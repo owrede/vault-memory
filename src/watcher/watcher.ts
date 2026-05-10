@@ -25,6 +25,10 @@ import type { SuppressionSet } from "./suppression.js";
 export interface VaultWatcherOptions {
   vault: Vault;
   embeddingModel: string;
+  /** Phase 7c: optional shadow model name; passed through to indexNote so
+   *  the secondary index stays current on live file edits. Silently
+   *  ignored if the model is not yet registered in the DB. */
+  secondaryEmbeddingModel?: string;
   ollama: OllamaClient;
   suppression: SuppressionSet;
   /** Debounce window (ms) for coalescing rapid file changes. Default 500. */
@@ -36,9 +40,12 @@ export interface VaultWatcherOptions {
 export class VaultWatcher {
   private fsWatcher: FSWatcher | null = null;
   private queue: DebouncedQueue;
-  private readonly opts: Required<Omit<VaultWatcherOptions, "log" | "debounceMs">> & {
+  private readonly opts: Required<
+    Omit<VaultWatcherOptions, "log" | "debounceMs" | "secondaryEmbeddingModel">
+  > & {
     log: (msg: string) => void;
     debounceMs: number;
+    secondaryEmbeddingModel: string | undefined;
   };
   private started = false;
 
@@ -46,6 +53,7 @@ export class VaultWatcher {
     this.opts = {
       vault: options.vault,
       embeddingModel: options.embeddingModel,
+      secondaryEmbeddingModel: options.secondaryEmbeddingModel,
       ollama: options.ollama,
       suppression: options.suppression,
       debounceMs: options.debounceMs ?? 500,
@@ -161,6 +169,7 @@ export class VaultWatcher {
       vault: this.opts.vault,
       absolutePath: event.path,
       embeddingModel: this.opts.embeddingModel,
+      secondaryEmbeddingModel: this.opts.secondaryEmbeddingModel,
       ollama: this.opts.ollama,
     });
 

@@ -35,7 +35,12 @@ import { queryFrontmatter, updateFrontmatter } from "./frontmatter/index.js";
 import { writeNote, deleteNote } from "./write/index.js";
 import { getAuditLog, getIndexRuns } from "./audit/index.js";
 import { SuppressionSet, VaultWatcher } from "./watcher/index.js";
-import { catchupVault } from "./indexer/index.js";
+import {
+  catchupVault,
+  listModels,
+  startShadowIndex,
+  switchActiveModel,
+} from "./indexer/index.js";
 import type { SearchHit } from "./types.js";
 
 const VERSION = "0.6.1";
@@ -132,6 +137,23 @@ const IndexRunsArgs = z.object({
   limit: z.number().int().positive().max(200).optional().default(20),
 });
 
+// ─── Phase 7c — shadow-indexing / model switch ──────────────────────────────
+
+const ListModelsArgs = z.object({
+  vault: z.string(),
+});
+
+const StartShadowIndexArgs = z.object({
+  vault: z.string(),
+  model: z.string().min(1),
+  batch_size: z.number().int().positive().max(256).optional(),
+});
+
+const SwitchActiveModelArgs = z.object({
+  vault: z.string(),
+  model_name: z.string().min(1),
+});
+
 // ─── Server bootstrap ────────────────────────────────────────────────────────
 
 export async function serve(): Promise<void> {
@@ -193,6 +215,7 @@ export async function serve(): Promise<void> {
       const watcher = new VaultWatcher({
         vault,
         embeddingModel: modelName,
+        secondaryEmbeddingModel: vault.config.secondary_embedding_model,
         ollama,
         suppression,
       });
@@ -477,6 +500,58 @@ export async function serve(): Promise<void> {
         },
       },
       {
+        name: "list_models",
+        description:
+          "List all embedding models registered for a vault, with dim, " +
+          "active flag, and how many chunks have been embedded under each. " +
+          "Use before start_shadow_index / switch_active_model.",
+        inputSchema: {
+          type: "object",
+          required: ["vault"],
+          properties: { vault: { type: "string" } },
+        },
+      },
+      {
+        name: "start_shadow_index",
+        description:
+          "Backfill embeddings for a secondary (shadow) model over every " +
+          "chunk in the vault. The active model is untouched — search keeps " +
+          "working during the run. Idempotent (resumable). Run " +
+          "switch_active_model once complete to promote the shadow.",
+        inputSchema: {
+          type: "object",
+          required: ["vault", "model"],
+          properties: {
+            vault: { type: "string" },
+            model: {
+              type: "string",
+              description: "Ollama model name, e.g. 'bge-m3' or 'embeddinggemma'.",
+            },
+            batch_size: {
+              type: "integer",
+              minimum: 1,
+              maximum: 256,
+              description: "Embed batch size — default 16.",
+            },
+          },
+        },
+      },
+      {
+        name: "switch_active_model",
+        description:
+          "Atomically promote a registered model to active. Fails with " +
+          "ok:false / reason:'incomplete' if any chunk is missing a shadow " +
+          "embedding for the target model.",
+        inputSchema: {
+          type: "object",
+          required: ["vault", "model_name"],
+          properties: {
+            vault: { type: "string" },
+            model_name: { type: "string" },
+          },
+        },
+      },
+      {
         name: "index_runs",
         description:
           "List recent index runs for a vault — what was scanned, when, how long, errors.",
@@ -645,6 +720,34 @@ export async function serve(): Promise<void> {
             limit: parsed.limit,
           });
           return ok({ entries, count: entries.length });
+        }
+
+        case "list_models": {
+          const parsed = ListModelsArgs.parse(args ?? {});
+          const vault = manager.require(parsed.vault);
+          const models = listModels(vault);
+          return ok({ models, count: models.length });
+        }
+
+        case "start_shadow_index": {
+          const parsed = StartShadowIndexArgs.parse(args ?? {});
+          const vault = manager.require(parsed.vault);
+          const result = await startShadowIndex({
+            vault,
+            model: parsed.model,
+            ollama,
+            batchSize: parsed.batch_size,
+            log: (m) =>
+              process.stderr.write(`[shadow:${vault.config.name}] ${m}\n`),
+          });
+          return ok(result);
+        }
+
+        case "switch_active_model": {
+          const parsed = SwitchActiveModelArgs.parse(args ?? {});
+          const vault = manager.require(parsed.vault);
+          const result = switchActiveModel(vault, parsed.model_name);
+          return ok(result);
         }
 
         case "index_runs": {

@@ -13,6 +13,10 @@ export interface VaultConfig {
   name: string;
   path: string;
   embedding_model?: string;
+  /** Phase 7c: optional secondary model embedded in parallel (shadow index)
+   *  so a user can evaluate a new model side-by-side without destroying
+   *  the active index. Promoted via `switch_active_model` when complete. */
+  secondary_embedding_model?: string;
   write_enabled?: boolean;
   exclude_globs?: string[];
 }
