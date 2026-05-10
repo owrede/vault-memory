@@ -14,13 +14,13 @@ describe("schema", () => {
   });
 
   it("sets user_version to the latest migration version", () => {
-    expect(db.getSchemaVersion()).toBe(3);
+    expect(db.getSchemaVersion()).toBe(4);
   });
 
   it("migrate is idempotent", () => {
     db.migrate();
     db.migrate();
-    expect(db.getSchemaVersion()).toBe(3);
+    expect(db.getSchemaVersion()).toBe(4);
   });
 
   it.each([
@@ -38,7 +38,7 @@ describe("schema", () => {
     expect(rows.length).toBeGreaterThan(0);
   });
 
-  it.each(["embeddings", "chunks_fts"])(
+  it.each(["embeddings_1024", "embeddings_768", "chunks_fts"])(
     "creates virtual table %s",
     (table) => {
       const row = db.handle

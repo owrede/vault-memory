@@ -48,10 +48,13 @@ export class Database {
 
     this.notes = new NotesQueries(this.handle);
     this.chunks = new ChunksQueries(this.handle);
-    this.embeddings = new EmbeddingsQueries(this.handle);
+    // models must be constructed before embeddings — embeddings looks up
+    // dim via models.getById() for routing to the correct embeddings_<dim>
+    // virtual table.
+    this.models = new ModelsQueries(this.handle);
+    this.embeddings = new EmbeddingsQueries(this.handle, this.models);
     this.wikilinks = new WikilinksQueries(this.handle);
     this.audit = new AuditQueries(this.handle);
-    this.models = new ModelsQueries(this.handle);
     this.fts = new FtsQueries(this.handle);
     this.aliases = new AliasesQueries(this.handle);
   }
