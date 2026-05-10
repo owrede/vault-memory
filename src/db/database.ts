@@ -8,6 +8,7 @@ import { EmbeddingsQueries } from "./queries/embeddings.js";
 import { WikilinksQueries } from "./queries/wikilinks.js";
 import { AuditQueries } from "./queries/audit.js";
 import { ModelsQueries } from "./queries/models.js";
+import { FtsQueries } from "./queries/fts.js";
 
 /**
  * SQLite wrapper for a single vault.
@@ -26,6 +27,7 @@ export class Database {
   readonly wikilinks: WikilinksQueries;
   readonly audit: AuditQueries;
   readonly models: ModelsQueries;
+  readonly fts: FtsQueries;
 
   constructor(dbPath: string) {
     this.handle = new BetterSqlite3(dbPath);
@@ -48,6 +50,7 @@ export class Database {
     this.wikilinks = new WikilinksQueries(this.handle);
     this.audit = new AuditQueries(this.handle);
     this.models = new ModelsQueries(this.handle);
+    this.fts = new FtsQueries(this.handle);
   }
 
   static async open(dbPath: string): Promise<Database> {

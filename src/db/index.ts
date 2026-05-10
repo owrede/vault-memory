@@ -30,3 +30,6 @@ export type {
 
 export { ModelsQueries } from "./queries/models.js";
 export type { UpsertModelInput } from "./queries/models.js";
+
+export { FtsQueries } from "./queries/fts.js";
+export type { BM25Hit } from "./queries/fts.js";

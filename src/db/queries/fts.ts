@@ -1,0 +1,127 @@
+import type BetterSqlite3 from "better-sqlite3";
+
+export interface BM25Hit {
+  chunkId: number;
+  /**
+   * Positive relevance score (higher = better). SQLite FTS5 `bm25()` returns a
+   * negative number — we flip the sign for downstream consumers so the score
+   * is monotonically increasing in "goodness of match".
+   */
+  score: number;
+  /** Optional snippet of the chunk with the query terms highlighted. */
+  snippet?: string;
+}
+
+interface BM25Row {
+  chunkId: number;
+  score: number;
+}
+
+interface BM25RowWithSnippet extends BM25Row {
+  snippet: string;
+}
+
+/**
+ * Full-text BM25 search over `chunks_fts` (the FTS5 virtual table mirroring
+ * `chunks.text` — see `INITIAL_SCHEMA`). The triggers on `chunks` keep the
+ * index in sync automatically, so consumers only need to insert chunks the
+ * usual way and can search here.
+ */
+export class FtsQueries {
+  private readonly _search: BetterSqlite3.Statement<[string, number], BM25Row>;
+  private readonly _searchWithSnippet: BetterSqlite3.Statement<
+    [string, number],
+    BM25RowWithSnippet
+  >;
+
+  constructor(db: BetterSqlite3.Database) {
+    this._search = db.prepare<[string, number], BM25Row>(
+      `SELECT rowid AS chunkId, bm25(chunks_fts) AS score
+       FROM chunks_fts
+       WHERE chunks_fts MATCH ?
+       ORDER BY bm25(chunks_fts) ASC
+       LIMIT ?`,
+    );
+    this._searchWithSnippet = db.prepare<[string, number], BM25RowWithSnippet>(
+      `SELECT
+         rowid AS chunkId,
+         bm25(chunks_fts) AS score,
+         snippet(chunks_fts, 0, '<mark>', '</mark>', '...', 64) AS snippet
+       FROM chunks_fts
+       WHERE chunks_fts MATCH ?
+       ORDER BY bm25(chunks_fts) ASC
+       LIMIT ?`,
+    );
+  }
+
+  search(query: string, topK: number, withSnippet = false): BM25Hit[] {
+    const sanitized = FtsQueries.sanitize(query);
+    if (sanitized.length === 0) return [];
+
+    if (withSnippet) {
+      const rows = this._searchWithSnippet.all(sanitized, topK);
+      return rows.map((r) => ({
+        chunkId: r.chunkId,
+        score: -r.score,
+        snippet: r.snippet,
+      }));
+    }
+    const rows = this._search.all(sanitized, topK);
+    return rows.map((r) => ({ chunkId: r.chunkId, score: -r.score }));
+  }
+
+  /**
+   * Conservative sanitizer for FTS5 MATCH input.
+   *
+   * Strategy: strip characters that have special FTS5 meaning when the user
+   * likely didn't intend them, while preserving advanced syntax for users
+   * who know what they're doing (AND/OR/NOT, NEAR, trailing `*` prefix).
+   *
+   * - Double quotes are removed unless balanced (unbalanced quote → phrase
+   *   parse error). We strip them all unconditionally to keep this simple
+   *   and predictable — phrase queries can be re-introduced by callers that
+   *   construct queries programmatically.
+   * - Parentheses are kept only when balanced; otherwise stripped.
+   * - Colons (column filters) are stripped — `chunks_fts` only has one
+   *   column, so column filters are never useful and cause errors.
+   * - Leading operator tokens at fragment boundaries are dropped (FTS5
+   *   errors on a trailing `AND`/`OR`).
+   * - Whitespace is normalized.
+   *
+   * If the cleaned result is empty, returns "".
+   */
+  static sanitize(userQuery: string): string {
+    let s = userQuery.replace(/"/g, " ").replace(/:/g, " ");
+
+    // Balance parens — if mismatched, strip all parens.
+    let depth = 0;
+    let balanced = true;
+    for (const ch of s) {
+      if (ch === "(") depth++;
+      else if (ch === ")") {
+        depth--;
+        if (depth < 0) {
+          balanced = false;
+          break;
+        }
+      }
+    }
+    if (!balanced || depth !== 0) {
+      s = s.replace(/[()]/g, " ");
+    }
+
+    // Normalize whitespace.
+    s = s.replace(/\s+/g, " ").trim();
+    if (s.length === 0) return "";
+
+    // Drop trailing operator tokens that would error.
+    const trailingOpRe = /\s+(AND|OR|NOT|NEAR)$/;
+    while (trailingOpRe.test(s)) {
+      s = s.replace(trailingOpRe, "");
+    }
+    // Drop leading operator tokens.
+    s = s.replace(/^(AND|OR|NOT|NEAR)\s+/, "");
+
+    return s.trim();
+  }
+}
