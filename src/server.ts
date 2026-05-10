@@ -43,7 +43,7 @@ import {
 } from "./indexer/index.js";
 import type { SearchHit } from "./types.js";
 
-const VERSION = "0.6.1";
+const VERSION = "0.7.0";
 
 // ─── Tool Input Schemas ──────────────────────────────────────────────────────
 
