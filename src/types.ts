@@ -29,6 +29,14 @@ export interface ServerConfig {
    *  (e.g. "qllama/bge-reranker-v2-m3"). When unset, search_hybrid's
    *  `rerank` flag is silently ignored. */
   reranker_model?: string;
+  /** Phase 8: which reranker backend to use. "onnx" runs a real
+   *  cross-encoder via onnxruntime-node (recommended); "ollama"
+   *  keeps the legacy L2-norm proxy. Default: "onnx" when
+   *  `reranker_model` is set. */
+  reranker_backend?: "onnx" | "ollama";
+  /** Phase 8: directory holding ONNX model + tokenizer for the "onnx"
+   *  backend. Default: `~/.vault-memory/models/bge-reranker-v2-m3`. */
+  reranker_model_dir?: string;
 }
 
 export interface AppConfig {

@@ -64,7 +64,9 @@ var init_loader = __esm({
       log_level: z.enum(["debug", "info", "warn", "error"]).optional(),
       ollama_endpoint: z.string().url().optional(),
       default_embedding_model: z.string().optional(),
-      reranker_model: z.string().optional()
+      reranker_model: z.string().optional(),
+      reranker_backend: z.enum(["onnx", "ollama"]).optional(),
+      reranker_model_dir: z.string().optional()
     });
     VaultConfigSchema = z.object({
       name: z.string().min(1),
@@ -1824,12 +1826,110 @@ var init_reranker = __esm({
   }
 });
 
+// src/rerank/onnx-reranker.ts
+import { readFile as readFile2 } from "fs/promises";
+import { existsSync } from "fs";
+import { join as join3 } from "path";
+function sigmoid(x) {
+  return 1 / (1 + Math.exp(-x));
+}
+var OnnxReranker;
+var init_onnx_reranker = __esm({
+  "src/rerank/onnx-reranker.ts"() {
+    "use strict";
+    init_esm_shims();
+    OnnxReranker = class {
+      modelDir;
+      maxLength;
+      loaded = null;
+      loading = null;
+      constructor(opts) {
+        this.modelDir = opts.modelDir;
+        this.maxLength = opts.maxLength ?? 512;
+      }
+      /**
+       * Score each chunk against the query. Returns sigmoid(logit) per pair.
+       * Throws if the model files are missing (with a copy-pasteable curl
+       * command in the error message).
+       */
+      async score(query, chunks) {
+        if (chunks.length === 0) return [];
+        const { session, tokenizer, ort } = await this.load();
+        const encoded = chunks.map((chunk) => {
+          const enc = tokenizer.encode(query, { text_pair: chunk });
+          let ids = enc.ids;
+          let mask = enc.attention_mask;
+          if (ids.length > this.maxLength) {
+            ids = ids.slice(0, this.maxLength);
+            mask = mask.slice(0, this.maxLength);
+          }
+          return { ids, mask };
+        });
+        const seqLen = Math.max(...encoded.map((e) => e.ids.length));
+        const batch = encoded.length;
+        const inputIds = new BigInt64Array(batch * seqLen);
+        const attentionMask = new BigInt64Array(batch * seqLen);
+        for (let i = 0; i < batch; i++) {
+          const row = encoded[i];
+          for (let j = 0; j < row.ids.length; j++) {
+            inputIds[i * seqLen + j] = BigInt(row.ids[j]);
+            attentionMask[i * seqLen + j] = BigInt(row.mask[j]);
+          }
+        }
+        const feeds = {
+          input_ids: new ort.Tensor("int64", inputIds, [batch, seqLen]),
+          attention_mask: new ort.Tensor("int64", attentionMask, [batch, seqLen])
+        };
+        const out = await session.run(feeds);
+        const logitsTensor = out.logits ?? out[Object.keys(out)[0]];
+        const data = logitsTensor.data;
+        const scores = new Array(batch);
+        for (let i = 0; i < batch; i++) {
+          scores[i] = sigmoid(data[i]);
+        }
+        return scores;
+      }
+      async load() {
+        if (this.loaded) return this.loaded;
+        if (this.loading) return this.loading;
+        this.loading = (async () => {
+          const modelPath = join3(this.modelDir, "model_quantized.onnx");
+          const tokenizerPath = join3(this.modelDir, "tokenizer.json");
+          if (!existsSync(modelPath)) {
+            throw new Error(
+              `OnnxReranker: model file not found at ${modelPath}. Run: curl -L https://huggingface.co/onnx-community/bge-reranker-v2-m3-ONNX/resolve/main/onnx/model_quantized.onnx -o ${modelPath}`
+            );
+          }
+          if (!existsSync(tokenizerPath)) {
+            throw new Error(
+              `OnnxReranker: tokenizer file not found at ${tokenizerPath}. Run: curl -L https://huggingface.co/onnx-community/bge-reranker-v2-m3-ONNX/resolve/main/tokenizer.json -o ${tokenizerPath}`
+            );
+          }
+          const [ort, tokMod, tokJson] = await Promise.all([
+            import("onnxruntime-node"),
+            import("@huggingface/tokenizers"),
+            readFile2(tokenizerPath, "utf-8")
+          ]);
+          const tokenizerConfig = JSON.parse(tokJson);
+          const tokenizer = new tokMod.Tokenizer(tokenizerConfig);
+          const session = await ort.InferenceSession.create(modelPath);
+          const loaded = { session, tokenizer, ort };
+          this.loaded = loaded;
+          return loaded;
+        })();
+        return this.loading;
+      }
+    };
+  }
+});
+
 // src/rerank/index.ts
 var init_rerank = __esm({
   "src/rerank/index.ts"() {
     "use strict";
     init_esm_shims();
     init_reranker();
+    init_onnx_reranker();
   }
 });
 
@@ -4307,6 +4407,8 @@ import {
   ListToolsRequestSchema
 } from "@modelcontextprotocol/sdk/types.js";
 import { z as z3 } from "zod";
+import { homedir as homedir3 } from "os";
+import { join as joinPath } from "path";
 async function serve() {
   const config = await loadConfig();
   const manager = new VaultManager();
@@ -4315,7 +4417,10 @@ async function serve() {
     endpoint: config.server.ollama_endpoint
   });
   const defaultModel = config.server.default_embedding_model ?? "qwen3-embedding:0.6b";
-  const reranker = config.server.reranker_model ? new OllamaReranker({ ollama, model: config.server.reranker_model }) : void 0;
+  const rerankerBackend = config.server.reranker_backend ?? (config.server.reranker_model ? "onnx" : void 0);
+  const reranker = config.server.reranker_model ? rerankerBackend === "ollama" ? new OllamaReranker({ ollama, model: config.server.reranker_model }) : new OnnxReranker({
+    modelDir: config.server.reranker_model_dir ?? joinPath(homedir3(), ".vault-memory", "models", "bge-reranker-v2-m3")
+  }) : void 0;
   const suppression = new SuppressionSet({ ttlMs: 2e3 });
   const watchers = /* @__PURE__ */ new Map();
   const startCatchupAndWatchers = async () => {
@@ -5028,7 +5133,7 @@ var init_server = __esm({
     init_audit3();
     init_watcher2();
     init_indexer2();
-    VERSION = "0.7.3";
+    VERSION = "0.8.0";
     ReadNoteArgs = z3.object({
       vault: z3.string(),
       path: z3.string()

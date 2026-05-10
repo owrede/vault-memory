@@ -24,9 +24,28 @@ Eval-v2 (May 2026) compared two multilingual Ollama-hosted embedding models on a
 
 See `vault-memory-eval-v2-results.md` for the full per-query benchmark table.
 
-## Reranker — experimental, off by default
+## Reranker — real ONNX cross-encoder (Phase 8, v0.8.0)
 
-The optional cross-encoder reranker (`reranker_model` in config, `rerank: true` per query) is **disabled by default**: the v0.7.x Ollama-backed implementation uses an L2-norm approximation that does not produce trustworthy relevance scores — in eval-v2 it *degraded* result quality compared to plain hybrid search. A proper ONNX-runtime backend is planned for Phase 8.
+v0.8.0 replaces the v0.7.x L2-norm hack with a real cross-encoder forward pass over **BAAI/bge-reranker-v2-m3** (ONNX INT8, ≈570 MB) via `onnxruntime-node` + `@huggingface/tokenizers`. Sigmoid-of-logit gives a true [0, 1] relevance score per (query, chunk) pair, matching the `Reranker` contract directly.
+
+Setup (one-time):
+
+```bash
+bash scripts/download-reranker.sh       # ≈590 MB into ~/.vault-memory/models/bge-reranker-v2-m3/
+```
+
+Then in `~/.vault-memory/config.toml`:
+
+```toml
+[server]
+reranker_model    = "bge-reranker-v2-m3"
+reranker_backend  = "onnx"              # default when reranker_model is set
+# reranker_model_dir = "..."            # optional override; defaults to ~/.vault-memory/models/bge-reranker-v2-m3
+```
+
+Reranking remains **opt-in per query** via `rerank: true` in `search_hybrid`. The ONNX session loads lazily on the first reranked query, so users who never set `rerank: true` pay zero startup cost. Eval-v3 (re-running the v2 query suite against the real backend) is still pending — treat this as opt-in until that lands.
+
+The legacy `OllamaReranker` (L2-norm proxy) stays available via `reranker_backend = "ollama"` for back-compat, but is no longer recommended.
 
 ## Install (recommended)
 
@@ -68,9 +87,10 @@ log_level = "info"
 ollama_endpoint = "http://localhost:11434"
 default_embedding_model = "bge-m3"      # recommended default since v0.7.3
 
-# Optional: cross-encoder reranker. Currently EXPERIMENTAL — see Reranker
-# section above. Leave commented out unless you specifically want to test.
-# reranker_model = "qllama/bge-reranker-v2-m3"
+# Optional: cross-encoder reranker (Phase 8). Run scripts/download-reranker.sh
+# first to fetch the ONNX model. See the "Reranker" section above for details.
+# reranker_model    = "bge-reranker-v2-m3"
+# reranker_backend  = "onnx"   # default when reranker_model is set
 
 [[vaults]]
 name = "myvault"

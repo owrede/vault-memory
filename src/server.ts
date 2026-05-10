@@ -24,8 +24,10 @@ import { VaultManager } from "./vault/index.js";
 import { OllamaClient } from "./ollama/index.js";
 import { FtsQueries } from "./db/index.js";
 import { hybridSearch, matchesAnyGlob } from "./search/index.js";
-import { OllamaReranker } from "./rerank/index.js";
+import { OllamaReranker, OnnxReranker } from "./rerank/index.js";
 import type { Reranker } from "./rerank/index.js";
+import { homedir } from "node:os";
+import { join as joinPath } from "node:path";
 import {
   listBacklinks,
   listForwardLinks,
@@ -44,7 +46,7 @@ import {
 } from "./indexer/index.js";
 import type { SearchHit } from "./types.js";
 
-const VERSION = "0.7.3";
+const VERSION = "0.8.0";
 
 // ─── Tool Input Schemas ──────────────────────────────────────────────────────
 
@@ -175,8 +177,21 @@ export async function serve(): Promise<void> {
 
   // Optional cross-encoder reranker (Phase 7d). Constructed once;
   // search_hybrid will pass it through only when the caller asks for it.
+  // Phase 8: backend selection. Default to "onnx" when reranker_model is
+  // set but no backend specified — the ONNX cross-encoder is the
+  // recommended path; the Ollama L2-norm proxy is retained for
+  // backward-compat only.
+  const rerankerBackend =
+    config.server.reranker_backend ??
+    (config.server.reranker_model ? "onnx" : undefined);
   const reranker: Reranker | undefined = config.server.reranker_model
-    ? new OllamaReranker({ ollama, model: config.server.reranker_model })
+    ? rerankerBackend === "ollama"
+      ? new OllamaReranker({ ollama, model: config.server.reranker_model })
+      : new OnnxReranker({
+          modelDir:
+            config.server.reranker_model_dir ??
+            joinPath(homedir(), ".vault-memory", "models", "bge-reranker-v2-m3"),
+        })
     : undefined;
 
   // ─── File watchers (Phase 4) ──────────────────────────────────────────────

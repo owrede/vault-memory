@@ -10,8 +10,14 @@ export default defineConfig({
   sourcemap: true,
   clean: true,
   shims: true,
-  // better-sqlite3 has native bindings — keep external
-  external: ["better-sqlite3", "sqlite-vec"],
+  // Native bindings / large optional runtimes — keep external so the
+  // bundler doesn't try to inline .node binaries or 570 MB of model glue.
+  external: [
+    "better-sqlite3",
+    "sqlite-vec",
+    "onnxruntime-node",
+    "@huggingface/tokenizers",
+  ],
   banner: {
     js: "#!/usr/bin/env node",
   },

@@ -18,6 +18,8 @@ const ServerConfigSchema = z.object({
   ollama_endpoint: z.string().url().optional(),
   default_embedding_model: z.string().optional(),
   reranker_model: z.string().optional(),
+  reranker_backend: z.enum(["onnx", "ollama"]).optional(),
+  reranker_model_dir: z.string().optional(),
 });
 
 const VaultConfigSchema = z.object({
