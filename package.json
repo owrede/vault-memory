@@ -1,13 +1,21 @@
 {
   "name": "@owrede/vault-memory",
-  "version": "0.1.0",
+  "version": "0.4.1",
   "description": "Local-first semantic memory MCP server for Obsidian vaults",
   "type": "module",
   "license": "MIT",
-  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/owrede/vault-memory.git"
+  },
   "bin": {
     "vault-memory": "./dist/cli.js"
   },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
   "engines": {
     "node": ">=22"
   },
@@ -18,7 +26,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
-    "format": "prettier --write \"src/**/*.ts\""
+    "format": "prettier --write \"src/**/*.ts\"",
+    "prepare": "[ -d dist ] || npm run build"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
