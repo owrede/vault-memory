@@ -55,6 +55,10 @@ export class ModelsQueries {
     return row;
   }
 
+  getById(modelId: number): ModelRow | null {
+    return this._selectById.get(modelId) ?? null;
+  }
+
   getActive(): ModelRow | null {
     return this._selectActive.get() ?? null;
   }

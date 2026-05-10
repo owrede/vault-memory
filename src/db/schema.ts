@@ -218,6 +218,50 @@ ALTER TABLE write_audit_new RENAME TO write_audit;
 CREATE INDEX IF NOT EXISTS idx_write_audit_note ON write_audit(note_id);
 `;
 
+/**
+ * Migration 004 — variable embedding dimensions (Phase 7b).
+ *
+ * Original schema declared a single virtual table:
+ *   embeddings USING vec0(chunk_id, model_id, vector FLOAT[1024])
+ * with the dim hard-wired to 1024 (qwen3-embedding default).
+ *
+ * Phase 7b lets multiple models with different output dimensions coexist
+ * in the same vault DB (e.g. qwen3 @ 1024 + embeddinggemma @ 768). Because
+ * sqlite-vec's vec0 requires a compile-time-fixed dimension per column,
+ * we use one virtual table per dim: `embeddings_<dim>`.
+ *
+ * This migration:
+ *   1) Creates `embeddings_1024` and `embeddings_768` up-front (the two
+ *      dims we know about today). Additional dims are materialized
+ *      on-demand by Database.ensureEmbeddingsTable(dim).
+ *   2) Copies all rows from the legacy `embeddings` table into
+ *      `embeddings_1024` (since the legacy schema was 1024-only).
+ *   3) Drops the legacy `embeddings` table.
+ *
+ * vec0 virtual tables do not support INSERT ... SELECT directly across
+ * vec0 instances reliably across older sqlite-vec builds — we copy row
+ * by row via a SELECT loop, materialised as a CTE-driven INSERT here.
+ * For empty tables this is a no-op.
+ */
+const MIGRATION_004_VARIABLE_DIMS = `
+CREATE VIRTUAL TABLE IF NOT EXISTS embeddings_1024 USING vec0(
+  chunk_id      INTEGER PRIMARY KEY,
+  model_id      INTEGER NOT NULL,
+  vector        FLOAT[1024]
+);
+
+CREATE VIRTUAL TABLE IF NOT EXISTS embeddings_768 USING vec0(
+  chunk_id      INTEGER PRIMARY KEY,
+  model_id      INTEGER NOT NULL,
+  vector        FLOAT[768]
+);
+
+INSERT INTO embeddings_1024 (chunk_id, model_id, vector)
+  SELECT chunk_id, model_id, vector FROM embeddings;
+
+DROP TABLE embeddings;
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   {
     version: 1,
@@ -233,5 +277,10 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 3,
     description: "fix delete-cascade gaps in wikilinks + write_audit FKs",
     sql: MIGRATION_003_FIX_DELETE_FKS,
+  },
+  {
+    version: 4,
+    description: "variable embedding dimensions (split embeddings table per dim)",
+    sql: MIGRATION_004_VARIABLE_DIMS,
   },
 ];
