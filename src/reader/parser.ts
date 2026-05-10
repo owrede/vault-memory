@@ -3,7 +3,7 @@ import * as path from "node:path";
 import matter from "gray-matter";
 import type { ParsedNote } from "../types.js";
 import { extractWikilinks } from "./wikilinks.js";
-import { sha256 } from "./hash.js";
+import { computeNoteHash } from "./hash.js";
 
 /**
  * Parse a single markdown file into a ParsedNote.
@@ -24,7 +24,7 @@ export async function parseNote(
     fmData !== undefined && Object.keys(fmData).length > 0 ? fmData : null;
 
   const title = extractTitle(content) ?? path.basename(absolutePath, ".md");
-  const hash = sha256(content + JSON.stringify(frontmatter ?? {}));
+  const hash = computeNoteHash(content, frontmatter);
   const mtime = Math.floor(stat.mtimeMs);
   const wikilinks = extractWikilinks(content);
   const wordCount = countWords(content);

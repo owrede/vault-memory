@@ -23,7 +23,7 @@
 import { promises as fs } from "node:fs";
 import matter from "gray-matter";
 import type { Vault } from "../vault/index.js";
-import { sha256 } from "../reader/hash.js";
+import { computeNoteHash } from "../reader/hash.js";
 import { extractAliases } from "../indexer/indexer.js";
 import { atomicWriteFile, safeJoinInsideVault } from "../write/fs.js";
 
@@ -184,9 +184,10 @@ function applyMerge(
 }
 
 function computeHash(content: string, data: Record<string, unknown>): string {
-  // Mirror reader/parser: empty frontmatter → JSON.stringify({}).
+  // Mirror reader/parser: empty frontmatter → canonicalJson({}). Delegates to
+  // computeNoteHash so canonical (key-sorted) JSON is used everywhere.
   const fmForHash = Object.keys(data).length > 0 ? data : {};
-  return sha256(content + JSON.stringify(fmForHash));
+  return computeNoteHash(content, fmForHash);
 }
 
 function countWords(content: string): number {

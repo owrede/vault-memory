@@ -3,7 +3,7 @@ import { promises as fs } from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { parseNote } from "./parser.js";
-import { sha256 } from "./hash.js";
+import { computeNoteHash } from "./hash.js";
 
 describe("parseNote", () => {
   let root: string;
@@ -50,10 +50,8 @@ describe("parseNote", () => {
     const targets = note.wikilinks.map((w) => w.rawTarget);
     expect(targets).toEqual(["Linked", "Other"]);
 
-    // Hash is deterministic on content + JSON-stringified frontmatter
-    const expected = sha256(
-      note.content + JSON.stringify(note.frontmatter ?? {}),
-    );
+    // Hash is deterministic on content + canonical-JSON frontmatter
+    const expected = computeNoteHash(note.content, note.frontmatter);
     expect(note.hash).toBe(expected);
   });
 

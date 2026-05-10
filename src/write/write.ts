@@ -12,7 +12,7 @@ import { promises as fs } from "node:fs";
 import { basename } from "node:path";
 import matter from "gray-matter";
 import type { Vault } from "../vault/index.js";
-import { sha256 } from "../reader/index.js";
+import { computeNoteHash } from "../reader/index.js";
 import { extractAliases } from "../indexer/index.js";
 import { atomicWriteFile, safeJoinInsideVault } from "./fs.js";
 
@@ -84,17 +84,14 @@ function permissionDenied(vaultName: string): WriteConflict {
 }
 
 /**
- * Compute the canonical content-hash the way the reader does:
- *   sha256(content + JSON.stringify(frontmatter ?? {}))
- *
- * Frontmatter is normalized to `{}` when empty/missing so a freshly written
- * file with no frontmatter hashes the same way as one parsed by the reader.
+ * Compute the canonical content-hash the way the reader does. Delegates to
+ * `computeNoteHash` from reader/hash.ts (canonical, key-sorted JSON).
  */
 function computeHash(
   content: string,
   frontmatter: Record<string, unknown> | null,
 ): string {
-  return sha256(content + JSON.stringify(frontmatter ?? {}));
+  return computeNoteHash(content, frontmatter);
 }
 
 function extractTitle(content: string, relativePath: string): string {
