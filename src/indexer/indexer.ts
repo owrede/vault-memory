@@ -296,7 +296,7 @@ function insertWikilinks(
  *
  * Returns null if no candidate exists (true broken link).
  */
-function resolveWikilinkTarget(
+export function resolveWikilinkTarget(
   vault: Vault,
   normalizedTarget: string,
 ): { id: number; path: string } | null {
