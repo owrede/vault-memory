@@ -32,9 +32,10 @@ import {
 import { queryFrontmatter, updateFrontmatter } from "./frontmatter/index.js";
 import { writeNote, deleteNote } from "./write/index.js";
 import { getAuditLog, getIndexRuns } from "./audit/index.js";
+import { SuppressionSet, VaultWatcher } from "./watcher/index.js";
 import type { SearchHit } from "./types.js";
 
-const VERSION = "0.3.0";
+const VERSION = "0.4.0";
 
 // ─── Tool Input Schemas ──────────────────────────────────────────────────────
 
@@ -134,6 +135,43 @@ export async function serve(): Promise<void> {
 
   const defaultModel =
     config.server.default_embedding_model ?? "qwen3-embedding:0.6b";
+
+  // ─── File watchers (Phase 4) ──────────────────────────────────────────────
+  //
+  // One SuppressionSet shared by all vaults (paths are vault-relative; the
+  // chance of a collision across vaults is negligible and a false positive
+  // just means one event is dropped — harmless).
+  const suppression = new SuppressionSet({ ttlMs: 2000 });
+  const watchers = new Map<string, VaultWatcher>();
+
+  for (const vault of manager.list()) {
+    if (vault.config.embedding_model || vault.db.models.getActive()) {
+      // Only start a watcher if the vault has been indexed at least once
+      // (otherwise we have no active model and indexNote would fail loud).
+      const modelName = vault.config.embedding_model ?? defaultModel;
+      const watcher = new VaultWatcher({
+        vault,
+        embeddingModel: modelName,
+        ollama,
+        suppression,
+      });
+      await watcher.start();
+      watchers.set(vault.config.name, watcher);
+    }
+  }
+
+  const shutdown = async (): Promise<void> => {
+    for (const w of watchers.values()) {
+      await w.drain();
+      await w.stop();
+    }
+  };
+  process.on("SIGINT", () => {
+    void shutdown().finally(() => process.exit(0));
+  });
+  process.on("SIGTERM", () => {
+    void shutdown().finally(() => process.exit(0));
+  });
 
   const server = new Server(
     { name: "vault-memory", version: VERSION },
@@ -481,6 +519,9 @@ export async function serve(): Promise<void> {
         case "write_note": {
           const parsed = WriteNoteArgs.parse(args ?? {});
           const vault = manager.require(parsed.vault);
+          // Pre-mark on the suppression set so the watcher ignores the
+          // filesystem event triggered by our own atomic rename.
+          suppression.add(parsed.path);
           const result = await writeNote({
             vault,
             relativePath: parsed.path,
@@ -495,6 +536,7 @@ export async function serve(): Promise<void> {
         case "update_frontmatter": {
           const parsed = UpdateFrontmatterArgs.parse(args ?? {});
           const vault = manager.require(parsed.vault);
+          suppression.add(parsed.path);
           const result = await updateFrontmatter({
             vault,
             relativePath: parsed.path,
@@ -508,6 +550,7 @@ export async function serve(): Promise<void> {
         case "delete_note": {
           const parsed = DeleteNoteArgs.parse(args ?? {});
           const vault = manager.require(parsed.vault);
+          suppression.add(parsed.path);
           const result = await deleteNote({
             vault,
             relativePath: parsed.path,
