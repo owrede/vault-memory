@@ -29,10 +29,12 @@ import {
   listForwardLinks,
   findBrokenLinks,
 } from "./graph/index.js";
-import { queryFrontmatter } from "./frontmatter/index.js";
+import { queryFrontmatter, updateFrontmatter } from "./frontmatter/index.js";
+import { writeNote, deleteNote } from "./write/index.js";
+import { getAuditLog, getIndexRuns } from "./audit/index.js";
 import type { SearchHit } from "./types.js";
 
-const VERSION = "0.2.0";
+const VERSION = "0.3.0";
 
 // ─── Tool Input Schemas ──────────────────────────────────────────────────────
 
@@ -78,6 +80,45 @@ const QueryFrontmatterArgs = z.object({
   vault: z.string(),
   where: z.record(z.string(), PredicateSchema),
   limit: z.number().int().positive().max(1000).optional().default(100),
+});
+
+// ─── Phase 3 input schemas ──────────────────────────────────────────────────
+
+const WriteNoteArgs = z.object({
+  vault: z.string(),
+  path: z.string(),
+  content: z.string(),
+  frontmatter: z.record(z.string(), z.unknown()).nullable().optional(),
+  expected_hash: z.string().optional(),
+  client_id: z.string().optional(),
+});
+
+const UpdateFrontmatterArgs = z.object({
+  vault: z.string(),
+  path: z.string(),
+  merge: z.record(z.string(), z.unknown()),
+  expected_hash: z.string().optional(),
+  client_id: z.string().optional(),
+});
+
+const DeleteNoteArgs = z.object({
+  vault: z.string(),
+  path: z.string(),
+  expected_hash: z.string(),
+  client_id: z.string().optional(),
+});
+
+const AuditLogArgs = z.object({
+  vault: z.string(),
+  note_path: z.string().optional(),
+  op: z.enum(["create", "update", "delete"]).optional(),
+  since: z.number().int().nonnegative().optional(),
+  limit: z.number().int().positive().max(1000).optional().default(50),
+});
+
+const IndexRunsArgs = z.object({
+  vault: z.string(),
+  limit: z.number().int().positive().max(200).optional().default(20),
 });
 
 // ─── Server bootstrap ────────────────────────────────────────────────────────
@@ -251,6 +292,102 @@ export async function serve(): Promise<void> {
           },
         },
       },
+      {
+        name: "write_note",
+        description:
+          "Atomically create or overwrite a note. Requires write_enabled=true. Use expected_hash for safe overwrites (read the note first, pass its hash). Omit expected_hash only when creating a new note.",
+        inputSchema: {
+          type: "object",
+          required: ["vault", "path", "content"],
+          properties: {
+            vault: { type: "string" },
+            path: {
+              type: "string",
+              description: "Vault-relative .md path, forward slashes.",
+            },
+            content: {
+              type: "string",
+              description: "Markdown body WITHOUT --- frontmatter delimiters.",
+            },
+            frontmatter: {
+              type: ["object", "null"],
+              description: "Optional frontmatter object. Set null to write no frontmatter block.",
+            },
+            expected_hash: {
+              type: "string",
+              description: "Required for overwrites — get it from read_note.",
+            },
+            client_id: { type: "string" },
+          },
+        },
+      },
+      {
+        name: "update_frontmatter",
+        description:
+          "Modify a note's frontmatter only. The body is preserved bytegenau. Merge DSL: scalar=set, {$unset:true}=delete, {$push:x}=array append, {$pull:x}=array remove.",
+        inputSchema: {
+          type: "object",
+          required: ["vault", "path", "merge"],
+          properties: {
+            vault: { type: "string" },
+            path: { type: "string" },
+            merge: {
+              type: "object",
+              description:
+                "Field → value | {$unset:bool} | {$push:scalar} | {$pull:scalar}",
+            },
+            expected_hash: { type: "string" },
+            client_id: { type: "string" },
+          },
+        },
+      },
+      {
+        name: "delete_note",
+        description:
+          "Delete a note. Requires write_enabled=true AND expected_hash (no blind deletes).",
+        inputSchema: {
+          type: "object",
+          required: ["vault", "path", "expected_hash"],
+          properties: {
+            vault: { type: "string" },
+            path: { type: "string" },
+            expected_hash: { type: "string" },
+            client_id: { type: "string" },
+          },
+        },
+      },
+      {
+        name: "audit_log",
+        description:
+          "Query the write audit trail for a vault. Filterable by note path, operation type, or time. Default limit 50.",
+        inputSchema: {
+          type: "object",
+          required: ["vault"],
+          properties: {
+            vault: { type: "string" },
+            note_path: { type: "string" },
+            op: { type: "string", enum: ["create", "update", "delete"] },
+            since: {
+              type: "integer",
+              description: "Epoch ms — entries at or after this timestamp.",
+            },
+            limit: { type: "integer", minimum: 1, maximum: 1000, default: 50 },
+          },
+        },
+      },
+      {
+        name: "index_runs",
+        description:
+          "List recent index runs for a vault — what was scanned, when, how long, errors.",
+        inputSchema: {
+          type: "object",
+          required: ["vault"],
+          properties: {
+            vault: { type: "string" },
+            limit: { type: "integer", minimum: 1, maximum: 200, default: 20 },
+          },
+        },
+      },
     ],
   }));
 
@@ -339,6 +476,65 @@ export async function serve(): Promise<void> {
             })),
             count: hits.length,
           });
+        }
+
+        case "write_note": {
+          const parsed = WriteNoteArgs.parse(args ?? {});
+          const vault = manager.require(parsed.vault);
+          const result = await writeNote({
+            vault,
+            relativePath: parsed.path,
+            content: parsed.content,
+            frontmatter: parsed.frontmatter ?? null,
+            expectedHash: parsed.expected_hash,
+            clientId: parsed.client_id,
+          });
+          return ok(result);
+        }
+
+        case "update_frontmatter": {
+          const parsed = UpdateFrontmatterArgs.parse(args ?? {});
+          const vault = manager.require(parsed.vault);
+          const result = await updateFrontmatter({
+            vault,
+            relativePath: parsed.path,
+            merge: parsed.merge,
+            expectedHash: parsed.expected_hash,
+            clientId: parsed.client_id,
+          });
+          return ok(result);
+        }
+
+        case "delete_note": {
+          const parsed = DeleteNoteArgs.parse(args ?? {});
+          const vault = manager.require(parsed.vault);
+          const result = await deleteNote({
+            vault,
+            relativePath: parsed.path,
+            expectedHash: parsed.expected_hash,
+            clientId: parsed.client_id,
+          });
+          return ok(result);
+        }
+
+        case "audit_log": {
+          const parsed = AuditLogArgs.parse(args ?? {});
+          const vault = manager.require(parsed.vault);
+          const entries = getAuditLog({
+            vault,
+            notePath: parsed.note_path,
+            op: parsed.op,
+            since: parsed.since,
+            limit: parsed.limit,
+          });
+          return ok({ entries, count: entries.length });
+        }
+
+        case "index_runs": {
+          const parsed = IndexRunsArgs.parse(args ?? {});
+          const vault = manager.require(parsed.vault);
+          const runs = getIndexRuns({ vault, limit: parsed.limit });
+          return ok({ runs, count: runs.length });
         }
 
         default:
