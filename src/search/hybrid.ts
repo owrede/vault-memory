@@ -284,18 +284,23 @@ async function searchOneVault(
 ): Promise<PerVaultHit[]> {
   const fanK = Math.max(topK * 3, topK);
 
-  // Resolve active model for this vault. If missing or name-mismatched,
-  // we still run the BM25-only path.
+  // Resolve the model to use for semantic search.
+  //
+  // Phase 7c follow-up (v0.7.2): the *active* model in the DB is the source
+  // of truth — `switch_active_model` may have promoted a shadow model that
+  // doesn't match the config's `default_embedding_model`. The config-named
+  // model is only a fallback used when no active model has been registered
+  // yet (fresh vault).
   const activeModel = vault.db.models.getActive();
-  const canRunSemantic =
-    activeModel !== null && activeModel.name === embeddingModelName;
+  const queryModelName = activeModel?.name ?? embeddingModelName;
+  const canRunSemantic = activeModel !== null;
 
   const semanticPromise: Promise<{
     chunkIds: number[];
     distances: Map<number, number>;
   } | null> = canRunSemantic
     ? (async () => {
-        const vec = await getQueryVector(embeddingModelName);
+        const vec = await getQueryVector(queryModelName);
         if (!vec) return null;
         const hits = vault.db.embeddings.searchSemantic(
           activeModel.id,

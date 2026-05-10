@@ -1666,9 +1666,10 @@ async function hybridSearch(opts) {
 async function searchOneVault(vault, query, embeddingModelName, rrfK, topK, getQueryVector) {
   const fanK = Math.max(topK * 3, topK);
   const activeModel = vault.db.models.getActive();
-  const canRunSemantic = activeModel !== null && activeModel.name === embeddingModelName;
+  const queryModelName = activeModel?.name ?? embeddingModelName;
+  const canRunSemantic = activeModel !== null;
   const semanticPromise = canRunSemantic ? (async () => {
-    const vec = await getQueryVector(embeddingModelName);
+    const vec = await getQueryVector(queryModelName);
     if (!vec) return null;
     const hits = vault.db.embeddings.searchSemantic(
       activeModel.id,
@@ -4843,9 +4844,9 @@ async function handleSearchSemantic(manager, ollama, defaultModel, query, vaultF
   const embedCache = /* @__PURE__ */ new Map();
   const allHits = [];
   for (const vault of targets) {
-    const modelName = vault.config.embedding_model ?? defaultModel;
     const model = vault.db.models.getActive();
-    if (!model || model.name !== modelName) continue;
+    if (!model) continue;
+    const modelName = model.name;
     let queryVec = embedCache.get(modelName);
     if (!queryVec) {
       const embedResp = await ollama.embed({ model: modelName, texts: [query] });
@@ -4960,7 +4961,7 @@ var init_server = __esm({
     init_audit3();
     init_watcher2();
     init_indexer2();
-    VERSION = "0.7.1";
+    VERSION = "0.7.2";
     ReadNoteArgs = z3.object({
       vault: z3.string(),
       path: z3.string()

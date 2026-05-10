@@ -43,7 +43,7 @@ import {
 } from "./indexer/index.js";
 import type { SearchHit } from "./types.js";
 
-const VERSION = "0.7.1";
+const VERSION = "0.7.2";
 
 // ─── Tool Input Schemas ──────────────────────────────────────────────────────
 
@@ -852,9 +852,13 @@ async function handleSearchSemantic(
   const allHits: SearchHit[] = [];
 
   for (const vault of targets) {
-    const modelName = vault.config.embedding_model ?? defaultModel;
+    // Phase 7c follow-up (v0.7.2): the active model in the DB is the source
+    // of truth — switch_active_model may have promoted a shadow model
+    // that doesn't match config.embedding_model. Fall back to the config
+    // only when no active model is registered yet.
     const model = vault.db.models.getActive();
-    if (!model || model.name !== modelName) continue;
+    if (!model) continue;
+    const modelName = model.name;
 
     let queryVec = embedCache.get(modelName);
     if (!queryVec) {
