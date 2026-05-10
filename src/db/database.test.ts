@@ -122,7 +122,7 @@ describe("Database roundtrips", () => {
     const model = db.models.upsert({
       name: "test-model",
       provider: "test",
-      dim: 768,
+      dim: 1024,
     });
 
     const { id: noteId } = db.notes.upsertByPath({
@@ -142,9 +142,9 @@ describe("Database roundtrips", () => {
     ]);
 
     // Three distinct dim-768 vectors: e0-aligned, e1-aligned, e2-aligned.
-    const v0 = unitAxis(0, 768);
-    const v1 = unitAxis(1, 768);
-    const v2 = unitAxis(2, 768);
+    const v0 = unitAxis(0, 1024);
+    const v1 = unitAxis(1, 1024);
+    const v2 = unitAxis(2, 1024);
 
     db.embeddings.insertBatch([
       { chunkId: chunkIds[0]!, modelId: model.id, vector: v0 },
@@ -161,7 +161,7 @@ describe("Database roundtrips", () => {
   });
 
   it("embeddings deleteByChunk and deleteByModel", () => {
-    const model = db.models.upsert({ name: "m2", provider: "t", dim: 768 });
+    const model = db.models.upsert({ name: "m2", provider: "t", dim: 1024 });
     const { id: noteId } = db.notes.upsertByPath({
       path: "v2.md", content: "x", frontmatter: null, title: "v",
       hash: "h", mtime: 1, wordCount: 1,
@@ -170,10 +170,10 @@ describe("Database roundtrips", () => {
       { idx: 0, text: "a", headingPath: null, startOffset: 0, endOffset: 1, tokenCount: 1 },
     ]);
     db.embeddings.insertBatch([
-      { chunkId: c0!, modelId: model.id, vector: unitAxis(0, 768) },
+      { chunkId: c0!, modelId: model.id, vector: unitAxis(0, 1024) },
     ]);
     db.embeddings.deleteByChunk(c0!);
-    expect(db.embeddings.searchSemantic(model.id, unitAxis(0, 768), 5)).toEqual([]);
+    expect(db.embeddings.searchSemantic(model.id, unitAxis(0, 1024), 5)).toEqual([]);
   });
 
   // ── Wikilinks ─────────────────────────────────────────────────────────
@@ -258,10 +258,10 @@ describe("Database roundtrips", () => {
 
   // ── Models ────────────────────────────────────────────────────────────
   it("models upsert + getActive + setActive", () => {
-    const m1 = db.models.upsert({ name: "qwen3", provider: "ollama", dim: 768 });
-    const m2 = db.models.upsert({ name: "other", provider: "ollama", dim: 768 });
+    const m1 = db.models.upsert({ name: "qwen3", provider: "ollama", dim: 1024 });
+    const m2 = db.models.upsert({ name: "other", provider: "ollama", dim: 1024 });
     // upsert is idempotent on name
-    const m1b = db.models.upsert({ name: "qwen3", provider: "ollama", dim: 768 });
+    const m1b = db.models.upsert({ name: "qwen3", provider: "ollama", dim: 1024 });
     expect(m1b.id).toBe(m1.id);
     expect(db.models.listAll().length).toBe(2);
 

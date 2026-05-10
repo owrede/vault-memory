@@ -50,10 +50,12 @@ CREATE INDEX IF NOT EXISTS idx_chunks_note ON chunks(note_id);
 
 -- ── 3.2 Derived Layer ────────────────────────────────────────────────────
 
+-- Dimension 1024 matches qwen3-embedding (our default per Memory System spec).
+-- For future multi-model support with different dims, see roadmap Phase 7.
 CREATE VIRTUAL TABLE IF NOT EXISTS embeddings USING vec0(
   chunk_id      INTEGER PRIMARY KEY,
   model_id      INTEGER NOT NULL,
-  vector        FLOAT[768]
+  vector        FLOAT[1024]
 );
 
 CREATE TABLE IF NOT EXISTS models (
