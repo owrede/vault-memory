@@ -21,6 +21,10 @@ export interface ServerConfig {
   log_level?: "debug" | "info" | "warn" | "error";
   ollama_endpoint?: string;
   default_embedding_model?: string;
+  /** Optional Ollama model name for cross-encoder reranking
+   *  (e.g. "qllama/bge-reranker-v2-m3"). When unset, search_hybrid's
+   *  `rerank` flag is silently ignored. */
+  reranker_model?: string;
 }
 
 export interface AppConfig {
@@ -163,5 +167,8 @@ export interface SearchHit {
     semantic?: number;
     text?: number;
     rrf?: number;
+    /** Cross-encoder rerank score (higher = more relevant). Only set
+     *  when a reranker was applied. */
+    rerank?: number;
   };
 }

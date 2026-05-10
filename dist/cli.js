@@ -9,11 +9,11 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
-// ../../../Users/wrede/Documents/GitHub/vault-memory/node_modules/tsup/assets/esm_shims.js
+// ../../node_modules/tsup/assets/esm_shims.js
 import path from "path";
 import { fileURLToPath } from "url";
 var init_esm_shims = __esm({
-  "../../../Users/wrede/Documents/GitHub/vault-memory/node_modules/tsup/assets/esm_shims.js"() {
+  "../../node_modules/tsup/assets/esm_shims.js"() {
     "use strict";
   }
 });
@@ -63,7 +63,8 @@ var init_loader = __esm({
     ServerConfigSchema = z.object({
       log_level: z.enum(["debug", "info", "warn", "error"]).optional(),
       ollama_endpoint: z.string().url().optional(),
-      default_embedding_model: z.string().optional()
+      default_embedding_model: z.string().optional(),
+      reranker_model: z.string().optional()
     });
     VaultConfigSchema = z.object({
       name: z.string().min(1),
@@ -1527,6 +1528,8 @@ async function hybridSearch(opts) {
     embedCache.set(model, p);
     return p;
   };
+  const rerankFanOut = Math.max(1, opts.rerankFanOut ?? 3);
+  const perVaultTopN = opts.reranker ? topK * rerankFanOut : topK;
   const perVault = await Promise.all(
     opts.vaults.map(
       (vault) => searchOneVault(
@@ -1534,14 +1537,56 @@ async function hybridSearch(opts) {
         query,
         opts.embeddingModel,
         rrfK,
-        topK,
+        perVaultTopN,
         getQueryVector
       )
     )
   );
   const flat = perVault.flat();
   flat.sort((a, b) => b.rrf - a.rrf);
-  const winners = flat.slice(0, topK);
+  let winners;
+  if (opts.reranker && flat.length > 0) {
+    const poolSize = Math.min(flat.length, topK * rerankFanOut);
+    const pool = flat.slice(0, poolSize);
+    const vaultByNameLocal = /* @__PURE__ */ new Map();
+    for (const v of opts.vaults) vaultByNameLocal.set(v.config.name, v);
+    const texts = [];
+    const indexed = [];
+    for (const h of pool) {
+      const vault = vaultByNameLocal.get(h.vaultName);
+      if (!vault) continue;
+      const chunk = vault.db.chunks.getById(h.chunkId);
+      if (!chunk) continue;
+      indexed.push({ hit: h, text: chunk.text });
+      texts.push(chunk.text);
+    }
+    try {
+      const scores = await opts.reranker.score(query, texts);
+      if (scores.length !== indexed.length) {
+        throw new Error(
+          `reranker returned ${scores.length} scores for ${indexed.length} chunks`
+        );
+      }
+      for (let i = 0; i < indexed.length; i++) {
+        const entry = indexed[i];
+        const s = scores[i];
+        entry.hit.rerankScore = s;
+      }
+      const reranked = indexed.map((e) => e.hit);
+      reranked.sort((a, b) => {
+        const ra = a.rerankScore ?? Number.NEGATIVE_INFINITY;
+        const rb = b.rerankScore ?? Number.NEGATIVE_INFINITY;
+        if (rb !== ra) return rb - ra;
+        return b.rrf - a.rrf;
+      });
+      winners = reranked.slice(0, topK);
+    } catch {
+      for (const h of pool) delete h.rerankScore;
+      winners = flat.slice(0, topK);
+    }
+  } else {
+    winners = flat.slice(0, topK);
+  }
   const vaultByName = /* @__PURE__ */ new Map();
   for (const v of opts.vaults) vaultByName.set(v.config.name, v);
   const hits = [];
@@ -1559,7 +1604,9 @@ async function hybridSearch(opts) {
       chunkText: chunk.text,
       chunkIdx: chunk.idx,
       headingPath: chunk.heading_path,
-      score: h.rrf
+      // Surface the rerank score as the primary score when present —
+      // it's the final order the caller sees.
+      score: h.rerankScore ?? h.rrf
     };
     if (includeBreakdown) {
       const breakdown = {
@@ -1567,6 +1614,7 @@ async function hybridSearch(opts) {
       };
       if (h.semanticScore !== void 0) breakdown.semantic = h.semanticScore;
       if (h.textScore !== void 0) breakdown.text = h.textScore;
+      if (h.rerankScore !== void 0) breakdown.rerank = h.rerankScore;
       hit.scoreBreakdown = breakdown;
     }
     hits.push(hit);
@@ -1690,6 +1738,55 @@ var init_search = __esm({
     init_esm_shims();
     init_hybrid();
     init_glob();
+  }
+});
+
+// src/rerank/reranker.ts
+function formatPair(query, doc) {
+  return `Query: ${query}
+
+Document: ${doc}
+
+Relevance:`;
+}
+function l2Norm(v) {
+  let sum = 0;
+  for (const x of v) sum += x * x;
+  return Math.sqrt(sum);
+}
+var OllamaReranker;
+var init_reranker = __esm({
+  "src/rerank/reranker.ts"() {
+    "use strict";
+    init_esm_shims();
+    OllamaReranker = class {
+      ollama;
+      model;
+      constructor(opts) {
+        this.ollama = opts.ollama;
+        this.model = opts.model;
+      }
+      async score(query, chunks) {
+        if (chunks.length === 0) return [];
+        const inputs = chunks.map((c) => formatPair(query, c));
+        const res = await this.ollama.embed({ model: this.model, texts: inputs });
+        if (res.vectors.length !== chunks.length) {
+          throw new Error(
+            `Reranker: expected ${chunks.length} vectors, got ${res.vectors.length}`
+          );
+        }
+        return res.vectors.map((v) => -l2Norm(v));
+      }
+    };
+  }
+});
+
+// src/rerank/index.ts
+var init_rerank = __esm({
+  "src/rerank/index.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_reranker();
   }
 });
 
@@ -3888,6 +3985,7 @@ async function serve() {
     endpoint: config.server.ollama_endpoint
   });
   const defaultModel = config.server.default_embedding_model ?? "qwen3-embedding:0.6b";
+  const reranker = config.server.reranker_model ? new OllamaReranker({ ollama, model: config.server.reranker_model }) : void 0;
   const suppression = new SuppressionSet({ ttlMs: 2e3 });
   const watchers = /* @__PURE__ */ new Map();
   const startCatchupAndWatchers = async () => {
@@ -4038,6 +4136,11 @@ async function serve() {
               type: "array",
               items: { type: "string" },
               description: "Glob patterns of paths to exclude."
+            },
+            rerank: {
+              type: "boolean",
+              default: false,
+              description: "Apply a cross-encoder rerank over the top candidates. Requires `reranker_model` in server config; silently ignored otherwise."
             }
           }
         }
@@ -4236,7 +4339,8 @@ async function serve() {
               parsed.vaults,
               parsed.top_k,
               parsed.rrf_k,
-              parsed.exclude_paths
+              parsed.exclude_paths,
+              parsed.rerank ? reranker : void 0
             )
           );
         }
@@ -4463,7 +4567,7 @@ function handleSearchText(manager, query, vaultFilter, topK, excludePaths) {
   allHits.sort((a, b) => b.score - a.score);
   return { hits: allHits.slice(0, topK), count: allHits.length };
 }
-async function handleSearchHybrid(manager, ollama, defaultModel, query, vaultFilter, topK, rrfK, excludePaths) {
+async function handleSearchHybrid(manager, ollama, defaultModel, query, vaultFilter, topK, rrfK, excludePaths, reranker) {
   const targets = vaultFilter ? vaultFilter.map((n) => manager.require(n)) : manager.list();
   if (targets.length === 0) {
     return { hits: [], note: "No vaults configured." };
@@ -4477,7 +4581,8 @@ async function handleSearchHybrid(manager, ollama, defaultModel, query, vaultFil
     vaults: targets,
     topK: innerTopK,
     rrfK,
-    includeBreakdown: true
+    includeBreakdown: true,
+    reranker
   });
   const filtered = hasExclude ? hits.filter((h) => !matchesAnyGlob(h.notePath, excludePaths)) : hits;
   return { hits: filtered.slice(0, topK), count: filtered.length };
@@ -4503,6 +4608,7 @@ var init_server = __esm({
     init_ollama();
     init_db();
     init_search();
+    init_rerank();
     init_graph2();
     init_frontmatter();
     init_write2();
@@ -4524,7 +4630,10 @@ var init_server = __esm({
       exclude_paths: z3.array(z3.string()).optional()
     });
     HybridSearchArgs = SearchArgs.extend({
-      rrf_k: z3.number().int().positive().max(1e3).optional().default(60)
+      rrf_k: z3.number().int().positive().max(1e3).optional().default(60),
+      /** When true AND a `reranker_model` is configured, runs a cross-encoder
+       *  rerank pass over the top candidates. Silently ignored otherwise. */
+      rerank: z3.boolean().optional().default(false)
     });
     VaultPathArgs = z3.object({
       vault: z3.string(),

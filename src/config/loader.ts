@@ -17,6 +17,7 @@ const ServerConfigSchema = z.object({
   log_level: z.enum(["debug", "info", "warn", "error"]).optional(),
   ollama_endpoint: z.string().url().optional(),
   default_embedding_model: z.string().optional(),
+  reranker_model: z.string().optional(),
 });
 
 const VaultConfigSchema = z.object({

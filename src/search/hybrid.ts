@@ -21,6 +21,7 @@
 import type { OllamaClient } from "../ollama/index.js";
 import type { Vault } from "../vault/index.js";
 import type { SearchHit } from "../types.js";
+import type { Reranker } from "../rerank/index.js";
 
 export interface HybridSearchOptions {
   query: string;
@@ -35,6 +36,16 @@ export interface HybridSearchOptions {
   rrfK?: number;
   /** Whether to include the per-method scores in the breakdown. Default true. */
   includeBreakdown?: boolean;
+  /**
+   * Optional cross-encoder reranker. When provided, hybridSearch fans out
+   * `topK × rerankFanOut` candidates from the RRF stage, runs the reranker
+   * on those, then resorts by rerank score and returns the new topK.
+   *
+   * On reranker failure (throw), the un-reranked RRF order is returned.
+   */
+  reranker?: Reranker;
+  /** Candidate pool size as a multiple of topK. Default 3. */
+  rerankFanOut?: number;
 }
 
 const DEFAULT_TOP_K = 10;
@@ -113,6 +124,8 @@ interface PerVaultHit {
   rrf: number;
   semanticScore?: number;
   textScore?: number;
+  /** Set when a reranker re-scored this candidate. */
+  rerankScore?: number;
 }
 
 export async function hybridSearch(
@@ -146,6 +159,11 @@ export async function hybridSearch(
     return p;
   };
 
+  const rerankFanOut = Math.max(1, opts.rerankFanOut ?? 3);
+  // When reranking, we need a wider per-vault pool so the global candidate
+  // set is large enough for the cross-encoder to re-order meaningfully.
+  const perVaultTopN = opts.reranker ? topK * rerankFanOut : topK;
+
   const perVault = await Promise.all(
     opts.vaults.map((vault) =>
       searchOneVault(
@@ -153,17 +171,65 @@ export async function hybridSearch(
         query,
         opts.embeddingModel,
         rrfK,
-        topK,
+        perVaultTopN,
         getQueryVector,
       ),
     ),
   );
 
   // Global merge: each vault already returned its top-N RRF hits. We
-  // re-sort by RRF score across vaults and take topK overall.
+  // re-sort by RRF score across vaults and take the candidate pool.
   const flat: PerVaultHit[] = perVault.flat();
   flat.sort((a, b) => b.rrf - a.rrf);
-  const winners = flat.slice(0, topK);
+
+  // Optional cross-encoder rerank: re-score the global top-(topK*fanOut)
+  // candidates with the reranker, then resort by rerank score. On any
+  // failure, fall back silently to the RRF order.
+  let winners: PerVaultHit[];
+  if (opts.reranker && flat.length > 0) {
+    const poolSize = Math.min(flat.length, topK * rerankFanOut);
+    const pool = flat.slice(0, poolSize);
+    const vaultByNameLocal = new Map<string, Vault>();
+    for (const v of opts.vaults) vaultByNameLocal.set(v.config.name, v);
+    const texts: string[] = [];
+    const indexed: { hit: PerVaultHit; text: string }[] = [];
+    for (const h of pool) {
+      const vault = vaultByNameLocal.get(h.vaultName);
+      if (!vault) continue;
+      const chunk = vault.db.chunks.getById(h.chunkId);
+      if (!chunk) continue;
+      indexed.push({ hit: h, text: chunk.text });
+      texts.push(chunk.text);
+    }
+    try {
+      const scores = await opts.reranker.score(query, texts);
+      if (scores.length !== indexed.length) {
+        throw new Error(
+          `reranker returned ${scores.length} scores for ${indexed.length} chunks`,
+        );
+      }
+      for (let i = 0; i < indexed.length; i++) {
+        const entry = indexed[i]!;
+        const s = scores[i]!;
+        entry.hit.rerankScore = s;
+      }
+      const reranked = indexed.map((e) => e.hit);
+      reranked.sort((a, b) => {
+        const ra = a.rerankScore ?? Number.NEGATIVE_INFINITY;
+        const rb = b.rerankScore ?? Number.NEGATIVE_INFINITY;
+        if (rb !== ra) return rb - ra;
+        return b.rrf - a.rrf;
+      });
+      winners = reranked.slice(0, topK);
+    } catch {
+      // Reranker failed — fall back to RRF order. Clear any partial
+      // rerankScore so the breakdown does not misrepresent the result.
+      for (const h of pool) delete h.rerankScore;
+      winners = flat.slice(0, topK);
+    }
+  } else {
+    winners = flat.slice(0, topK);
+  }
 
   // Hydrate to SearchHit. Look up via the originating vault's DB.
   const vaultByName = new Map<string, Vault>();
@@ -184,7 +250,9 @@ export async function hybridSearch(
       chunkText: chunk.text,
       chunkIdx: chunk.idx,
       headingPath: chunk.heading_path,
-      score: h.rrf,
+      // Surface the rerank score as the primary score when present —
+      // it's the final order the caller sees.
+      score: h.rerankScore ?? h.rrf,
     };
     if (includeBreakdown) {
       const breakdown: NonNullable<SearchHit["scoreBreakdown"]> = {
@@ -192,6 +260,7 @@ export async function hybridSearch(
       };
       if (h.semanticScore !== undefined) breakdown.semantic = h.semanticScore;
       if (h.textScore !== undefined) breakdown.text = h.textScore;
+      if (h.rerankScore !== undefined) breakdown.rerank = h.rerankScore;
       hit.scoreBreakdown = breakdown;
     }
     hits.push(hit);
