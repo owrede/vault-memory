@@ -3610,6 +3610,56 @@ var init_shadow = __esm({
   }
 });
 
+// src/indexer/vacuum.ts
+function vacuumEmbeddings(vault) {
+  const startedAt = Date.now();
+  const models = vault.db.models.listAll();
+  const per_model = [];
+  let total_removed = 0;
+  vault.db.transaction(() => {
+    for (const m of models) {
+      vault.db.embeddings.ensureTableForModel(m.id, m.dim);
+      const table = `embeddings_m${m.id}_d${m.dim}`;
+      const beforeRow = vault.db.handle.prepare(`SELECT COUNT(*) AS c FROM ${table}`).get();
+      const before = beforeRow?.c ?? 0;
+      const orphans = vault.db.handle.prepare(
+        `SELECT chunk_id FROM ${table}
+           WHERE chunk_id NOT IN (SELECT id FROM chunks)`
+      ).all();
+      if (orphans.length > 0) {
+        const stmt = vault.db.handle.prepare(
+          `DELETE FROM ${table} WHERE chunk_id = ?`
+        );
+        for (const o of orphans) {
+          stmt.run(BigInt(o.chunk_id));
+        }
+      }
+      const removed = orphans.length;
+      const kept = before - removed;
+      total_removed += removed;
+      per_model.push({
+        model_id: m.id,
+        model_name: m.name,
+        dim: m.dim,
+        table,
+        removed,
+        kept
+      });
+    }
+  });
+  return {
+    total_removed,
+    per_model,
+    duration_ms: Date.now() - startedAt
+  };
+}
+var init_vacuum = __esm({
+  "src/indexer/vacuum.ts"() {
+    "use strict";
+    init_esm_shims();
+  }
+});
+
 // src/indexer/index.ts
 var indexer_exports = {};
 __export(indexer_exports, {
@@ -3621,7 +3671,8 @@ __export(indexer_exports, {
   removeNote: () => removeNote,
   resolveWikilinkTarget: () => resolveWikilinkTarget,
   startShadowIndex: () => startShadowIndex,
-  switchActiveModel: () => switchActiveModel
+  switchActiveModel: () => switchActiveModel,
+  vacuumEmbeddings: () => vacuumEmbeddings
 });
 var init_indexer2 = __esm({
   "src/indexer/index.ts"() {
@@ -3631,6 +3682,7 @@ var init_indexer2 = __esm({
     init_single();
     init_catchup();
     init_shadow();
+    init_vacuum();
   }
 });
 
@@ -4600,6 +4652,15 @@ async function serve() {
         }
       },
       {
+        name: "vacuum_embeddings",
+        description: "Drop orphaned embedding rows whose chunk_id no longer exists in the chunks table. Safe and idempotent; does not touch live data. Useful after migrations from pre-v0.7.0 schemas where chunk deletion did not always cascade to the derived layer.",
+        inputSchema: {
+          type: "object",
+          required: ["vault"],
+          properties: { vault: { type: "string" } }
+        }
+      },
+      {
         name: "index_runs",
         description: "List recent index runs for a vault \u2014 what was scanned, when, how long, errors.",
         inputSchema: {
@@ -4775,6 +4836,12 @@ async function serve() {
           const result = switchActiveModel(vault, parsed.model_name);
           return ok(result);
         }
+        case "vacuum_embeddings": {
+          const parsed = VacuumEmbeddingsArgs.parse(args2 ?? {});
+          const vault = manager.require(parsed.vault);
+          const result = vacuumEmbeddings(vault);
+          return ok(result);
+        }
         case "index_runs": {
           const parsed = IndexRunsArgs.parse(args2 ?? {});
           const vault = manager.require(parsed.vault);
@@ -4944,7 +5011,7 @@ function errorResponse(message) {
     content: [{ type: "text", text: message }]
   };
 }
-var VERSION, ReadNoteArgs, SearchArgs, HybridSearchArgs, VaultPathArgs, ForwardLinksArgs, FindBrokenLinksArgs, PredicateSchema, QueryFrontmatterArgs, WriteNoteArgs, UpdateFrontmatterArgs, DeleteNoteArgs, AuditLogArgs, IndexRunsArgs, ListModelsArgs, StartShadowIndexArgs, SwitchActiveModelArgs;
+var VERSION, ReadNoteArgs, SearchArgs, HybridSearchArgs, VaultPathArgs, ForwardLinksArgs, FindBrokenLinksArgs, PredicateSchema, QueryFrontmatterArgs, WriteNoteArgs, UpdateFrontmatterArgs, DeleteNoteArgs, AuditLogArgs, IndexRunsArgs, ListModelsArgs, StartShadowIndexArgs, SwitchActiveModelArgs, VacuumEmbeddingsArgs;
 var init_server = __esm({
   "src/server.ts"() {
     "use strict";
@@ -4961,7 +5028,7 @@ var init_server = __esm({
     init_audit3();
     init_watcher2();
     init_indexer2();
-    VERSION = "0.7.2";
+    VERSION = "0.7.3";
     ReadNoteArgs = z3.object({
       vault: z3.string(),
       path: z3.string()
@@ -5048,6 +5115,9 @@ var init_server = __esm({
     SwitchActiveModelArgs = z3.object({
       vault: z3.string(),
       model_name: z3.string().min(1)
+    });
+    VacuumEmbeddingsArgs = z3.object({
+      vault: z3.string()
     });
   }
 });

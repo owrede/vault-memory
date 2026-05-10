@@ -40,10 +40,11 @@ import {
   listModels,
   startShadowIndex,
   switchActiveModel,
+  vacuumEmbeddings,
 } from "./indexer/index.js";
 import type { SearchHit } from "./types.js";
 
-const VERSION = "0.7.2";
+const VERSION = "0.7.3";
 
 // ─── Tool Input Schemas ──────────────────────────────────────────────────────
 
@@ -152,6 +153,10 @@ const StartShadowIndexArgs = z.object({
 const SwitchActiveModelArgs = z.object({
   vault: z.string(),
   model_name: z.string().min(1),
+});
+
+const VacuumEmbeddingsArgs = z.object({
+  vault: z.string(),
 });
 
 // ─── Server bootstrap ────────────────────────────────────────────────────────
@@ -552,6 +557,19 @@ export async function serve(): Promise<void> {
         },
       },
       {
+        name: "vacuum_embeddings",
+        description:
+          "Drop orphaned embedding rows whose chunk_id no longer exists in " +
+          "the chunks table. Safe and idempotent; does not touch live data. " +
+          "Useful after migrations from pre-v0.7.0 schemas where chunk " +
+          "deletion did not always cascade to the derived layer.",
+        inputSchema: {
+          type: "object",
+          required: ["vault"],
+          properties: { vault: { type: "string" } },
+        },
+      },
+      {
         name: "index_runs",
         description:
           "List recent index runs for a vault — what was scanned, when, how long, errors.",
@@ -747,6 +765,13 @@ export async function serve(): Promise<void> {
           const parsed = SwitchActiveModelArgs.parse(args ?? {});
           const vault = manager.require(parsed.vault);
           const result = switchActiveModel(vault, parsed.model_name);
+          return ok(result);
+        }
+
+        case "vacuum_embeddings": {
+          const parsed = VacuumEmbeddingsArgs.parse(args ?? {});
+          const vault = manager.require(parsed.vault);
+          const result = vacuumEmbeddings(vault);
           return ok(result);
         }
 

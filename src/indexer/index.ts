@@ -15,3 +15,5 @@ export type {
   ModelInventoryEntry,
   SwitchResult,
 } from "./shadow.js";
+export { vacuumEmbeddings } from "./vacuum.js";
+export type { VacuumResult, VacuumPerModel } from "./vacuum.js";
