@@ -33,6 +33,7 @@ import { queryFrontmatter, updateFrontmatter } from "./frontmatter/index.js";
 import { writeNote, deleteNote } from "./write/index.js";
 import { getAuditLog, getIndexRuns } from "./audit/index.js";
 import { SuppressionSet, VaultWatcher } from "./watcher/index.js";
+import { catchupVault } from "./indexer/index.js";
 import type { SearchHit } from "./types.js";
 
 const VERSION = "0.4.0";
@@ -149,6 +150,31 @@ export async function serve(): Promise<void> {
       // Only start a watcher if the vault has been indexed at least once
       // (otherwise we have no active model and indexNote would fail loud).
       const modelName = vault.config.embedding_model ?? defaultModel;
+
+      // Catch-up: reconcile any edits that happened while the server was
+      // offline. Cheap path-hash scan, only re-embeds the notes that
+      // actually changed.
+      try {
+        const result = await catchupVault({
+          vault,
+          embeddingModel: modelName,
+          ollama,
+          log: (m) => process.stderr.write(`[catchup:${vault.config.name}] ${m}\n`),
+        });
+        if (result.reindexed > 0 || result.removed > 0) {
+          process.stderr.write(
+            `[catchup:${vault.config.name}] scanned ${result.scanned}, ` +
+              `reindexed ${result.reindexed}, removed ${result.removed} ` +
+              `(${result.durationMs}ms)\n`,
+          );
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        process.stderr.write(
+          `[catchup:${vault.config.name}] failed: ${message} (watcher will still start)\n`,
+        );
+      }
+
       const watcher = new VaultWatcher({
         vault,
         embeddingModel: modelName,
