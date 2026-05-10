@@ -1,0 +1,41 @@
+{
+  "name": "@owrede/vault-memory",
+  "version": "0.1.0",
+  "description": "Local-first semantic memory MCP server for Obsidian vaults",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "bin": {
+    "vault-memory": "./dist/cli.js"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsx watch src/cli.ts",
+    "start": "node dist/cli.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit",
+    "format": "prettier --write \"src/**/*.ts\""
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.4",
+    "better-sqlite3": "^11.7.0",
+    "chokidar": "^4.0.1",
+    "gray-matter": "^4.0.3",
+    "smol-toml": "^1.3.1",
+    "sqlite-vec": "^0.1.6",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.10.0",
+    "prettier": "^3.4.0",
+    "tsup": "^8.3.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.8"
+  }
+}
