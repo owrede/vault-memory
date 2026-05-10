@@ -1533,12 +1533,54 @@ var init_hybrid = __esm({
   }
 });
 
+// src/search/glob.ts
+function compile(pattern) {
+  const cached = cache.get(pattern);
+  if (cached) return cached;
+  let re = "";
+  for (let i = 0; i < pattern.length; i++) {
+    const ch = pattern[i];
+    if (ch === "*") {
+      if (pattern[i + 1] === "*") {
+        re += ".*";
+        i++;
+      } else {
+        re += "[^/]*";
+      }
+    } else if (ch === "?") {
+      re += "[^/]";
+    } else if (/[.+^${}()|[\]\\]/.test(ch)) {
+      re += "\\" + ch;
+    } else {
+      re += ch;
+    }
+  }
+  const compiled = new RegExp(`^${re}$`);
+  cache.set(pattern, compiled);
+  return compiled;
+}
+function matchesAnyGlob(path5, patterns) {
+  for (const p of patterns) {
+    if (compile(p).test(path5)) return true;
+  }
+  return false;
+}
+var cache;
+var init_glob = __esm({
+  "src/search/glob.ts"() {
+    "use strict";
+    init_esm_shims();
+    cache = /* @__PURE__ */ new Map();
+  }
+});
+
 // src/search/index.ts
 var init_search = __esm({
   "src/search/index.ts"() {
     "use strict";
     init_esm_shims();
     init_hybrid();
+    init_glob();
   }
 });
 
@@ -3826,6 +3868,11 @@ async function serve() {
               minimum: 1,
               maximum: 100,
               default: 10
+            },
+            exclude_paths: {
+              type: "array",
+              items: { type: "string" },
+              description: "Glob patterns (e.g. '_research/eval.md', '**/index.md') of paths to exclude."
             }
           }
         }
@@ -3847,6 +3894,11 @@ async function serve() {
               minimum: 1,
               maximum: 100,
               default: 10
+            },
+            exclude_paths: {
+              type: "array",
+              items: { type: "string" },
+              description: "Glob patterns of paths to exclude."
             }
           }
         }
@@ -3872,6 +3924,11 @@ async function serve() {
               maximum: 1e3,
               default: 60,
               description: "RRF constant \u2014 higher dampens emphasis on top ranks."
+            },
+            exclude_paths: {
+              type: "array",
+              items: { type: "string" },
+              description: "Glob patterns of paths to exclude."
             }
           }
         }
@@ -4042,14 +4099,21 @@ async function serve() {
               defaultModel,
               parsed.query,
               parsed.vaults,
-              parsed.top_k
+              parsed.top_k,
+              parsed.exclude_paths
             )
           );
         }
         case "search_text": {
           const parsed = SearchArgs.parse(args2 ?? {});
           return ok(
-            handleSearchText(manager, parsed.query, parsed.vaults, parsed.top_k)
+            handleSearchText(
+              manager,
+              parsed.query,
+              parsed.vaults,
+              parsed.top_k,
+              parsed.exclude_paths
+            )
           );
         }
         case "search_hybrid": {
@@ -4062,7 +4126,8 @@ async function serve() {
               parsed.query,
               parsed.vaults,
               parsed.top_k,
-              parsed.rrf_k
+              parsed.rrf_k,
+              parsed.exclude_paths
             )
           );
         }
@@ -4210,11 +4275,13 @@ function handleReadNote(manager, vaultName, path5) {
     word_count: note.word_count
   };
 }
-async function handleSearchSemantic(manager, ollama, defaultModel, query, vaultFilter, topK) {
+async function handleSearchSemantic(manager, ollama, defaultModel, query, vaultFilter, topK, excludePaths) {
   const targets = vaultFilter ? vaultFilter.map((n) => manager.require(n)) : manager.list();
   if (targets.length === 0) {
     return { hits: [], note: "No vaults configured." };
   }
+  const hasExclude = excludePaths !== void 0 && excludePaths.length > 0;
+  const fanK = hasExclude ? topK * 3 : topK;
   const embedCache = /* @__PURE__ */ new Map();
   const allHits = [];
   for (const vault of targets) {
@@ -4231,13 +4298,14 @@ async function handleSearchSemantic(manager, ollama, defaultModel, query, vaultF
     const semanticHits = vault.db.embeddings.searchSemantic(
       model.id,
       queryVec,
-      topK
+      fanK
     );
     for (const hit of semanticHits) {
       const chunk = vault.db.chunks.getById(hit.chunkId);
       if (!chunk) continue;
       const note = vault.db.notes.getById(chunk.note_id);
       if (!note) continue;
+      if (hasExclude && matchesAnyGlob(note.path, excludePaths)) continue;
       const score = 1 / (1 + hit.distance);
       allHits.push({
         vault: vault.config.name,
@@ -4254,20 +4322,23 @@ async function handleSearchSemantic(manager, ollama, defaultModel, query, vaultF
   allHits.sort((a, b) => b.score - a.score);
   return { hits: allHits.slice(0, topK), count: allHits.length };
 }
-function handleSearchText(manager, query, vaultFilter, topK) {
+function handleSearchText(manager, query, vaultFilter, topK, excludePaths) {
   const targets = vaultFilter ? vaultFilter.map((n) => manager.require(n)) : manager.list();
   if (targets.length === 0) {
     return { hits: [], note: "No vaults configured." };
   }
+  const hasExclude = excludePaths !== void 0 && excludePaths.length > 0;
+  const fanK = hasExclude ? topK * 3 : topK;
   const sanitized = FtsQueries.sanitize(query);
   const allHits = [];
   for (const vault of targets) {
-    const ftsHits = vault.db.fts.search(sanitized, topK, true);
+    const ftsHits = vault.db.fts.search(sanitized, fanK, true);
     for (const hit of ftsHits) {
       const chunk = vault.db.chunks.getById(hit.chunkId);
       if (!chunk) continue;
       const note = vault.db.notes.getById(chunk.note_id);
       if (!note) continue;
+      if (hasExclude && matchesAnyGlob(note.path, excludePaths)) continue;
       allHits.push({
         vault: vault.config.name,
         notePath: note.path,
@@ -4283,21 +4354,24 @@ function handleSearchText(manager, query, vaultFilter, topK) {
   allHits.sort((a, b) => b.score - a.score);
   return { hits: allHits.slice(0, topK), count: allHits.length };
 }
-async function handleSearchHybrid(manager, ollama, defaultModel, query, vaultFilter, topK, rrfK) {
+async function handleSearchHybrid(manager, ollama, defaultModel, query, vaultFilter, topK, rrfK, excludePaths) {
   const targets = vaultFilter ? vaultFilter.map((n) => manager.require(n)) : manager.list();
   if (targets.length === 0) {
     return { hits: [], note: "No vaults configured." };
   }
+  const hasExclude = excludePaths !== void 0 && excludePaths.length > 0;
+  const innerTopK = hasExclude ? topK * 3 : topK;
   const hits = await hybridSearch({
     query,
     embeddingModel: defaultModel,
     ollama,
     vaults: targets,
-    topK,
+    topK: innerTopK,
     rrfK,
     includeBreakdown: true
   });
-  return { hits, count: hits.length };
+  const filtered = hasExclude ? hits.filter((h) => !matchesAnyGlob(h.notePath, excludePaths)) : hits;
+  return { hits: filtered.slice(0, topK), count: filtered.length };
 }
 function ok(data) {
   return {
@@ -4326,7 +4400,7 @@ var init_server = __esm({
     init_audit3();
     init_watcher2();
     init_indexer2();
-    VERSION = "0.5.0";
+    VERSION = "0.6.1";
     ReadNoteArgs = z3.object({
       vault: z3.string(),
       path: z3.string()
@@ -4334,7 +4408,11 @@ var init_server = __esm({
     SearchArgs = z3.object({
       query: z3.string().min(1),
       vaults: z3.array(z3.string()).optional(),
-      top_k: z3.number().int().positive().max(100).optional().default(10)
+      top_k: z3.number().int().positive().max(100).optional().default(10),
+      /** Glob patterns of vault-relative paths to exclude from results. Useful
+       *  for filtering self-referential notes (e.g. an eval note that lists
+       *  the same keywords it's testing) or auxiliary indices. */
+      exclude_paths: z3.array(z3.string()).optional()
     });
     HybridSearchArgs = SearchArgs.extend({
       rrf_k: z3.number().int().positive().max(1e3).optional().default(60)

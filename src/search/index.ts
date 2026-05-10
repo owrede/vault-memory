@@ -4,3 +4,4 @@ export type {
   RankedList,
   RrfMergeResult,
 } from "./hybrid.js";
+export { matchesAnyGlob } from "./glob.js";

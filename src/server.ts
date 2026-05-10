@@ -23,7 +23,7 @@ import { loadConfig } from "./config/index.js";
 import { VaultManager } from "./vault/index.js";
 import { OllamaClient } from "./ollama/index.js";
 import { FtsQueries } from "./db/index.js";
-import { hybridSearch } from "./search/index.js";
+import { hybridSearch, matchesAnyGlob } from "./search/index.js";
 import {
   listBacklinks,
   listForwardLinks,
@@ -36,7 +36,7 @@ import { SuppressionSet, VaultWatcher } from "./watcher/index.js";
 import { catchupVault } from "./indexer/index.js";
 import type { SearchHit } from "./types.js";
 
-const VERSION = "0.5.0";
+const VERSION = "0.6.1";
 
 // ─── Tool Input Schemas ──────────────────────────────────────────────────────
 
@@ -49,6 +49,10 @@ const SearchArgs = z.object({
   query: z.string().min(1),
   vaults: z.array(z.string()).optional(),
   top_k: z.number().int().positive().max(100).optional().default(10),
+  /** Glob patterns of vault-relative paths to exclude from results. Useful
+   *  for filtering self-referential notes (e.g. an eval note that lists
+   *  the same keywords it's testing) or auxiliary indices. */
+  exclude_paths: z.array(z.string()).optional(),
 });
 
 const HybridSearchArgs = SearchArgs.extend({
@@ -245,6 +249,12 @@ export async function serve(): Promise<void> {
               maximum: 100,
               default: 10,
             },
+            exclude_paths: {
+              type: "array",
+              items: { type: "string" },
+              description:
+                "Glob patterns (e.g. '_research/eval.md', '**/index.md') of paths to exclude.",
+            },
           },
         },
       },
@@ -267,6 +277,11 @@ export async function serve(): Promise<void> {
               minimum: 1,
               maximum: 100,
               default: 10,
+            },
+            exclude_paths: {
+              type: "array",
+              items: { type: "string" },
+              description: "Glob patterns of paths to exclude.",
             },
           },
         },
@@ -294,6 +309,11 @@ export async function serve(): Promise<void> {
               default: 60,
               description:
                 "RRF constant — higher dampens emphasis on top ranks.",
+            },
+            exclude_paths: {
+              type: "array",
+              items: { type: "string" },
+              description: "Glob patterns of paths to exclude.",
             },
           },
         },
@@ -478,6 +498,7 @@ export async function serve(): Promise<void> {
               parsed.query,
               parsed.vaults,
               parsed.top_k,
+              parsed.exclude_paths,
             ),
           );
         }
@@ -485,7 +506,13 @@ export async function serve(): Promise<void> {
         case "search_text": {
           const parsed = SearchArgs.parse(args ?? {});
           return ok(
-            handleSearchText(manager, parsed.query, parsed.vaults, parsed.top_k),
+            handleSearchText(
+              manager,
+              parsed.query,
+              parsed.vaults,
+              parsed.top_k,
+              parsed.exclude_paths,
+            ),
           );
         }
 
@@ -500,6 +527,7 @@ export async function serve(): Promise<void> {
               parsed.vaults,
               parsed.top_k,
               parsed.rrf_k,
+              parsed.exclude_paths,
             ),
           );
         }
@@ -684,6 +712,7 @@ async function handleSearchSemantic(
   query: string,
   vaultFilter: string[] | undefined,
   topK: number,
+  excludePaths: string[] | undefined,
 ): Promise<object> {
   const targets = vaultFilter
     ? vaultFilter.map((n) => manager.require(n))
@@ -692,6 +721,10 @@ async function handleSearchSemantic(
   if (targets.length === 0) {
     return { hits: [], note: "No vaults configured." };
   }
+
+  // When excluding paths, fan out wider so the filtered topK is well-stocked.
+  const hasExclude = excludePaths !== undefined && excludePaths.length > 0;
+  const fanK = hasExclude ? topK * 3 : topK;
 
   // Cache query embedding by model name across vaults.
   const embedCache = new Map<string, number[]>();
@@ -713,7 +746,7 @@ async function handleSearchSemantic(
     const semanticHits = vault.db.embeddings.searchSemantic(
       model.id,
       queryVec,
-      topK,
+      fanK,
     );
 
     for (const hit of semanticHits) {
@@ -721,6 +754,7 @@ async function handleSearchSemantic(
       if (!chunk) continue;
       const note = vault.db.notes.getById(chunk.note_id);
       if (!note) continue;
+      if (hasExclude && matchesAnyGlob(note.path, excludePaths!)) continue;
       const score = 1 / (1 + hit.distance);
 
       allHits.push({
@@ -745,6 +779,7 @@ function handleSearchText(
   query: string,
   vaultFilter: string[] | undefined,
   topK: number,
+  excludePaths: string[] | undefined,
 ): object {
   const targets = vaultFilter
     ? vaultFilter.map((n) => manager.require(n))
@@ -754,16 +789,20 @@ function handleSearchText(
     return { hits: [], note: "No vaults configured." };
   }
 
+  const hasExclude = excludePaths !== undefined && excludePaths.length > 0;
+  const fanK = hasExclude ? topK * 3 : topK;
+
   const sanitized = FtsQueries.sanitize(query);
   const allHits: SearchHit[] = [];
 
   for (const vault of targets) {
-    const ftsHits = vault.db.fts.search(sanitized, topK, true);
+    const ftsHits = vault.db.fts.search(sanitized, fanK, true);
     for (const hit of ftsHits) {
       const chunk = vault.db.chunks.getById(hit.chunkId);
       if (!chunk) continue;
       const note = vault.db.notes.getById(chunk.note_id);
       if (!note) continue;
+      if (hasExclude && matchesAnyGlob(note.path, excludePaths!)) continue;
 
       allHits.push({
         vault: vault.config.name,
@@ -790,6 +829,7 @@ async function handleSearchHybrid(
   vaultFilter: string[] | undefined,
   topK: number,
   rrfK: number,
+  excludePaths: string[] | undefined,
 ): Promise<object> {
   const targets = vaultFilter
     ? vaultFilter.map((n) => manager.require(n))
@@ -799,17 +839,27 @@ async function handleSearchHybrid(
     return { hits: [], note: "No vaults configured." };
   }
 
+  const hasExclude = excludePaths !== undefined && excludePaths.length > 0;
+  // Request 3× the final topK when filtering so the post-filter list is
+  // well-stocked. hybridSearch internally fans 3× again per ranking, so
+  // semantic/BM25 each retrieve ~9×topK chunks — plenty of headroom.
+  const innerTopK = hasExclude ? topK * 3 : topK;
+
   const hits = await hybridSearch({
     query,
     embeddingModel: defaultModel,
     ollama,
     vaults: targets,
-    topK,
+    topK: innerTopK,
     rrfK,
     includeBreakdown: true,
   });
 
-  return { hits, count: hits.length };
+  const filtered = hasExclude
+    ? hits.filter((h) => !matchesAnyGlob(h.notePath, excludePaths!))
+    : hits;
+
+  return { hits: filtered.slice(0, topK), count: filtered.length };
 }
 
 // ─── Response helpers ────────────────────────────────────────────────────────
