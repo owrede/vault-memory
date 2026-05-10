@@ -51,6 +51,16 @@ export interface WriteNoteInput {
   expectedHash?: string;
   /** For audit_log entry. Defaults to "claude-code". */
   clientId?: string;
+  /**
+   * Called exactly once, immediately before the filesystem write. Used by
+   * the MCP server to mark the path on the watcher's SuppressionSet so the
+   * watcher ignores the fs event triggered by our own atomic rename.
+   *
+   * If the operation aborts (hash conflict, permission denied) this hook
+   * is NOT called — so a failed write cannot accidentally suppress a real
+   * external edit that happens shortly after.
+   */
+  onBeforeFsWrite?: () => void;
 }
 
 export interface DeleteNoteInput {
@@ -59,6 +69,8 @@ export interface DeleteNoteInput {
   /** Required for delete — caller must prove they read the current state. */
   expectedHash: string;
   clientId?: string;
+  /** See WriteNoteInput.onBeforeFsWrite. Called just before fs.unlink. */
+  onBeforeFsWrite?: () => void;
 }
 
 const DEFAULT_CLIENT_ID = "claude-code";
@@ -171,6 +183,7 @@ export async function writeNote(input: WriteNoteInput): Promise<WriteResult> {
       ? matter.stringify(content, frontmatter)
       : content;
 
+  input.onBeforeFsWrite?.();
   await atomicWriteFile(absPath, fileText);
 
   // Re-parse from disk to compute the canonical post-write hash. This also
@@ -253,6 +266,7 @@ export async function deleteNote(input: DeleteNoteInput): Promise<WriteResult> {
   const previousNote = vault.db.notes.getByPath(relativePath);
   const previousHash = previousNote?.hash ?? existing.hash;
 
+  input.onBeforeFsWrite?.();
   await fs.unlink(absPath);
 
   // Remove from DB. If the note was never indexed (e.g. file appeared and
@@ -260,37 +274,28 @@ export async function deleteNote(input: DeleteNoteInput): Promise<WriteResult> {
   // entry — but only when we have a noteId. Without one, the audit row
   // can't be tied to a (now-gone) note.
   if (previousNote !== null) {
-    // The current schema's write_audit.note_id REFERENCES notes(id) without
-    // ON DELETE CASCADE / SET NULL. That means once we delete a note, no
-    // audit row can legally reference its id — including the freshly
-    // recorded "delete" entry. To preserve audit semantics without
-    // changing the schema, we briefly disable foreign-key enforcement for
-    // the delete transaction. The audit row is intentionally left as a
-    // dangling reference (note_id of a no-longer-existing note); audit
-    // queries treat note_id as opaque history, not as a live FK.
-    // SQLite forbids changing `foreign_keys` inside a transaction, so we
-    // toggle it outside and run the multi-statement delete as a manual
-    // sequence. With FKs off we must clear cascade dependents ourselves.
-    vault.db.handle.pragma("foreign_keys = OFF");
-    try {
-      vault.db.transaction(() => {
-        vault.db.chunks.deleteByNote(previousNote.id);
-        vault.db.wikilinks.deleteByNote(previousNote.id);
-        vault.db.aliases.setForNote(previousNote.id, []);
-        vault.db.notes.deleteByPath(relativePath);
-        vault.db.audit.recordWrite({
-          noteId: previousNote.id,
-          op: "delete",
-          previousHash,
-          newHash: null,
-          expectedHash,
-          clientId,
-          diffSummary: null,
-        });
+    // Since migration 003 the FKs do the right thing:
+    //   - chunks.note_id, note_aliases.note_id → ON DELETE CASCADE (auto-clear)
+    //   - wikilinks.source_note → ON DELETE CASCADE (outgoing links gone)
+    //   - wikilinks.target_note → ON DELETE SET NULL (incoming links become
+    //     broken; find_broken_links surfaces them correctly)
+    //   - write_audit.note_id → ON DELETE SET NULL (the audit row survives;
+    //     getAuditLog already resolves notePath=null for a vanished note)
+    //
+    // Wrap delete + audit insert in one transaction so a crash leaves
+    // either both or neither.
+    vault.db.transaction(() => {
+      vault.db.audit.recordWrite({
+        noteId: previousNote.id,
+        op: "delete",
+        previousHash,
+        newHash: null,
+        expectedHash,
+        clientId,
+        diffSummary: null,
       });
-    } finally {
-      vault.db.handle.pragma("foreign_keys = ON");
-    }
+      vault.db.notes.deleteByPath(relativePath);
+    });
     return {
       ok: true,
       newHash: existing.hash,

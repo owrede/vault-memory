@@ -102,7 +102,7 @@ var init_config = __esm({
 });
 
 // src/db/schema.ts
-var INITIAL_SCHEMA, MIGRATION_002_ALIASES, MIGRATIONS;
+var INITIAL_SCHEMA, MIGRATION_002_ALIASES, MIGRATION_003_FIX_DELETE_FKS, MIGRATIONS;
 var init_schema = __esm({
   "src/db/schema.ts"() {
     "use strict";
@@ -179,7 +179,7 @@ CREATE TABLE IF NOT EXISTS wikilinks (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   source_note   INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
   target_path   TEXT NOT NULL,
-  target_note   INTEGER REFERENCES notes(id),
+  target_note   INTEGER REFERENCES notes(id) ON DELETE SET NULL,
   link_text     TEXT,
   anchor        TEXT,
   line_number   INTEGER,
@@ -207,7 +207,7 @@ CREATE TABLE IF NOT EXISTS index_runs (
 
 CREATE TABLE IF NOT EXISTS write_audit (
   id              INTEGER PRIMARY KEY AUTOINCREMENT,
-  note_id         INTEGER NOT NULL REFERENCES notes(id),
+  note_id         INTEGER REFERENCES notes(id) ON DELETE SET NULL,
   op              TEXT NOT NULL,
   previous_hash   TEXT,
   new_hash        TEXT,
@@ -230,6 +230,52 @@ CREATE TABLE IF NOT EXISTS note_aliases (
 );
 CREATE INDEX IF NOT EXISTS idx_note_aliases_norm ON note_aliases(alias_norm);
 `;
+    MIGRATION_003_FIX_DELETE_FKS = `
+-- 1) wikilinks: rebuild with ON DELETE SET NULL on target_note
+CREATE TABLE wikilinks_new (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_note   INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+  target_path   TEXT NOT NULL,
+  target_note   INTEGER REFERENCES notes(id) ON DELETE SET NULL,
+  link_text     TEXT,
+  anchor        TEXT,
+  line_number   INTEGER,
+  UNIQUE (source_note, target_path, anchor)
+);
+INSERT INTO wikilinks_new SELECT * FROM wikilinks;
+DROP TABLE wikilinks;
+ALTER TABLE wikilinks_new RENAME TO wikilinks;
+CREATE INDEX IF NOT EXISTS idx_wikilinks_source ON wikilinks(source_note);
+CREATE INDEX IF NOT EXISTS idx_wikilinks_target ON wikilinks(target_note);
+
+-- 2) write_audit: rebuild with ON DELETE SET NULL on note_id
+--    note_id must allow NULL for this to work; the column was NOT NULL in v1.
+--    Existing audit rows that already reference vanished notes (residue from
+--    the pre-migration FK-OFF delete workaround) have their note_id healed
+--    to NULL during the copy \u2014 preserving audit history without re-introducing
+--    dangling refs.
+CREATE TABLE write_audit_new (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  note_id         INTEGER REFERENCES notes(id) ON DELETE SET NULL,
+  op              TEXT NOT NULL,
+  previous_hash   TEXT,
+  new_hash        TEXT,
+  expected_hash   TEXT,
+  client_id       TEXT,
+  diff_summary    TEXT,
+  at              INTEGER NOT NULL
+);
+INSERT INTO write_audit_new (id, note_id, op, previous_hash, new_hash, expected_hash, client_id, diff_summary, at)
+SELECT
+  wa.id,
+  CASE WHEN n.id IS NULL THEN NULL ELSE wa.note_id END,
+  wa.op, wa.previous_hash, wa.new_hash, wa.expected_hash, wa.client_id, wa.diff_summary, wa.at
+FROM write_audit wa
+LEFT JOIN notes n ON n.id = wa.note_id;
+DROP TABLE write_audit;
+ALTER TABLE write_audit_new RENAME TO write_audit;
+CREATE INDEX IF NOT EXISTS idx_write_audit_note ON write_audit(note_id);
+`;
     MIGRATIONS = [
       {
         version: 1,
@@ -240,6 +286,11 @@ CREATE INDEX IF NOT EXISTS idx_note_aliases_norm ON note_aliases(alias_norm);
         version: 2,
         description: "note aliases for wikilink resolution",
         sql: MIGRATION_002_ALIASES
+      },
+      {
+        version: 3,
+        description: "fix delete-cascade gaps in wikilinks + write_audit FKs",
+        sql: MIGRATION_003_FIX_DELETE_FKS
       }
     ];
   }
@@ -949,15 +1000,27 @@ var init_database = __esm({
           (a, b) => a.version - b.version
         );
         if (pending.length === 0) return;
+        const fkWasOn = this.handle.pragma("foreign_keys", { simple: true }) === 1;
+        if (fkWasOn) this.handle.pragma("foreign_keys = OFF");
         let highest = current;
-        const tx = this.handle.transaction(() => {
-          for (const m of pending) {
-            this.handle.exec(m.sql);
-            highest = m.version;
+        try {
+          const tx = this.handle.transaction(() => {
+            for (const m of pending) {
+              this.handle.exec(m.sql);
+              highest = m.version;
+            }
+          });
+          tx();
+          const violations = this.handle.pragma("foreign_key_check");
+          if (violations.length > 0) {
+            throw new Error(
+              `Migration to v${highest} produced foreign-key violations: ${JSON.stringify(violations)}`
+            );
           }
-        });
-        tx();
-        this.handle.pragma(`user_version = ${highest}`);
+          this.handle.pragma(`user_version = ${highest}`);
+        } finally {
+          if (fkWasOn) this.handle.pragma("foreign_keys = ON");
+        }
       }
       transaction(fn) {
         return this.handle.transaction(fn)();
@@ -2622,6 +2685,7 @@ async function updateFrontmatter(input) {
     };
   }
   const fullText = Object.keys(next).length === 0 ? content : matter2.stringify(content, next);
+  input.onBeforeFsWrite?.();
   await atomicWriteFile(absPath, fullText);
   const stat = await fs4.stat(absPath);
   const newHash = computeHash(content, next);
@@ -2993,6 +3057,7 @@ async function writeNote(input) {
     }
   }
   const fileText = frontmatter !== null && Object.keys(frontmatter).length > 0 ? matter3.stringify(content, frontmatter) : content;
+  input.onBeforeFsWrite?.();
   await atomicWriteFile(absPath, fileText);
   const written = await readExistingFile(absPath);
   if (written === null) {
@@ -3056,28 +3121,21 @@ async function deleteNote(input) {
   }
   const previousNote = vault.db.notes.getByPath(relativePath);
   const previousHash = previousNote?.hash ?? existing.hash;
+  input.onBeforeFsWrite?.();
   await fs5.unlink(absPath);
   if (previousNote !== null) {
-    vault.db.handle.pragma("foreign_keys = OFF");
-    try {
-      vault.db.transaction(() => {
-        vault.db.chunks.deleteByNote(previousNote.id);
-        vault.db.wikilinks.deleteByNote(previousNote.id);
-        vault.db.aliases.setForNote(previousNote.id, []);
-        vault.db.notes.deleteByPath(relativePath);
-        vault.db.audit.recordWrite({
-          noteId: previousNote.id,
-          op: "delete",
-          previousHash,
-          newHash: null,
-          expectedHash,
-          clientId,
-          diffSummary: null
-        });
+    vault.db.transaction(() => {
+      vault.db.audit.recordWrite({
+        noteId: previousNote.id,
+        op: "delete",
+        previousHash,
+        newHash: null,
+        expectedHash,
+        clientId,
+        diffSummary: null
       });
-    } finally {
-      vault.db.handle.pragma("foreign_keys = ON");
-    }
+      vault.db.notes.deleteByPath(relativePath);
+    });
     return {
       ok: true,
       newHash: existing.hash,
@@ -3902,39 +3960,39 @@ async function serve() {
         case "write_note": {
           const parsed = WriteNoteArgs.parse(args2 ?? {});
           const vault = manager.require(parsed.vault);
-          suppression.add(parsed.path);
           const result = await writeNote({
             vault,
             relativePath: parsed.path,
             content: parsed.content,
             frontmatter: parsed.frontmatter ?? null,
             expectedHash: parsed.expected_hash,
-            clientId: parsed.client_id
+            clientId: parsed.client_id,
+            onBeforeFsWrite: () => suppression.add(parsed.path)
           });
           return ok(result);
         }
         case "update_frontmatter": {
           const parsed = UpdateFrontmatterArgs.parse(args2 ?? {});
           const vault = manager.require(parsed.vault);
-          suppression.add(parsed.path);
           const result = await updateFrontmatter({
             vault,
             relativePath: parsed.path,
             merge: parsed.merge,
             expectedHash: parsed.expected_hash,
-            clientId: parsed.client_id
+            clientId: parsed.client_id,
+            onBeforeFsWrite: () => suppression.add(parsed.path)
           });
           return ok(result);
         }
         case "delete_note": {
           const parsed = DeleteNoteArgs.parse(args2 ?? {});
           const vault = manager.require(parsed.vault);
-          suppression.add(parsed.path);
           const result = await deleteNote({
             vault,
             relativePath: parsed.path,
             expectedHash: parsed.expected_hash,
-            clientId: parsed.client_id
+            clientId: parsed.client_id,
+            onBeforeFsWrite: () => suppression.add(parsed.path)
           });
           return ok(result);
         }
@@ -4120,7 +4178,7 @@ var init_server = __esm({
     init_audit3();
     init_watcher2();
     init_indexer2();
-    VERSION = "0.4.0";
+    VERSION = "0.5.0";
     ReadNoteArgs = z3.object({
       vault: z3.string(),
       path: z3.string()

@@ -37,6 +37,11 @@ export interface UpdateFrontmatterInput {
   merge: Record<string, unknown>;
   expectedHash?: string;
   clientId?: string;
+  /** Called once, immediately before the filesystem write. See
+   *  `WriteNoteInput.onBeforeFsWrite`. Not called when the update is a
+   *  no-op (empty merge or no effective change) since no fs event will
+   *  occur. */
+  onBeforeFsWrite?: () => void;
 }
 
 export type DiffOp = "set" | "unset" | "push" | "pull";
@@ -279,6 +284,7 @@ export async function updateFrontmatter(
   const fullText =
     Object.keys(next).length === 0 ? content : matter.stringify(content, next);
 
+  input.onBeforeFsWrite?.();
   await atomicWriteFile(absPath, fullText);
 
   const stat = await fs.stat(absPath);

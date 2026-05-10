@@ -200,10 +200,15 @@ describe("deleteNote", () => {
     await expect(fs.access(join(vaultDir, "doomed.md"))).rejects.toThrow();
     expect(vault.db.notes.getByPath("doomed.md")).toBeNull();
 
-    const audits = vault.db.audit.listWrites({ noteId: w.noteId });
-    expect(audits[0]?.op).toBe("delete");
-    expect(audits[0]?.new_hash).toBeNull();
-    expect(audits[0]?.previous_hash).toBe(w.newHash);
+    // After delete, the audit row's note_id was set to NULL by the FK
+    // (migration 003: ON DELETE SET NULL on write_audit.note_id).
+    // The audit history survives — we just have to look it up unfiltered.
+    const audits = vault.db.audit.listWrites({});
+    const deleteEntry = audits.find((a) => a.op === "delete");
+    expect(deleteEntry).toBeDefined();
+    expect(deleteEntry?.note_id).toBeNull();
+    expect(deleteEntry?.new_hash).toBeNull();
+    expect(deleteEntry?.previous_hash).toBe(w.newHash);
   });
 
   it("conflict when expectedHash does not match", async () => {

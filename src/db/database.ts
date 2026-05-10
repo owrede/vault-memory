@@ -86,16 +86,38 @@ export class Database {
     );
     if (pending.length === 0) return;
 
+    // SQLite's recommended table-rebuild pattern (CREATE *_new, INSERT,
+    // DROP, RENAME) trips foreign-key checks mid-transaction even when
+    // the data itself is consistent. The official guidance is to disable
+    // FKs around the migration and verify with PRAGMA foreign_key_check
+    // afterwards. PRAGMA foreign_keys cannot be toggled inside an active
+    // transaction, so the toggle wraps the transactional batch.
+    const fkWasOn = (this.handle.pragma("foreign_keys", { simple: true }) as number) === 1;
+    if (fkWasOn) this.handle.pragma("foreign_keys = OFF");
+
     let highest = current;
-    const tx = this.handle.transaction(() => {
-      for (const m of pending) {
-        this.handle.exec(m.sql);
-        highest = m.version;
+    try {
+      const tx = this.handle.transaction(() => {
+        for (const m of pending) {
+          this.handle.exec(m.sql);
+          highest = m.version;
+        }
+      });
+      tx();
+      // Verify referential integrity post-migration. Any violation raises
+      // a sqlite-error here; the migration is already committed, but at
+      // least we know about the inconsistency.
+      const violations = this.handle.pragma("foreign_key_check") as unknown[];
+      if (violations.length > 0) {
+        throw new Error(
+          `Migration to v${highest} produced foreign-key violations: ${JSON.stringify(violations)}`,
+        );
       }
-    });
-    tx();
-    // PRAGMA cannot be bound; safe because `highest` is a number we control.
-    this.handle.pragma(`user_version = ${highest}`);
+      // PRAGMA cannot be bound; safe because `highest` is a number we control.
+      this.handle.pragma(`user_version = ${highest}`);
+    } finally {
+      if (fkWasOn) this.handle.pragma("foreign_keys = ON");
+    }
   }
 
   transaction<T>(fn: () => T): T {

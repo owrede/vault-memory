@@ -36,7 +36,7 @@ import { SuppressionSet, VaultWatcher } from "./watcher/index.js";
 import { catchupVault } from "./indexer/index.js";
 import type { SearchHit } from "./types.js";
 
-const VERSION = "0.4.0";
+const VERSION = "0.5.0";
 
 // ─── Tool Input Schemas ──────────────────────────────────────────────────────
 
@@ -545,9 +545,10 @@ export async function serve(): Promise<void> {
         case "write_note": {
           const parsed = WriteNoteArgs.parse(args ?? {});
           const vault = manager.require(parsed.vault);
-          // Pre-mark on the suppression set so the watcher ignores the
-          // filesystem event triggered by our own atomic rename.
-          suppression.add(parsed.path);
+          // Suppress the watcher event triggered by our own atomic rename.
+          // The hook fires inside writeNote() ONLY if the write actually
+          // happens (no permission/hash conflict), so a failed write never
+          // accidentally masks a real external edit shortly after.
           const result = await writeNote({
             vault,
             relativePath: parsed.path,
@@ -555,6 +556,7 @@ export async function serve(): Promise<void> {
             frontmatter: parsed.frontmatter ?? null,
             expectedHash: parsed.expected_hash,
             clientId: parsed.client_id,
+            onBeforeFsWrite: () => suppression.add(parsed.path),
           });
           return ok(result);
         }
@@ -562,13 +564,13 @@ export async function serve(): Promise<void> {
         case "update_frontmatter": {
           const parsed = UpdateFrontmatterArgs.parse(args ?? {});
           const vault = manager.require(parsed.vault);
-          suppression.add(parsed.path);
           const result = await updateFrontmatter({
             vault,
             relativePath: parsed.path,
             merge: parsed.merge,
             expectedHash: parsed.expected_hash,
             clientId: parsed.client_id,
+            onBeforeFsWrite: () => suppression.add(parsed.path),
           });
           return ok(result);
         }
@@ -576,12 +578,12 @@ export async function serve(): Promise<void> {
         case "delete_note": {
           const parsed = DeleteNoteArgs.parse(args ?? {});
           const vault = manager.require(parsed.vault);
-          suppression.add(parsed.path);
           const result = await deleteNote({
             vault,
             relativePath: parsed.path,
             expectedHash: parsed.expected_hash,
             clientId: parsed.client_id,
+            onBeforeFsWrite: () => suppression.add(parsed.path),
           });
           return ok(result);
         }
