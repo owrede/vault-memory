@@ -247,8 +247,7 @@ function insertWikilinks(
   if (wikilinks.length === 0) return;
 
   const inputs = wikilinks.map((wl) => {
-    const target = vault.db.notes.getByPath(`${wl.normalizedTarget}.md`)
-      ?? vault.db.notes.getByPath(wl.normalizedTarget);
+    const target = resolveWikilinkTarget(vault, wl.normalizedTarget);
     return {
       targetPath: wl.normalizedTarget,
       targetNoteId: target?.id ?? null,
@@ -258,6 +257,41 @@ function insertWikilinks(
     };
   });
   vault.db.wikilinks.insertBatch(sourceNoteId, inputs);
+}
+
+/**
+ * Resolve a wikilink target the way Obsidian does:
+ * 1) exact relative path match (with or without .md)
+ * 2) filename-only match anywhere in the vault — shortest path wins
+ *
+ * Returns null if no candidate exists (broken link).
+ */
+function resolveWikilinkTarget(
+  vault: Vault,
+  normalizedTarget: string,
+): { id: number; path: string } | null {
+  // Try exact relative path (with .md, then without)
+  const exact =
+    vault.db.notes.getByPath(`${normalizedTarget}.md`) ??
+    vault.db.notes.getByPath(normalizedTarget);
+  if (exact) return exact;
+
+  // If target has no slash, it's a filename-only reference — search all notes.
+  if (!normalizedTarget.includes("/")) {
+    const stmt = vault.db.handle.prepare<[string, string], { id: number; path: string }>(
+      `SELECT id, path FROM notes
+       WHERE path = ?
+          OR path LIKE ?
+       ORDER BY length(path) ASC
+       LIMIT 1`,
+    );
+    const filename = `${normalizedTarget}.md`;
+    const suffix = `%/${filename}`;
+    const hit = stmt.get(filename, suffix);
+    if (hit) return hit;
+  }
+
+  return null;
 }
 
 function relativize(absPath: string, vaultRoot: string): string {

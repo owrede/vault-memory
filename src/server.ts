@@ -2,11 +2,14 @@
  * MCP server.
  *
  * Phase 1 toolset:
- *   - list_vaults
- *   - read_note
- *   - search_semantic
+ *   - list_vaults, read_note, search_semantic
  *
- * Later phases add: search_text, search_hybrid, write_note, graph tools, etc.
+ * Phase 2 toolset:
+ *   - search_text, search_hybrid
+ *   - list_backlinks, list_forward_links, find_broken_links
+ *   - query_frontmatter
+ *
+ * Phase 3 will add: write_note, update_frontmatter, audit_log
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -19,9 +22,17 @@ import { z } from "zod";
 import { loadConfig } from "./config/index.js";
 import { VaultManager } from "./vault/index.js";
 import { OllamaClient } from "./ollama/index.js";
+import { FtsQueries } from "./db/index.js";
+import { hybridSearch } from "./search/index.js";
+import {
+  listBacklinks,
+  listForwardLinks,
+  findBrokenLinks,
+} from "./graph/index.js";
+import { queryFrontmatter } from "./frontmatter/index.js";
 import type { SearchHit } from "./types.js";
 
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
 
 // ─── Tool Input Schemas ──────────────────────────────────────────────────────
 
@@ -30,10 +41,43 @@ const ReadNoteArgs = z.object({
   path: z.string(),
 });
 
-const SearchSemanticArgs = z.object({
+const SearchArgs = z.object({
   query: z.string().min(1),
   vaults: z.array(z.string()).optional(),
   top_k: z.number().int().positive().max(100).optional().default(10),
+});
+
+const HybridSearchArgs = SearchArgs.extend({
+  rrf_k: z.number().int().positive().max(1000).optional().default(60),
+});
+
+const VaultPathArgs = z.object({
+  vault: z.string(),
+  path: z.string(),
+});
+
+const ForwardLinksArgs = VaultPathArgs.extend({
+  include_broken: z.boolean().optional().default(true),
+});
+
+const FindBrokenLinksArgs = z.object({
+  vault: z.string(),
+});
+
+const PredicateSchema: z.ZodType<unknown> = z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.null(),
+  z.object({ $in: z.array(z.union([z.string(), z.number(), z.boolean(), z.null()])) }),
+  z.object({ $exists: z.boolean() }),
+  z.object({ $contains: z.union([z.string(), z.number(), z.boolean(), z.null()]) }),
+]);
+
+const QueryFrontmatterArgs = z.object({
+  vault: z.string(),
+  where: z.record(z.string(), PredicateSchema),
+  limit: z.number().int().positive().max(1000).optional().default(100),
 });
 
 // ─── Server bootstrap ────────────────────────────────────────────────────────
@@ -48,7 +92,7 @@ export async function serve(): Promise<void> {
   });
 
   const defaultModel =
-    config.server.default_embedding_model ?? "qwen3-embedding";
+    config.server.default_embedding_model ?? "qwen3-embedding:0.6b";
 
   const server = new Server(
     { name: "vault-memory", version: VERSION },
@@ -74,7 +118,8 @@ export async function serve(): Promise<void> {
             vault: { type: "string", description: "Configured vault name" },
             path: {
               type: "string",
-              description: "Vault-relative path with forward slashes, ending in .md",
+              description:
+                "Vault-relative path with forward slashes, ending in .md",
             },
           },
         },
@@ -88,12 +133,121 @@ export async function serve(): Promise<void> {
           required: ["query"],
           properties: {
             query: { type: "string" },
-            vaults: {
-              type: "array",
-              items: { type: "string" },
-              description: "Restrict to specific vault names (default: all)",
+            vaults: { type: "array", items: { type: "string" } },
+            top_k: {
+              type: "integer",
+              minimum: 1,
+              maximum: 100,
+              default: 10,
             },
-            top_k: { type: "integer", minimum: 1, maximum: 100, default: 10 },
+          },
+        },
+      },
+      {
+        name: "search_text",
+        description:
+          "Full-text BM25 search via SQLite FTS5. Best for exact-word and phrase matches.",
+        inputSchema: {
+          type: "object",
+          required: ["query"],
+          properties: {
+            query: {
+              type: "string",
+              description:
+                "FTS5 query — whitespace-separated tokens are AND'd; use OR explicitly.",
+            },
+            vaults: { type: "array", items: { type: "string" } },
+            top_k: {
+              type: "integer",
+              minimum: 1,
+              maximum: 100,
+              default: 10,
+            },
+          },
+        },
+      },
+      {
+        name: "search_hybrid",
+        description:
+          "Hybrid search: combines semantic (embedding) and BM25 (full-text) results via Reciprocal Rank Fusion. Best general-purpose query.",
+        inputSchema: {
+          type: "object",
+          required: ["query"],
+          properties: {
+            query: { type: "string" },
+            vaults: { type: "array", items: { type: "string" } },
+            top_k: {
+              type: "integer",
+              minimum: 1,
+              maximum: 100,
+              default: 10,
+            },
+            rrf_k: {
+              type: "integer",
+              minimum: 1,
+              maximum: 1000,
+              default: 60,
+              description:
+                "RRF constant — higher dampens emphasis on top ranks.",
+            },
+          },
+        },
+      },
+      {
+        name: "list_backlinks",
+        description: "Find all notes that link TO a given note.",
+        inputSchema: {
+          type: "object",
+          required: ["vault", "path"],
+          properties: {
+            vault: { type: "string" },
+            path: { type: "string" },
+          },
+        },
+      },
+      {
+        name: "list_forward_links",
+        description:
+          "List all wikilinks FROM a given note. Optionally include broken links.",
+        inputSchema: {
+          type: "object",
+          required: ["vault", "path"],
+          properties: {
+            vault: { type: "string" },
+            path: { type: "string" },
+            include_broken: { type: "boolean", default: true },
+          },
+        },
+      },
+      {
+        name: "find_broken_links",
+        description: "List all wikilinks in a vault that point to non-existent notes.",
+        inputSchema: {
+          type: "object",
+          required: ["vault"],
+          properties: { vault: { type: "string" } },
+        },
+      },
+      {
+        name: "query_frontmatter",
+        description:
+          "Filter notes by their YAML frontmatter. Supports equality, $in, $exists, $contains predicates. Multiple keys are AND-combined.",
+        inputSchema: {
+          type: "object",
+          required: ["vault", "where"],
+          properties: {
+            vault: { type: "string" },
+            where: {
+              type: "object",
+              description:
+                "Field-name → predicate map. Predicate is a scalar (equality) or { $in: [...] } | { $exists: bool } | { $contains: scalar }.",
+            },
+            limit: {
+              type: "integer",
+              minimum: 1,
+              maximum: 1000,
+              default: 100,
+            },
           },
         },
       },
@@ -114,16 +268,77 @@ export async function serve(): Promise<void> {
         }
 
         case "search_semantic": {
-          const parsed = SearchSemanticArgs.parse(args ?? {});
-          const result = await handleSearchSemantic(
-            manager,
-            ollama,
-            defaultModel,
-            parsed.query,
-            parsed.vaults,
-            parsed.top_k,
+          const parsed = SearchArgs.parse(args ?? {});
+          return ok(
+            await handleSearchSemantic(
+              manager,
+              ollama,
+              defaultModel,
+              parsed.query,
+              parsed.vaults,
+              parsed.top_k,
+            ),
           );
-          return ok(result);
+        }
+
+        case "search_text": {
+          const parsed = SearchArgs.parse(args ?? {});
+          return ok(
+            handleSearchText(manager, parsed.query, parsed.vaults, parsed.top_k),
+          );
+        }
+
+        case "search_hybrid": {
+          const parsed = HybridSearchArgs.parse(args ?? {});
+          return ok(
+            await handleSearchHybrid(
+              manager,
+              ollama,
+              defaultModel,
+              parsed.query,
+              parsed.vaults,
+              parsed.top_k,
+              parsed.rrf_k,
+            ),
+          );
+        }
+
+        case "list_backlinks": {
+          const parsed = VaultPathArgs.parse(args ?? {});
+          const vault = manager.require(parsed.vault);
+          return ok({ backlinks: listBacklinks(vault, parsed.path) });
+        }
+
+        case "list_forward_links": {
+          const parsed = ForwardLinksArgs.parse(args ?? {});
+          const vault = manager.require(parsed.vault);
+          return ok({
+            links: listForwardLinks(vault, parsed.path, parsed.include_broken),
+          });
+        }
+
+        case "find_broken_links": {
+          const parsed = FindBrokenLinksArgs.parse(args ?? {});
+          const vault = manager.require(parsed.vault);
+          return ok({ broken: findBrokenLinks(vault) });
+        }
+
+        case "query_frontmatter": {
+          const parsed = QueryFrontmatterArgs.parse(args ?? {});
+          const vault = manager.require(parsed.vault);
+          const hits = queryFrontmatter(vault, {
+            where: parsed.where as Record<string, never>,
+            limit: parsed.limit,
+          });
+          return ok({
+            notes: hits.map((n) => ({
+              path: n.path,
+              title: n.title,
+              frontmatter: n.frontmatter ? JSON.parse(n.frontmatter) : null,
+              mtime: n.mtime,
+            })),
+            count: hits.length,
+          });
         }
 
         default:
@@ -202,23 +417,22 @@ async function handleSearchSemantic(
     return { hits: [], note: "No vaults configured." };
   }
 
-  // Embed the query once; per-vault we use that vault's model. For mixed
-  // models across vaults we'd embed multiple times. For Phase 1 we assume
-  // a shared default unless overridden per vault.
+  // Cache query embedding by model name across vaults.
+  const embedCache = new Map<string, number[]>();
   const allHits: SearchHit[] = [];
 
   for (const vault of targets) {
     const modelName = vault.config.embedding_model ?? defaultModel;
     const model = vault.db.models.getActive();
+    if (!model || model.name !== modelName) continue;
 
-    if (!model || model.name !== modelName) {
-      // Vault has not been indexed yet or with a different model
-      continue;
+    let queryVec = embedCache.get(modelName);
+    if (!queryVec) {
+      const embedResp = await ollama.embed({ model: modelName, texts: [query] });
+      queryVec = embedResp.vectors[0];
+      if (!queryVec) continue;
+      embedCache.set(modelName, queryVec);
     }
-
-    const embedResp = await ollama.embed({ model: modelName, texts: [query] });
-    const queryVec = embedResp.vectors[0];
-    if (!queryVec) continue;
 
     const semanticHits = vault.db.embeddings.searchSemantic(
       model.id,
@@ -231,8 +445,6 @@ async function handleSearchSemantic(
       if (!chunk) continue;
       const note = vault.db.notes.getById(chunk.note_id);
       if (!note) continue;
-
-      // sqlite-vec L2 distance → similarity = 1 / (1 + distance) for ranking
       const score = 1 / (1 + hit.distance);
 
       allHits.push({
@@ -248,9 +460,80 @@ async function handleSearchSemantic(
     }
   }
 
-  // Sort by score desc, take top_k
   allHits.sort((a, b) => b.score - a.score);
   return { hits: allHits.slice(0, topK), count: allHits.length };
+}
+
+function handleSearchText(
+  manager: VaultManager,
+  query: string,
+  vaultFilter: string[] | undefined,
+  topK: number,
+): object {
+  const targets = vaultFilter
+    ? vaultFilter.map((n) => manager.require(n))
+    : manager.list();
+
+  if (targets.length === 0) {
+    return { hits: [], note: "No vaults configured." };
+  }
+
+  const sanitized = FtsQueries.sanitize(query);
+  const allHits: SearchHit[] = [];
+
+  for (const vault of targets) {
+    const ftsHits = vault.db.fts.search(sanitized, topK, true);
+    for (const hit of ftsHits) {
+      const chunk = vault.db.chunks.getById(hit.chunkId);
+      if (!chunk) continue;
+      const note = vault.db.notes.getById(chunk.note_id);
+      if (!note) continue;
+
+      allHits.push({
+        vault: vault.config.name,
+        notePath: note.path,
+        noteTitle: note.title,
+        chunkText: hit.snippet ?? chunk.text,
+        chunkIdx: chunk.idx,
+        headingPath: chunk.heading_path,
+        score: hit.score,
+        scoreBreakdown: { text: hit.score },
+      });
+    }
+  }
+
+  allHits.sort((a, b) => b.score - a.score);
+  return { hits: allHits.slice(0, topK), count: allHits.length };
+}
+
+async function handleSearchHybrid(
+  manager: VaultManager,
+  ollama: OllamaClient,
+  defaultModel: string,
+  query: string,
+  vaultFilter: string[] | undefined,
+  topK: number,
+  rrfK: number,
+): Promise<object> {
+  const targets = vaultFilter
+    ? vaultFilter.map((n) => manager.require(n))
+    : manager.list();
+
+  if (targets.length === 0) {
+    return { hits: [], note: "No vaults configured." };
+  }
+
+  const hits = await hybridSearch({
+    query,
+    embeddingModel: defaultModel,
+    ollama,
+    vaults: targets,
+    topK,
+    rrfK,
+    includeBreakdown: true,
+  });
+
+  return { hits, count: hits.length };
 }
 
 // ─── Response helpers ────────────────────────────────────────────────────────
