@@ -55,17 +55,24 @@ export async function atomicWriteFile(
 /**
  * Resolve `relativePath` against `vaultRoot` and verify the result stays
  * within the vault. Throws `OutsideVaultError` on any escape attempt
- * (e.g. `../../etc/passwd`, absolute paths, symlink-style traversal in
- * the input string).
+ * (e.g. `../../etc/passwd`, absolute paths, string-level traversal).
  *
- * Note: this is a path-string check; it does not follow symlinks. The
- * write module operates on vault-relative inputs only and does not chase
- * links.
+ * This function ALSO follows symlinks via `fs.realpath` to defeat
+ * symlink-escape attacks: if a directory inside the vault is a symlink
+ * pointing outside (e.g. `Netzwerk/escape -> /etc`), any path beneath
+ * it is rejected even though the joined string looks vault-internal.
+ *
+ * Realpath is applied to:
+ *   - the vault root, and
+ *   - the deepest existing ancestor of the target (since the target
+ *     itself may not exist yet for a create/write).
+ *
+ * Async because it touches the filesystem.
  */
-export function safeJoinInsideVault(
+export async function safeJoinInsideVault(
   vaultRoot: string,
   relativePath: string,
-): string {
+): Promise<string> {
   if (typeof relativePath !== "string" || relativePath.length === 0) {
     throw new OutsideVaultError(relativePath, vaultRoot);
   }
@@ -75,7 +82,8 @@ export function safeJoinInsideVault(
   }
   const root = resolve(vaultRoot);
   const target = resolve(root, relativePath);
-  // Ensure target is `root` itself (never valid for a file) or a descendant.
+
+  // String-level prefix check first — catches `../` traversal cheaply.
   const rootWithSep = root.endsWith(sep) ? root : root + sep;
   if (target !== root && !target.startsWith(rootWithSep)) {
     throw new OutsideVaultError(relativePath, vaultRoot);
@@ -84,5 +92,63 @@ export function safeJoinInsideVault(
     // The vault root itself is not a writable note path.
     throw new OutsideVaultError(relativePath, vaultRoot);
   }
+
+  // Realpath both sides to defeat symlink-escape. The target may not exist
+  // yet (creating a new note), so walk up to the deepest existing ancestor
+  // and realpath that. Anything not yet on disk is by definition a fresh
+  // path that cannot itself be a symlink.
+  let realRoot: string;
+  try {
+    realRoot = await fs.realpath(root);
+  } catch {
+    // If the vault root itself cannot be resolved, refuse — we cannot
+    // guarantee any boundary check is meaningful.
+    throw new OutsideVaultError(relativePath, vaultRoot);
+  }
+
+  const realTarget = await resolveExistingAncestor(target);
+  const realRootWithSep = realRoot.endsWith(sep) ? realRoot : realRoot + sep;
+  if (
+    realTarget !== realRoot &&
+    !realTarget.startsWith(realRootWithSep)
+  ) {
+    throw new OutsideVaultError(relativePath, vaultRoot);
+  }
+
   return target;
+}
+
+/**
+ * Resolve the deepest existing ancestor of `absPath` via realpath, then
+ * re-attach any non-existent trailing segments. This handles the common
+ * case of writing a brand-new file whose parent (or grandparent) exists.
+ */
+async function resolveExistingAncestor(absPath: string): Promise<string> {
+  let current = absPath;
+  const trailing: string[] = [];
+  // Walk up until realpath succeeds or we hit the filesystem root.
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    try {
+      const real = await fs.realpath(current);
+      return trailing.length === 0
+        ? real
+        : resolve(real, ...trailing.reverse());
+    } catch (err: unknown) {
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code !== "ENOENT" && code !== "ENOTDIR") {
+        throw err;
+      }
+      const parent = dirname(current);
+      if (parent === current) {
+        // Reached filesystem root without ever resolving — fall back to
+        // the original string. The caller's prefix check has already
+        // verified string-level containment.
+        return absPath;
+      }
+      // Track the non-existent leaf to re-attach after realpath.
+      trailing.push(current.slice(parent.length + 1));
+      current = parent;
+    }
+  }
 }

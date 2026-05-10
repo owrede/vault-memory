@@ -230,7 +230,7 @@ export async function updateFrontmatter(
     };
   }
 
-  const absPath = safeJoinInsideVault(vault.config.path, relativePath);
+  const absPath = await safeJoinInsideVault(vault.config.path, relativePath);
 
   let raw: string;
   try {

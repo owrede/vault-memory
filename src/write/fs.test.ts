@@ -47,47 +47,82 @@ describe("atomicWriteFile", () => {
 
 describe("safeJoinInsideVault", () => {
   let root: string;
+  let outsideDir: string;
   beforeEach(async () => {
     root = await mkdtemp(join(tmpdir(), "vm-vault-"));
+    outsideDir = await mkdtemp(join(tmpdir(), "vm-outside-"));
   });
   afterEach(async () => {
     await rm(root, { recursive: true, force: true });
+    await rm(outsideDir, { recursive: true, force: true });
   });
 
-  it("accepts a normal relative path", () => {
-    const out = safeJoinInsideVault(root, "notes/foo.md");
-    expect(out.startsWith(root)).toBe(true);
+  it("accepts a normal relative path", async () => {
+    const out = await safeJoinInsideVault(root, "notes/foo.md");
     expect(out.endsWith("foo.md")).toBe(true);
   });
 
-  it("accepts deeply nested relative paths", () => {
-    const out = safeJoinInsideVault(root, "a/b/c/d.md");
-    expect(out.startsWith(root)).toBe(true);
+  it("accepts deeply nested relative paths", async () => {
+    const out = await safeJoinInsideVault(root, "a/b/c/d.md");
+    expect(out.endsWith("d.md")).toBe(true);
   });
 
-  it("rejects ../ traversal", () => {
-    expect(() => safeJoinInsideVault(root, "../etc/passwd")).toThrow(
+  it("rejects ../ traversal", async () => {
+    await expect(
+      safeJoinInsideVault(root, "../etc/passwd"),
+    ).rejects.toBeInstanceOf(OutsideVaultError);
+  });
+
+  it("rejects deeper ../../ traversal", async () => {
+    await expect(
+      safeJoinInsideVault(root, "a/../../escape.md"),
+    ).rejects.toBeInstanceOf(OutsideVaultError);
+  });
+
+  it("rejects absolute paths", async () => {
+    await expect(
+      safeJoinInsideVault(root, "/etc/passwd"),
+    ).rejects.toBeInstanceOf(OutsideVaultError);
+  });
+
+  it("rejects empty input", async () => {
+    await expect(safeJoinInsideVault(root, "")).rejects.toBeInstanceOf(
       OutsideVaultError,
     );
   });
 
-  it("rejects deeper ../../ traversal", () => {
-    expect(() => safeJoinInsideVault(root, "a/../../escape.md")).toThrow(
+  it("rejects targeting the vault root itself", async () => {
+    await expect(safeJoinInsideVault(root, ".")).rejects.toBeInstanceOf(
       OutsideVaultError,
     );
   });
 
-  it("rejects absolute paths", () => {
-    expect(() => safeJoinInsideVault(root, "/etc/passwd")).toThrow(
-      OutsideVaultError,
-    );
+  it("rejects a path beneath a symlink that escapes the vault", async () => {
+    // Create symlink inside vault pointing to a directory outside the vault.
+    const linkPath = join(root, "escape");
+    await fs.symlink(outsideDir, linkPath, "dir");
+    await expect(
+      safeJoinInsideVault(root, "escape/passwd"),
+    ).rejects.toBeInstanceOf(OutsideVaultError);
   });
 
-  it("rejects empty input", () => {
-    expect(() => safeJoinInsideVault(root, "")).toThrow(OutsideVaultError);
+  it("rejects a symlinked file that points outside the vault", async () => {
+    const outsideFile = join(outsideDir, "secret.txt");
+    await fs.writeFile(outsideFile, "secret", "utf-8");
+    const linkPath = join(root, "leak.txt");
+    await fs.symlink(outsideFile, linkPath, "file");
+    await expect(
+      safeJoinInsideVault(root, "leak.txt"),
+    ).rejects.toBeInstanceOf(OutsideVaultError);
   });
 
-  it("rejects targeting the vault root itself", () => {
-    expect(() => safeJoinInsideVault(root, ".")).toThrow(OutsideVaultError);
+  it("accepts a symlink that points to a location INSIDE the vault", async () => {
+    const realDir = join(root, "real");
+    await fs.mkdir(realDir, { recursive: true });
+    const linkPath = join(root, "alias");
+    await fs.symlink(realDir, linkPath, "dir");
+    // Writing a new file under the symlinked alias should still be allowed.
+    const out = await safeJoinInsideVault(root, "alias/note.md");
+    expect(out.includes("alias")).toBe(true);
   });
 });
