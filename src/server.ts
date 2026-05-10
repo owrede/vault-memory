@@ -24,6 +24,8 @@ import { VaultManager } from "./vault/index.js";
 import { OllamaClient } from "./ollama/index.js";
 import { FtsQueries } from "./db/index.js";
 import { hybridSearch, matchesAnyGlob } from "./search/index.js";
+import { OllamaReranker } from "./rerank/index.js";
+import type { Reranker } from "./rerank/index.js";
 import {
   listBacklinks,
   listForwardLinks,
@@ -57,6 +59,9 @@ const SearchArgs = z.object({
 
 const HybridSearchArgs = SearchArgs.extend({
   rrf_k: z.number().int().positive().max(1000).optional().default(60),
+  /** When true AND a `reranker_model` is configured, runs a cross-encoder
+   *  rerank pass over the top candidates. Silently ignored otherwise. */
+  rerank: z.boolean().optional().default(false),
 });
 
 const VaultPathArgs = z.object({
@@ -140,6 +145,12 @@ export async function serve(): Promise<void> {
 
   const defaultModel =
     config.server.default_embedding_model ?? "qwen3-embedding:0.6b";
+
+  // Optional cross-encoder reranker (Phase 7d). Constructed once;
+  // search_hybrid will pass it through only when the caller asks for it.
+  const reranker: Reranker | undefined = config.server.reranker_model
+    ? new OllamaReranker({ ollama, model: config.server.reranker_model })
+    : undefined;
 
   // ─── File watchers (Phase 4) ──────────────────────────────────────────────
   //
@@ -314,6 +325,12 @@ export async function serve(): Promise<void> {
               type: "array",
               items: { type: "string" },
               description: "Glob patterns of paths to exclude.",
+            },
+            rerank: {
+              type: "boolean",
+              default: false,
+              description:
+                "Apply a cross-encoder rerank over the top candidates. Requires `reranker_model` in server config; silently ignored otherwise.",
             },
           },
         },
@@ -528,6 +545,7 @@ export async function serve(): Promise<void> {
               parsed.top_k,
               parsed.rrf_k,
               parsed.exclude_paths,
+              parsed.rerank ? reranker : undefined,
             ),
           );
         }
@@ -830,6 +848,7 @@ async function handleSearchHybrid(
   topK: number,
   rrfK: number,
   excludePaths: string[] | undefined,
+  reranker: Reranker | undefined,
 ): Promise<object> {
   const targets = vaultFilter
     ? vaultFilter.map((n) => manager.require(n))
@@ -853,6 +872,7 @@ async function handleSearchHybrid(
     topK: innerTopK,
     rrfK,
     includeBreakdown: true,
+    reranker,
   });
 
   const filtered = hasExclude

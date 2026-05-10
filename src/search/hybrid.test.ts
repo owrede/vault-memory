@@ -265,4 +265,82 @@ describe("hybridSearch (integration)", () => {
       }),
     ).toEqual([]);
   });
+
+  it("reranker reorders results and surfaces rerank score in breakdown", async () => {
+    const ollama = {
+      embed: vi.fn().mockResolvedValue({
+        vectors: [queryVec],
+        dim: DIM,
+        model: "test-model",
+      }),
+    } as unknown as OllamaClient;
+
+    // Without rerank: "alpha…target" wins (both semantic + BM25).
+    const baseline = await hybridSearch({
+      query: "alpha",
+      embeddingModel: "test-model",
+      ollama,
+      vaults: [vault],
+      topK: 3,
+    });
+    expect(baseline[0]?.chunkText).toContain("alpha");
+
+    // Mock reranker that *inverts* the order: assigns higher score to
+    // chunks NOT containing "alpha". This forces a reorder we can detect.
+    const reranker = {
+      score: vi.fn(async (_q: string, chunks: readonly string[]) =>
+        chunks.map((c) => (c.includes("alpha") ? 0 : 1)),
+      ),
+    };
+
+    const reranked = await hybridSearch({
+      query: "alpha",
+      embeddingModel: "test-model",
+      ollama,
+      vaults: [vault],
+      topK: 3,
+      reranker,
+    });
+
+    expect(reranked.length).toBeGreaterThan(0);
+    // Top hit is now a non-alpha chunk.
+    expect(reranked[0]?.chunkText).not.toContain("alpha");
+    // Rerank score surfaces in the breakdown and as the primary score.
+    expect(reranked[0]?.scoreBreakdown?.rerank).toBe(1);
+    expect(reranked[0]?.score).toBe(1);
+    // RRF breakdown is preserved.
+    expect(reranked[0]?.scoreBreakdown?.rrf).toBeGreaterThan(0);
+    expect(reranker.score).toHaveBeenCalledTimes(1);
+  });
+
+  it("reranker failure falls back silently to RRF order", async () => {
+    const ollama = {
+      embed: vi.fn().mockResolvedValue({
+        vectors: [queryVec],
+        dim: DIM,
+        model: "test-model",
+      }),
+    } as unknown as OllamaClient;
+
+    const reranker = {
+      score: vi.fn(async () => {
+        throw new Error("ollama down");
+      }),
+    };
+
+    const hits = await hybridSearch({
+      query: "alpha",
+      embeddingModel: "test-model",
+      ollama,
+      vaults: [vault],
+      topK: 3,
+      reranker,
+    });
+
+    // Same shape as the un-reranked result.
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits[0]?.chunkText).toContain("alpha");
+    expect(hits[0]?.scoreBreakdown?.rerank).toBeUndefined();
+    expect(hits[0]?.score).toBe(hits[0]?.scoreBreakdown?.rrf);
+  });
 });
