@@ -340,7 +340,7 @@ function resolveWikilinkTarget(
  *
  * Anything else (numbers, objects) is ignored.
  */
-function extractAliases(frontmatter: Record<string, unknown> | null): string[] {
+export function extractAliases(frontmatter: Record<string, unknown> | null): string[] {
   if (!frontmatter) return [];
   const raw = frontmatter["aliases"] ?? frontmatter["alias"];
   if (raw == null) return [];

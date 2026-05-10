@@ -1,2 +1,2 @@
-export { indexVault } from "./indexer.js";
+export { indexVault, extractAliases } from "./indexer.js";
 export type { IndexerOptions, IndexRunResult } from "./indexer.js";
