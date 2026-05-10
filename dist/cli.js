@@ -821,6 +821,12 @@ var init_fts = __esm({
        * - Parentheses are kept only when balanced; otherwise stripped.
        * - Colons (column filters) are stripped — `chunks_fts` only has one
        *   column, so column filters are never useful and cause errors.
+       * - Tokens containing FTS5-reserved punctuation that doesn't have a sane
+       *   meaning here (`-`, `/`, `?`, `.`, `!`) are wrapped in double quotes so
+       *   FTS5 treats them as literal phrases. This is what makes natural
+       *   queries like "LAG-EPIX", "Netzwerk/Personen", or "Wer ist X?" work.
+       *   See the v0.6.0 retrieval eval (vault note `_research/vault-memory-eval.md`)
+       *   for the discovered crash triggers.
        * - Leading operator tokens at fragment boundaries are dropped (FTS5
        *   errors on a trailing `AND`/`OR`).
        * - Whitespace is normalized.
@@ -851,7 +857,19 @@ var init_fts = __esm({
           s = s.replace(trailingOpRe, "");
         }
         s = s.replace(/^(AND|OR|NOT|NEAR)\s+/, "");
-        return s.trim();
+        s = s.trim();
+        if (s.length === 0) return "";
+        const needsPhrase = /[-/.?!\\]/;
+        const isOperator = /^(AND|OR|NOT|NEAR)$/;
+        const isPrefixStar = /^[^*\s]+\*$/;
+        const tokens = s.split(/\s+/).map((t) => {
+          if (t.length === 0) return t;
+          if (isOperator.test(t)) return t;
+          if (isPrefixStar.test(t)) return t;
+          if (needsPhrase.test(t)) return `"${t}"`;
+          return t;
+        });
+        return tokens.filter((t) => t.length > 0).join(" ");
       }
     };
   }

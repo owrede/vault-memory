@@ -151,4 +151,43 @@ describe("FtsQueries", () => {
     const hits = db.fts.search("Bildung OR Förderprojekte OR Kaffee", 1);
     expect(hits.length).toBe(1);
   });
+
+  // ── Regression tests for crash triggers found in v0.6.0 eval ────────────
+
+  it("sanitize phrase-wraps hyphenated tokens (was: 'no such column: EPIX')", () => {
+    expect(FtsQueries.sanitize("LAG-EPIX")).toBe('"LAG-EPIX"');
+    expect(FtsQueries.sanitize("LAG-EPIX status")).toBe('"LAG-EPIX" status');
+    expect(FtsQueries.sanitize("INIM-397 abc")).toBe('"INIM-397" abc');
+  });
+
+  it("sanitize phrase-wraps slash-containing tokens (was: 'no such column: Netzwerk')", () => {
+    expect(FtsQueries.sanitize("Netzwerk/Personen")).toBe('"Netzwerk/Personen"');
+  });
+
+  it("sanitize phrase-wraps tokens with question marks (was: 'syntax error near ?')", () => {
+    expect(FtsQueries.sanitize("Wer ist Holger Hoos?")).toBe(
+      'Wer ist Holger "Hoos?"',
+    );
+  });
+
+  it("sanitize leaves prefix-star tokens intact", () => {
+    expect(FtsQueries.sanitize("Förder*")).toBe("Förder*");
+    expect(FtsQueries.sanitize("(Bildung OR Förder*)")).toBe(
+      "(Bildung OR Förder*)",
+    );
+  });
+
+  it("sanitize leaves bare operator tokens intact", () => {
+    expect(FtsQueries.sanitize("Bildung AND Förder")).toBe(
+      "Bildung AND Förder",
+    );
+    expect(FtsQueries.sanitize("a NEAR b")).toBe("a NEAR b");
+  });
+
+  it("search executes without throwing for the three eval-discovered triggers", () => {
+    // The three real-world queries that crashed in the v0.6.0 eval.
+    expect(() => db.fts.search("LAG-EPIX", 10)).not.toThrow();
+    expect(() => db.fts.search("Netzwerk/Personen Bildung", 10)).not.toThrow();
+    expect(() => db.fts.search("Wer ist Holger Hoos?", 10)).not.toThrow();
+  });
 });

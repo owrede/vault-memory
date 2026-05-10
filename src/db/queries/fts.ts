@@ -84,6 +84,12 @@ export class FtsQueries {
    * - Parentheses are kept only when balanced; otherwise stripped.
    * - Colons (column filters) are stripped — `chunks_fts` only has one
    *   column, so column filters are never useful and cause errors.
+   * - Tokens containing FTS5-reserved punctuation that doesn't have a sane
+   *   meaning here (`-`, `/`, `?`, `.`, `!`) are wrapped in double quotes so
+   *   FTS5 treats them as literal phrases. This is what makes natural
+   *   queries like "LAG-EPIX", "Netzwerk/Personen", or "Wer ist X?" work.
+   *   See the v0.6.0 retrieval eval (vault note `_research/vault-memory-eval.md`)
+   *   for the discovered crash triggers.
    * - Leading operator tokens at fragment boundaries are dropped (FTS5
    *   errors on a trailing `AND`/`OR`).
    * - Whitespace is normalized.
@@ -121,7 +127,29 @@ export class FtsQueries {
     }
     // Drop leading operator tokens.
     s = s.replace(/^(AND|OR|NOT|NEAR)\s+/, "");
+    s = s.trim();
+    if (s.length === 0) return "";
 
-    return s.trim();
+    // Phrase-wrap any token that contains FTS5-meaningful punctuation. Keep
+    // operator keywords (AND/OR/NOT/NEAR) and lone wildcards (*) untouched
+    // so power-user syntax still works. Tokens that *contain* a wildcard
+    // alongside other content (e.g. "foo*bar") are phrase-wrapped — the
+    // prefix-match semantics only fire on a token-trailing star anyway.
+    //
+    // The character class matches: hyphen, slash, dot, question mark,
+    // exclamation, backslash. Asterisks are handled separately below.
+    const needsPhrase = /[-/.?!\\]/;
+    const isOperator = /^(AND|OR|NOT|NEAR)$/;
+    const isPrefixStar = /^[^*\s]+\*$/; // "word*" — leave alone.
+
+    const tokens = s.split(/\s+/).map((t) => {
+      if (t.length === 0) return t;
+      if (isOperator.test(t)) return t;
+      if (isPrefixStar.test(t)) return t;
+      if (needsPhrase.test(t)) return `"${t}"`;
+      return t;
+    });
+
+    return tokens.filter((t) => t.length > 0).join(" ");
   }
 }
