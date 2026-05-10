@@ -145,7 +145,7 @@ export async function writeNote(input: WriteNoteInput): Promise<WriteResult> {
 
   // Throws OutsideVaultError on traversal — intentional: callers should not
   // be able to construct invalid paths and silently get a "conflict".
-  const absPath = safeJoinInsideVault(vault.config.path, relativePath);
+  const absPath = await safeJoinInsideVault(vault.config.path, relativePath);
 
   const existing = await readExistingFile(absPath);
   const created = existing === null;
@@ -240,7 +240,7 @@ export async function deleteNote(input: DeleteNoteInput): Promise<WriteResult> {
     return permissionDenied(vault.config.name);
   }
 
-  const absPath = safeJoinInsideVault(vault.config.path, relativePath);
+  const absPath = await safeJoinInsideVault(vault.config.path, relativePath);
 
   const existing = await readExistingFile(absPath);
   if (existing === null) {
