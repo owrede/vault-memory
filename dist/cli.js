@@ -1686,6 +1686,25 @@ import { createHash } from "crypto";
 function sha256(input) {
   return createHash("sha256").update(input, "utf8").digest("hex");
 }
+function canonicalJsonStringify(value) {
+  if (value === null || value === void 0) return "null";
+  if (Array.isArray(value)) {
+    return "[" + value.map((v) => canonicalJsonStringify(v)).join(",") + "]";
+  }
+  if (typeof value === "object") {
+    const obj = value;
+    const keys = Object.keys(obj).sort();
+    const parts = keys.map(
+      (k) => JSON.stringify(k) + ":" + canonicalJsonStringify(obj[k])
+    );
+    return "{" + parts.join(",") + "}";
+  }
+  const s = JSON.stringify(value);
+  return s === void 0 ? "null" : s;
+}
+function computeNoteHash(content, frontmatter) {
+  return sha256(content + canonicalJsonStringify(frontmatter ?? {}));
+}
 var init_hash = __esm({
   "src/reader/hash.ts"() {
     "use strict";
@@ -1886,7 +1905,7 @@ async function parseNote(absolutePath, vaultRoot) {
   const fmData = parsed.data;
   const frontmatter = fmData !== void 0 && Object.keys(fmData).length > 0 ? fmData : null;
   const title = extractTitle(content) ?? path3.basename(absolutePath, ".md");
-  const hash = sha256(content + JSON.stringify(frontmatter ?? {}));
+  const hash = computeNoteHash(content, frontmatter);
   const mtime = Math.floor(stat.mtimeMs);
   const wikilinks = extractWikilinks(content);
   const wordCount = countWords(content);
@@ -2216,6 +2235,64 @@ var init_chunker2 = __esm({
   }
 });
 
+// src/indexer/resolver.ts
+var WikilinkResolver;
+var init_resolver = __esm({
+  "src/indexer/resolver.ts"() {
+    "use strict";
+    init_esm_shims();
+    WikilinkResolver = class {
+      vault;
+      filenameStmt;
+      cache = /* @__PURE__ */ new Map();
+      constructor(vault) {
+        this.vault = vault;
+        this.filenameStmt = vault.db.handle.prepare(
+          `SELECT id, path FROM notes
+       WHERE path = ?
+          OR path LIKE ?
+       ORDER BY length(path) ASC
+       LIMIT 1`
+        );
+      }
+      /**
+       * Resolve a wikilink target the way Obsidian does, in priority order:
+       *   1) exact relative path match (with or without .md)
+       *   2) filename-only match anywhere in the vault — shortest path wins
+       *   3) alias match — looks up note_aliases (case-insensitive)
+       *
+       * Returns null if no candidate exists.
+       */
+      resolve(normalizedTarget) {
+        const cached = this.cache.get(normalizedTarget);
+        if (cached !== void 0) return cached;
+        const hit = this.resolveUncached(normalizedTarget);
+        this.cache.set(normalizedTarget, hit);
+        return hit;
+      }
+      resolveUncached(normalizedTarget) {
+        const exact = this.vault.db.notes.getByPath(`${normalizedTarget}.md`) ?? this.vault.db.notes.getByPath(normalizedTarget);
+        if (exact) return { id: exact.id, path: exact.path };
+        if (!normalizedTarget.includes("/")) {
+          const filename = `${normalizedTarget}.md`;
+          const suffix = `%/${filename}`;
+          const hit = this.filenameStmt.get(filename, suffix);
+          if (hit) return hit;
+          const aliasHit = this.vault.db.aliases.resolve(normalizedTarget);
+          if (aliasHit) {
+            return { id: aliasHit.note_id, path: aliasHit.path };
+          }
+        }
+        return null;
+      }
+      /** Test/diagnostics: cache size after a run. */
+      get cacheSize() {
+        return this.cache.size;
+      }
+    };
+  }
+});
+
 // src/indexer/indexer.ts
 import { randomUUID } from "crypto";
 async function indexVault(vault, options) {
@@ -2255,6 +2332,7 @@ async function indexVault(vault, options) {
   let notesUpdated = 0;
   let notesDeleted = 0;
   let chunksCreated = 0;
+  const firstPassResolver = new WikilinkResolver(vault);
   try {
     if (mode === "full") {
       log("Full mode: clearing existing chunks and embeddings");
@@ -2328,7 +2406,7 @@ async function indexVault(vault, options) {
         vector: embedResult.vectors[i]
       }));
       vault.db.embeddings.insertBatch(embeddingInputs);
-      insertWikilinks(vault, noteId, parsed.wikilinks);
+      insertWikilinks(vault, noteId, parsed.wikilinks, firstPassResolver);
       chunksCreated += chunks.length;
     }
     const knownPaths = new Set(files.map((f) => relativize(f, vault.config.path)));
@@ -2346,8 +2424,9 @@ async function indexVault(vault, options) {
       `UPDATE wikilinks SET target_note = ?
        WHERE source_note = ? AND target_path = ? AND target_note IS NULL`
     );
+    const secondPassResolver = new WikilinkResolver(vault);
     for (const link of broken) {
-      const hit = resolveWikilinkTarget(vault, link.targetPath);
+      const hit = secondPassResolver.resolve(link.targetPath);
       if (hit) {
         updateStmt.run(hit.id, link.sourceNoteId, link.targetPath);
         resolved++;
@@ -2390,10 +2469,11 @@ async function indexVault(vault, options) {
     };
   }
 }
-function insertWikilinks(vault, sourceNoteId, wikilinks) {
+function insertWikilinks(vault, sourceNoteId, wikilinks, resolver) {
   if (wikilinks.length === 0) return;
+  const r = resolver ?? new WikilinkResolver(vault);
   const inputs = wikilinks.map((wl) => {
-    const target = resolveWikilinkTarget(vault, wl.normalizedTarget);
+    const target = r.resolve(wl.normalizedTarget);
     return {
       targetPath: wl.normalizedTarget,
       targetNoteId: target?.id ?? null,
@@ -2405,26 +2485,7 @@ function insertWikilinks(vault, sourceNoteId, wikilinks) {
   vault.db.wikilinks.insertBatch(sourceNoteId, inputs);
 }
 function resolveWikilinkTarget(vault, normalizedTarget) {
-  const exact = vault.db.notes.getByPath(`${normalizedTarget}.md`) ?? vault.db.notes.getByPath(normalizedTarget);
-  if (exact) return exact;
-  if (!normalizedTarget.includes("/")) {
-    const stmt = vault.db.handle.prepare(
-      `SELECT id, path FROM notes
-       WHERE path = ?
-          OR path LIKE ?
-       ORDER BY length(path) ASC
-       LIMIT 1`
-    );
-    const filename = `${normalizedTarget}.md`;
-    const suffix = `%/${filename}`;
-    const hit = stmt.get(filename, suffix);
-    if (hit) return hit;
-    const aliasHit = vault.db.aliases.resolve(normalizedTarget);
-    if (aliasHit) {
-      return { id: aliasHit.note_id, path: aliasHit.path };
-    }
-  }
-  return null;
+  return new WikilinkResolver(vault).resolve(normalizedTarget);
 }
 function extractAliases(frontmatter) {
   if (!frontmatter) return [];
@@ -2453,6 +2514,7 @@ var init_indexer = __esm({
     init_reader();
     init_chunker2();
     init_ollama();
+    init_resolver();
   }
 });
 
@@ -2479,7 +2541,7 @@ async function atomicWriteFile(absPath, content) {
     throw err;
   }
 }
-function safeJoinInsideVault(vaultRoot, relativePath) {
+async function safeJoinInsideVault(vaultRoot, relativePath) {
   if (typeof relativePath !== "string" || relativePath.length === 0) {
     throw new OutsideVaultError(relativePath, vaultRoot);
   }
@@ -2495,7 +2557,39 @@ function safeJoinInsideVault(vaultRoot, relativePath) {
   if (target === root) {
     throw new OutsideVaultError(relativePath, vaultRoot);
   }
+  let realRoot;
+  try {
+    realRoot = await fs3.realpath(root);
+  } catch {
+    throw new OutsideVaultError(relativePath, vaultRoot);
+  }
+  const realTarget = await resolveExistingAncestor(target);
+  const realRootWithSep = realRoot.endsWith(sep3) ? realRoot : realRoot + sep3;
+  if (realTarget !== realRoot && !realTarget.startsWith(realRootWithSep)) {
+    throw new OutsideVaultError(relativePath, vaultRoot);
+  }
   return target;
+}
+async function resolveExistingAncestor(absPath) {
+  let current = absPath;
+  const trailing = [];
+  while (true) {
+    try {
+      const real = await fs3.realpath(current);
+      return trailing.length === 0 ? real : resolve3(real, ...trailing.reverse());
+    } catch (err) {
+      const code = err?.code;
+      if (code !== "ENOENT" && code !== "ENOTDIR") {
+        throw err;
+      }
+      const parent = dirname(current);
+      if (parent === current) {
+        return absPath;
+      }
+      trailing.push(current.slice(parent.length + 1));
+      current = parent;
+    }
+  }
 }
 var OutsideVaultError;
 var init_fs = __esm({
@@ -2609,7 +2703,7 @@ function applyMerge(data, merge) {
 }
 function computeHash(content, data) {
   const fmForHash = Object.keys(data).length > 0 ? data : {};
-  return sha256(content + JSON.stringify(fmForHash));
+  return computeNoteHash(content, fmForHash);
 }
 function countWords2(content) {
   if (content.length === 0) return 0;
@@ -2643,7 +2737,7 @@ async function updateFrontmatter(input) {
       message: `No indexed note at path: ${relativePath}`
     };
   }
-  const absPath = safeJoinInsideVault(vault.config.path, relativePath);
+  const absPath = await safeJoinInsideVault(vault.config.path, relativePath);
   let raw;
   try {
     raw = await fs4.readFile(absPath, "utf8");
@@ -2692,32 +2786,45 @@ async function updateFrontmatter(input) {
   const title = extractTitle2(content, basenameNoMd(relativePath));
   const wordCount = countWords2(content);
   const fmJson = Object.keys(next).length > 0 ? JSON.stringify(next) : null;
-  const upsert = vault.db.notes.upsertByPath({
-    path: relativePath,
-    content,
-    frontmatter: fmJson,
-    title,
-    hash: newHash,
-    mtime: Math.floor(stat.mtimeMs),
-    wordCount
-  });
   const aliasKeyTouched = "aliases" in merge || "alias" in merge;
-  if (aliasKeyTouched) {
-    vault.db.aliases.setForNote(upsert.id, extractAliases(next));
+  let upsertId;
+  try {
+    upsertId = vault.db.transaction(() => {
+      const up = vault.db.notes.upsertByPath({
+        path: relativePath,
+        content,
+        frontmatter: fmJson,
+        title,
+        hash: newHash,
+        mtime: Math.floor(stat.mtimeMs),
+        wordCount
+      });
+      if (aliasKeyTouched) {
+        vault.db.aliases.setForNote(up.id, extractAliases(next));
+      }
+      vault.db.audit.recordWrite({
+        noteId: up.id,
+        op: "update",
+        previousHash: currentHash,
+        newHash,
+        expectedHash: expectedHash ?? null,
+        clientId: clientId ?? null,
+        diffSummary: JSON.stringify(diff)
+      });
+      return up.id;
+    });
+  } catch (dbErr) {
+    input.onBeforeFsWrite?.();
+    try {
+      await atomicWriteFile(absPath, raw);
+    } catch {
+    }
+    throw dbErr;
   }
-  vault.db.audit.recordWrite({
-    noteId: upsert.id,
-    op: "update",
-    previousHash: currentHash,
-    newHash,
-    expectedHash: expectedHash ?? null,
-    clientId: clientId ?? null,
-    diffSummary: JSON.stringify(diff)
-  });
   return {
     ok: true,
     newHash,
-    noteId: upsert.id,
+    noteId: upsertId,
     diff
   };
 }
@@ -2997,7 +3104,7 @@ function permissionDenied(vaultName) {
   };
 }
 function computeHash2(content, frontmatter) {
-  return sha256(content + JSON.stringify(frontmatter ?? {}));
+  return computeNoteHash(content, frontmatter);
 }
 function extractTitle3(content, relativePath) {
   for (const line of content.split("\n")) {
@@ -3033,7 +3140,7 @@ async function writeNote(input) {
   if (vault.config.write_enabled !== true) {
     return permissionDenied(vault.config.name);
   }
-  const absPath = safeJoinInsideVault(vault.config.path, relativePath);
+  const absPath = await safeJoinInsideVault(vault.config.path, relativePath);
   const existing = await readExistingFile(absPath);
   const created = existing === null;
   if (existing !== null) {
@@ -3069,29 +3176,46 @@ async function writeNote(input) {
   const previousNote = vault.db.notes.getByPath(relativePath);
   const previousHash = previousNote?.hash ?? null;
   const title = extractTitle3(written.content, relativePath);
-  const upsert = vault.db.notes.upsertByPath({
-    path: relativePath,
-    content: written.content,
-    frontmatter: written.frontmatter ? JSON.stringify(written.frontmatter) : null,
-    title,
-    hash: written.hash,
-    mtime: Math.floor(stat.mtimeMs),
-    wordCount: countWords3(written.content)
-  });
-  vault.db.aliases.setForNote(upsert.id, extractAliases(written.frontmatter));
-  vault.db.audit.recordWrite({
-    noteId: upsert.id,
-    op: created ? "create" : "update",
-    previousHash,
-    newHash: written.hash,
-    expectedHash: input.expectedHash ?? null,
-    clientId,
-    diffSummary: null
-  });
+  let upsertId;
+  try {
+    upsertId = vault.db.transaction(() => {
+      const up = vault.db.notes.upsertByPath({
+        path: relativePath,
+        content: written.content,
+        frontmatter: written.frontmatter ? JSON.stringify(written.frontmatter) : null,
+        title,
+        hash: written.hash,
+        mtime: Math.floor(stat.mtimeMs),
+        wordCount: countWords3(written.content)
+      });
+      vault.db.aliases.setForNote(up.id, extractAliases(written.frontmatter));
+      vault.db.audit.recordWrite({
+        noteId: up.id,
+        op: created ? "create" : "update",
+        previousHash,
+        newHash: written.hash,
+        expectedHash: input.expectedHash ?? null,
+        clientId,
+        diffSummary: null
+      });
+      return up.id;
+    });
+  } catch (dbErr) {
+    input.onBeforeFsWrite?.();
+    try {
+      if (created) {
+        await fs5.unlink(absPath);
+      } else if (existing !== null) {
+        await atomicWriteFile(absPath, existing.raw);
+      }
+    } catch {
+    }
+    throw dbErr;
+  }
   return {
     ok: true,
     newHash: written.hash,
-    noteId: upsert.id,
+    noteId: upsertId,
     created
   };
 }
@@ -3101,7 +3225,7 @@ async function deleteNote(input) {
   if (vault.config.write_enabled !== true) {
     return permissionDenied(vault.config.name);
   }
-  const absPath = safeJoinInsideVault(vault.config.path, relativePath);
+  const absPath = await safeJoinInsideVault(vault.config.path, relativePath);
   const existing = await readExistingFile(absPath);
   if (existing === null) {
     return {
@@ -3597,8 +3721,9 @@ async function serve() {
   const defaultModel = config.server.default_embedding_model ?? "qwen3-embedding:0.6b";
   const suppression = new SuppressionSet({ ttlMs: 2e3 });
   const watchers = /* @__PURE__ */ new Map();
-  for (const vault of manager.list()) {
-    if (vault.config.embedding_model || vault.db.models.getActive()) {
+  const startCatchupAndWatchers = async () => {
+    for (const vault of manager.list()) {
+      if (!vault.config.embedding_model && !vault.db.models.getActive()) continue;
       const modelName = vault.config.embedding_model ?? defaultModel;
       try {
         const result = await catchupVault({
@@ -3630,7 +3755,7 @@ async function serve() {
       await watcher.start();
       watchers.set(vault.config.name, watcher);
     }
-  }
+  };
   const shutdown = async () => {
     for (const w of watchers.values()) {
       await w.drain();
@@ -4024,6 +4149,11 @@ async function serve() {
   });
   const transport = new StdioServerTransport();
   await server.connect(transport);
+  startCatchupAndWatchers().catch((err) => {
+    const message = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`[catchup] unexpected failure: ${message}
+`);
+  });
 }
 function handleListVaults(manager) {
   const vaults = manager.list().map((v) => {

@@ -145,15 +145,15 @@ export async function serve(): Promise<void> {
   const suppression = new SuppressionSet({ ttlMs: 2000 });
   const watchers = new Map<string, VaultWatcher>();
 
-  for (const vault of manager.list()) {
-    if (vault.config.embedding_model || vault.db.models.getActive()) {
-      // Only start a watcher if the vault has been indexed at least once
-      // (otherwise we have no active model and indexNote would fail loud).
+  // Codex MEDIUM-3: catch-up reconciliation can take seconds on large vaults
+  // (re-embedding modified notes). We defer it until after MCP `connect()` so
+  // the tool list responds immediately and the LLM doesn't time out waiting
+  // for the handshake. Watchers start per-vault as each catch-up finishes.
+  const startCatchupAndWatchers = async (): Promise<void> => {
+    for (const vault of manager.list()) {
+      if (!vault.config.embedding_model && !vault.db.models.getActive()) continue;
       const modelName = vault.config.embedding_model ?? defaultModel;
 
-      // Catch-up: reconcile any edits that happened while the server was
-      // offline. Cheap path-hash scan, only re-embeds the notes that
-      // actually changed.
       try {
         const result = await catchupVault({
           vault,
@@ -184,7 +184,7 @@ export async function serve(): Promise<void> {
       await watcher.start();
       watchers.set(vault.config.name, watcher);
     }
-  }
+  };
 
   const shutdown = async (): Promise<void> => {
     for (const w of watchers.values()) {
@@ -619,6 +619,15 @@ export async function serve(): Promise<void> {
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
+
+  // Fire-and-forget — the MCP handshake is complete, tools are usable, and
+  // catch-up runs in the background. Errors are already logged inside the
+  // function; we still catch here to satisfy the linter and surface anything
+  // unexpected on stderr.
+  startCatchupAndWatchers().catch((err) => {
+    const message = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`[catchup] unexpected failure: ${message}\n`);
+  });
 }
 
 // ─── Tool handlers ───────────────────────────────────────────────────────────

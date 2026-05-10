@@ -293,37 +293,50 @@ export async function updateFrontmatter(
   const title = extractTitle(content, basenameNoMd(relativePath));
   const wordCount = countWords(content);
   const fmJson = Object.keys(next).length > 0 ? JSON.stringify(next) : null;
-
-  const upsert = vault.db.notes.upsertByPath({
-    path: relativePath,
-    content,
-    frontmatter: fmJson,
-    title,
-    hash: newHash,
-    mtime: Math.floor(stat.mtimeMs),
-    wordCount,
-  });
-
-  // Aliases: re-derive from the new frontmatter and replace in DB.
   const aliasKeyTouched = "aliases" in merge || "alias" in merge;
-  if (aliasKeyTouched) {
-    vault.db.aliases.setForNote(upsert.id, extractAliases(next));
-  }
 
-  vault.db.audit.recordWrite({
-    noteId: upsert.id,
-    op: "update",
-    previousHash: currentHash,
-    newHash,
-    expectedHash: expectedHash ?? null,
-    clientId: clientId ?? null,
-    diffSummary: JSON.stringify(diff),
-  });
+  // Codex MEDIUM-1: atomic DB updates + FS rollback on failure. The note
+  // already exists on disk (we read `raw` above), so rollback restores it.
+  let upsertId: number;
+  try {
+    upsertId = vault.db.transaction(() => {
+      const up = vault.db.notes.upsertByPath({
+        path: relativePath,
+        content,
+        frontmatter: fmJson,
+        title,
+        hash: newHash,
+        mtime: Math.floor(stat.mtimeMs),
+        wordCount,
+      });
+      if (aliasKeyTouched) {
+        vault.db.aliases.setForNote(up.id, extractAliases(next));
+      }
+      vault.db.audit.recordWrite({
+        noteId: up.id,
+        op: "update",
+        previousHash: currentHash,
+        newHash,
+        expectedHash: expectedHash ?? null,
+        clientId: clientId ?? null,
+        diffSummary: JSON.stringify(diff),
+      });
+      return up.id;
+    });
+  } catch (dbErr) {
+    input.onBeforeFsWrite?.();
+    try {
+      await atomicWriteFile(absPath, raw);
+    } catch {
+      // Rollback failed — re-throw original; catch-up will reconcile.
+    }
+    throw dbErr;
+  }
 
   return {
     ok: true,
     newHash,
-    noteId: upsert.id,
+    noteId: upsertId,
     diff,
   };
 }

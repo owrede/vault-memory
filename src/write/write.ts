@@ -198,33 +198,56 @@ export async function writeNote(input: WriteNoteInput): Promise<WriteResult> {
   const previousHash = previousNote?.hash ?? null;
   const title = extractTitle(written.content, relativePath);
 
-  const upsert = vault.db.notes.upsertByPath({
-    path: relativePath,
-    content: written.content,
-    frontmatter: written.frontmatter ? JSON.stringify(written.frontmatter) : null,
-    title,
-    hash: written.hash,
-    mtime: Math.floor(stat.mtimeMs),
-    wordCount: countWords(written.content),
-  });
-
-  // Persist aliases — same logic as the indexer so write+reindex agree.
-  vault.db.aliases.setForNote(upsert.id, extractAliases(written.frontmatter));
-
-  vault.db.audit.recordWrite({
-    noteId: upsert.id,
-    op: created ? "create" : "update",
-    previousHash,
-    newHash: written.hash,
-    expectedHash: input.expectedHash ?? null,
-    clientId,
-    diffSummary: null,
-  });
+  // Codex MEDIUM-1: wrap the three DB writes in a single transaction so they
+  // either all land or none do. If the transaction throws, roll back the FS
+  // write to the pre-write state — either by unlinking a freshly created
+  // file, or restoring the previous on-disk content.
+  let upsertId: number;
+  try {
+    upsertId = vault.db.transaction(() => {
+      const up = vault.db.notes.upsertByPath({
+        path: relativePath,
+        content: written.content,
+        frontmatter: written.frontmatter ? JSON.stringify(written.frontmatter) : null,
+        title,
+        hash: written.hash,
+        mtime: Math.floor(stat.mtimeMs),
+        wordCount: countWords(written.content),
+      });
+      vault.db.aliases.setForNote(up.id, extractAliases(written.frontmatter));
+      vault.db.audit.recordWrite({
+        noteId: up.id,
+        op: created ? "create" : "update",
+        previousHash,
+        newHash: written.hash,
+        expectedHash: input.expectedHash ?? null,
+        clientId,
+        diffSummary: null,
+      });
+      return up.id;
+    });
+  } catch (dbErr) {
+    // Suppress the next watcher event from our rollback write/unlink too —
+    // the watcher would otherwise re-index the rolled-back state and undo
+    // the rollback's intent.
+    input.onBeforeFsWrite?.();
+    try {
+      if (created) {
+        await fs.unlink(absPath);
+      } else if (existing !== null) {
+        await atomicWriteFile(absPath, existing.raw);
+      }
+    } catch {
+      // Rollback failed — leave the divergence visible by re-throwing the
+      // original DB error. Catch-up reconciliation will eventually heal it.
+    }
+    throw dbErr;
+  }
 
   return {
     ok: true,
     newHash: written.hash,
-    noteId: upsert.id,
+    noteId: upsertId,
     created,
   };
 }
