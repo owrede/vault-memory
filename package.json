@@ -26,8 +26,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "tsc --noEmit",
-    "format": "prettier --write \"src/**/*.ts\"",
-    "prepare": "[ -d dist ] || npm run build"
+    "format": "prettier --write \"src/**/*.ts\""
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
