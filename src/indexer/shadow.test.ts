@@ -130,29 +130,17 @@ describe("Phase 7c — shadow indexing via indexVault", () => {
       .get()!.c;
     expect(primaryRow.embedded_chunk_count).toBe(totalChunks);
     expect(secondaryRow.embedded_chunk_count).toBe(totalChunks);
-    // Sanity: vectors landed in dim-specific tables.
-    const c1024 = vault.db.handle
-      .prepare<[], { c: number }>(
-        `SELECT COUNT(*) AS c FROM embeddings_${PRIMARY_DIM} WHERE model_id = ?`,
-      );
-    const c768 = vault.db.handle
-      .prepare<[], { c: number }>(
-        `SELECT COUNT(*) AS c FROM embeddings_${SECONDARY_DIM} WHERE model_id = ?`,
-      );
-    expect(
-      (
-        c1024 as unknown as {
-          get: (id: number) => { c: number };
-        }
-      ).get(primaryRow.id).c,
-    ).toBe(totalChunks);
-    expect(
-      (
-        c768 as unknown as {
-          get: (id: number) => { c: number };
-        }
-      ).get(secondaryRow.id).c,
-    ).toBe(totalChunks);
+    // Sanity: vectors landed in their per-model tables (Phase 7e layout).
+    const primaryTable = `embeddings_m${primaryRow.id}_d${PRIMARY_DIM}`;
+    const secondaryTable = `embeddings_m${secondaryRow.id}_d${SECONDARY_DIM}`;
+    const cPrimary = vault.db.handle
+      .prepare<[], { c: number }>(`SELECT COUNT(*) AS c FROM ${primaryTable}`)
+      .get();
+    const cSecondary = vault.db.handle
+      .prepare<[], { c: number }>(`SELECT COUNT(*) AS c FROM ${secondaryTable}`)
+      .get();
+    expect(cPrimary?.c).toBe(totalChunks);
+    expect(cSecondary?.c).toBe(totalChunks);
   });
 });
 

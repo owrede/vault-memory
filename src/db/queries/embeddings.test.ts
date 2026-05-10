@@ -80,15 +80,19 @@ describe("EmbeddingsQueries — variable dims", () => {
     );
     expect(hits768[0]?.chunkId).toBe(chunks768[2]);
 
-    // Verify the underlying tables really are separate.
+    // Verify the underlying tables really are separate (per-model, post-7e).
     const count1024 = (
       db.handle
-        .prepare<[], { c: number }>("SELECT COUNT(*) AS c FROM embeddings_1024")
+        .prepare<[], { c: number }>(
+          `SELECT COUNT(*) AS c FROM embeddings_m${m1024.id}_d1024`,
+        )
         .get() as { c: number }
     ).c;
     const count768 = (
       db.handle
-        .prepare<[], { c: number }>("SELECT COUNT(*) AS c FROM embeddings_768")
+        .prepare<[], { c: number }>(
+          `SELECT COUNT(*) AS c FROM embeddings_m${m768.id}_d768`,
+        )
         .get() as { c: number }
     ).c;
     expect(count1024).toBe(3);
@@ -140,26 +144,63 @@ describe("EmbeddingsQueries — variable dims", () => {
     db.embeddings.insertBatch([
       { chunkId: c0!, modelId: m384.id, vector: unitAxis(0, 384) },
     ]);
-    // Table was created lazily.
+    // Table was created lazily — per-model naming in v5.
+    const expectedTable = `embeddings_m${m384.id}_d384`;
     const row = db.handle
       .prepare<[string], { name: string }>(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
       )
-      .get("embeddings_384");
-    expect(row?.name).toBe("embeddings_384");
+      .get(expectedTable);
+    expect(row?.name).toBe(expectedTable);
 
     const hits = db.embeddings.searchSemantic(m384.id, unitAxis(0, 384), 5);
     expect(hits.map((h) => h.chunkId)).toEqual([c0]);
   });
+
+  // Regression test for the v0.7.0 bug discovered during eval-v2:
+  // two models with the SAME dim (e.g. qwen3 @ 1024 + bge-m3 @ 1024) embedding
+  // the SAME chunk crashed with "UNIQUE constraint failed on embeddings_1024
+  // primary key". Migration 005 + the `model_id PARTITION KEY` in the vec0
+  // schema allow this case.
+  it("two models with same dim can both embed the same chunk_id (partition key)", () => {
+    const m1 = db.models.upsert({ name: "qwen-test", provider: "ollama", dim: 1024 });
+    const m2 = db.models.upsert({
+      name: "bge-test",
+      provider: "ollama",
+      dim: 1024,
+      active: false,
+    });
+    const [chunkId] = makeNoteWithChunks("dual.md", 1);
+    const v1 = unitAxis(0, 1024);
+    const v2 = unitAxis(1, 1024);
+
+    db.embeddings.insertBatch([
+      { chunkId: chunkId!, modelId: m1.id, vector: v1 },
+      { chunkId: chunkId!, modelId: m2.id, vector: v2 },
+    ]);
+
+    // Each model's search should return the chunk for its own vector but
+    // never see the other model's embedding.
+    const hitsM1 = db.embeddings.searchSemantic(m1.id, v1, 5);
+    expect(hitsM1.map((h) => h.chunkId)).toEqual([chunkId]);
+
+    const hitsM2 = db.embeddings.searchSemantic(m2.id, v2, 5);
+    expect(hitsM2.map((h) => h.chunkId)).toEqual([chunkId]);
+
+    // Cross: query M1 with M2's vector — distance should be larger than
+    // when querying with M1's own vector.
+    const hitsCross = db.embeddings.searchSemantic(m1.id, v2, 5);
+    expect(hitsCross[0]?.distance).toBeGreaterThan(hitsM1[0]!.distance);
+  });
 });
 
-describe("migration 004 — legacy embeddings → embeddings_1024", () => {
-  it("preserves rows from a pre-v4 DB and ends at version 4", () => {
+describe("migration 004→005 — legacy embeddings → per-model tables", () => {
+  it("preserves rows from a pre-v4 DB through migration 005 (per-model layout)", () => {
     // Hand-craft a v3-shaped DB: notes/chunks/models/embeddings with one row,
     // user_version=3 — exactly what an existing v0.6.1 vault looks like.
     const db = new Database(":memory:");
-    // Roll the user_version back to 3 and recreate the legacy table to
-    // simulate a pre-migration DB. (Migrations have already brought it to 4.)
+    // Wipe migration-004 pre-tables; rebuild the legacy v3 table; reset
+    // user_version to 3 so the migration runner replays 4 + 5.
     db.handle.exec("DROP TABLE IF EXISTS embeddings_1024");
     db.handle.exec("DROP TABLE IF EXISTS embeddings_768");
     db.handle.exec(`
@@ -188,32 +229,33 @@ describe("migration 004 — legacy embeddings → embeddings_1024", () => {
 
     // Apply migrations forward.
     db.migrate();
-    expect(db.getSchemaVersion()).toBe(4);
+    expect(db.getSchemaVersion()).toBe(5);
 
-    // Legacy table is gone; embeddings_1024 has the row.
-    const legacy = db.handle
-      .prepare<[string], { name: string }>(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
-      )
-      .get("embeddings");
-    expect(legacy).toBeUndefined();
+    // Both legacy tables are gone:
+    //   - `embeddings`         (v3) — dropped by migration 004
+    //   - `embeddings_1024`    (v4) — dropped by migration 005
+    // and the row was moved into the per-model table.
+    for (const oldName of ["embeddings", "embeddings_1024"]) {
+      const legacy = db.handle
+        .prepare<[string], { name: string }>(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+        )
+        .get(oldName);
+      expect(legacy).toBeUndefined();
+    }
 
+    const newTable = `embeddings_m${model.id}_d1024`;
     const moved = db.handle
-      .prepare<[], { c: number }>("SELECT COUNT(*) AS c FROM embeddings_1024")
+      .prepare<[], { c: number }>(`SELECT COUNT(*) AS c FROM ${newTable}`)
       .get();
     expect(moved?.c).toBe(1);
 
-    // And it's queryable through the EmbeddingsQueries.
-    // (Need to invalidate the cached statements which were prepared against
-    // the test-side schema; easiest is a fresh Database opening the same
-    // SQLite handle is not trivial — so just verify via raw SQL.)
     const row = db.handle
-      .prepare<[bigint], { chunk_id: number; model_id: number }>(
-        "SELECT chunk_id, model_id FROM embeddings_1024 WHERE chunk_id = ?",
+      .prepare<[bigint], { chunk_id: number }>(
+        `SELECT chunk_id FROM ${newTable} WHERE chunk_id = ?`,
       )
       .get(BigInt(chunkId!));
     expect(row?.chunk_id).toBe(chunkId);
-    expect(row?.model_id).toBe(model.id);
 
     db.close();
   });

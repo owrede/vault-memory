@@ -102,7 +102,11 @@ export class Database {
     try {
       const tx = this.handle.transaction(() => {
         for (const m of pending) {
-          this.handle.exec(m.sql);
+          if ("sql" in m) {
+            this.handle.exec(m.sql);
+          } else {
+            m.run(this.handle);
+          }
           highest = m.version;
         }
       });

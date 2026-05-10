@@ -79,8 +79,8 @@ export async function startShadowIndex(
     active: false,
   });
 
-  // The embeddings table for this dim is created lazily by ensureTableForDim.
-  vault.db.embeddings.ensureTableForDim(dim);
+  // The vec0 table for this model is created lazily by ensureTableForModel.
+  vault.db.embeddings.ensureTableForModel(modelRow.id, dim);
 
   // 3. Audit run.
   vault.db.audit.startRun({
@@ -92,21 +92,21 @@ export async function startShadowIndex(
 
   // 4. Find chunks missing the shadow embedding.
   //
-  // The dim-specific table name is interpolated from a validated integer
-  // dim — same pattern as EmbeddingsQueries.ensureTableForDim. Safe.
+  // Phase 7e: each model owns its own vec0 table `embeddings_m<id>_d<dim>`.
+  // The table name is interpolated from validated integers — safe.
+  const embTable = `embeddings_m${modelRow.id}_d${dim}`;
   const pendingSql = `
     SELECT c.id AS id, c.text AS text
     FROM chunks c
-    LEFT JOIN embeddings_${dim} e
-      ON e.chunk_id = c.id AND e.model_id = ?
+    LEFT JOIN ${embTable} e ON e.chunk_id = c.id
     WHERE e.chunk_id IS NULL
     ORDER BY c.id
   `;
   const totalSql = `SELECT COUNT(*) AS c FROM chunks`;
 
   const pending = vault.db.handle
-    .prepare<[number], PendingChunkRow>(pendingSql)
-    .all(modelRow.id);
+    .prepare<[], PendingChunkRow>(pendingSql)
+    .all();
   const totalRow = vault.db.handle
     .prepare<[], { c: number }>(totalSql)
     .get();
@@ -191,18 +191,18 @@ export interface ModelInventoryEntry {
 export function listModels(vault: Vault): ModelInventoryEntry[] {
   const rows = vault.db.models.listAll();
   return rows.map((m) => {
-    // Each dim has its own table; the chunk count is per-(model_id, dim).
+    // Phase 7e: each model owns its own vec0 table — chunk count is COUNT(*).
     let count = 0;
     try {
-      vault.db.embeddings.ensureTableForDim(m.dim);
+      vault.db.embeddings.ensureTableForModel(m.id, m.dim);
       const row = vault.db.handle
-        .prepare<[number], { c: number }>(
-          `SELECT COUNT(*) AS c FROM embeddings_${m.dim} WHERE model_id = ?`,
+        .prepare<[], { c: number }>(
+          `SELECT COUNT(*) AS c FROM embeddings_m${m.id}_d${m.dim}`,
         )
-        .get(m.id);
+        .get();
       count = row?.c ?? 0;
     } catch {
-      // Defensive: if the dim table somehow can't be queried (e.g. corrupt
+      // Defensive: if the table somehow can't be queried (e.g. corrupt
       // schema), surface 0 rather than crashing the listing call.
       count = 0;
     }
@@ -250,17 +250,19 @@ export function switchActiveModel(
     };
   }
 
-  // Completeness check: every chunk must have an embedding under (target.id, target.dim).
-  vault.db.embeddings.ensureTableForDim(target.dim);
+  // Completeness check: every chunk must have an embedding for the target
+  // model's vec0 table. Phase 7e: per-model table eliminates the model_id
+  // join condition — presence in the table is sufficient.
+  vault.db.embeddings.ensureTableForModel(target.id, target.dim);
+  const embTable = `embeddings_m${target.id}_d${target.dim}`;
   const missingRow = vault.db.handle
-    .prepare<[number], { c: number }>(
+    .prepare<[], { c: number }>(
       `SELECT COUNT(*) AS c
        FROM chunks c
-       LEFT JOIN embeddings_${target.dim} e
-         ON e.chunk_id = c.id AND e.model_id = ?
+       LEFT JOIN ${embTable} e ON e.chunk_id = c.id
        WHERE e.chunk_id IS NULL`,
     )
-    .get(target.id);
+    .get();
   const missing = missingRow?.c ?? 0;
 
   if (missing > 0) {

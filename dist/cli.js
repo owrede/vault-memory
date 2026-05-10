@@ -104,6 +104,46 @@ var init_config = __esm({
 });
 
 // src/db/schema.ts
+function runMigration005(db) {
+  const rows = db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'embeddings\\_%' ESCAPE '\\'"
+  ).all();
+  const legacyTables = [];
+  for (const r of rows) {
+    const m = /^embeddings_(\d+)$/.exec(r.name);
+    if (m && m[1]) legacyTables.push({ name: r.name, dim: Number(m[1]) });
+  }
+  for (const { name, dim } of legacyTables) {
+    const rows2 = db.prepare(
+      `SELECT chunk_id, model_id, vector FROM ${name}`
+    ).all();
+    db.exec(`DROP TABLE ${name}`);
+    const byModel = /* @__PURE__ */ new Map();
+    for (const row of rows2) {
+      let bucket = byModel.get(row.model_id);
+      if (!bucket) {
+        bucket = [];
+        byModel.set(row.model_id, bucket);
+      }
+      bucket.push(row);
+    }
+    for (const [modelId, bucket] of byModel) {
+      const newName = `embeddings_m${modelId}_d${dim}`;
+      db.exec(
+        `CREATE VIRTUAL TABLE ${newName} USING vec0(
+           chunk_id INTEGER PRIMARY KEY,
+           vector   FLOAT[${dim}]
+         )`
+      );
+      const insert = db.prepare(
+        `INSERT INTO ${newName} (chunk_id, vector) VALUES (?, ?)`
+      );
+      for (const row of bucket) {
+        insert.run(BigInt(row.chunk_id), row.vector);
+      }
+    }
+  }
+}
 var INITIAL_SCHEMA, MIGRATION_002_ALIASES, MIGRATION_003_FIX_DELETE_FKS, MIGRATION_004_VARIABLE_DIMS, MIGRATIONS;
 var init_schema = __esm({
   "src/db/schema.ts"() {
@@ -316,6 +356,11 @@ DROP TABLE embeddings;
         version: 4,
         description: "variable embedding dimensions (split embeddings table per dim)",
         sql: MIGRATION_004_VARIABLE_DIMS
+      },
+      {
+        version: 5,
+        description: "add partition key on model_id (two models per dim can coexist)",
+        run: runMigration005
       }
     ];
   }
@@ -493,20 +538,26 @@ var init_embeddings = __esm({
       }
       db;
       models;
-      stmtsByDim = /* @__PURE__ */ new Map();
+      stmtsByModel = /* @__PURE__ */ new Map();
+      tableName(modelId, dim) {
+        return `embeddings_m${modelId}_d${dim}`;
+      }
       /**
-       * Ensure an `embeddings_<dim>` virtual table exists for `dim`. Idempotent.
-       * Called lazily on first use of a dim. Tables for the two commonly-used
-       * dims (768, 1024) are also created by migration 004 up front.
+       * Ensure the vec0 table for this model exists. Idempotent. Called lazily
+       * on first use of a model. Tables for an existing pre-v5 dataset are
+       * materialized by migration 005.
        */
-      ensureTableForDim(dim) {
+      ensureTableForModel(modelId, dim) {
+        if (!Number.isInteger(modelId) || modelId <= 0) {
+          throw new Error(`Invalid modelId: ${modelId}`);
+        }
         if (!Number.isInteger(dim) || dim <= 0) {
           throw new Error(`Invalid embedding dim: ${dim}`);
         }
+        const table = this.tableName(modelId, dim);
         this.db.exec(
-          `CREATE VIRTUAL TABLE IF NOT EXISTS embeddings_${dim} USING vec0(
+          `CREATE VIRTUAL TABLE IF NOT EXISTS ${table} USING vec0(
          chunk_id INTEGER PRIMARY KEY,
-         model_id INTEGER NOT NULL,
          vector   FLOAT[${dim}]
        )`
         );
@@ -520,72 +571,68 @@ var init_embeddings = __esm({
         }
         return row.dim;
       }
-      getStmts(dim) {
-        const cached = this.stmtsByDim.get(dim);
+      getStmts(modelId) {
+        const cached = this.stmtsByModel.get(modelId);
         if (cached) return cached;
-        this.ensureTableForDim(dim);
-        const table = `embeddings_${dim}`;
+        const dim = this.dimForModel(modelId);
+        this.ensureTableForModel(modelId, dim);
+        const table = this.tableName(modelId, dim);
         const stmts = {
           insert: this.db.prepare(
-            `INSERT INTO ${table} (chunk_id, model_id, vector) VALUES (?, ?, ?)`
+            `INSERT INTO ${table} (chunk_id, vector) VALUES (?, ?)`
           ),
           deleteByChunk: this.db.prepare(
             `DELETE FROM ${table} WHERE chunk_id = ?`
           ),
-          deleteByModel: this.db.prepare(
-            `DELETE FROM ${table} WHERE model_id = ?`
-          ),
+          deleteAll: this.db.prepare(`DELETE FROM ${table}`),
           search: this.db.prepare(
             `SELECT chunk_id, distance
          FROM ${table}
-         WHERE model_id = ? AND vector MATCH ? AND k = ?
+         WHERE vector MATCH ? AND k = ?
          ORDER BY distance`
           )
         };
-        this.stmtsByDim.set(dim, stmts);
+        this.stmtsByModel.set(modelId, stmts);
         return stmts;
       }
       insertBatch(items) {
         if (items.length === 0) return;
-        const byDim = /* @__PURE__ */ new Map();
+        const byModel = /* @__PURE__ */ new Map();
         for (const x of items) {
-          const dim = this.dimForModel(x.modelId);
-          let bucket = byDim.get(dim);
+          let bucket = byModel.get(x.modelId);
           if (!bucket) {
             bucket = [];
-            byDim.set(dim, bucket);
+            byModel.set(x.modelId, bucket);
           }
           bucket.push(x);
         }
         const tx = this.db.transaction(() => {
-          for (const [dim, xs] of byDim) {
-            const stmts = this.getStmts(dim);
+          for (const [modelId, xs] of byModel) {
+            const stmts = this.getStmts(modelId);
             for (const x of xs) {
-              stmts.insert.run(
-                BigInt(x.chunkId),
-                BigInt(x.modelId),
-                serializeVector(x.vector)
-              );
+              stmts.insert.run(BigInt(x.chunkId), serializeVector(x.vector));
             }
           }
         });
         tx();
       }
       /**
-       * Delete embeddings for a chunk. Without a known model context, we walk
-       * every known dim — chunk_ids are globally unique across dim tables so
-       * this is safe and idempotent. Used by note-deletion cascade.
+       * Delete embeddings for a chunk across every registered model — the
+       * caller doesn't track which models embedded the chunk.
        */
       deleteByChunk(chunkId) {
-        for (const dim of this.knownDims()) {
-          const stmts = this.getStmts(dim);
+        for (const modelId of this.registeredModelIds()) {
+          const stmts = this.getStmts(modelId);
           stmts.deleteByChunk.run(BigInt(chunkId));
         }
       }
+      /**
+       * Wipe every embedding row for the given model. Cheap because each
+       * model owns its own table — equivalent to `DELETE FROM table`.
+       */
       deleteByModel(modelId) {
-        const dim = this.dimForModel(modelId);
-        const stmts = this.getStmts(dim);
-        stmts.deleteByModel.run(BigInt(modelId));
+        const stmts = this.getStmts(modelId);
+        stmts.deleteAll.run();
       }
       searchSemantic(modelId, queryVector, topK) {
         const dim = this.dimForModel(modelId);
@@ -594,31 +641,17 @@ var init_embeddings = __esm({
             `searchSemantic: query vector length ${queryVector.length} does not match model ${modelId} dim ${dim}`
           );
         }
-        const stmts = this.getStmts(dim);
-        const rows = stmts.search.all(
-          // model_id is INTEGER metadata — same BigInt requirement as insert.
-          BigInt(modelId),
-          serializeVector(queryVector),
-          topK
-        );
+        const stmts = this.getStmts(modelId);
+        const rows = stmts.search.all(serializeVector(queryVector), topK);
         return rows.map((r) => ({ chunkId: r.chunk_id, distance: r.distance }));
       }
       /**
-       * Discover every `embeddings_<dim>` table currently in the schema. Used
-       * by deleteByChunk where the caller doesn't know which dim the chunk
-       * lives under.
+       * Every model_id with a materialized embeddings table. Read from the
+       * model registry — every model that has ever been inserted-into has
+       * its table created via `ensureTableForModel`.
        */
-      knownDims() {
-        const rows = this.db.prepare(
-          `SELECT name FROM sqlite_master
-         WHERE type = 'table' AND name LIKE 'embeddings\\_%' ESCAPE '\\'`
-        ).all();
-        const dims = [];
-        for (const r of rows) {
-          const m = /^embeddings_(\d+)$/.exec(r.name);
-          if (m && m[1]) dims.push(Number(m[1]));
-        }
-        return dims;
+      registeredModelIds() {
+        return this.models.listAll().map((m) => m.id);
       }
     };
   }
@@ -1139,7 +1172,11 @@ var init_database = __esm({
         try {
           const tx = this.handle.transaction(() => {
             for (const m of pending) {
-              this.handle.exec(m.sql);
+              if ("sql" in m) {
+                this.handle.exec(m.sql);
+              } else {
+                m.run(this.handle);
+              }
               highest = m.version;
             }
           });
@@ -3427,23 +3464,23 @@ async function startShadowIndex(options) {
     dim,
     active: false
   });
-  vault.db.embeddings.ensureTableForDim(dim);
+  vault.db.embeddings.ensureTableForModel(modelRow.id, dim);
   vault.db.audit.startRun({
     runId,
     vaultName: vault.config.name,
     modelId: modelRow.id,
     trigger: "shadow"
   });
+  const embTable = `embeddings_m${modelRow.id}_d${dim}`;
   const pendingSql = `
     SELECT c.id AS id, c.text AS text
     FROM chunks c
-    LEFT JOIN embeddings_${dim} e
-      ON e.chunk_id = c.id AND e.model_id = ?
+    LEFT JOIN ${embTable} e ON e.chunk_id = c.id
     WHERE e.chunk_id IS NULL
     ORDER BY c.id
   `;
   const totalSql = `SELECT COUNT(*) AS c FROM chunks`;
-  const pending = vault.db.handle.prepare(pendingSql).all(modelRow.id);
+  const pending = vault.db.handle.prepare(pendingSql).all();
   const totalRow = vault.db.handle.prepare(totalSql).get();
   const chunksTotal = totalRow?.c ?? 0;
   const chunksSkipped = chunksTotal - pending.length;
@@ -3508,10 +3545,10 @@ function listModels(vault) {
   return rows.map((m) => {
     let count = 0;
     try {
-      vault.db.embeddings.ensureTableForDim(m.dim);
+      vault.db.embeddings.ensureTableForModel(m.id, m.dim);
       const row = vault.db.handle.prepare(
-        `SELECT COUNT(*) AS c FROM embeddings_${m.dim} WHERE model_id = ?`
-      ).get(m.id);
+        `SELECT COUNT(*) AS c FROM embeddings_m${m.id}_d${m.dim}`
+      ).get();
       count = row?.c ?? 0;
     } catch {
       count = 0;
@@ -3540,14 +3577,14 @@ function switchActiveModel(vault, targetModelName) {
       switched_to: target.name
     };
   }
-  vault.db.embeddings.ensureTableForDim(target.dim);
+  vault.db.embeddings.ensureTableForModel(target.id, target.dim);
+  const embTable = `embeddings_m${target.id}_d${target.dim}`;
   const missingRow = vault.db.handle.prepare(
     `SELECT COUNT(*) AS c
        FROM chunks c
-       LEFT JOIN embeddings_${target.dim} e
-         ON e.chunk_id = c.id AND e.model_id = ?
+       LEFT JOIN ${embTable} e ON e.chunk_id = c.id
        WHERE e.chunk_id IS NULL`
-  ).get(target.id);
+  ).get();
   const missing = missingRow?.c ?? 0;
   if (missing > 0) {
     return {
@@ -4923,7 +4960,7 @@ var init_server = __esm({
     init_audit3();
     init_watcher2();
     init_indexer2();
-    VERSION = "0.7.0";
+    VERSION = "0.7.1";
     ReadNoteArgs = z3.object({
       vault: z3.string(),
       path: z3.string()

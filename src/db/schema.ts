@@ -10,11 +10,23 @@
  * in order, then sets PRAGMA user_version to the highest version applied.
  */
 
-export interface Migration {
-  version: number;
-  description: string;
-  sql: string;
-}
+/**
+ * A migration either ships static SQL or a function that runs imperative
+ * steps against the DB. Function-style migrations are used when the steps
+ * depend on the current schema state (e.g. discover all `embeddings_<dim>`
+ * tables and rebuild each).
+ */
+export type Migration =
+  | {
+      version: number;
+      description: string;
+      sql: string;
+    }
+  | {
+      version: number;
+      description: string;
+      run: (db: BetterSqlite3Database) => void;
+    };
 
 /** Section 3 of the spec — full initial schema. */
 export const INITIAL_SCHEMA: string = `
@@ -262,6 +274,91 @@ INSERT INTO embeddings_1024 (chunk_id, model_id, vector)
 DROP TABLE embeddings;
 `;
 
+/**
+ * Migration 005 — add `partition key` on `model_id` so two embedding models
+ * with the same dim (e.g. qwen3 @ 1024 + bge-m3 @ 1024) can coexist for the
+ * same chunks. Discovered as a bug during the Phase 7e eval run.
+ *
+ * sqlite-vec vec0 tables do not support ALTER COLUMN, so the only path is
+ * rebuild-and-copy:
+ *   1) For every existing `embeddings_<dim>` table:
+ *      a) Rename to `embeddings_<dim>__old`.
+ *      b) Create new `embeddings_<dim>` with `model_id partition key`.
+ *      c) Copy all rows back. The partition column accepts ordinary inserts.
+ *      d) Drop the `__old` table.
+ *
+ * We can't write this as a single static SQL string because the set of
+ * dim-tables in any given DB is data-dependent (768 only exists if someone
+ * registered a 768-dim model). The runner therefore calls a function-style
+ * migration: see `Migration.run()` below.
+ */
+function runMigration005(db: BetterSqlite3Database): void {
+  // Phase 7e bugfix: split per-dim tables into per-model tables so two models
+  // with the same dim (e.g. qwen3 + bge-m3, both 1024) can coexist for the
+  // same chunk_ids. New naming: `embeddings_m<modelId>_d<dim>`.
+  //
+  // The earlier partition-key approach was a dead end — sqlite-vec's
+  // `partition key` is an internal index hint, NOT a composite PK; chunk_id
+  // remains globally unique inside a vec0 table.
+  //
+  // Migration steps per legacy `embeddings_<dim>` table:
+  //   1) Read all rows (grouped by model_id).
+  //   2) DROP the legacy table.
+  //   3) For each model_id with rows, CREATE `embeddings_m<modelId>_d<dim>`
+  //      and copy that model's rows back.
+  const rows = db
+    .prepare<[], { name: string }>(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'embeddings\\_%' ESCAPE '\\'",
+    )
+    .all();
+  const legacyTables: { name: string; dim: number }[] = [];
+  for (const r of rows) {
+    // Match only the OLD per-dim shape (`embeddings_<dim>`), not anything
+    // already in the new shape.
+    const m = /^embeddings_(\d+)$/.exec(r.name);
+    if (m && m[1]) legacyTables.push({ name: r.name, dim: Number(m[1]) });
+  }
+
+  for (const { name, dim } of legacyTables) {
+    const rows = db
+      .prepare<[], { chunk_id: number; model_id: number; vector: Buffer }>(
+        `SELECT chunk_id, model_id, vector FROM ${name}`,
+      )
+      .all();
+
+    db.exec(`DROP TABLE ${name}`);
+
+    // Group rows by model_id so we materialise one new table per model.
+    const byModel = new Map<number, typeof rows>();
+    for (const row of rows) {
+      let bucket = byModel.get(row.model_id);
+      if (!bucket) {
+        bucket = [];
+        byModel.set(row.model_id, bucket);
+      }
+      bucket.push(row);
+    }
+
+    for (const [modelId, bucket] of byModel) {
+      const newName = `embeddings_m${modelId}_d${dim}`;
+      db.exec(
+        `CREATE VIRTUAL TABLE ${newName} USING vec0(
+           chunk_id INTEGER PRIMARY KEY,
+           vector   FLOAT[${dim}]
+         )`,
+      );
+      const insert = db.prepare(
+        `INSERT INTO ${newName} (chunk_id, vector) VALUES (?, ?)`,
+      );
+      for (const row of bucket) {
+        insert.run(BigInt(row.chunk_id), row.vector);
+      }
+    }
+  }
+}
+
+type BetterSqlite3Database = import("better-sqlite3").Database;
+
 export const MIGRATIONS: readonly Migration[] = [
   {
     version: 1,
@@ -282,5 +379,11 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 4,
     description: "variable embedding dimensions (split embeddings table per dim)",
     sql: MIGRATION_004_VARIABLE_DIMS,
+  },
+  {
+    version: 5,
+    description:
+      "add partition key on model_id (two models per dim can coexist)",
+    run: runMigration005,
   },
 ];

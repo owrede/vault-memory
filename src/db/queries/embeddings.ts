@@ -13,57 +13,65 @@ export interface SemanticHit {
   distance: number;
 }
 
-interface DimStatements {
+interface ModelStatements {
   insert: BetterSqlite3.Statement;
   deleteByChunk: BetterSqlite3.Statement<[bigint]>;
-  deleteByModel: BetterSqlite3.Statement<[bigint]>;
+  deleteAll: BetterSqlite3.Statement;
   search: BetterSqlite3.Statement<
-    [bigint, string, number],
+    [string, number],
     { chunk_id: number; distance: number }
   >;
 }
 
 /**
- * sqlite-vec embedding store with variable-dimension routing.
+ * sqlite-vec embedding store with one vec0 table per (modelId, dim).
  *
  * Distance metric: vec0 with `FLOAT[N]` uses L2 (Euclidean) distance by
  * default. For cosine similarity, normalize vectors to unit length before
  * insert and at query time — L2 on unit vectors is monotonically equivalent
  * to cosine distance.
  *
- * Multi-dim routing (Phase 7b): a single vec0 virtual table is fixed to one
- * dimension at creation time. To support multiple embedding models with
- * different output dims (e.g. qwen3 @ 1024 + embeddinggemma @ 768) in the
- * same vault DB, we maintain one table per dim — `embeddings_<dim>` —
- * and route every operation via the model's registered `dim` (from the
- * `models` table). Prepared statements are cached per dim.
+ * Layout history:
+ *   - v1..v3: one global `embeddings(FLOAT[1024])` table.
+ *   - v4 (Phase 7b): per-dim tables `embeddings_<dim>` so two models with
+ *     DIFFERENT dims could coexist.
+ *   - v5 (Phase 7e bugfix): per-MODEL tables `embeddings_m<modelId>_d<dim>`
+ *     so two models with the SAME dim (e.g. qwen3 + bge-m3, both 1024)
+ *     can ALSO coexist. The earlier `partition key` attempt turned out
+ *     not to give us a composite primary key.
  *
- * The caller always passes a `modelId`; the dim is never inferred from the
- * vector length (no silent defaults) — if the model is unknown the call
- * throws.
+ * The caller always passes a `modelId`; the dim is looked up from the
+ * `models` table — never inferred from the vector length. Unknown model
+ * throws (no silent defaults).
  */
 export class EmbeddingsQueries {
-  private readonly stmtsByDim = new Map<number, DimStatements>();
+  private readonly stmtsByModel = new Map<number, ModelStatements>();
 
   constructor(
     private readonly db: BetterSqlite3.Database,
     private readonly models: ModelsQueries,
   ) {}
 
+  private tableName(modelId: number, dim: number): string {
+    return `embeddings_m${modelId}_d${dim}`;
+  }
+
   /**
-   * Ensure an `embeddings_<dim>` virtual table exists for `dim`. Idempotent.
-   * Called lazily on first use of a dim. Tables for the two commonly-used
-   * dims (768, 1024) are also created by migration 004 up front.
+   * Ensure the vec0 table for this model exists. Idempotent. Called lazily
+   * on first use of a model. Tables for an existing pre-v5 dataset are
+   * materialized by migration 005.
    */
-  ensureTableForDim(dim: number): void {
+  ensureTableForModel(modelId: number, dim: number): void {
+    if (!Number.isInteger(modelId) || modelId <= 0) {
+      throw new Error(`Invalid modelId: ${modelId}`);
+    }
     if (!Number.isInteger(dim) || dim <= 0) {
       throw new Error(`Invalid embedding dim: ${dim}`);
     }
-    // Schema name is derived from a validated integer — safe to interpolate.
+    const table = this.tableName(modelId, dim);
     this.db.exec(
-      `CREATE VIRTUAL TABLE IF NOT EXISTS embeddings_${dim} USING vec0(
+      `CREATE VIRTUAL TABLE IF NOT EXISTS ${table} USING vec0(
          chunk_id INTEGER PRIMARY KEY,
-         model_id INTEGER NOT NULL,
          vector   FLOAT[${dim}]
        )`,
     );
@@ -79,64 +87,56 @@ export class EmbeddingsQueries {
     return row.dim;
   }
 
-  private getStmts(dim: number): DimStatements {
-    const cached = this.stmtsByDim.get(dim);
+  private getStmts(modelId: number): ModelStatements {
+    const cached = this.stmtsByModel.get(modelId);
     if (cached) return cached;
 
-    this.ensureTableForDim(dim);
-    const table = `embeddings_${dim}`;
-    const stmts: DimStatements = {
+    const dim = this.dimForModel(modelId);
+    this.ensureTableForModel(modelId, dim);
+    const table = this.tableName(modelId, dim);
+    const stmts: ModelStatements = {
       insert: this.db.prepare(
-        `INSERT INTO ${table} (chunk_id, model_id, vector) VALUES (?, ?, ?)`,
+        `INSERT INTO ${table} (chunk_id, vector) VALUES (?, ?)`,
       ),
       deleteByChunk: this.db.prepare(
         `DELETE FROM ${table} WHERE chunk_id = ?`,
       ),
-      deleteByModel: this.db.prepare(
-        `DELETE FROM ${table} WHERE model_id = ?`,
-      ),
+      deleteAll: this.db.prepare(`DELETE FROM ${table}`),
       search: this.db.prepare<
-        [bigint, string, number],
+        [string, number],
         { chunk_id: number; distance: number }
       >(
         `SELECT chunk_id, distance
          FROM ${table}
-         WHERE model_id = ? AND vector MATCH ? AND k = ?
+         WHERE vector MATCH ? AND k = ?
          ORDER BY distance`,
       ),
     };
-    this.stmtsByDim.set(dim, stmts);
+    this.stmtsByModel.set(modelId, stmts);
     return stmts;
   }
 
   insertBatch(items: EmbeddingInput[]): void {
     if (items.length === 0) return;
 
-    // Group by model_id → dim. The vast majority of real calls are
-    // single-model, so the common path is a single dim group.
-    const byDim = new Map<number, EmbeddingInput[]>();
+    // Group by model_id so each batch hits one prepared statement.
+    const byModel = new Map<number, EmbeddingInput[]>();
     for (const x of items) {
-      const dim = this.dimForModel(x.modelId);
-      let bucket = byDim.get(dim);
+      let bucket = byModel.get(x.modelId);
       if (!bucket) {
         bucket = [];
-        byDim.set(dim, bucket);
+        byModel.set(x.modelId, bucket);
       }
       bucket.push(x);
     }
 
     const tx = this.db.transaction(() => {
-      for (const [dim, xs] of byDim) {
-        const stmts = this.getStmts(dim);
+      for (const [modelId, xs] of byModel) {
+        const stmts = this.getStmts(modelId);
         for (const x of xs) {
-          // sqlite-vec vec0 metadata columns typed INTEGER are strict — JS
-          // numbers bind as REAL via better-sqlite3 and get rejected with
-          // "Only integers are allowed...". BigInt forces SQLite INTEGER.
-          stmts.insert.run(
-            BigInt(x.chunkId),
-            BigInt(x.modelId),
-            serializeVector(x.vector),
-          );
+          // sqlite-vec vec0 INTEGER PK is strict — BigInt forces SQLite
+          // INTEGER instead of REAL.
+          stmts.insert.run(BigInt(x.chunkId), serializeVector(x.vector));
         }
       }
     });
@@ -144,21 +144,23 @@ export class EmbeddingsQueries {
   }
 
   /**
-   * Delete embeddings for a chunk. Without a known model context, we walk
-   * every known dim — chunk_ids are globally unique across dim tables so
-   * this is safe and idempotent. Used by note-deletion cascade.
+   * Delete embeddings for a chunk across every registered model — the
+   * caller doesn't track which models embedded the chunk.
    */
   deleteByChunk(chunkId: number): void {
-    for (const dim of this.knownDims()) {
-      const stmts = this.getStmts(dim);
+    for (const modelId of this.registeredModelIds()) {
+      const stmts = this.getStmts(modelId);
       stmts.deleteByChunk.run(BigInt(chunkId));
     }
   }
 
+  /**
+   * Wipe every embedding row for the given model. Cheap because each
+   * model owns its own table — equivalent to `DELETE FROM table`.
+   */
   deleteByModel(modelId: number): void {
-    const dim = this.dimForModel(modelId);
-    const stmts = this.getStmts(dim);
-    stmts.deleteByModel.run(BigInt(modelId));
+    const stmts = this.getStmts(modelId);
+    stmts.deleteAll.run();
   }
 
   searchSemantic(
@@ -173,34 +175,18 @@ export class EmbeddingsQueries {
           `does not match model ${modelId} dim ${dim}`,
       );
     }
-    const stmts = this.getStmts(dim);
-    const rows = stmts.search.all(
-      // model_id is INTEGER metadata — same BigInt requirement as insert.
-      BigInt(modelId),
-      serializeVector(queryVector),
-      topK,
-    );
+    const stmts = this.getStmts(modelId);
+    const rows = stmts.search.all(serializeVector(queryVector), topK);
     return rows.map((r) => ({ chunkId: r.chunk_id, distance: r.distance }));
   }
 
   /**
-   * Discover every `embeddings_<dim>` table currently in the schema. Used
-   * by deleteByChunk where the caller doesn't know which dim the chunk
-   * lives under.
+   * Every model_id with a materialized embeddings table. Read from the
+   * model registry — every model that has ever been inserted-into has
+   * its table created via `ensureTableForModel`.
    */
-  private knownDims(): number[] {
-    const rows = this.db
-      .prepare<[], { name: string }>(
-        `SELECT name FROM sqlite_master
-         WHERE type = 'table' AND name LIKE 'embeddings\\_%' ESCAPE '\\'`,
-      )
-      .all();
-    const dims: number[] = [];
-    for (const r of rows) {
-      const m = /^embeddings_(\d+)$/.exec(r.name);
-      if (m && m[1]) dims.push(Number(m[1]));
-    }
-    return dims;
+  private registeredModelIds(): number[] {
+    return this.models.listAll().map((m) => m.id);
   }
 }
 
