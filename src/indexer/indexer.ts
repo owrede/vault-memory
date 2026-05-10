@@ -119,6 +119,11 @@ export async function indexVault(
         wordCount: parsed.wordCount,
       });
 
+      // Persist aliases from frontmatter. We do this every run (not just on
+      // reindex) so alias-only frontmatter edits propagate even when the body
+      // is unchanged. The set is idempotent: setForNote does delete+insert.
+      vault.db.aliases.setForNote(upsert.id, extractAliases(parsed.frontmatter));
+
       const noteExisted = !upsert.isNew;
       const existing = noteExisted ? vault.db.notes.getById(upsert.id) : null;
       // After upsert the DB row reflects the new state; we need to know if the hash
@@ -201,6 +206,30 @@ export async function indexVault(
       }
     }
 
+    // 7. Second-pass wikilink resolution.
+    //
+    // The first pass resolved wikilinks while notes were being inserted in
+    // arbitrary order — so any link to a note that hadn't been inserted yet,
+    // or any link via an alias whose owner hadn't been processed yet, was
+    // marked unresolved. Now that the full notes + aliases tables exist, we
+    // re-resolve broken links once. This converts "transient broken" links
+    // (resolution-order artifact) into proper edges without re-parsing files.
+    log("Resolving deferred wikilinks (second pass)");
+    const broken = vault.db.wikilinks.resolveBrokenLinks();
+    let resolved = 0;
+    const updateStmt = vault.db.handle.prepare(
+      `UPDATE wikilinks SET target_note = ?
+       WHERE source_note = ? AND target_path = ? AND target_note IS NULL`,
+    );
+    for (const link of broken) {
+      const hit = resolveWikilinkTarget(vault, link.targetPath);
+      if (hit) {
+        updateStmt.run(hit.id, link.sourceNoteId, link.targetPath);
+        resolved++;
+      }
+    }
+    if (resolved > 0) log(`Second pass resolved ${resolved} wikilinks`);
+
     vault.db.audit.finishRun(runId, {
       notesIndexed,
       chunksCreated,
@@ -260,11 +289,12 @@ function insertWikilinks(
 }
 
 /**
- * Resolve a wikilink target the way Obsidian does:
- * 1) exact relative path match (with or without .md)
- * 2) filename-only match anywhere in the vault — shortest path wins
+ * Resolve a wikilink target the way Obsidian does, in priority order:
+ *   1) exact relative path match (with or without .md)
+ *   2) filename-only match anywhere in the vault — shortest path wins
+ *   3) alias match — looks up note_aliases (case-insensitive)
  *
- * Returns null if no candidate exists (broken link).
+ * Returns null if no candidate exists (true broken link).
  */
 function resolveWikilinkTarget(
   vault: Vault,
@@ -289,9 +319,36 @@ function resolveWikilinkTarget(
     const suffix = `%/${filename}`;
     const hit = stmt.get(filename, suffix);
     if (hit) return hit;
+
+    // Last resort: alias lookup. Only for slash-less targets — aliases
+    // never contain slashes by convention.
+    const aliasHit = vault.db.aliases.resolve(normalizedTarget);
+    if (aliasHit) {
+      return { id: aliasHit.note_id, path: aliasHit.path };
+    }
   }
 
   return null;
+}
+
+/**
+ * Extract aliases from a parsed frontmatter object. Accepts the two common
+ * shapes Obsidian writes:
+ *   aliases: ["OWR", "Oliver"]
+ *   alias:   "OWR"          (singular form, sometimes used)
+ *   aliases: "OWR"          (string fallback)
+ *
+ * Anything else (numbers, objects) is ignored.
+ */
+function extractAliases(frontmatter: Record<string, unknown> | null): string[] {
+  if (!frontmatter) return [];
+  const raw = frontmatter["aliases"] ?? frontmatter["alias"];
+  if (raw == null) return [];
+  if (typeof raw === "string") return [raw];
+  if (Array.isArray(raw)) {
+    return raw.filter((v): v is string => typeof v === "string");
+  }
+  return [];
 }
 
 function relativize(absPath: string, vaultRoot: string): string {

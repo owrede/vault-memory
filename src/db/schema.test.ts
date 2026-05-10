@@ -13,14 +13,14 @@ describe("schema", () => {
     db.close();
   });
 
-  it("sets user_version to 1 after initial migration", () => {
-    expect(db.getSchemaVersion()).toBe(1);
+  it("sets user_version to the latest migration version", () => {
+    expect(db.getSchemaVersion()).toBe(2);
   });
 
   it("migrate is idempotent", () => {
     db.migrate();
     db.migrate();
-    expect(db.getSchemaVersion()).toBe(1);
+    expect(db.getSchemaVersion()).toBe(2);
   });
 
   it.each([
@@ -30,6 +30,7 @@ describe("schema", () => {
     "wikilinks",
     "index_runs",
     "write_audit",
+    "note_aliases",
   ])("creates table %s with columns", (table) => {
     const rows = db.handle.pragma(`table_info(${table})`) as Array<{
       name: string;

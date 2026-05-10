@@ -33,3 +33,6 @@ export type { UpsertModelInput } from "./queries/models.js";
 
 export { FtsQueries } from "./queries/fts.js";
 export type { BM25Hit } from "./queries/fts.js";
+
+export { AliasesQueries } from "./queries/aliases.js";
+export type { AliasResolveHit } from "./queries/aliases.js";

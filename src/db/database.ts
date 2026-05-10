@@ -9,6 +9,7 @@ import { WikilinksQueries } from "./queries/wikilinks.js";
 import { AuditQueries } from "./queries/audit.js";
 import { ModelsQueries } from "./queries/models.js";
 import { FtsQueries } from "./queries/fts.js";
+import { AliasesQueries } from "./queries/aliases.js";
 
 /**
  * SQLite wrapper for a single vault.
@@ -28,6 +29,7 @@ export class Database {
   readonly audit: AuditQueries;
   readonly models: ModelsQueries;
   readonly fts: FtsQueries;
+  readonly aliases: AliasesQueries;
 
   constructor(dbPath: string) {
     this.handle = new BetterSqlite3(dbPath);
@@ -51,6 +53,7 @@ export class Database {
     this.audit = new AuditQueries(this.handle);
     this.models = new ModelsQueries(this.handle);
     this.fts = new FtsQueries(this.handle);
+    this.aliases = new AliasesQueries(this.handle);
   }
 
   static async open(dbPath: string): Promise<Database> {

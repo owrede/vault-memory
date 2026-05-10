@@ -129,10 +129,36 @@ CREATE TABLE IF NOT EXISTS write_audit (
 CREATE INDEX IF NOT EXISTS idx_write_audit_note ON write_audit(note_id);
 `;
 
+/**
+ * Migration 002 — note_aliases table.
+ *
+ * Obsidian notes can declare `aliases: ["short", "another"]` in frontmatter.
+ * A wikilink `[[short]]` should resolve to that note. We index aliases
+ * separately so the wikilink resolver can do a fast lookup without
+ * re-parsing every note's frontmatter.
+ */
+const MIGRATION_002_ALIASES = `
+CREATE TABLE IF NOT EXISTS note_aliases (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  note_id   INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+  alias     TEXT NOT NULL,
+  /* Aliases are case-insensitive matched in practice; we store original
+     case for display but enforce a normalized key as UNIQUE per note. */
+  alias_norm TEXT NOT NULL,
+  UNIQUE (note_id, alias_norm)
+);
+CREATE INDEX IF NOT EXISTS idx_note_aliases_norm ON note_aliases(alias_norm);
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   {
     version: 1,
     description: "initial schema",
     sql: INITIAL_SCHEMA,
+  },
+  {
+    version: 2,
+    description: "note aliases for wikilink resolution",
+    sql: MIGRATION_002_ALIASES,
   },
 ];
