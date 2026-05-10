@@ -14,6 +14,7 @@ import { chunkNote } from "../chunker/index.js";
 import { OllamaClient } from "../ollama/index.js";
 import type { Vault } from "../vault/index.js";
 import type { ParsedNote, ParsedWikilink } from "../types.js";
+import { WikilinkResolver } from "./resolver.js";
 
 export interface IndexerOptions {
   mode?: "full" | "incremental";
@@ -81,6 +82,12 @@ export async function indexVault(
   let notesUpdated = 0;
   let notesDeleted = 0;
   let chunksCreated = 0;
+
+  // Per-run resolver: prepared statements reused, results memoised.
+  // First pass uses this. Second pass (after all notes are inserted) uses
+  // a fresh instance so newly-visible notes aren't masked by stale "null"
+  // cache entries from the first pass.
+  const firstPassResolver = new WikilinkResolver(vault);
 
   try {
     // 2. Full mode: clear derived layer
@@ -191,7 +198,7 @@ export async function indexVault(
       vault.db.embeddings.insertBatch(embeddingInputs);
 
       // Wikilinks
-      insertWikilinks(vault, noteId, parsed.wikilinks);
+      insertWikilinks(vault, noteId, parsed.wikilinks, firstPassResolver);
 
       chunksCreated += chunks.length;
     }
@@ -221,8 +228,11 @@ export async function indexVault(
       `UPDATE wikilinks SET target_note = ?
        WHERE source_note = ? AND target_path = ? AND target_note IS NULL`,
     );
+    // Fresh resolver for the second pass — the notes table is now complete,
+    // so first-pass "null" cache entries would mask newly-resolvable links.
+    const secondPassResolver = new WikilinkResolver(vault);
     for (const link of broken) {
-      const hit = resolveWikilinkTarget(vault, link.targetPath);
+      const hit = secondPassResolver.resolve(link.targetPath);
       if (hit) {
         updateStmt.run(hit.id, link.sourceNoteId, link.targetPath);
         resolved++;
@@ -272,11 +282,13 @@ function insertWikilinks(
   vault: Vault,
   sourceNoteId: number,
   wikilinks: ParsedWikilink[],
+  resolver?: WikilinkResolver,
 ): void {
   if (wikilinks.length === 0) return;
 
+  const r = resolver ?? new WikilinkResolver(vault);
   const inputs = wikilinks.map((wl) => {
-    const target = resolveWikilinkTarget(vault, wl.normalizedTarget);
+    const target = r.resolve(wl.normalizedTarget);
     return {
       targetPath: wl.normalizedTarget,
       targetNoteId: target?.id ?? null,
@@ -300,35 +312,10 @@ export function resolveWikilinkTarget(
   vault: Vault,
   normalizedTarget: string,
 ): { id: number; path: string } | null {
-  // Try exact relative path (with .md, then without)
-  const exact =
-    vault.db.notes.getByPath(`${normalizedTarget}.md`) ??
-    vault.db.notes.getByPath(normalizedTarget);
-  if (exact) return exact;
-
-  // If target has no slash, it's a filename-only reference — search all notes.
-  if (!normalizedTarget.includes("/")) {
-    const stmt = vault.db.handle.prepare<[string, string], { id: number; path: string }>(
-      `SELECT id, path FROM notes
-       WHERE path = ?
-          OR path LIKE ?
-       ORDER BY length(path) ASC
-       LIMIT 1`,
-    );
-    const filename = `${normalizedTarget}.md`;
-    const suffix = `%/${filename}`;
-    const hit = stmt.get(filename, suffix);
-    if (hit) return hit;
-
-    // Last resort: alias lookup. Only for slash-less targets — aliases
-    // never contain slashes by convention.
-    const aliasHit = vault.db.aliases.resolve(normalizedTarget);
-    if (aliasHit) {
-      return { id: aliasHit.note_id, path: aliasHit.path };
-    }
-  }
-
-  return null;
+  // API-compat wrapper. Single-call sites (e.g. single-note re-index) pay
+  // the prepared-statement cost per call. The hot path (indexVault) goes
+  // through a long-lived WikilinkResolver instance instead.
+  return new WikilinkResolver(vault).resolve(normalizedTarget);
 }
 
 /**
