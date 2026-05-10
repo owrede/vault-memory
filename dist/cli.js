@@ -9,11 +9,11 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
-// ../../node_modules/tsup/assets/esm_shims.js
+// node_modules/tsup/assets/esm_shims.js
 import path from "path";
 import { fileURLToPath } from "url";
 var init_esm_shims = __esm({
-  "../../node_modules/tsup/assets/esm_shims.js"() {
+  "node_modules/tsup/assets/esm_shims.js"() {
     "use strict";
   }
 });
@@ -70,6 +70,7 @@ var init_loader = __esm({
       name: z.string().min(1),
       path: z.string().min(1),
       embedding_model: z.string().optional(),
+      secondary_embedding_model: z.string().optional(),
       write_enabled: z.boolean().optional(),
       exclude_globs: z.array(z.string()).optional()
     });
@@ -822,7 +823,7 @@ var init_models = __esm({
         );
         this._insert = db.prepare(`
       INSERT INTO models (name, provider, dim, created_at, active)
-      VALUES (@name, @provider, @dim, @created_at, 1)
+      VALUES (@name, @provider, @dim, @created_at, @active)
     `);
         this._deactivateAll = db.prepare("UPDATE models SET active = 0");
         this._activate = db.prepare(
@@ -847,7 +848,8 @@ var init_models = __esm({
           name: input.name,
           provider: input.provider,
           dim: input.dim,
-          created_at: Date.now()
+          created_at: Date.now(),
+          active: input.active === false ? 0 : 1
         });
         const row = this._selectById.get(Number(info.lastInsertRowid));
         if (!row) {
@@ -857,6 +859,9 @@ var init_models = __esm({
       }
       getById(modelId) {
         return this._selectById.get(modelId) ?? null;
+      }
+      getByName(name) {
+        return this._selectByName.get(name) ?? null;
       }
       getActive() {
         return this._selectActive.get() ?? null;
@@ -2588,6 +2593,28 @@ async function indexVault(vault, options) {
     provider: "ollama",
     dim
   });
+  let secondaryModelRow = null;
+  if (options.secondaryEmbeddingModel) {
+    const secName = options.secondaryEmbeddingModel;
+    log(`Probing secondary (shadow) model: ${secName}`);
+    const secExists = await options.ollama.modelExists(secName);
+    if (!secExists) {
+      throw new Error(
+        `Secondary embedding model "${secName}" not found in Ollama. Run: ollama pull ${secName}`
+      );
+    }
+    const secProbe = await options.ollama.embed({
+      model: secName,
+      texts: ["probe"]
+    });
+    const row = vault.db.models.upsert({
+      name: secName,
+      provider: "ollama",
+      dim: secProbe.dim,
+      active: false
+    });
+    secondaryModelRow = { id: row.id, dim: row.dim };
+  }
   vault.db.audit.startRun({
     runId,
     vaultName: vault.config.name,
@@ -2672,6 +2699,24 @@ async function indexVault(vault, options) {
         vector: embedResult.vectors[i]
       }));
       vault.db.embeddings.insertBatch(embeddingInputs);
+      if (secondaryModelRow) {
+        const secEmbed = await options.ollama.embed({
+          model: options.secondaryEmbeddingModel,
+          texts: chunks.map((c) => c.text)
+        });
+        if (secEmbed.dim !== secondaryModelRow.dim) {
+          throw new Error(
+            `Secondary embedding dimension mismatch: expected ${secondaryModelRow.dim}, got ${secEmbed.dim}`
+          );
+        }
+        vault.db.embeddings.insertBatch(
+          chunkIds.map((chunkId, i) => ({
+            chunkId,
+            modelId: secondaryModelRow.id,
+            vector: secEmbed.vectors[i]
+          }))
+        );
+      }
       insertWikilinks(vault, noteId, parsed.wikilinks, firstPassResolver);
       chunksCreated += chunks.length;
     }
@@ -3118,6 +3163,7 @@ var init_frontmatter = __esm({
 import * as path4 from "path";
 async function indexNote(options) {
   const { vault, absolutePath, embeddingModel, ollama } = options;
+  const secondaryName = options.secondaryEmbeddingModel;
   if (!isInsideVault(absolutePath, vault.config.path)) {
     return emptyResult("outside_vault");
   }
@@ -3208,6 +3254,27 @@ async function indexNote(options) {
       vector: embedResult.vectors[i]
     }))
   );
+  if (secondaryName) {
+    const secondaryModel = vault.db.models.getByName(secondaryName);
+    if (secondaryModel && secondaryModel.id !== activeModel.id) {
+      const secEmbed = await ollama.embed({
+        model: secondaryName,
+        texts: chunks.map((c) => c.text)
+      });
+      if (secEmbed.dim !== secondaryModel.dim) {
+        throw new Error(
+          `single-indexer: shadow embedding dim ${secEmbed.dim} does not match registered dim ${secondaryModel.dim} for "${secondaryName}".`
+        );
+      }
+      vault.db.embeddings.insertBatch(
+        chunkIds.map((chunkId, i) => ({
+          chunkId,
+          modelId: secondaryModel.id,
+          vector: secEmbed.vectors[i]
+        }))
+      );
+    }
+  }
   insertWikilinks2(vault, upsert.id, parsed.wikilinks);
   return {
     status: "indexed",
@@ -3338,6 +3405,173 @@ var init_catchup = __esm({
   }
 });
 
+// src/indexer/shadow.ts
+import { randomUUID as randomUUID2 } from "crypto";
+async function startShadowIndex(options) {
+  const { vault, model, ollama } = options;
+  const log = options.log ?? (() => {
+  });
+  const batchSize = options.batchSize ?? 16;
+  const runId = randomUUID2();
+  const started = Date.now();
+  if (!await ollama.modelExists(model)) {
+    throw new Error(
+      `Shadow model "${model}" not found in Ollama. Run: ollama pull ${model}`
+    );
+  }
+  const probe = await ollama.embed({ model, texts: ["probe"] });
+  const dim = probe.dim;
+  const modelRow = vault.db.models.upsert({
+    name: model,
+    provider: "ollama",
+    dim,
+    active: false
+  });
+  vault.db.embeddings.ensureTableForDim(dim);
+  vault.db.audit.startRun({
+    runId,
+    vaultName: vault.config.name,
+    modelId: modelRow.id,
+    trigger: "shadow"
+  });
+  const pendingSql = `
+    SELECT c.id AS id, c.text AS text
+    FROM chunks c
+    LEFT JOIN embeddings_${dim} e
+      ON e.chunk_id = c.id AND e.model_id = ?
+    WHERE e.chunk_id IS NULL
+    ORDER BY c.id
+  `;
+  const totalSql = `SELECT COUNT(*) AS c FROM chunks`;
+  const pending = vault.db.handle.prepare(pendingSql).all(modelRow.id);
+  const totalRow = vault.db.handle.prepare(totalSql).get();
+  const chunksTotal = totalRow?.c ?? 0;
+  const chunksSkipped = chunksTotal - pending.length;
+  log(
+    `shadow-index "${model}" (dim=${dim}): ${pending.length} pending, ${chunksSkipped} already embedded`
+  );
+  let chunksEmbedded = 0;
+  try {
+    for (let i = 0; i < pending.length; i += batchSize) {
+      const batch = pending.slice(i, i + batchSize);
+      const embedResp = await ollama.embed({
+        model,
+        texts: batch.map((c) => c.text)
+      });
+      if (embedResp.dim !== dim) {
+        throw new Error(
+          `Shadow embedding dim mismatch mid-run: expected ${dim}, got ${embedResp.dim} on batch starting chunk_id ${batch[0]?.id}`
+        );
+      }
+      vault.db.embeddings.insertBatch(
+        batch.map((row, j) => ({
+          chunkId: row.id,
+          modelId: modelRow.id,
+          vector: embedResp.vectors[j]
+        }))
+      );
+      chunksEmbedded += batch.length;
+      if (i % (batchSize * 8) === 0) {
+        log(`  ${chunksEmbedded}/${pending.length}\u2026`);
+      }
+    }
+    vault.db.audit.finishRun(runId, {
+      notesIndexed: 0,
+      chunksCreated: chunksEmbedded,
+      notesUpdated: 0,
+      notesDeleted: 0
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    vault.db.audit.finishRun(runId, {
+      notesIndexed: 0,
+      chunksCreated: chunksEmbedded,
+      notesUpdated: 0,
+      notesDeleted: 0,
+      error: message
+    });
+    throw err;
+  }
+  return {
+    runId,
+    modelId: modelRow.id,
+    modelName: model,
+    dim,
+    chunksTotal,
+    chunksEmbedded,
+    chunksSkipped,
+    durationMs: Date.now() - started
+  };
+}
+function listModels(vault) {
+  const rows = vault.db.models.listAll();
+  return rows.map((m) => {
+    let count = 0;
+    try {
+      vault.db.embeddings.ensureTableForDim(m.dim);
+      const row = vault.db.handle.prepare(
+        `SELECT COUNT(*) AS c FROM embeddings_${m.dim} WHERE model_id = ?`
+      ).get(m.id);
+      count = row?.c ?? 0;
+    } catch {
+      count = 0;
+    }
+    return {
+      id: m.id,
+      name: m.name,
+      provider: m.provider,
+      dim: m.dim,
+      active: m.active === 1,
+      embedded_chunk_count: count
+    };
+  });
+}
+function switchActiveModel(vault, targetModelName) {
+  const target = vault.db.models.getByName(targetModelName);
+  if (!target) {
+    return { ok: false, reason: "unknown_model" };
+  }
+  const current = vault.db.models.getActive();
+  if (current && current.id === target.id) {
+    return {
+      ok: false,
+      reason: "already_active",
+      switched_from: current.name,
+      switched_to: target.name
+    };
+  }
+  vault.db.embeddings.ensureTableForDim(target.dim);
+  const missingRow = vault.db.handle.prepare(
+    `SELECT COUNT(*) AS c
+       FROM chunks c
+       LEFT JOIN embeddings_${target.dim} e
+         ON e.chunk_id = c.id AND e.model_id = ?
+       WHERE e.chunk_id IS NULL`
+  ).get(target.id);
+  const missing = missingRow?.c ?? 0;
+  if (missing > 0) {
+    return {
+      ok: false,
+      reason: "incomplete",
+      missing_chunks: missing,
+      switched_from: current?.name,
+      switched_to: target.name
+    };
+  }
+  vault.db.models.setActive(target.id);
+  return {
+    ok: true,
+    switched_from: current?.name,
+    switched_to: target.name
+  };
+}
+var init_shadow = __esm({
+  "src/indexer/shadow.ts"() {
+    "use strict";
+    init_esm_shims();
+  }
+});
+
 // src/indexer/index.ts
 var indexer_exports = {};
 __export(indexer_exports, {
@@ -3345,8 +3579,11 @@ __export(indexer_exports, {
   extractAliases: () => extractAliases,
   indexNote: () => indexNote,
   indexVault: () => indexVault,
+  listModels: () => listModels,
   removeNote: () => removeNote,
-  resolveWikilinkTarget: () => resolveWikilinkTarget
+  resolveWikilinkTarget: () => resolveWikilinkTarget,
+  startShadowIndex: () => startShadowIndex,
+  switchActiveModel: () => switchActiveModel
 });
 var init_indexer2 = __esm({
   "src/indexer/index.ts"() {
@@ -3355,6 +3592,7 @@ var init_indexer2 = __esm({
     init_indexer();
     init_single();
     init_catchup();
+    init_shadow();
   }
 });
 
@@ -3769,6 +4007,7 @@ var init_watcher = __esm({
         this.opts = {
           vault: options.vault,
           embeddingModel: options.embeddingModel,
+          secondaryEmbeddingModel: options.secondaryEmbeddingModel,
           ollama: options.ollama,
           suppression: options.suppression,
           debounceMs: options.debounceMs ?? 500,
@@ -3868,6 +4107,7 @@ var init_watcher = __esm({
           vault: this.opts.vault,
           absolutePath: event.path,
           embeddingModel: this.opts.embeddingModel,
+          secondaryEmbeddingModel: this.opts.secondaryEmbeddingModel,
           ollama: this.opts.ollama
         });
         switch (result.status) {
@@ -4016,6 +4256,7 @@ async function serve() {
       const watcher = new VaultWatcher({
         vault,
         embeddingModel: modelName,
+        secondaryEmbeddingModel: vault.config.secondary_embedding_model,
         ollama,
         suppression
       });
@@ -4279,6 +4520,48 @@ async function serve() {
         }
       },
       {
+        name: "list_models",
+        description: "List all embedding models registered for a vault, with dim, active flag, and how many chunks have been embedded under each. Use before start_shadow_index / switch_active_model.",
+        inputSchema: {
+          type: "object",
+          required: ["vault"],
+          properties: { vault: { type: "string" } }
+        }
+      },
+      {
+        name: "start_shadow_index",
+        description: "Backfill embeddings for a secondary (shadow) model over every chunk in the vault. The active model is untouched \u2014 search keeps working during the run. Idempotent (resumable). Run switch_active_model once complete to promote the shadow.",
+        inputSchema: {
+          type: "object",
+          required: ["vault", "model"],
+          properties: {
+            vault: { type: "string" },
+            model: {
+              type: "string",
+              description: "Ollama model name, e.g. 'bge-m3' or 'embeddinggemma'."
+            },
+            batch_size: {
+              type: "integer",
+              minimum: 1,
+              maximum: 256,
+              description: "Embed batch size \u2014 default 16."
+            }
+          }
+        }
+      },
+      {
+        name: "switch_active_model",
+        description: "Atomically promote a registered model to active. Fails with ok:false / reason:'incomplete' if any chunk is missing a shadow embedding for the target model.",
+        inputSchema: {
+          type: "object",
+          required: ["vault", "model_name"],
+          properties: {
+            vault: { type: "string" },
+            model_name: { type: "string" }
+          }
+        }
+      },
+      {
         name: "index_runs",
         description: "List recent index runs for a vault \u2014 what was scanned, when, how long, errors.",
         inputSchema: {
@@ -4428,6 +4711,31 @@ async function serve() {
             limit: parsed.limit
           });
           return ok({ entries, count: entries.length });
+        }
+        case "list_models": {
+          const parsed = ListModelsArgs.parse(args2 ?? {});
+          const vault = manager.require(parsed.vault);
+          const models = listModels(vault);
+          return ok({ models, count: models.length });
+        }
+        case "start_shadow_index": {
+          const parsed = StartShadowIndexArgs.parse(args2 ?? {});
+          const vault = manager.require(parsed.vault);
+          const result = await startShadowIndex({
+            vault,
+            model: parsed.model,
+            ollama,
+            batchSize: parsed.batch_size,
+            log: (m) => process.stderr.write(`[shadow:${vault.config.name}] ${m}
+`)
+          });
+          return ok(result);
+        }
+        case "switch_active_model": {
+          const parsed = SwitchActiveModelArgs.parse(args2 ?? {});
+          const vault = manager.require(parsed.vault);
+          const result = switchActiveModel(vault, parsed.model_name);
+          return ok(result);
         }
         case "index_runs": {
           const parsed = IndexRunsArgs.parse(args2 ?? {});
@@ -4598,7 +4906,7 @@ function errorResponse(message) {
     content: [{ type: "text", text: message }]
   };
 }
-var VERSION, ReadNoteArgs, SearchArgs, HybridSearchArgs, VaultPathArgs, ForwardLinksArgs, FindBrokenLinksArgs, PredicateSchema, QueryFrontmatterArgs, WriteNoteArgs, UpdateFrontmatterArgs, DeleteNoteArgs, AuditLogArgs, IndexRunsArgs;
+var VERSION, ReadNoteArgs, SearchArgs, HybridSearchArgs, VaultPathArgs, ForwardLinksArgs, FindBrokenLinksArgs, PredicateSchema, QueryFrontmatterArgs, WriteNoteArgs, UpdateFrontmatterArgs, DeleteNoteArgs, AuditLogArgs, IndexRunsArgs, ListModelsArgs, StartShadowIndexArgs, SwitchActiveModelArgs;
 var init_server = __esm({
   "src/server.ts"() {
     "use strict";
@@ -4690,6 +4998,18 @@ var init_server = __esm({
     IndexRunsArgs = z3.object({
       vault: z3.string(),
       limit: z3.number().int().positive().max(200).optional().default(20)
+    });
+    ListModelsArgs = z3.object({
+      vault: z3.string()
+    });
+    StartShadowIndexArgs = z3.object({
+      vault: z3.string(),
+      model: z3.string().min(1),
+      batch_size: z3.number().int().positive().max(256).optional()
+    });
+    SwitchActiveModelArgs = z3.object({
+      vault: z3.string(),
+      model_name: z3.string().min(1)
     });
   }
 });

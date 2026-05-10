@@ -5,6 +5,12 @@ export interface UpsertModelInput {
   name: string;
   provider: string;
   dim: number;
+  /** When true (default), newly-inserted rows are marked active=1, matching
+   *  the historical contract: the first model to index a vault is the
+   *  active one. Set to false to register a shadow / secondary model
+   *  without disturbing the currently-active one. Existing rows keep
+   *  their active flag — upsert never flips active. */
+  active?: boolean;
 }
 
 export class ModelsQueries {
@@ -28,7 +34,7 @@ export class ModelsQueries {
     );
     this._insert = db.prepare(`
       INSERT INTO models (name, provider, dim, created_at, active)
-      VALUES (@name, @provider, @dim, @created_at, 1)
+      VALUES (@name, @provider, @dim, @created_at, @active)
     `);
     this._deactivateAll = db.prepare("UPDATE models SET active = 0");
     this._activate = db.prepare<[number]>(
@@ -47,6 +53,7 @@ export class ModelsQueries {
       provider: input.provider,
       dim: input.dim,
       created_at: Date.now(),
+      active: input.active === false ? 0 : 1,
     });
     const row = this._selectById.get(Number(info.lastInsertRowid));
     if (!row) {
@@ -57,6 +64,10 @@ export class ModelsQueries {
 
   getById(modelId: number): ModelRow | null {
     return this._selectById.get(modelId) ?? null;
+  }
+
+  getByName(name: string): ModelRow | null {
+    return this._selectByName.get(name) ?? null;
   }
 
   getActive(): ModelRow | null {

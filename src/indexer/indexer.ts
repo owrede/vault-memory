@@ -19,6 +19,12 @@ import { WikilinkResolver } from "./resolver.js";
 export interface IndexerOptions {
   mode?: "full" | "incremental";
   embeddingModel: string;
+  /** Phase 7c: optional secondary (shadow) embedding model. When set, every
+   *  chunk is embedded with BOTH the primary and the secondary model in
+   *  parallel. Stored in separate `embeddings_<dim>` tables so search and
+   *  the active model are unaffected. Used by `/setup-memory-system` and
+   *  the watcher to keep a shadow index live for a future model switch. */
+  secondaryEmbeddingModel?: string;
   ollama: OllamaClient;
   /** Called periodically with progress info. */
   onProgress?: (msg: string) => void;
@@ -70,6 +76,33 @@ export async function indexVault(
     provider: "ollama",
     dim,
   });
+
+  // Phase 7c: secondary (shadow) model registration. We probe + upsert with
+  // active=false so the primary stays active. Probing also fails fast if the
+  // model isn't pulled — better than discovering that mid-run on note 5000.
+  let secondaryModelRow: { id: number; dim: number } | null = null;
+  if (options.secondaryEmbeddingModel) {
+    const secName = options.secondaryEmbeddingModel;
+    log(`Probing secondary (shadow) model: ${secName}`);
+    const secExists = await options.ollama.modelExists(secName);
+    if (!secExists) {
+      throw new Error(
+        `Secondary embedding model "${secName}" not found in Ollama. ` +
+          `Run: ollama pull ${secName}`,
+      );
+    }
+    const secProbe = await options.ollama.embed({
+      model: secName,
+      texts: ["probe"],
+    });
+    const row = vault.db.models.upsert({
+      name: secName,
+      provider: "ollama",
+      dim: secProbe.dim,
+      active: false,
+    });
+    secondaryModelRow = { id: row.id, dim: row.dim };
+  }
 
   vault.db.audit.startRun({
     runId,
@@ -196,6 +229,31 @@ export async function indexVault(
         vector: embedResult.vectors[i]!,
       }));
       vault.db.embeddings.insertBatch(embeddingInputs);
+
+      // Phase 7c: shadow-index pass. Embed each chunk a second time with
+      // the secondary model and persist into its dim-specific table.
+      // Independent failure surface: if secondary embed throws, the primary
+      // index for this run still completes — the secondary will be retried
+      // on the next index run (idempotent: LEFT JOIN in start_shadow_index).
+      if (secondaryModelRow) {
+        const secEmbed = await options.ollama.embed({
+          model: options.secondaryEmbeddingModel!,
+          texts: chunks.map((c) => c.text),
+        });
+        if (secEmbed.dim !== secondaryModelRow.dim) {
+          throw new Error(
+            `Secondary embedding dimension mismatch: expected ` +
+              `${secondaryModelRow.dim}, got ${secEmbed.dim}`,
+          );
+        }
+        vault.db.embeddings.insertBatch(
+          chunkIds.map((chunkId, i) => ({
+            chunkId,
+            modelId: secondaryModelRow!.id,
+            vector: secEmbed.vectors[i]!,
+          })),
+        );
+      }
 
       // Wikilinks
       insertWikilinks(vault, noteId, parsed.wikilinks, firstPassResolver);

@@ -24,6 +24,7 @@ const VaultConfigSchema = z.object({
   name: z.string().min(1),
   path: z.string().min(1),
   embedding_model: z.string().optional(),
+  secondary_embedding_model: z.string().optional(),
   write_enabled: z.boolean().optional(),
   exclude_globs: z.array(z.string()).optional(),
 });

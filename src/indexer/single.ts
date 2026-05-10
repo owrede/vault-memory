@@ -24,6 +24,12 @@ export interface IndexNoteOptions {
   /** Absolute file path. Must be inside the vault. */
   absolutePath: string;
   embeddingModel: string;
+  /** Phase 7c: optional secondary (shadow) model name. When set AND the
+   *  model is already registered in the vault DB, the watcher / single
+   *  indexer also writes shadow embeddings so the secondary index stays
+   *  current with the primary. Unregistered names are ignored silently —
+   *  registration only happens via a full `indexVault` run. */
+  secondaryEmbeddingModel?: string;
   ollama: OllamaClient;
 }
 
@@ -54,6 +60,7 @@ export async function indexNote(
   options: IndexNoteOptions,
 ): Promise<IndexNoteResult> {
   const { vault, absolutePath, embeddingModel, ollama } = options;
+  const secondaryName = options.secondaryEmbeddingModel;
 
   // 1. Validate path is inside the vault.
   if (!isInsideVault(absolutePath, vault.config.path)) {
@@ -171,6 +178,34 @@ export async function indexNote(
       vector: embedResult.vectors[i]!,
     })),
   );
+
+  // Phase 7c: keep the shadow index live. Only embed if the secondary model
+  // is already registered (i.e. a full indexVault run has set it up). We
+  // never register a new model from a single-note path — the dim probe is
+  // a full-indexer responsibility.
+  if (secondaryName) {
+    const secondaryModel = vault.db.models.getByName(secondaryName);
+    if (secondaryModel && secondaryModel.id !== activeModel.id) {
+      const secEmbed = await ollama.embed({
+        model: secondaryName,
+        texts: chunks.map((c) => c.text),
+      });
+      if (secEmbed.dim !== secondaryModel.dim) {
+        throw new Error(
+          `single-indexer: shadow embedding dim ${secEmbed.dim} ` +
+            `does not match registered dim ${secondaryModel.dim} for ` +
+            `"${secondaryName}".`,
+        );
+      }
+      vault.db.embeddings.insertBatch(
+        chunkIds.map((chunkId, i) => ({
+          chunkId,
+          modelId: secondaryModel.id,
+          vector: secEmbed.vectors[i]!,
+        })),
+      );
+    }
+  }
 
   insertWikilinks(vault, upsert.id, parsed.wikilinks);
 
