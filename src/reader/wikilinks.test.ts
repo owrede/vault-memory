@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { extractWikilinks } from "./wikilinks.js";
+import { extractWikilinks, extractFrontmatterWikilinks } from "./wikilinks.js";
 
 describe("extractWikilinks", () => {
   it("parses a plain wikilink", () => {
@@ -98,5 +98,137 @@ describe("extractWikilinks", () => {
     const out = extractWikilinks("Image: ![[Pic.png]] and [[Doc]]");
     const targets = out.map((w) => w.rawTarget);
     expect(targets).toEqual(["Doc"]);
+  });
+});
+
+describe("extractFrontmatterWikilinks", () => {
+  it("returns [] for null frontmatter", () => {
+    expect(extractFrontmatterWikilinks(null)).toEqual([]);
+  });
+
+  it("returns [] when no wikilinks in any value", () => {
+    const out = extractFrontmatterWikilinks({
+      class: "Person",
+      email: "x@y.com",
+      tags: ["network", "client"],
+    });
+    expect(out).toEqual([]);
+  });
+
+  it("extracts a single wikilink from a string value", () => {
+    const out = extractFrontmatterWikilinks({
+      organisation: "[[INFORM GmbH]]",
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({
+      rawTarget: "INFORM GmbH",
+      normalizedTarget: "INFORM GmbH",
+      anchor: null,
+      alias: null,
+      line: 0,
+    });
+  });
+
+  it("extracts multiple wikilinks from a list value", () => {
+    const out = extractFrontmatterWikilinks({
+      members: ["[[Jörg Herbers]]", "[[Oliver Wrede]]"],
+    });
+    expect(out).toHaveLength(2);
+    expect(out.map((w) => w.normalizedTarget)).toEqual([
+      "Jörg Herbers",
+      "Oliver Wrede",
+    ]);
+  });
+
+  it("extracts multiple wikilinks from a single string value", () => {
+    const out = extractFrontmatterWikilinks({
+      Teilnehmer: "[[OWR]], [[JHE]]",
+    });
+    expect(out).toHaveLength(2);
+    expect(out.map((w) => w.normalizedTarget)).toEqual(["OWR", "JHE"]);
+  });
+
+  it("parses anchor and alias inside frontmatter wikilinks", () => {
+    const out = extractFrontmatterWikilinks({
+      ref: "[[Foo#Section|Bar]]",
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0]).toMatchObject({
+      rawTarget: "Foo",
+      anchor: "Section",
+      alias: "Bar",
+    });
+  });
+
+  it("strips trailing .md from frontmatter wikilink targets", () => {
+    const out = extractFrontmatterWikilinks({
+      ref: "[[Foo.md]]",
+    });
+    expect(out[0]?.normalizedTarget).toBe("Foo");
+  });
+
+  it("skips aliases and alias keys", () => {
+    const out = extractFrontmatterWikilinks({
+      aliases: ["[[Should Not Match]]", "JHE"],
+      alias: "[[Also Not]]",
+      organisation: "[[Real Match]]",
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0]?.normalizedTarget).toBe("Real Match");
+  });
+
+  it("recurses into nested objects", () => {
+    const out = extractFrontmatterWikilinks({
+      meta: {
+        related: ["[[A]]", "[[B]]"],
+        owner: "[[C]]",
+      },
+    });
+    expect(out.map((w) => w.normalizedTarget).sort()).toEqual(["A", "B", "C"]);
+  });
+
+  it("handles unquoted YAML wikilinks that parse as nested arrays", () => {
+    // `Klient: [[LAG]]` in YAML parses as Klient = [["LAG"]]. We treat
+    // string-array elements as wikilink targets.
+    const out = extractFrontmatterWikilinks({
+      Klient: [["LAG"]],
+    });
+    // Nested array of strings has no [[ ]] syntax — we deliberately do NOT
+    // synthesize wikilinks from raw strings, because we can't tell a real
+    // wikilink target apart from an arbitrary string ("LAG" could be an
+    // alias, a code, or anything). Behavior: no match.
+    expect(out).toEqual([]);
+  });
+
+  it("ignores non-string scalar values", () => {
+    const out = extractFrontmatterWikilinks({
+      count: 42,
+      enabled: true,
+      tags: null,
+    });
+    expect(out).toEqual([]);
+  });
+
+  it("collects all wikilinks across multiple keys (real-world INIM example)", () => {
+    const out = extractFrontmatterWikilinks({
+      class: "Person",
+      organisation: "[[INFORM GmbH]]",
+      affiliated_with: [
+        "[[INFORM GmbH]]",
+        "[[Intelligence Impact]]",
+        "[[RWTH Aachen]]",
+      ],
+      cofounder_of: ["[[Intelligence Impact]]"],
+      past_roles: ["[[RWTH Aachen]]"],
+      participation: ["[[LAG-EPIX]]"],
+    });
+    const targets = out.map((w) => w.normalizedTarget);
+    // Each key contributes one or more entries; we don't dedupe at this
+    // layer — DB UNIQUE constraint dedupes downstream.
+    expect(targets).toContain("INFORM GmbH");
+    expect(targets).toContain("Intelligence Impact");
+    expect(targets).toContain("RWTH Aachen");
+    expect(targets).toContain("LAG-EPIX");
+    expect(out.every((w) => w.line === 0)).toBe(true);
   });
 });

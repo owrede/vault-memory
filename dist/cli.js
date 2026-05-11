@@ -2476,12 +2476,50 @@ function maskFencedCodeBlocks(content) {
   void fenceRe;
   return chars.join("");
 }
-var WIKILINK_RE;
+function extractFrontmatterWikilinks(frontmatter) {
+  if (!frontmatter) return [];
+  const results = [];
+  for (const [key, value] of Object.entries(frontmatter)) {
+    if (key === "aliases" || key === "alias") continue;
+    collectFromValue(value, results);
+  }
+  return results;
+}
+function collectFromValue(value, out) {
+  if (typeof value === "string") {
+    collectFromString(value, out);
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectFromValue(item, out);
+    }
+    return;
+  }
+  if (value !== null && typeof value === "object") {
+    for (const v of Object.values(value)) {
+      collectFromValue(v, out);
+    }
+  }
+}
+function collectFromString(s, out) {
+  FRONTMATTER_WIKILINK_RE.lastIndex = 0;
+  let match;
+  while ((match = FRONTMATTER_WIKILINK_RE.exec(s)) !== null) {
+    const inner = match[1];
+    if (inner === void 0) continue;
+    const parsed = parseInner(inner);
+    if (parsed === null) continue;
+    out.push({ ...parsed, line: 0 });
+  }
+}
+var WIKILINK_RE, FRONTMATTER_WIKILINK_RE;
 var init_wikilinks2 = __esm({
   "src/reader/wikilinks.ts"() {
     "use strict";
     init_esm_shims();
     WIKILINK_RE = /(^|[^!])\[\[([^\[\]\n]+?)\]\]/g;
+    FRONTMATTER_WIKILINK_RE = /\[\[([^\[\]\n]+?)\]\]/g;
   }
 });
 
@@ -2499,7 +2537,9 @@ async function parseNote(absolutePath, vaultRoot) {
   const title = extractTitle(content) ?? path3.basename(absolutePath, ".md");
   const hash = computeNoteHash(content, frontmatter);
   const mtime = Math.floor(stat.mtimeMs);
-  const wikilinks = extractWikilinks(content);
+  const bodyLinks = extractWikilinks(content);
+  const frontmatterLinks = extractFrontmatterWikilinks(frontmatter);
+  const wikilinks = frontmatterLinks.length === 0 ? bodyLinks : mergeFrontmatterIntoBody(bodyLinks, frontmatterLinks);
   const wordCount = countWords(content);
   const relativePath = toPosix2(
     path3.relative(path3.resolve(vaultRoot), path3.resolve(absolutePath))
@@ -2514,6 +2554,20 @@ async function parseNote(absolutePath, vaultRoot) {
     wikilinks,
     wordCount
   };
+}
+function mergeFrontmatterIntoBody(body, fm) {
+  const seen = /* @__PURE__ */ new Set();
+  for (const w of body) {
+    seen.add(`${w.normalizedTarget}\0${w.anchor ?? ""}`);
+  }
+  const result = body.slice();
+  for (const w of fm) {
+    const key = `${w.normalizedTarget}\0${w.anchor ?? ""}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(w);
+  }
+  return result;
 }
 function extractTitle(content) {
   const lines = content.split("\n");
