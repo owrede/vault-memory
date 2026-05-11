@@ -36,6 +36,7 @@ export interface IndexRunResult {
   notesIndexed: number;
   notesUpdated: number;
   notesDeleted: number;
+  notesSkipped: number;
   chunksCreated: number;
   durationMs: number;
   error?: string;
@@ -114,6 +115,7 @@ export async function indexVault(
   let notesIndexed = 0;
   let notesUpdated = 0;
   let notesDeleted = 0;
+  let notesSkipped = 0;
   let chunksCreated = 0;
 
   // Per-run resolver: prepared statements reused, results memoised.
@@ -148,7 +150,20 @@ export async function indexVault(
     const parsedNotes: Array<{ parsed: ParsedNote; noteId: number; needsReindex: boolean }> = [];
 
     for (const file of files) {
-      const parsed = await parseNote(file, vault.config.path);
+      let parsed: ParsedNote;
+      try {
+        parsed = await parseNote(file, vault.config.path);
+      } catch (err) {
+        // Robustheit gegen invalides Frontmatter / kaputte Notes:
+        // skip + log statt Vault-Abort. User-Notes sind nicht unser Vertrag.
+        notesSkipped++;
+        const msg = err instanceof Error ? err.message.split("\n")[0] : String(err);
+        const rel = file.startsWith(vault.config.path)
+          ? file.slice(vault.config.path.length + 1)
+          : file;
+        log(`  skipped (parse error): ${rel} — ${msg}`);
+        continue;
+      }
       const upsert = vault.db.notes.upsertByPath({
         path: parsed.relativePath,
         content: parsed.content,
@@ -305,12 +320,17 @@ export async function indexVault(
       notesDeleted,
     });
 
+    if (notesSkipped > 0) {
+      log(`${notesSkipped} note(s) skipped due to parse errors`);
+    }
+
     return {
       runId,
       status: "completed",
       notesIndexed,
       notesUpdated,
       notesDeleted,
+      notesSkipped,
       chunksCreated,
       durationMs: Date.now() - startedAt,
     };
@@ -329,6 +349,7 @@ export async function indexVault(
       notesIndexed,
       notesUpdated,
       notesDeleted,
+      notesSkipped,
       chunksCreated,
       durationMs: Date.now() - startedAt,
       error: message,

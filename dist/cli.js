@@ -1833,6 +1833,20 @@ import { join as join3 } from "path";
 function sigmoid(x) {
   return 1 / (1 + Math.exp(-x));
 }
+function deriveTokenizerConfig(tokenizerJson) {
+  const added = tokenizerJson.added_tokens ?? [];
+  const byContent = new Map(added.map((t) => [t.content, t]));
+  const pick = (...candidates) => {
+    for (const c of candidates) if (byContent.has(c)) return c;
+    return candidates[0];
+  };
+  return {
+    bos_token: pick("<s>"),
+    eos_token: pick("</s>"),
+    pad_token: pick("<pad>"),
+    unk_token: pick("<unk>")
+  };
+}
 var OnnxReranker;
 var init_onnx_reranker = __esm({
   "src/rerank/onnx-reranker.ts"() {
@@ -1910,8 +1924,9 @@ var init_onnx_reranker = __esm({
             import("@huggingface/tokenizers"),
             readFile2(tokenizerPath, "utf-8")
           ]);
-          const tokenizerConfig = JSON.parse(tokJson);
-          const tokenizer = new tokMod.Tokenizer(tokenizerConfig);
+          const tokenizerJson = JSON.parse(tokJson);
+          const config = deriveTokenizerConfig(tokenizerJson);
+          const tokenizer = new tokMod.Tokenizer(tokenizerJson, config);
           const session = await ort.InferenceSession.create(modelPath);
           const loaded = { session, tokenizer, ort };
           this.loaded = loaded;
@@ -2762,6 +2777,7 @@ async function indexVault(vault, options) {
   let notesIndexed = 0;
   let notesUpdated = 0;
   let notesDeleted = 0;
+  let notesSkipped = 0;
   let chunksCreated = 0;
   const firstPassResolver = new WikilinkResolver(vault);
   try {
@@ -2782,7 +2798,16 @@ async function indexVault(vault, options) {
     log(`Found ${files.length} markdown files`);
     const parsedNotes = [];
     for (const file of files) {
-      const parsed = await parseNote(file, vault.config.path);
+      let parsed;
+      try {
+        parsed = await parseNote(file, vault.config.path);
+      } catch (err) {
+        notesSkipped++;
+        const msg = err instanceof Error ? err.message.split("\n")[0] : String(err);
+        const rel = file.startsWith(vault.config.path) ? file.slice(vault.config.path.length + 1) : file;
+        log(`  skipped (parse error): ${rel} \u2014 ${msg}`);
+        continue;
+      }
       const upsert = vault.db.notes.upsertByPath({
         path: parsed.relativePath,
         content: parsed.content,
@@ -2888,12 +2913,16 @@ async function indexVault(vault, options) {
       notesUpdated,
       notesDeleted
     });
+    if (notesSkipped > 0) {
+      log(`${notesSkipped} note(s) skipped due to parse errors`);
+    }
     return {
       runId,
       status: "completed",
       notesIndexed,
       notesUpdated,
       notesDeleted,
+      notesSkipped,
       chunksCreated,
       durationMs: Date.now() - startedAt
     };
@@ -2912,6 +2941,7 @@ async function indexVault(vault, options) {
       notesIndexed,
       notesUpdated,
       notesDeleted,
+      notesSkipped,
       chunksCreated,
       durationMs: Date.now() - startedAt,
       error: message
@@ -3312,7 +3342,7 @@ async function indexNote(options) {
     if (isENOENT(err)) {
       return emptyResult("missing");
     }
-    throw err;
+    return emptyResult("parse_error");
   }
   const existing = vault.db.notes.getByPath(parsed.relativePath);
   if (existing && existing.hash === parsed.hash) {
@@ -5287,8 +5317,9 @@ async function runIndex(rest) {
       onProgress: (msg) => console.error(`  ${msg}`)
     });
     if (result.status === "completed") {
+      const skipSuffix = result.notesSkipped > 0 ? `, ${result.notesSkipped} skipped` : "";
       console.error(
-        `\u2713 ${vault.config.name}: ${result.notesIndexed} new, ${result.notesUpdated} updated, ${result.notesDeleted} deleted, ${result.chunksCreated} chunks \xB7 ${result.durationMs}ms`
+        `\u2713 ${vault.config.name}: ${result.notesIndexed} new, ${result.notesUpdated} updated, ${result.notesDeleted} deleted${skipSuffix}, ${result.chunksCreated} chunks \xB7 ${result.durationMs}ms`
       );
     } else {
       console.error(`\u2717 ${vault.config.name}: ${result.error}`);

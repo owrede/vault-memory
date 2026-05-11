@@ -81,9 +81,11 @@ async function runIndex(rest: string[]): Promise<void> {
     });
 
     if (result.status === "completed") {
+      const skipSuffix =
+        result.notesSkipped > 0 ? `, ${result.notesSkipped} skipped` : "";
       console.error(
         `✓ ${vault.config.name}: ${result.notesIndexed} new, ` +
-          `${result.notesUpdated} updated, ${result.notesDeleted} deleted, ` +
+          `${result.notesUpdated} updated, ${result.notesDeleted} deleted${skipSuffix}, ` +
           `${result.chunksCreated} chunks · ${result.durationMs}ms`,
       );
     } else {

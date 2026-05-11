@@ -34,7 +34,7 @@ export interface IndexNoteOptions {
 }
 
 export interface IndexNoteResult {
-  status: "indexed" | "unchanged" | "outside_vault" | "missing";
+  status: "indexed" | "unchanged" | "outside_vault" | "missing" | "parse_error";
   notePath: string | null;
   noteId: number | null;
   chunksCreated: number;
@@ -67,7 +67,7 @@ export async function indexNote(
     return emptyResult("outside_vault");
   }
 
-  // 2. Parse — handle missing-file fast path.
+  // 2. Parse — handle missing-file fast path and invalid-frontmatter skip.
   let parsed;
   try {
     parsed = await parseNote(absolutePath, vault.config.path);
@@ -75,7 +75,10 @@ export async function indexNote(
     if (isENOENT(err)) {
       return emptyResult("missing");
     }
-    throw err;
+    // Invalid frontmatter or other parse failure: skip silently so a single
+    // bad note doesn't kill the watcher or break the indexer mid-run. Caller
+    // can inspect `status === "parse_error"` if it wants to log.
+    return emptyResult("parse_error");
   }
 
   // 3. Look up existing note for hash check.
@@ -244,7 +247,7 @@ export function removeNote(
 // ───────────────────────────────────────────────────────────────────────────
 
 function emptyResult(
-  status: "outside_vault" | "missing",
+  status: "outside_vault" | "missing" | "parse_error",
 ): IndexNoteResult {
   return {
     status,
