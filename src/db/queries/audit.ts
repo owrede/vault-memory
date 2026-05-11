@@ -38,6 +38,7 @@ export class AuditQueries {
   private readonly _finishRun: BetterSqlite3.Statement;
   private readonly _listRuns: BetterSqlite3.Statement<[number], IndexRunRow>;
   private readonly _recordWrite: BetterSqlite3.Statement;
+  private readonly _isIndexing: BetterSqlite3.Statement<[], { c: number }>;
 
   constructor(private readonly db: BetterSqlite3.Database) {
     this._startRun = db.prepare(`
@@ -56,6 +57,12 @@ export class AuditQueries {
     `);
     this._listRuns = db.prepare<[number], IndexRunRow>(
       "SELECT * FROM index_runs ORDER BY id DESC LIMIT ?",
+    );
+    // True iff there is at least one unfinished run in the audit log.
+    // Used by the search layer to avoid surfacing chunks from a vault
+    // whose embeddings are mid-flight (see search/scope.ts).
+    this._isIndexing = db.prepare<[], { c: number }>(
+      "SELECT COUNT(*) AS c FROM index_runs WHERE finished_at IS NULL",
     );
     this._recordWrite = db.prepare(`
       INSERT INTO write_audit (note_id, op, previous_hash, new_hash, expected_hash, client_id, diff_summary, at)
@@ -88,6 +95,11 @@ export class AuditQueries {
 
   listRuns(limit = 50): IndexRunRow[] {
     return this._listRuns.all(limit);
+  }
+
+  /** True iff at least one index_runs row in this vault has finished_at IS NULL. */
+  isIndexing(): boolean {
+    return (this._isIndexing.get()?.c ?? 0) > 0;
   }
 
   recordWrite(input: RecordWriteInput): void {

@@ -228,6 +228,36 @@ describe("Database roundtrips", () => {
     expect(runs[0]?.finished_at).not.toBeNull();
   });
 
+  it("isIndexing() reflects unfinished runs", () => {
+    expect(db.audit.isIndexing()).toBe(false);
+
+    db.audit.startRun({
+      runId: "running",
+      vaultName: "test",
+      modelId: null,
+      trigger: "init",
+    });
+    expect(db.audit.isIndexing()).toBe(true);
+
+    db.audit.finishRun("running", {
+      notesIndexed: 0,
+      chunksCreated: 0,
+      notesUpdated: 0,
+      notesDeleted: 0,
+    });
+    expect(db.audit.isIndexing()).toBe(false);
+
+    // Crashed/aborted run that was never finalised should still register
+    // as indexing — that's exactly the case the search layer needs to dodge.
+    db.audit.startRun({
+      runId: "crashed",
+      vaultName: "test",
+      modelId: null,
+      trigger: "manual-full",
+    });
+    expect(db.audit.isIndexing()).toBe(true);
+  });
+
   it("audit recordWrite + listWrites filter", () => {
     const n = db.notes.upsertByPath({
       path: "w.md", content: "x", frontmatter: null, title: "w",
