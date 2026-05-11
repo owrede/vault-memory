@@ -68,6 +68,19 @@ By default — with multiple vaults configured — `search_*` tools fan out acro
 
 **Mid-index skip** — vaults with an unfinished `index_runs` row (i.e. an index is still embedding chunks) are excluded from the implicit candidate set so half-indexed chunks don't pollute results. Skipped vaults are listed in a `note` field on the response. Explicit `vaults: ["…"]` still passes through if you want to query a mid-indexing vault on purpose.
 
+## Adding a vault
+
+For the first vault, follow [Install (recommended)](#install-recommended) below.
+For every additional vault — one command:
+
+```bash
+vault-memory add-vault "/path/to/another/obsidian/vault"
+```
+
+This appends a `[[vaults]]` block to `~/.vault-memory/config.toml`, writes a `.mcp.json` into the vault root (so Claude Code auto-spawns the MCP server when you open it), and runs the initial index. Idempotent — re-running on a known path only fills in whatever is missing.
+
+Flags: `--name <slug>` to override the auto-slugified basename, `--write` to enable MCP writes (default read-only), `--no-index` to skip the initial index. Inside Claude Code you can also use the `/add-vault` skill which wraps the same CLI with confirmation prompts.
+
 ## Install (recommended)
 
 ```bash
@@ -89,9 +102,8 @@ gh repo clone owrede/vault-memory
 cd vault-memory
 npm install && npm run build && npm link   # creates the global `vault-memory` binary
 
-# 6) Config (~/.vault-memory/config.toml — see below)
-# 7) First index
-vault-memory index
+# 6) Register your first vault (creates config + .mcp.json + initial index)
+vault-memory add-vault "/Users/you/Documents/Obsidian Vaults/My Vault"
 ```
 
 The MCP-host config (`.mcp.json` in the consuming vault) calls the `vault-memory` binary, so any shell with it on `$PATH` will work.
