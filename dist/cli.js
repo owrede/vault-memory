@@ -4447,6 +4447,7 @@ async function serve() {
     endpoint: config.server.ollama_endpoint
   });
   const defaultModel = config.server.default_embedding_model ?? "qwen3-embedding:0.6b";
+  const activeVault = process.env.VAULT_MEMORY_ACTIVE_VAULT?.trim() || void 0;
   const rerankerBackend = config.server.reranker_backend ?? (config.server.reranker_model ? "onnx" : void 0);
   const reranker = config.server.reranker_model ? rerankerBackend === "ollama" ? new OllamaReranker({ ollama, model: config.server.reranker_model }) : new OnnxReranker({
     modelDir: config.server.reranker_model_dir ?? joinPath(homedir3(), ".vault-memory", "models", "bge-reranker-v2-m3")
@@ -4826,6 +4827,7 @@ async function serve() {
               manager,
               ollama,
               defaultModel,
+              activeVault,
               parsed.query,
               parsed.vaults,
               parsed.top_k,
@@ -4838,6 +4840,7 @@ async function serve() {
           return ok(
             handleSearchText(
               manager,
+              activeVault,
               parsed.query,
               parsed.vaults,
               parsed.top_k,
@@ -4852,6 +4855,7 @@ async function serve() {
               manager,
               ollama,
               defaultModel,
+              activeVault,
               parsed.query,
               parsed.vaults,
               parsed.top_k,
@@ -5036,8 +5040,13 @@ function handleReadNote(manager, vaultName, path5) {
     word_count: note.word_count
   };
 }
-async function handleSearchSemantic(manager, ollama, defaultModel, query, vaultFilter, topK, excludePaths) {
-  const targets = vaultFilter ? vaultFilter.map((n) => manager.require(n)) : manager.list();
+function resolveVaultTargets(manager, vaultFilter, activeVault) {
+  if (vaultFilter) return vaultFilter.map((n) => manager.require(n));
+  if (activeVault) return [manager.require(activeVault)];
+  return manager.list();
+}
+async function handleSearchSemantic(manager, ollama, defaultModel, activeVault, query, vaultFilter, topK, excludePaths) {
+  const targets = resolveVaultTargets(manager, vaultFilter, activeVault);
   if (targets.length === 0) {
     return { hits: [], note: "No vaults configured." };
   }
@@ -5083,8 +5092,8 @@ async function handleSearchSemantic(manager, ollama, defaultModel, query, vaultF
   allHits.sort((a, b) => b.score - a.score);
   return { hits: allHits.slice(0, topK), count: allHits.length };
 }
-function handleSearchText(manager, query, vaultFilter, topK, excludePaths) {
-  const targets = vaultFilter ? vaultFilter.map((n) => manager.require(n)) : manager.list();
+function handleSearchText(manager, activeVault, query, vaultFilter, topK, excludePaths) {
+  const targets = resolveVaultTargets(manager, vaultFilter, activeVault);
   if (targets.length === 0) {
     return { hits: [], note: "No vaults configured." };
   }
@@ -5115,8 +5124,8 @@ function handleSearchText(manager, query, vaultFilter, topK, excludePaths) {
   allHits.sort((a, b) => b.score - a.score);
   return { hits: allHits.slice(0, topK), count: allHits.length };
 }
-async function handleSearchHybrid(manager, ollama, defaultModel, query, vaultFilter, topK, rrfK, excludePaths, reranker) {
-  const targets = vaultFilter ? vaultFilter.map((n) => manager.require(n)) : manager.list();
+async function handleSearchHybrid(manager, ollama, defaultModel, activeVault, query, vaultFilter, topK, rrfK, excludePaths, reranker) {
+  const targets = resolveVaultTargets(manager, vaultFilter, activeVault);
   if (targets.length === 0) {
     return { hits: [], note: "No vaults configured." };
   }

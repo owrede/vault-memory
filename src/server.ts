@@ -175,6 +175,14 @@ export async function serve(): Promise<void> {
   const defaultModel =
     config.server.default_embedding_model ?? "qwen3-embedding:0.6b";
 
+  // Default search scope. When VAULT_MEMORY_ACTIVE_VAULT is set, search_*
+  // tools default to that single vault unless the caller passes an explicit
+  // `vaults` array. This makes the common case ("I'm working in this vault,
+  // search this vault") the default — cross-vault search is opt-in via an
+  // explicit `vaults: ["a", "b"]` filter. If the env var is unset, the
+  // legacy behaviour (search all configured vaults) applies.
+  const activeVault = process.env.VAULT_MEMORY_ACTIVE_VAULT?.trim() || undefined;
+
   // Optional cross-encoder reranker (Phase 7d). Constructed once;
   // search_hybrid will pass it through only when the caller asks for it.
   // Phase 8: backend selection. Default to "onnx" when reranker_model is
@@ -620,6 +628,7 @@ export async function serve(): Promise<void> {
               manager,
               ollama,
               defaultModel,
+              activeVault,
               parsed.query,
               parsed.vaults,
               parsed.top_k,
@@ -633,6 +642,7 @@ export async function serve(): Promise<void> {
           return ok(
             handleSearchText(
               manager,
+              activeVault,
               parsed.query,
               parsed.vaults,
               parsed.top_k,
@@ -648,6 +658,7 @@ export async function serve(): Promise<void> {
               manager,
               ollama,
               defaultModel,
+              activeVault,
               parsed.query,
               parsed.vaults,
               parsed.top_k,
@@ -866,18 +877,38 @@ function handleReadNote(
   };
 }
 
+/**
+ * Resolve which vaults a search should hit.
+ *
+ * Priority (highest first):
+ *   1. Explicit `vaultFilter` from the request → exactly those vaults.
+ *   2. `activeVault` from VAULT_MEMORY_ACTIVE_VAULT env var → just that one.
+ *   3. Neither set → all configured vaults (legacy behaviour).
+ *
+ * Step 2 is what makes "search this vault by default" work without breaking
+ * existing cross-vault callers — they still pass an explicit `vaults` array.
+ */
+function resolveVaultTargets(
+  manager: VaultManager,
+  vaultFilter: string[] | undefined,
+  activeVault: string | undefined,
+): ReturnType<VaultManager["list"]> {
+  if (vaultFilter) return vaultFilter.map((n) => manager.require(n));
+  if (activeVault) return [manager.require(activeVault)];
+  return manager.list();
+}
+
 async function handleSearchSemantic(
   manager: VaultManager,
   ollama: OllamaClient,
   defaultModel: string,
+  activeVault: string | undefined,
   query: string,
   vaultFilter: string[] | undefined,
   topK: number,
   excludePaths: string[] | undefined,
 ): Promise<object> {
-  const targets = vaultFilter
-    ? vaultFilter.map((n) => manager.require(n))
-    : manager.list();
+  const targets = resolveVaultTargets(manager, vaultFilter, activeVault);
 
   if (targets.length === 0) {
     return { hits: [], note: "No vaults configured." };
@@ -941,14 +972,13 @@ async function handleSearchSemantic(
 
 function handleSearchText(
   manager: VaultManager,
+  activeVault: string | undefined,
   query: string,
   vaultFilter: string[] | undefined,
   topK: number,
   excludePaths: string[] | undefined,
 ): object {
-  const targets = vaultFilter
-    ? vaultFilter.map((n) => manager.require(n))
-    : manager.list();
+  const targets = resolveVaultTargets(manager, vaultFilter, activeVault);
 
   if (targets.length === 0) {
     return { hits: [], note: "No vaults configured." };
@@ -990,6 +1020,7 @@ async function handleSearchHybrid(
   manager: VaultManager,
   ollama: OllamaClient,
   defaultModel: string,
+  activeVault: string | undefined,
   query: string,
   vaultFilter: string[] | undefined,
   topK: number,
@@ -997,9 +1028,7 @@ async function handleSearchHybrid(
   excludePaths: string[] | undefined,
   reranker: Reranker | undefined,
 ): Promise<object> {
-  const targets = vaultFilter
-    ? vaultFilter.map((n) => manager.require(n))
-    : manager.list();
+  const targets = resolveVaultTargets(manager, vaultFilter, activeVault);
 
   if (targets.length === 0) {
     return { hits: [], note: "No vaults configured." };
