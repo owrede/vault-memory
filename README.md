@@ -6,7 +6,7 @@ Reads one or more Obsidian vaults, indexes them with local embeddings via Ollama
 
 ## Status
 
-**v0.7.3** — feature-complete through Phase 7e (eval-driven model upgrades). See `_research/vault-memory-spec.md` in a consuming vault for the design contract, and `_research/vault-memory-eval-v2-results.md` for retrieval-quality benchmarks.
+**v0.8.1** — Phase 8 (real ONNX cross-encoder reranker) + search-quality fixes. See `_research/vault-memory-spec.md` in a consuming vault for the design contract, `_research/vault-memory-eval-v2-results.md` for retrieval-quality benchmarks, and `_research/vault-memory-eval-v3-spec.md` for the planned reranker eval.
 
 ## Architecture in one paragraph
 
@@ -24,9 +24,9 @@ Eval-v2 (May 2026) compared two multilingual Ollama-hosted embedding models on a
 
 See `vault-memory-eval-v2-results.md` for the full per-query benchmark table.
 
-## Reranker — real ONNX cross-encoder (Phase 8, v0.8.0)
+## Reranker — real ONNX cross-encoder (Phase 8)
 
-v0.8.0 replaces the v0.7.x L2-norm hack with a real cross-encoder forward pass over **BAAI/bge-reranker-v2-m3** (ONNX INT8, ≈570 MB) via `onnxruntime-node` + `@huggingface/tokenizers`. Sigmoid-of-logit gives a true [0, 1] relevance score per (query, chunk) pair, matching the `Reranker` contract directly.
+Replaces the v0.7.x L2-norm hack with a real cross-encoder forward pass over **BAAI/bge-reranker-v2-m3** (ONNX INT8, ≈570 MB) via `onnxruntime-node` + `@huggingface/tokenizers`. Sigmoid-of-logit gives a true [0, 1] relevance score per (query, chunk) pair, matching the `Reranker` contract directly. v0.8.1 fixed the tokenizer-constructor API (Hugging Face needs `Tokenizer(tokenizerJson, config)`) and added a near-empty-chunk pre-filter so the rerank pool isn't diluted by degenerate inputs.
 
 Setup (one-time):
 
@@ -43,9 +43,30 @@ reranker_backend  = "onnx"              # default when reranker_model is set
 # reranker_model_dir = "..."            # optional override; defaults to ~/.vault-memory/models/bge-reranker-v2-m3
 ```
 
-Reranking remains **opt-in per query** via `rerank: true` in `search_hybrid`. The ONNX session loads lazily on the first reranked query, so users who never set `rerank: true` pay zero startup cost. Eval-v3 (re-running the v2 query suite against the real backend) is still pending — treat this as opt-in until that lands.
+Reranking remains **opt-in per query** via `rerank: true` in `search_hybrid`. The ONNX session loads lazily on the first reranked query, so users who never set `rerank: true` pay zero startup cost.
 
 The legacy `OllamaReranker` (L2-norm proxy) stays available via `reranker_backend = "ollama"` for back-compat, but is no longer recommended.
+
+## Search scope (v0.8.1)
+
+By default — with multiple vaults configured — `search_*` tools fan out across all of them and merge via RRF. Two new mechanisms scope this:
+
+**`VAULT_MEMORY_ACTIVE_VAULT` env var** — set per consumer (in `.mcp.json`'s `env` block) to default search to one vault. Explicit `vaults: [...]` in the request still overrides; cross-vault stays opt-in.
+
+```json
+{
+  "mcpServers": {
+    "vault-memory": {
+      "type": "stdio",
+      "command": "vault-memory",
+      "args": ["serve"],
+      "env": { "VAULT_MEMORY_ACTIVE_VAULT": "myvault" }
+    }
+  }
+}
+```
+
+**Mid-index skip** — vaults with an unfinished `index_runs` row (i.e. an index is still embedding chunks) are excluded from the implicit candidate set so half-indexed chunks don't pollute results. Skipped vaults are listed in a `note` field on the response. Explicit `vaults: ["…"]` still passes through if you want to query a mid-indexing vault on purpose.
 
 ## Install (recommended)
 
@@ -107,7 +128,7 @@ exclude_globs = [".obsidian/**", ".trash/**", "_research/**", ".claude/**"]
 ## MCP tools (18)
 
 **Discovery & Read:** `list_vaults`, `read_note`
-**Search:** `search_semantic`, `search_text`, `search_hybrid` (all with optional `exclude_paths` glob filter)
+**Search:** `search_semantic`, `search_text`, `search_hybrid` — all support optional `exclude_paths` (glob) and an explicit `vaults` filter; responses include a `note` field when vaults were skipped (e.g. mid-indexing)
 **Graph:** `list_backlinks`, `list_forward_links`, `find_broken_links`
 **Frontmatter:** `query_frontmatter`
 **Write:** `write_note`, `update_frontmatter`, `delete_note` (all hash-protected, atomic)
@@ -120,11 +141,13 @@ exclude_globs = [".obsidian/**", ".trash/**", "_research/**", ".claude/**"]
 ```bash
 npm install
 npm run dev          # MCP server on stdio with hot reload
-npm test             # 264+ tests across 31+ files
+npm test             # 278 tests across 33 files (v0.8.1)
 npm run build
 ```
 
 After a code change: `npm run build && git add dist/` — the bundle is tracked in git so users can `git pull && npm link` without needing devDependencies on every machine.
+
+The indexer is robust against malformed notes: gray-matter parse errors on a single file (invalid YAML frontmatter, duplicate mapping keys, etc.) are logged and skipped, not fatal to the whole vault run. The `IndexRunResult.notesSkipped` field surfaces the count.
 
 ## License
 
