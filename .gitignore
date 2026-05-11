@@ -6,3 +6,6 @@ node_modules/
 coverage/
 .vitest/
 *.tsbuildinfo
+# Symlink created by `npm link --prefix .`; the canonical bin entry is
+# resolved via package.json#bin from the global node_modules instead.
+bin/

@@ -16,6 +16,10 @@ switch (command) {
     await runIndex(args.slice(1));
     break;
 
+  case "add-vault":
+    await runAddVault(args.slice(1));
+    break;
+
   case "--help":
   case "-h":
   case "help":
@@ -97,6 +101,92 @@ async function runIndex(rest: string[]): Promise<void> {
   manager.closeAll();
 }
 
+/**
+ * add-vault: onboard a new Obsidian vault end-to-end.
+ *   1. append a [[vaults]] block to ~/.vault-memory/config.toml
+ *   2. write/merge .mcp.json in the vault root (so Claude Code can
+ *      auto-spawn the MCP server when that vault is opened)
+ *   3. build an initial index (unless --no-index is passed)
+ *
+ * Idempotent: re-running with a known path skips config mutation
+ * and only refreshes the .mcp.json + delta-indexes.
+ */
+async function runAddVault(rest: string[]): Promise<void> {
+  const { addVault } = await import("./config/index.js");
+
+  // Parse positional path + flags.
+  let path: string | null = null;
+  let name: string | undefined;
+  let writeEnabled = false;
+  let skipIndex = false;
+
+  for (let i = 0; i < rest.length; i++) {
+    const arg = rest[i];
+    if (arg === "--name") {
+      name = rest[i + 1];
+      i++;
+    } else if (arg === "--write" || arg === "--write-enabled") {
+      writeEnabled = true;
+    } else if (arg === "--no-index") {
+      skipIndex = true;
+    } else if (arg === "--help" || arg === "-h") {
+      console.error(`Usage: vault-memory add-vault <path> [--name <name>] [--write] [--no-index]
+
+Registers a vault in ~/.vault-memory/config.toml, writes a .mcp.json
+into the vault root, and runs an initial index. Idempotent.`);
+      return;
+    } else if (arg && !arg.startsWith("--") && path === null) {
+      path = arg;
+    }
+  }
+
+  if (path === null) {
+    console.error(
+      "Usage: vault-memory add-vault <path> [--name <name>] [--write] [--no-index]",
+    );
+    process.exit(2);
+  }
+
+  console.error(`→ Registering vault: ${path}`);
+  const result = await addVault({ path, name, writeEnabled });
+
+  // Render the per-step transcript so users see exactly what changed.
+  for (const step of result.steps) {
+    switch (step.kind) {
+      case "config-added":
+        console.error(`  ✓ config.toml: added [[vaults]] "${step.name}"`);
+        break;
+      case "config-already-registered":
+        console.error(
+          `  • config.toml: already registered as "${step.name}" (${step.existingPath})`,
+        );
+        break;
+      case "mcp-json-created":
+        console.error(`  ✓ ${step.mcpPath}: created`);
+        break;
+      case "mcp-json-merged":
+        console.error(`  ✓ ${step.mcpPath}: merged vault-memory entry`);
+        break;
+      case "mcp-json-unchanged":
+        console.error(`  • ${step.mcpPath}: already up to date`);
+        break;
+    }
+  }
+
+  if (skipIndex) {
+    console.error(`\nSkipped indexing (--no-index). Run later:`);
+    console.error(`  vault-memory index ${result.name}`);
+  } else {
+    console.error(`\n→ Building initial index for "${result.name}"…`);
+    // Reuse the existing index flow. Pass the vault name as positional arg.
+    await runIndex([result.name]);
+  }
+
+  console.error(
+    `\nDone. Open ${result.resolvedPath} in Claude Code — the vault-memory MCP server will be available.`,
+  );
+}
+
 function printHelp(): void {
   console.error(`vault-memory — local-first semantic memory MCP server
 
@@ -108,6 +198,10 @@ COMMANDS:
   index [VAULT]          Build/refresh index for a vault (or all if omitted)
     --full                 Wipe derived layer and re-embed everything
     --vault NAME           Alternative flag form
+  add-vault <path>       Register a new vault end-to-end (config + .mcp.json + index)
+    --name NAME            Override the auto-slugified name
+    --write                Allow MCP write operations (default: read-only)
+    --no-index             Skip the initial index (you can run it later)
   init                   Interactive config wizard (Phase 5 — not yet)
   help, --help           Show this message
 

@@ -91,17 +91,173 @@ var init_loader = __esm({
   }
 });
 
+// src/config/add-vault.ts
+import { promises as fs } from "fs";
+import { join as join2, basename, resolve } from "path";
+import { homedir as homedir2 } from "os";
+function slugifyVaultName(input) {
+  const cleaned = input.toLowerCase().normalize("NFKD").replace(/[^a-z0-9-]+/g, "-").replace(/-+/g, "-").replace(/^-|-$/g, "");
+  if (cleaned.length === 0) return "vault";
+  if (/^[0-9]/.test(cleaned)) return `v-${cleaned}`;
+  return cleaned;
+}
+async function addVault(opts) {
+  const resolvedPath = resolve(opts.path);
+  const cfgFile = opts.configFile ?? configPath();
+  const binary = opts.binary ?? "vault-memory";
+  const steps = [];
+  const stat = await fs.stat(resolvedPath).catch((err) => {
+    if (err.code === "ENOENT") {
+      throw new Error(`Vault path does not exist: ${resolvedPath}`);
+    }
+    throw err;
+  });
+  if (!stat.isDirectory()) {
+    throw new Error(`Vault path is not a directory: ${resolvedPath}`);
+  }
+  const proposedName = opts.name ?? slugifyVaultName(basename(resolvedPath));
+  if (!/^[a-z0-9][a-z0-9-]*$/.test(proposedName)) {
+    throw new Error(
+      `Vault name "${proposedName}" must match /^[a-z0-9][a-z0-9-]*$/ (lowercase alphanumeric + dashes, starting with a letter or digit).`
+    );
+  }
+  const existing = await loadConfig(cfgFile);
+  const sameName = existing.vaults.find((v) => v.name === proposedName);
+  const samePath = existing.vaults.find(
+    (v) => resolve(v.path) === resolvedPath
+  );
+  if (samePath) {
+    steps.push({
+      kind: "config-already-registered",
+      name: samePath.name,
+      existingPath: samePath.path
+    });
+  } else if (sameName) {
+    throw new Error(
+      `A different vault is already registered under name "${proposedName}" (path: ${sameName.path}). Pass --name <other> to choose a different one.`
+    );
+  } else {
+    const block = renderVaultBlock({
+      name: proposedName,
+      path: resolvedPath,
+      writeEnabled: opts.writeEnabled ?? false,
+      excludeGlobs: opts.excludeGlobs ?? DEFAULT_EXCLUDE_GLOBS
+    });
+    await ensureFileExists(cfgFile);
+    await appendToFile(cfgFile, block);
+    steps.push({ kind: "config-added", name: proposedName, path: resolvedPath });
+  }
+  const finalName = samePath?.name ?? proposedName;
+  const mcpPath = join2(resolvedPath, ".mcp.json");
+  const step = await writeOrMergeMcpJson(mcpPath, finalName, binary);
+  steps.push(step);
+  return {
+    name: finalName,
+    resolvedPath,
+    configFile: cfgFile,
+    mcpJsonPath: mcpPath,
+    steps
+  };
+}
+function renderVaultBlock(input) {
+  const lines = [
+    "",
+    `# Added by vault-memory add-vault on ${(/* @__PURE__ */ new Date()).toISOString()}`,
+    "[[vaults]]",
+    `name = ${JSON.stringify(input.name)}`,
+    `path = ${JSON.stringify(input.path)}`,
+    `write_enabled = ${input.writeEnabled}`,
+    `exclude_globs = [`,
+    ...input.excludeGlobs.map((g) => `  ${JSON.stringify(g)},`),
+    `]`,
+    ""
+  ];
+  return lines.join("\n");
+}
+async function ensureFileExists(path5) {
+  try {
+    await fs.access(path5);
+  } catch {
+    await fs.mkdir(join2(homedir2(), ".vault-memory"), { recursive: true });
+    await fs.writeFile(path5, "# vault-memory configuration\n", "utf-8");
+  }
+}
+async function appendToFile(path5, content) {
+  await fs.appendFile(path5, content, "utf-8");
+}
+async function writeOrMergeMcpJson(mcpPath, vaultName, binary) {
+  const desiredEntry = {
+    type: "stdio",
+    command: binary,
+    args: ["serve"],
+    env: { VAULT_MEMORY_ACTIVE_VAULT: vaultName }
+  };
+  let existing = null;
+  try {
+    const raw = await fs.readFile(mcpPath, "utf-8");
+    existing = JSON.parse(raw);
+  } catch (err) {
+    const code = err.code;
+    if (code !== "ENOENT") {
+      throw new Error(
+        `Failed to read existing .mcp.json at ${mcpPath}: ${err.message}`
+      );
+    }
+  }
+  if (existing === null) {
+    const fresh = { mcpServers: { "vault-memory": desiredEntry } };
+    await fs.writeFile(mcpPath, JSON.stringify(fresh, null, 2) + "\n", "utf-8");
+    return { kind: "mcp-json-created", mcpPath };
+  }
+  const before = existing.mcpServers?.["vault-memory"];
+  const beforeJson = before ? JSON.stringify(before) : null;
+  const merged = {
+    ...existing,
+    mcpServers: {
+      ...existing.mcpServers ?? {},
+      "vault-memory": desiredEntry
+    }
+  };
+  const afterJson = JSON.stringify(merged.mcpServers?.["vault-memory"]);
+  if (beforeJson === afterJson) {
+    return { kind: "mcp-json-unchanged", mcpPath };
+  }
+  await fs.writeFile(mcpPath, JSON.stringify(merged, null, 2) + "\n", "utf-8");
+  return { kind: "mcp-json-merged", mcpPath };
+}
+var DEFAULT_EXCLUDE_GLOBS;
+var init_add_vault = __esm({
+  "src/config/add-vault.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_loader();
+    DEFAULT_EXCLUDE_GLOBS = [
+      ".obsidian/**",
+      ".trash/**",
+      "Trash/**",
+      ".claude/**",
+      ".smart-connections/**",
+      ".smart-env/**",
+      ".systemsculpt/**",
+      ".makemd/**"
+    ];
+  }
+});
+
 // src/config/index.ts
 var config_exports = {};
 __export(config_exports, {
+  addVault: () => addVault,
   configPath: () => configPath,
-  loadConfig: () => loadConfig
+  loadConfig: () => loadConfig,
+  slugifyVaultName: () => slugifyVaultName
 });
 var init_config = __esm({
   "src/config/index.ts"() {
     "use strict";
     init_esm_shims();
     init_loader();
+    init_add_vault();
   }
 });
 
@@ -1228,8 +1384,8 @@ var init_db = __esm({
 });
 
 // src/vault/manager.ts
-import { homedir as homedir2 } from "os";
-import { join as join2 } from "path";
+import { homedir as homedir3 } from "os";
+import { join as join3 } from "path";
 import { mkdir } from "fs/promises";
 var VaultManager;
 var init_manager = __esm({
@@ -1240,10 +1396,10 @@ var init_manager = __esm({
     VaultManager = class _VaultManager {
       vaults = /* @__PURE__ */ new Map();
       static dbDirectory() {
-        return join2(homedir2(), ".vault-memory", "vaults");
+        return join3(homedir3(), ".vault-memory", "vaults");
       }
       static dbPathFor(vaultName) {
-        return join2(_VaultManager.dbDirectory(), `${vaultName}.db`);
+        return join3(_VaultManager.dbDirectory(), `${vaultName}.db`);
       }
       /**
        * Initialize all vaults from config. Creates DB files if missing, runs
@@ -1303,7 +1459,7 @@ var init_vault = __esm({
 
 // src/ollama/retry.ts
 function sleep(ms) {
-  return new Promise((resolve5) => setTimeout(resolve5, ms));
+  return new Promise((resolve6) => setTimeout(resolve6, ms));
 }
 function computeDelay(attempt, baseDelayMs, maxDelayMs) {
   const exp = baseDelayMs * Math.pow(2, attempt);
@@ -1841,7 +1997,7 @@ var init_reranker = __esm({
 // src/rerank/onnx-reranker.ts
 import { readFile as readFile2 } from "fs/promises";
 import { existsSync } from "fs";
-import { join as join3 } from "path";
+import { join as join4 } from "path";
 function sigmoid(x) {
   return 1 / (1 + Math.exp(-x));
 }
@@ -1919,8 +2075,8 @@ var init_onnx_reranker = __esm({
         if (this.loaded) return this.loaded;
         if (this.loading) return this.loading;
         this.loading = (async () => {
-          const modelPath = join3(this.modelDir, "model_quantized.onnx");
-          const tokenizerPath = join3(this.modelDir, "tokenizer.json");
+          const modelPath = join4(this.modelDir, "model_quantized.onnx");
+          const tokenizerPath = join4(this.modelDir, "tokenizer.json");
           if (!existsSync(modelPath)) {
             throw new Error(
               `OnnxReranker: model file not found at ${modelPath}. Run: curl -L https://huggingface.co/onnx-community/bge-reranker-v2-m3-ONNX/resolve/main/onnx/model_quantized.onnx -o ${modelPath}`
@@ -2149,7 +2305,7 @@ var init_hash = __esm({
 });
 
 // src/reader/scanner.ts
-import { promises as fs } from "fs";
+import { promises as fs2 } from "fs";
 import * as path2 from "path";
 async function scanVault(rootPath, options) {
   const root = path2.resolve(rootPath);
@@ -2163,7 +2319,7 @@ async function scanVault(rootPath, options) {
 async function walk(root, dir, matchers, out) {
   let entries;
   try {
-    entries = await fs.readdir(dir, { withFileTypes: true });
+    entries = await fs2.readdir(dir, { withFileTypes: true });
   } catch {
     return;
   }
@@ -2330,12 +2486,12 @@ var init_wikilinks2 = __esm({
 });
 
 // src/reader/parser.ts
-import { promises as fs2 } from "fs";
+import { promises as fs3 } from "fs";
 import * as path3 from "path";
 import matter from "gray-matter";
 async function parseNote(absolutePath, vaultRoot) {
-  const raw = await fs2.readFile(absolutePath, "utf-8");
-  const stat = await fs2.stat(absolutePath);
+  const raw = await fs3.readFile(absolutePath, "utf-8");
+  const stat = await fs3.stat(absolutePath);
   const parsed = matter(raw);
   const content = parsed.content;
   const fmData = parsed.data;
@@ -3012,23 +3168,23 @@ var init_indexer = __esm({
 });
 
 // src/write/fs.ts
-import { promises as fs3 } from "fs";
-import { dirname, isAbsolute, resolve as resolve3, sep as sep3 } from "path";
+import { promises as fs4 } from "fs";
+import { dirname, isAbsolute, resolve as resolve4, sep as sep3 } from "path";
 import { randomBytes } from "crypto";
 async function atomicWriteFile(absPath, content) {
   if (!isAbsolute(absPath)) {
     throw new Error(`atomicWriteFile requires an absolute path: ${absPath}`);
   }
   const parent = dirname(absPath);
-  await fs3.mkdir(parent, { recursive: true });
+  await fs4.mkdir(parent, { recursive: true });
   const suffix = randomBytes(8).toString("hex");
   const tmpPath = `${absPath}.tmp.${suffix}`;
   try {
-    await fs3.writeFile(tmpPath, content, "utf-8");
-    await fs3.rename(tmpPath, absPath);
+    await fs4.writeFile(tmpPath, content, "utf-8");
+    await fs4.rename(tmpPath, absPath);
   } catch (err) {
     try {
-      await fs3.unlink(tmpPath);
+      await fs4.unlink(tmpPath);
     } catch {
     }
     throw err;
@@ -3041,8 +3197,8 @@ async function safeJoinInsideVault(vaultRoot, relativePath) {
   if (isAbsolute(relativePath)) {
     throw new OutsideVaultError(relativePath, vaultRoot);
   }
-  const root = resolve3(vaultRoot);
-  const target = resolve3(root, relativePath);
+  const root = resolve4(vaultRoot);
+  const target = resolve4(root, relativePath);
   const rootWithSep = root.endsWith(sep3) ? root : root + sep3;
   if (target !== root && !target.startsWith(rootWithSep)) {
     throw new OutsideVaultError(relativePath, vaultRoot);
@@ -3052,7 +3208,7 @@ async function safeJoinInsideVault(vaultRoot, relativePath) {
   }
   let realRoot;
   try {
-    realRoot = await fs3.realpath(root);
+    realRoot = await fs4.realpath(root);
   } catch {
     throw new OutsideVaultError(relativePath, vaultRoot);
   }
@@ -3068,8 +3224,8 @@ async function resolveExistingAncestor(absPath) {
   const trailing = [];
   while (true) {
     try {
-      const real = await fs3.realpath(current);
-      return trailing.length === 0 ? real : resolve3(real, ...trailing.reverse());
+      const real = await fs4.realpath(current);
+      return trailing.length === 0 ? real : resolve4(real, ...trailing.reverse());
     } catch (err) {
       const code = err?.code;
       if (code !== "ENOENT" && code !== "ENOTDIR") {
@@ -3101,7 +3257,7 @@ var init_fs = __esm({
 });
 
 // src/frontmatter/update.ts
-import { promises as fs4 } from "fs";
+import { promises as fs5 } from "fs";
 import matter2 from "gray-matter";
 function isPlainObject2(v) {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -3233,7 +3389,7 @@ async function updateFrontmatter(input) {
   const absPath = await safeJoinInsideVault(vault.config.path, relativePath);
   let raw;
   try {
-    raw = await fs4.readFile(absPath, "utf8");
+    raw = await fs5.readFile(absPath, "utf8");
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return {
@@ -3274,7 +3430,7 @@ async function updateFrontmatter(input) {
   const fullText = Object.keys(next).length === 0 ? content : matter2.stringify(content, next);
   input.onBeforeFsWrite?.();
   await atomicWriteFile(absPath, fullText);
-  const stat = await fs4.stat(absPath);
+  const stat = await fs5.stat(absPath);
   const newHash = computeHash(content, next);
   const title = extractTitle2(content, basenameNoMd(relativePath));
   const wordCount = countWords2(content);
@@ -3831,8 +3987,8 @@ var init_indexer2 = __esm({
 });
 
 // src/write/write.ts
-import { promises as fs5 } from "fs";
-import { basename as basename2 } from "path";
+import { promises as fs6 } from "fs";
+import { basename as basename3 } from "path";
 import matter3 from "gray-matter";
 function permissionDenied(vaultName) {
   return {
@@ -3849,7 +4005,7 @@ function extractTitle3(content, relativePath) {
     const m = /^#\s+(.+?)\s*$/.exec(line);
     if (m !== null && m[1] !== void 0) return m[1].trim();
   }
-  return basename2(relativePath, ".md");
+  return basename3(relativePath, ".md");
 }
 function countWords3(content) {
   if (content.length === 0) return 0;
@@ -3858,7 +4014,7 @@ function countWords3(content) {
 async function readExistingFile(absPath) {
   let raw;
   try {
-    raw = await fs5.readFile(absPath, "utf-8");
+    raw = await fs6.readFile(absPath, "utf-8");
   } catch (err) {
     if (typeof err === "object" && err !== null && err.code === "ENOENT") {
       return null;
@@ -3910,7 +4066,7 @@ async function writeNote(input) {
       `Internal error: file disappeared after write: ${relativePath}`
     );
   }
-  const stat = await fs5.stat(absPath);
+  const stat = await fs6.stat(absPath);
   const previousNote = vault.db.notes.getByPath(relativePath);
   const previousHash = previousNote?.hash ?? null;
   const title = extractTitle3(written.content, relativePath);
@@ -3942,7 +4098,7 @@ async function writeNote(input) {
     input.onBeforeFsWrite?.();
     try {
       if (created) {
-        await fs5.unlink(absPath);
+        await fs6.unlink(absPath);
       } else if (existing !== null) {
         await atomicWriteFile(absPath, existing.raw);
       }
@@ -3984,7 +4140,7 @@ async function deleteNote(input) {
   const previousNote = vault.db.notes.getByPath(relativePath);
   const previousHash = previousNote?.hash ?? existing.hash;
   input.onBeforeFsWrite?.();
-  await fs5.unlink(absPath);
+  await fs6.unlink(absPath);
   if (previousNote !== null) {
     vault.db.transaction(() => {
       vault.db.audit.recordWrite({
@@ -4290,8 +4446,8 @@ var init_watcher = __esm({
           const message = err instanceof Error ? err.message : String(err);
           this.opts.log(`fs watcher error: ${message}`);
         });
-        await new Promise((resolve5) => {
-          this.fsWatcher.once("ready", () => resolve5());
+        await new Promise((resolve6) => {
+          this.fsWatcher.once("ready", () => resolve6());
         });
         this.started = true;
         this.opts.log(`watching ${vaultPath}`);
@@ -4451,7 +4607,7 @@ import {
   ListToolsRequestSchema
 } from "@modelcontextprotocol/sdk/types.js";
 import { z as z3 } from "zod";
-import { homedir as homedir3 } from "os";
+import { homedir as homedir4 } from "os";
 import { join as joinPath } from "path";
 async function serve() {
   const config = await loadConfig();
@@ -4464,7 +4620,7 @@ async function serve() {
   const activeVault = process.env.VAULT_MEMORY_ACTIVE_VAULT?.trim() || void 0;
   const rerankerBackend = config.server.reranker_backend ?? (config.server.reranker_model ? "onnx" : void 0);
   const reranker = config.server.reranker_model ? rerankerBackend === "ollama" ? new OllamaReranker({ ollama, model: config.server.reranker_model }) : new OnnxReranker({
-    modelDir: config.server.reranker_model_dir ?? joinPath(homedir3(), ".vault-memory", "models", "bge-reranker-v2-m3")
+    modelDir: config.server.reranker_model_dir ?? joinPath(homedir4(), ".vault-memory", "models", "bge-reranker-v2-m3")
   }) : void 0;
   const suppression = new SuppressionSet({ ttlMs: 2e3 });
   const watchers = /* @__PURE__ */ new Map();
@@ -5332,6 +5488,9 @@ switch (command) {
   case "index":
     await runIndex(args.slice(1));
     break;
+  case "add-vault":
+    await runAddVault(args.slice(1));
+    break;
   case "--help":
   case "-h":
   case "help":
@@ -5392,6 +5551,74 @@ async function runIndex(rest) {
   }
   manager.closeAll();
 }
+async function runAddVault(rest) {
+  const { addVault: addVault2 } = await Promise.resolve().then(() => (init_config(), config_exports));
+  let path5 = null;
+  let name;
+  let writeEnabled = false;
+  let skipIndex = false;
+  for (let i = 0; i < rest.length; i++) {
+    const arg = rest[i];
+    if (arg === "--name") {
+      name = rest[i + 1];
+      i++;
+    } else if (arg === "--write" || arg === "--write-enabled") {
+      writeEnabled = true;
+    } else if (arg === "--no-index") {
+      skipIndex = true;
+    } else if (arg === "--help" || arg === "-h") {
+      console.error(`Usage: vault-memory add-vault <path> [--name <name>] [--write] [--no-index]
+
+Registers a vault in ~/.vault-memory/config.toml, writes a .mcp.json
+into the vault root, and runs an initial index. Idempotent.`);
+      return;
+    } else if (arg && !arg.startsWith("--") && path5 === null) {
+      path5 = arg;
+    }
+  }
+  if (path5 === null) {
+    console.error(
+      "Usage: vault-memory add-vault <path> [--name <name>] [--write] [--no-index]"
+    );
+    process.exit(2);
+  }
+  console.error(`\u2192 Registering vault: ${path5}`);
+  const result = await addVault2({ path: path5, name, writeEnabled });
+  for (const step of result.steps) {
+    switch (step.kind) {
+      case "config-added":
+        console.error(`  \u2713 config.toml: added [[vaults]] "${step.name}"`);
+        break;
+      case "config-already-registered":
+        console.error(
+          `  \u2022 config.toml: already registered as "${step.name}" (${step.existingPath})`
+        );
+        break;
+      case "mcp-json-created":
+        console.error(`  \u2713 ${step.mcpPath}: created`);
+        break;
+      case "mcp-json-merged":
+        console.error(`  \u2713 ${step.mcpPath}: merged vault-memory entry`);
+        break;
+      case "mcp-json-unchanged":
+        console.error(`  \u2022 ${step.mcpPath}: already up to date`);
+        break;
+    }
+  }
+  if (skipIndex) {
+    console.error(`
+Skipped indexing (--no-index). Run later:`);
+    console.error(`  vault-memory index ${result.name}`);
+  } else {
+    console.error(`
+\u2192 Building initial index for "${result.name}"\u2026`);
+    await runIndex([result.name]);
+  }
+  console.error(
+    `
+Done. Open ${result.resolvedPath} in Claude Code \u2014 the vault-memory MCP server will be available.`
+  );
+}
 function printHelp() {
   console.error(`vault-memory \u2014 local-first semantic memory MCP server
 
@@ -5403,6 +5630,10 @@ COMMANDS:
   index [VAULT]          Build/refresh index for a vault (or all if omitted)
     --full                 Wipe derived layer and re-embed everything
     --vault NAME           Alternative flag form
+  add-vault <path>       Register a new vault end-to-end (config + .mcp.json + index)
+    --name NAME            Override the auto-slugified name
+    --write                Allow MCP write operations (default: read-only)
+    --no-index             Skip the initial index (you can run it later)
   init                   Interactive config wizard (Phase 5 \u2014 not yet)
   help, --help           Show this message
 
