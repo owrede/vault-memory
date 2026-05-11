@@ -767,6 +767,9 @@ var init_audit = __esm({
         this._listRuns = db.prepare(
           "SELECT * FROM index_runs ORDER BY id DESC LIMIT ?"
         );
+        this._isIndexing = db.prepare(
+          "SELECT COUNT(*) AS c FROM index_runs WHERE finished_at IS NULL"
+        );
         this._recordWrite = db.prepare(`
       INSERT INTO write_audit (note_id, op, previous_hash, new_hash, expected_hash, client_id, diff_summary, at)
       VALUES (@note_id, @op, @previous_hash, @new_hash, @expected_hash, @client_id, @diff_summary, @at)
@@ -777,6 +780,7 @@ var init_audit = __esm({
       _finishRun;
       _listRuns;
       _recordWrite;
+      _isIndexing;
       startRun(input) {
         const info = this._startRun.run({
           run_id: input.runId,
@@ -800,6 +804,10 @@ var init_audit = __esm({
       }
       listRuns(limit = 50) {
         return this._listRuns.all(limit);
+      }
+      /** True iff at least one index_runs row in this vault has finished_at IS NULL. */
+      isIndexing() {
+        return (this._isIndexing.get()?.c ?? 0) > 0;
       }
       recordWrite(input) {
         this._recordWrite.run({
@@ -1601,10 +1609,13 @@ async function hybridSearch(opts) {
       if (!vault) continue;
       const chunk = vault.db.chunks.getById(h.chunkId);
       if (!chunk) continue;
+      if (chunk.text.trim().length < MIN_RERANK_TRIM_CHARS) continue;
       indexed.push({ hit: h, text: chunk.text });
       texts.push(chunk.text);
     }
-    try {
+    if (indexed.length === 0) {
+      winners = flat.slice(0, topK);
+    } else try {
       const scores = await opts.reranker.score(query, texts);
       if (scores.length !== indexed.length) {
         throw new Error(
@@ -1725,13 +1736,14 @@ async function searchOneVault(vault, query, embeddingModelName, rrfK, topK, getQ
     return hit;
   });
 }
-var DEFAULT_TOP_K, DEFAULT_RRF_K;
+var DEFAULT_TOP_K, DEFAULT_RRF_K, MIN_RERANK_TRIM_CHARS;
 var init_hybrid = __esm({
   "src/search/hybrid.ts"() {
     "use strict";
     init_esm_shims();
     DEFAULT_TOP_K = 10;
     DEFAULT_RRF_K = 60;
+    MIN_RERANK_TRIM_CHARS = 20;
   }
 });
 
@@ -2463,6 +2475,7 @@ function chunkNote(content, options) {
   const overlapChars = overlapTokens * 4;
   const headings = extractHeadings(content);
   if (countTokens(content) <= maxTokens) {
+    if (content.trim().length < MIN_CHUNK_TRIM_CHARS) return [];
     return [
       {
         idx: 0,
@@ -2497,7 +2510,7 @@ function chunkNote(content, options) {
       start = sentenceIdx >= 0 ? overlapStart + sentenceIdx : overlapStart;
     }
     const text = content.slice(start, end);
-    if (text.length === 0) continue;
+    if (text.trim().length < MIN_CHUNK_TRIM_CHARS) continue;
     chunks.push({
       idx: chunks.length,
       text,
@@ -2636,7 +2649,7 @@ function findLastSentenceBoundary(window) {
   }
   return last;
 }
-var DEFAULT_MAX_TOKENS, DEFAULT_OVERLAP_TOKENS;
+var DEFAULT_MAX_TOKENS, DEFAULT_OVERLAP_TOKENS, MIN_CHUNK_TRIM_CHARS;
 var init_chunker = __esm({
   "src/chunker/chunker.ts"() {
     "use strict";
@@ -2645,6 +2658,7 @@ var init_chunker = __esm({
     init_headings();
     DEFAULT_MAX_TOKENS = 400;
     DEFAULT_OVERLAP_TOKENS = 50;
+    MIN_CHUNK_TRIM_CHARS = 3;
   }
 });
 
@@ -5041,14 +5055,28 @@ function handleReadNote(manager, vaultName, path5) {
   };
 }
 function resolveVaultTargets(manager, vaultFilter, activeVault) {
-  if (vaultFilter) return vaultFilter.map((n) => manager.require(n));
-  if (activeVault) return [manager.require(activeVault)];
-  return manager.list();
+  if (vaultFilter) {
+    return { targets: vaultFilter.map((n) => manager.require(n)), skipped: [] };
+  }
+  const candidates = activeVault ? [manager.require(activeVault)] : manager.list();
+  const targets = [];
+  const skipped = [];
+  for (const v of candidates) {
+    if (v.db.audit.isIndexing()) {
+      skipped.push(v.config.name);
+    } else {
+      targets.push(v);
+    }
+  }
+  return { targets, skipped };
 }
 async function handleSearchSemantic(manager, ollama, defaultModel, activeVault, query, vaultFilter, topK, excludePaths) {
-  const targets = resolveVaultTargets(manager, vaultFilter, activeVault);
+  const { targets, skipped } = resolveVaultTargets(manager, vaultFilter, activeVault);
   if (targets.length === 0) {
-    return { hits: [], note: "No vaults configured." };
+    return {
+      hits: [],
+      note: skipped.length > 0 ? `All eligible vaults are indexing; skipped: ${skipped.join(", ")}.` : "No vaults configured."
+    };
   }
   const hasExclude = excludePaths !== void 0 && excludePaths.length > 0;
   const fanK = hasExclude ? topK * 3 : topK;
@@ -5090,12 +5118,22 @@ async function handleSearchSemantic(manager, ollama, defaultModel, activeVault, 
     }
   }
   allHits.sort((a, b) => b.score - a.score);
-  return { hits: allHits.slice(0, topK), count: allHits.length };
+  const out = {
+    hits: allHits.slice(0, topK),
+    count: allHits.length
+  };
+  if (skipped.length > 0) {
+    out.note = `Skipped vault(s) currently indexing: ${skipped.join(", ")}.`;
+  }
+  return out;
 }
 function handleSearchText(manager, activeVault, query, vaultFilter, topK, excludePaths) {
-  const targets = resolveVaultTargets(manager, vaultFilter, activeVault);
+  const { targets, skipped } = resolveVaultTargets(manager, vaultFilter, activeVault);
   if (targets.length === 0) {
-    return { hits: [], note: "No vaults configured." };
+    return {
+      hits: [],
+      note: skipped.length > 0 ? `All eligible vaults are indexing; skipped: ${skipped.join(", ")}.` : "No vaults configured."
+    };
   }
   const hasExclude = excludePaths !== void 0 && excludePaths.length > 0;
   const fanK = hasExclude ? topK * 3 : topK;
@@ -5122,12 +5160,22 @@ function handleSearchText(manager, activeVault, query, vaultFilter, topK, exclud
     }
   }
   allHits.sort((a, b) => b.score - a.score);
-  return { hits: allHits.slice(0, topK), count: allHits.length };
+  const out = {
+    hits: allHits.slice(0, topK),
+    count: allHits.length
+  };
+  if (skipped.length > 0) {
+    out.note = `Skipped vault(s) currently indexing: ${skipped.join(", ")}.`;
+  }
+  return out;
 }
 async function handleSearchHybrid(manager, ollama, defaultModel, activeVault, query, vaultFilter, topK, rrfK, excludePaths, reranker) {
-  const targets = resolveVaultTargets(manager, vaultFilter, activeVault);
+  const { targets, skipped } = resolveVaultTargets(manager, vaultFilter, activeVault);
   if (targets.length === 0) {
-    return { hits: [], note: "No vaults configured." };
+    return {
+      hits: [],
+      note: skipped.length > 0 ? `All eligible vaults are indexing; skipped: ${skipped.join(", ")}.` : "No vaults configured."
+    };
   }
   const hasExclude = excludePaths !== void 0 && excludePaths.length > 0;
   const innerTopK = hasExclude ? topK * 3 : topK;
@@ -5142,7 +5190,14 @@ async function handleSearchHybrid(manager, ollama, defaultModel, activeVault, qu
     reranker
   });
   const filtered = hasExclude ? hits.filter((h) => !matchesAnyGlob(h.notePath, excludePaths)) : hits;
-  return { hits: filtered.slice(0, topK), count: filtered.length };
+  const out = {
+    hits: filtered.slice(0, topK),
+    count: filtered.length
+  };
+  if (skipped.length > 0) {
+    out.note = `Skipped vault(s) currently indexing: ${skipped.join(", ")}.`;
+  }
+  return out;
 }
 function ok(data) {
   return {
