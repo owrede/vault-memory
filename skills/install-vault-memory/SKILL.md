@@ -1,9 +1,9 @@
 ---
-name: memory
-description: One-call entry point to enable vault-memory for this Obsidian vault. Detects what is missing (system install vs. vault registration vs. index vs. MCP attach), then runs the minimal set of steps to reach a working state — system install via /setup-memory-system, per-vault registration via /add-vault, end-to-end smoketest. Runs autonomously with status updates; only asks the user when a step is destructive or ambiguous. Use when the user says "set up memory", "/memory", "enable vault-memory", "Vault soll Memory-System werden", or when the mcp__vault-memory__* tools are missing in this session.
+name: install-vault-memory
+description: One-call entry point to enable vault-memory for this Obsidian vault. Detects what is missing (system install vs. vault registration vs. index vs. MCP attach), then runs the minimal set of steps to reach a working state — system install via /setup-memory-system, per-vault registration via /add-vault, end-to-end smoketest. Runs autonomously with status updates; only asks the user when a step is destructive or ambiguous. Use when the user says "set up memory", "/install-vault-memory", "enable vault-memory", "Vault soll Memory-System werden", or when the mcp__vault-memory__* tools are missing in this session.
 ---
 
-# /memory — One-Call Vault Memory Setup
+# /install-vault-memory — One-Call Vault Memory Setup
 
 The single entry point a new user needs. After invocation, the vault is indexed,
 the MCP server attaches on next Claude Code restart, and the agent can use
@@ -17,11 +17,11 @@ Setting up `vault-memory` for a fresh vault requires three orthogonal phases:
 2. **Vault registration** (entry in `~/.vault-memory/config.toml` + `.mcp.json` in vault root + initial index) — done once per vault.
 3. **Smoketest** (does the MCP server actually start? does the index contain notes? is the model reachable?) — confirms the chain works.
 
-The existing `/setup-memory-system` and `/add-vault` skills cover phases 1 and 2 in isolation. `/memory` is the orchestrator a first-time user actually invokes — it inspects the current state, decides which phases are missing, runs them in order, and verifies the result.
+The existing `/setup-memory-system` and `/add-vault` skills cover phases 1 and 2 in isolation. `/install-vault-memory` is the orchestrator a first-time user actually invokes — it inspects the current state, decides which phases are missing, runs them in order, and verifies the result.
 
 ## When to invoke
 
-- User runs `/memory` (primary trigger)
+- User runs `/install-vault-memory` (primary trigger)
 - User says "set up memory", "enable memory for this vault", "vault soll Memory-System werden", "Memory aktivieren"
 - The `mcp__vault-memory__*` tool family is not available in the current session and the user wants to use it
 - A `.mcp.json` references `vault-memory` but the tools are unavailable (broken state to repair)
@@ -171,12 +171,12 @@ These become the agent's "memory" of this specific vault — durable across sess
 
 - Install Claude Code itself — assumes it is already running.
 - Migrate notes between vaults.
-- Configure cross-vault search (multi-vault is set up by running `/memory` in each vault separately).
+- Configure cross-vault search (multi-vault is set up by running `/install-vault-memory` in each vault separately).
 - Touch the user's notes in any way during setup (only reads them for indexing).
 
 ## Idempotency
 
-Running `/memory` on a fully-set-up vault should:
+Running `/install-vault-memory` on a fully-set-up vault should:
 
 - Take <5 seconds (just probes + smoketest).
 - Report "all good".

@@ -17,15 +17,15 @@
 set -eu
 
 REPO_RAW="https://raw.githubusercontent.com/owrede/vault-memory/main"
-SKILLS=(memory setup-memory-system add-vault)
+SKILLS=(install-vault-memory setup-memory-system add-vault)
 
 # ─── Files per skill (kept in sync with the repo's skills/ tree) ─────────────
 files_for() {
   case "$1" in
-    memory)              echo "SKILL.md" ;;
-    setup-memory-system) echo "SKILL.md setup.sh config-wizard.sh" ;;
-    add-vault)           echo "SKILL.md" ;;
-    *)                   echo "" ;;
+    install-vault-memory) echo "SKILL.md" ;;
+    setup-memory-system)  echo "SKILL.md setup.sh config-wizard.sh" ;;
+    add-vault)            echo "SKILL.md" ;;
+    *)                    echo "" ;;
   esac
 }
 
@@ -84,7 +84,7 @@ if [ "$ok" -eq "$total" ]; then
   echo ""
   echo "✓ All $total files installed."
   echo ""
-  echo "Next: open the vault in Claude Code and run /memory to set up vault-memory."
+  echo "Next: open the vault in Claude Code and run /install-vault-memory to set up vault-memory."
 else
   echo ""
   echo "⚠ $ok of $total files installed. See errors above." >&2
