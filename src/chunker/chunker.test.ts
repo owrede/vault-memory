@@ -106,6 +106,32 @@ describe("chunkNote", () => {
     }
   });
 
+  it("drops whitespace-only and tiny chunks (no pollution from chunk_idx=0)", () => {
+    // Note with a blank line before the first heading (common after
+    // gray-matter strips frontmatter). Pre-fix this produced a chunk_idx=0
+    // "\n" that ranked near every search query at cosine ≈ 1.0.
+    const short = chunkNote("\n");
+    expect(short).toEqual([]);
+
+    const veryShort = chunkNote("   \n  \t  ");
+    expect(veryShort).toEqual([]);
+
+    // Multi-section note where one section is empty whitespace.
+    const content =
+      "\n# Real Section\n\n" +
+      makeLongText(150) +
+      "\n\n## Empty section follows\n\n" +
+      "\n\n" +
+      "## Another real section\n\n" +
+      makeLongText(150);
+    const chunks = chunkNote(content);
+    for (const c of chunks) {
+      expect(c.text.trim().length).toBeGreaterThanOrEqual(3);
+    }
+    // idx is dense (no holes from skipped chunks)
+    chunks.forEach((c, i) => expect(c.idx).toBe(i));
+  });
+
   it("attaches headingPath based on chunk start offset in original content", () => {
     const content =
       "# Top\n\n" +

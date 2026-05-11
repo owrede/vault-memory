@@ -21,6 +21,15 @@ import type { HeadingRef } from "./headings.js";
 
 const DEFAULT_MAX_TOKENS = 400;
 const DEFAULT_OVERLAP_TOKENS = 50;
+/**
+ * Minimum non-whitespace characters required for a chunk to be kept.
+ * Notes that begin with a blank line before the first heading produce a
+ * leading whitespace-only span; those would otherwise become a chunk_idx=0
+ * "\n" chunk and pollute search top-k because their embedding is close to
+ * the embedding of every other near-empty text (cosine ≈ 1.0). Trimming
+ * here is the source of truth — search/rerank don't need a follow-up filter.
+ */
+const MIN_CHUNK_TRIM_CHARS = 3;
 
 interface Span {
   start: number;
@@ -39,6 +48,7 @@ export function chunkNote(content: string, options?: ChunkOptions): Chunk[] {
 
   // Fast path: whole note fits.
   if (countTokens(content) <= maxTokens) {
+    if (content.trim().length < MIN_CHUNK_TRIM_CHARS) return [];
     return [
       {
         idx: 0,
@@ -84,7 +94,9 @@ export function chunkNote(content: string, options?: ChunkOptions): Chunk[] {
     }
 
     const text = content.slice(start, end);
-    if (text.length === 0) continue;
+    // Drop whitespace-only and tiny chunks: they produce near-identical
+    // embeddings and pollute search top-k (see MIN_CHUNK_TRIM_CHARS doc).
+    if (text.trim().length < MIN_CHUNK_TRIM_CHARS) continue;
 
     chunks.push({
       idx: chunks.length,
