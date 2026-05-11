@@ -1,0 +1,65 @@
+name: publish to npm
+
+# Triggers on push of any tag matching v*.*.* — typically the result of
+# `git tag -a vX.Y.Z -m "..." && git push origin vX.Y.Z`. The workflow
+# rebuilds dist/ on a clean Linux runner (so the tarball is reproducible),
+# runs the test suite, and publishes the package to https://registry.npmjs.org
+# with --access public. The latest dist-tag follows the highest semver, so
+# users running `npm install -g @owrede/vault-memory` always get the most
+# recent release.
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+# Skip in PR contexts entirely
+permissions:
+  contents: read
+  id-token: write   # required for npm provenance
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify package.json version matches tag
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::package.json version ($PKG_VERSION) does not match tag ($TAG_VERSION). Aborting publish."
+            exit 1
+          fi
+          echo "Version matches: $PKG_VERSION"
+
+      - name: Publish to npm
+        # --access public: scoped packages default to private otherwise
+        # --provenance: attaches signed provenance attestation (npm 9.5+)
+        # NPM_TOKEN must be a granular access token with publish rights for
+        # @owrede/vault-memory and bypass-2fa enabled — stored in repo secrets.
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

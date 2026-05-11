@@ -96,19 +96,27 @@ brew install ollama && brew services start ollama
 # 4) Embedding model (~1.1 GB)
 ollama pull bge-m3
 
-# 5) Clone, build, link
-cd ~/Documents/GitHub
-gh repo clone owrede/vault-memory
-cd vault-memory
-npm install && npm run build && npm link   # creates the global `vault-memory` binary
+# 5) Install vault-memory from npm (public registry, no auth)
+npm install -g @owrede/vault-memory
 
 # 6) Register your first vault (creates config + .mcp.json + initial index)
 vault-memory add-vault "/Users/you/Documents/Obsidian Vaults/My Vault"
 ```
 
-The MCP-host config (`.mcp.json` in the consuming vault) calls the `vault-memory` binary, so any shell with it on `$PATH` will work.
+The MCP-host config (`.mcp.json` in the consuming vault) calls the `vault-memory` binary, so any shell with it on `$PATH` will work. Future upgrades: `npm install -g @owrede/vault-memory@latest`.
 
 For a guided install from inside Claude Code, see the `skills/` directory in this repo — they bundle the install, vault registration, and end-to-end smoketest behind a single command.
+
+### Install from source (developer mode)
+
+Only needed if you want to modify vault-memory itself. Otherwise use the npm install above.
+
+```bash
+cd ~/Documents/GitHub
+gh repo clone owrede/vault-memory
+cd vault-memory
+npm install && npm run build && npm link   # creates the global `vault-memory` binary
+```
 
 ## Skills (Claude Code integration)
 
@@ -122,9 +130,24 @@ The `skills/` directory contains three Claude Code skills you can drop into any 
 
 ### Installing the skills in a vault
 
+If you installed via `npm install -g @owrede/vault-memory`, fetch the skills directly from GitHub (the npm tarball intentionally excludes them):
+
 ```bash
 # From the consuming vault's root:
 mkdir -p .claude/skills
+for skill in memory setup-memory-system add-vault; do
+  mkdir -p ".claude/skills/$skill"
+  for file in SKILL.md setup.sh config-wizard.sh; do
+    curl -fsSL "https://raw.githubusercontent.com/owrede/vault-memory/main/skills/$skill/$file" \
+      -o ".claude/skills/$skill/$file" 2>/dev/null || true
+  done
+done
+chmod +x .claude/skills/setup-memory-system/*.sh 2>/dev/null
+```
+
+If you installed from source, just copy:
+
+```bash
 cp -R ~/Documents/GitHub/vault-memory/skills/{memory,setup-memory-system,add-vault} .claude/skills/
 ```
 

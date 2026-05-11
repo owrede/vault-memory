@@ -34,7 +34,7 @@ The skill defaults to **autonomous execution**: it runs all non-destructive step
 |---|---|
 | `~/.vault-memory/config.toml` exists but does **not** reference this vault | Overwriting a multi-vault config is destructive; confirm intent. |
 | Initial index would touch >2,000 notes | Long-running operation (>5 min); offer to run in background. |
-| `gh auth status` fails AND `vault-memory` is not yet installed | The user must authenticate to GitHub before the private repo clone can succeed. Give them the exact commands. |
+| `VAULT_MEMORY_INSTALL_MODE=source` is set AND `gh auth status` fails AND `vault-memory` is missing | Source-build mode needs git access. Tell the user to `gh auth login` or unset the variable to use the default npm install (no auth required). |
 
 Everything else (Homebrew check, Node install, Ollama service start, model pull, npm link, vault registration, initial index, smoketest) proceeds without prompts.
 
@@ -60,8 +60,8 @@ grep -q "vault-memory" "$CLAUDE_PROJECT_DIR/.mcp.json" 2>/dev/null
 # Phase 3 probe (index health)
 test -s ~/.vault-memory/$(slug).db    # non-empty SQLite file (.db, not -journal)
 
-# Phase 0 probe (GitHub auth — only relevant if vault-memory binary is missing)
-gh auth status 2>&1 | grep -q "Logged in"
+# Phase 0 probe (GitHub auth — only relevant in source-build mode)
+[ "$VAULT_MEMORY_INSTALL_MODE" = "source" ] && gh auth status 2>&1 | grep -q "Logged in"
 ```
 
 The skill writes a one-line **state report** based on these probes, then prints the **action plan** (which phases will run), then executes.
@@ -99,7 +99,7 @@ The skill writes a one-line **state report** based on these probes, then prints 
    If everything is green, jump to step 6 (smoketest only).
 
 3. **Phase 1 — system install** (only if any system probe failed):
-   - If `gh auth status` fails AND `vault-memory` is missing: STOP, ask the user to run `gh auth login`, then re-invoke `/memory`. Do not attempt to clone.
+   - If `VAULT_MEMORY_INSTALL_MODE=source` AND `gh auth status` fails AND `vault-memory` is missing: STOP, ask the user to `gh auth login` OR unset the variable (npm install needs no auth). Do not attempt to clone.
    - Otherwise: invoke the existing setup script with autonomous mode:
      ```bash
      VAULT_MEMORY_AUTO=1 bash "$CLAUDE_PROJECT_DIR/.claude/skills/setup-memory-system/setup.sh"
@@ -163,8 +163,9 @@ These become the agent's "memory" of this specific vault — durable across sess
 | `vault-memory` not in PATH after Phase 1 | npm link silently failed (perm or PATH) | Tell user to run `npm link` manually in the install dir; suggest `nvm` if root npm is the issue |
 | Ollama service won't start | Port 11434 already bound, or LaunchAgent denied | `lsof -iTCP:11434` to find the conflict; `brew services info ollama` for status |
 | Initial index = 0 notes | `exclude_globs` too broad, or wrong vault path | Inspect the generated `~/.vault-memory/config.toml`, narrow excludes, re-run `vault-memory index --full` |
-| Smoketest returns parse error | Old `vault-memory` build, MCP protocol version mismatch | `cd ~/Documents/GitHub/vault-memory && git pull && npm install && npm run build` |
-| GitHub clone fails (404) | User not authenticated to the private repo | Run `gh auth login`, then `/memory` again |
+| Smoketest returns parse error | Old `vault-memory` build, MCP protocol version mismatch | `npm install -g @owrede/vault-memory@latest` (or in source mode: `cd ~/Documents/GitHub/vault-memory && git pull && npm install && npm run build`) |
+| `npm install -g` fails with EACCES | Default npm prefix is not user-writable | Check `npm config get prefix` — either fix permissions or use a user-local prefix like `~/.npm-global`. Don't use `sudo npm install -g` on a system Node. |
+| Source-mode `gh repo clone` fails | User not authenticated to GitHub | Run `gh auth login`, or simpler: unset `VAULT_MEMORY_INSTALL_MODE` to fall back to npm install. |
 
 ## What this skill does NOT do
 

@@ -15,16 +15,18 @@ Bootstraps the `vault-memory` MCP server on a fresh machine so Claude Code can p
 
 ## Behavior
 
-The skill walks through 6 idempotent checkpoints. Each checkpoint either silently passes (when already met), or asks the user once for permission to apply the fix:
+The skill walks through 8 idempotent checkpoints (0–7). Each checkpoint either silently passes (when already met), or asks the user once for permission to apply the fix:
 
 | # | Check | Fix on miss |
 |---|---|---|
+| 0 | Install source determined | Default `VAULT_MEMORY_INSTALL_MODE=npm` (public registry, no auth). `source` mode clones from GitHub — requires `gh auth login`. |
 | 1 | Homebrew installed | Print install instructions (external URL — do not auto-install) |
 | 2 | Node 22+ in `$PATH` | `brew install node@22` |
 | 3 | Ollama installed + service running | `brew install ollama && brew services start ollama` |
-| 4 | Embedding model `bge-m3` available | `ollama pull bge-m3` (1.1 GB) — recommended default since v0.7.3 (see vault-memory README). Override via `VAULT_MEMORY_EMBED_MODEL=qwen3-embedding:0.6b` for low-RAM machines. |
-| 5 | `vault-memory` binary in `$PATH` | Clone `github.com/owrede/vault-memory`, `npm install`, `npm run build`, `npm link` |
+| 4 | Embedding model `bge-m3` available | `ollama pull bge-m3` (1.1 GB) — recommended default since v0.7.3. Override via `VAULT_MEMORY_EMBED_MODEL=qwen3-embedding:0.6b` for low-RAM machines. |
+| 5 | `vault-memory` binary in `$PATH` | **npm mode (default):** `npm install -g @owrede/vault-memory`. **source mode:** clone, `npm install && npm run build && npm link`. Existing installs are version-checked against npm's `latest` and offered an in-place upgrade. |
 | 6 | `~/.vault-memory/config.toml` present and lists this vault | Generate config interactively (default vault name from folder, path from `$CLAUDE_PROJECT_DIR`) |
+| 7 | MCP server smoketest passes | Send a JSON-RPC `initialize` request via `perl alarm` (portable timeout) and assert `result + serverInfo` in the response. |
 
 Final action: run `vault-memory index` once to build the initial index. Print success summary.
 
@@ -47,14 +49,14 @@ Running this skill twice in a row must:
 
 The script must never delete user data, never overwrite an existing `config.toml` without asking, never re-pull models that already exist.
 
-## Repo coordinates
+## Install sources
 
-- vault-memory source: https://github.com/owrede/vault-memory (private — user must have GitHub auth via `gh`)
-- Default install location: `~/Documents/GitHub/vault-memory`
-- Global binary alias: `vault-memory` (via `npm link`)
+- **npm registry (default):** https://www.npmjs.com/package/@owrede/vault-memory — public, no auth required, `latest` tag follows the most recent release.
+- **GitHub source (developer mode):** https://github.com/owrede/vault-memory — set `VAULT_MEMORY_INSTALL_MODE=source` to clone + build locally. Requires `gh auth login` since the repo's release flow tags from local.
+- **Default source-clone location:** `~/Documents/GitHub/vault-memory`
+- **Global binary alias:** `vault-memory` (via `npm install -g` or `npm link`)
 
 ## Limits
 
-- macOS only (relies on Homebrew). Linux support is a Phase 7 concern.
-- Requires the user to be authenticated to GitHub via `gh` for the private repo clone.
-- Does not run unattended — every system change requires interactive confirmation.
+- macOS only (relies on Homebrew). Linux support is on the roadmap.
+- Does not run unattended unless `VAULT_MEMORY_AUTO=1` is set — every system change otherwise requires interactive confirmation.

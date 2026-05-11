@@ -101,32 +101,38 @@ if [ "$AUTO" = "1" ]; then
 fi
 log ""
 
-# ─── Checkpoint 0: GitHub auth (only needed if we have to clone) ─────────────
+# ─── Checkpoint 0: Install source — npm registry (default) or git ───────────
 
-step "0/7  GitHub access (only required if vault-memory is not yet installed)"
+step "0/7  Install source"
 
-if command -v vault-memory >/dev/null 2>&1; then
-  ok "vault-memory already in PATH — skipping GitHub auth check"
-else
-  if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
-    ok "GitHub CLI authenticated ($(gh api user --jq .login 2>/dev/null || echo 'ok'))"
-  else
-    err "vault-memory is a private GitHub repo (owrede/vault-memory)."
-    log ""
-    log "You need GitHub authentication to clone it. Run ONE of these:"
-    log ""
-    log "  ${c_bold}Option A — GitHub CLI (recommended):${c_reset}"
-    log "    brew install gh"
-    log "    gh auth login           # follow the browser prompt"
-    log ""
-    log "  ${c_bold}Option B — SSH:${c_reset}"
-    log "    Add an SSH key to your GitHub account, then re-run this skill"
-    log "    after exporting: export VAULT_MEMORY_REPO_URL=git@github.com:owrede/vault-memory.git"
-    log ""
-    log "Once GitHub auth works, re-invoke /memory (or /setup-memory-system)."
+# Two install modes:
+#   npm    (default)  → `npm install -g @owrede/vault-memory` from the public registry
+#   source            → clone the repo and build locally (developer mode)
+# Switch via env var: VAULT_MEMORY_INSTALL_MODE=source
+INSTALL_MODE="${VAULT_MEMORY_INSTALL_MODE:-npm}"
+
+case "$INSTALL_MODE" in
+  npm)
+    info "Install mode: ${c_bold}npm${c_reset} (registry: https://registry.npmjs.org/@owrede/vault-memory)"
+    ;;
+  source)
+    info "Install mode: ${c_bold}source${c_reset} (clone + build from $REPO_URL)"
+    if command -v vault-memory >/dev/null 2>&1; then
+      ok "vault-memory already in PATH — skipping GitHub auth check"
+    elif command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+      ok "GitHub CLI authenticated ($(gh api user --jq .login 2>/dev/null || echo 'ok'))"
+    else
+      err "Source-build mode needs git access to owrede/vault-memory."
+      log "Either set up gh auth ('gh auth login') or use the default npm install:"
+      log "  unset VAULT_MEMORY_INSTALL_MODE   # uses npm registry, no auth needed"
+      exit 1
+    fi
+    ;;
+  *)
+    err "Unknown VAULT_MEMORY_INSTALL_MODE: $INSTALL_MODE (expected 'npm' or 'source')"
     exit 1
-  fi
-fi
+    ;;
+esac
 
 # ─── Checkpoint 1: Homebrew ──────────────────────────────────────────────────
 
@@ -262,43 +268,71 @@ step "5/7  vault-memory binary"
 if command -v vault-memory >/dev/null 2>&1; then
   vm_version=$(vault-memory --help 2>&1 | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
   ok "vault-memory in PATH (version $vm_version)"
+
+  # If npm has a newer 'latest' than what is installed, offer to upgrade.
+  if [ "$INSTALL_MODE" = "npm" ] && [ "$vm_version" != "unknown" ]; then
+    latest=$(npm view @owrede/vault-memory@latest version 2>/dev/null || echo "")
+    if [ -n "$latest" ] && [ "$latest" != "$vm_version" ]; then
+      info "npm registry has @owrede/vault-memory@$latest (you have $vm_version)"
+      if confirm "Upgrade to @owrede/vault-memory@$latest?" \
+        "A newer release is available on npm. Upgrading via 'npm install -g @owrede/vault-memory@latest' replaces the global binary in-place. Your data (~/.vault-memory/) and vault notes are untouched — only the engine code is updated."; then
+        npm install -g @owrede/vault-memory@latest \
+          || { err "npm install -g failed"; exit 1; }
+        ok "vault-memory upgraded to $latest"
+      fi
+    fi
+  fi
 else
   warn "vault-memory not in PATH."
 
-  if [ -d "$INSTALL_DIR/.git" ]; then
-    info "Existing clone at $INSTALL_DIR — will pull + rebuild."
-    if confirm "Rebuild vault-memory at $INSTALL_DIR?" \
-      "An existing clone was found but the global 'vault-memory' command is not in PATH. Pulling latest, reinstalling deps, rebuilding TypeScript, and re-linking via 'npm link' to make the binary globally available."; then
-      ( cd "$INSTALL_DIR" && git pull --ff-only && npm install && npm run build && npm link ) \
-        || { err "Rebuild failed in $INSTALL_DIR"; exit 1; }
-      ok "vault-memory rebuilt and linked"
-    else
-      err "vault-memory binary is required."
-      exit 2
-    fi
-  else
-    if confirm "Clone owrede/vault-memory to $INSTALL_DIR and install?" \
-      "This is the actual memory engine — a Node.js MCP server with semantic search, frontmatter queries, wikilink navigation, and atomic note writes. Cloning to ~/Documents/GitHub/vault-memory, running npm install + build, and 'npm link' to expose the 'vault-memory' command system-wide. The repo is private (owrede/vault-memory) — requires the GitHub auth you confirmed in step 0."; then
-      mkdir -p "$(dirname "$INSTALL_DIR")"
-      if command -v gh >/dev/null 2>&1; then
-        gh repo clone owrede/vault-memory "$INSTALL_DIR" \
-          || { err "gh repo clone failed (auth? private repo access?)"; exit 1; }
-      else
-        git clone "$REPO_URL" "$INSTALL_DIR" \
-          || { err "git clone failed. Set up GitHub auth (e.g. gh auth login) or check the URL."; exit 1; }
-      fi
-      ( cd "$INSTALL_DIR" && npm install && npm run build && npm link ) \
-        || { err "Install/build/link failed in $INSTALL_DIR"; exit 1; }
-      ok "vault-memory installed and linked"
+  if [ "$INSTALL_MODE" = "npm" ]; then
+    # ── npm install path (default, no GitHub auth needed) ───────────────────
+    if confirm "Install vault-memory via 'npm install -g @owrede/vault-memory'?" \
+      "Pulls the published package from the public npm registry (https://registry.npmjs.org/@owrede/vault-memory) and installs the 'vault-memory' binary globally. No GitHub authentication or source build required. The package is the bundled dist/cli.js — same code that gets built from source."; then
+      npm install -g @owrede/vault-memory \
+        || { err "npm install -g failed. Possible causes: npm not in PATH, npm prefix not writable (try: npm config get prefix). Falling back to source build: re-run with VAULT_MEMORY_INSTALL_MODE=source."; exit 1; }
+      ok "vault-memory installed from npm registry"
     else
       err "vault-memory is required."
       exit 2
+    fi
+  else
+    # ── source-build path (developer mode) ──────────────────────────────────
+    if [ -d "$INSTALL_DIR/.git" ]; then
+      info "Existing clone at $INSTALL_DIR — will pull + rebuild."
+      if confirm "Rebuild vault-memory at $INSTALL_DIR?" \
+        "An existing clone was found but the global 'vault-memory' command is not in PATH. Pulling latest, reinstalling deps, rebuilding TypeScript, and re-linking via 'npm link' to make the binary globally available."; then
+        ( cd "$INSTALL_DIR" && git pull --ff-only && npm install && npm run build && npm link ) \
+          || { err "Rebuild failed in $INSTALL_DIR"; exit 1; }
+        ok "vault-memory rebuilt and linked"
+      else
+        err "vault-memory binary is required."
+        exit 2
+      fi
+    else
+      if confirm "Clone owrede/vault-memory to $INSTALL_DIR and install?" \
+        "Source-build mode: clone the repo, run npm install + build + npm link. Use this only if you want to develop or modify vault-memory itself. For normal use, the default 'npm install -g' (unset VAULT_MEMORY_INSTALL_MODE) is simpler and does not require git access."; then
+        mkdir -p "$(dirname "$INSTALL_DIR")"
+        if command -v gh >/dev/null 2>&1; then
+          gh repo clone owrede/vault-memory "$INSTALL_DIR" \
+            || { err "gh repo clone failed (auth?)"; exit 1; }
+        else
+          git clone "$REPO_URL" "$INSTALL_DIR" \
+            || { err "git clone failed. Set up GitHub auth (e.g. gh auth login) or check the URL."; exit 1; }
+        fi
+        ( cd "$INSTALL_DIR" && npm install && npm run build && npm link ) \
+          || { err "Install/build/link failed in $INSTALL_DIR"; exit 1; }
+        ok "vault-memory installed and linked from source"
+      else
+        err "vault-memory is required."
+        exit 2
+      fi
     fi
   fi
 
   # Verify
   if ! command -v vault-memory >/dev/null 2>&1; then
-    err "After install, vault-memory still not in PATH. Try opening a new shell."
+    err "After install, vault-memory still not in PATH. Try opening a new shell (or check 'npm bin -g')."
     exit 1
   fi
 fi
