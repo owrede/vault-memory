@@ -1736,7 +1736,7 @@ async function hybridSearch(opts) {
     embedCache.set(model, p);
     return p;
   };
-  const rerankFanOut = Math.max(1, opts.rerankFanOut ?? 3);
+  const rerankFanOut = Math.max(1, opts.rerankFanOut ?? 5);
   const perVaultTopN = opts.reranker ? topK * rerankFanOut : topK;
   const perVault = await Promise.all(
     opts.vaults.map(

@@ -44,7 +44,15 @@ export interface HybridSearchOptions {
    * On reranker failure (throw), the un-reranked RRF order is returned.
    */
   reranker?: Reranker;
-  /** Candidate pool size as a multiple of topK. Default 3. */
+  /** Candidate pool size as a multiple of topK. Default 5.
+   *
+   *  Sizing rationale: BGE-M3 cosine distances on prose vaults form tight
+   *  plateaus (all top-N within ~0.02 score). The reranker needs a wide
+   *  enough pool to include semantically-on-target chunks that the
+   *  embedding ranks just below the plateau crest. At topK=10, a fanOut
+   *  of 5 produces a 50-chunk pool — empirically enough to catch chunks
+   *  that the bi-encoder placed in rank 30-50 due to plateau noise.
+   *  Larger pools cost reranker inference time proportionally. */
   rerankFanOut?: number;
 }
 
@@ -164,7 +172,7 @@ export async function hybridSearch(
     return p;
   };
 
-  const rerankFanOut = Math.max(1, opts.rerankFanOut ?? 3);
+  const rerankFanOut = Math.max(1, opts.rerankFanOut ?? 5);
   // When reranking, we need a wider per-vault pool so the global candidate
   // set is large enough for the cross-encoder to re-order meaningfully.
   const perVaultTopN = opts.reranker ? topK * rerankFanOut : topK;
