@@ -108,7 +108,31 @@ vault-memory add-vault "/Users/you/Documents/Obsidian Vaults/My Vault"
 
 The MCP-host config (`.mcp.json` in the consuming vault) calls the `vault-memory` binary, so any shell with it on `$PATH` will work.
 
-For a guided install from inside Claude Code, use the `/setup-memory-system` skill in the consuming vault.
+For a guided install from inside Claude Code, see the `skills/` directory in this repo — they bundle the install, vault registration, and end-to-end smoketest behind a single command.
+
+## Skills (Claude Code integration)
+
+The `skills/` directory contains three Claude Code skills you can drop into any vault's `.claude/skills/` folder. They are the user-facing way to install and operate vault-memory without remembering CLI flags.
+
+| Skill | What it does | When to invoke |
+|---|---|---|
+| **`memory/`** | One-call orchestrator. Detects current state (system install? vault registered? index built? MCP server responding?) and autonomously runs the minimal set of steps to reach a working state. Asks the user only for destructive steps. | First-time setup, or repairing a broken state. `/memory` |
+| **`setup-memory-system/`** | System-level install via 7 idempotent checkpoints: GitHub auth precheck, Homebrew, Node 22+, Ollama + service, embedding model (`bge-m3` default), `vault-memory` binary, end-to-end MCP smoketest. Honors `VAULT_MEMORY_AUTO=1` for non-interactive runs and includes a "why is this needed" reason for every install prompt. | Direct invocation when you only want the system layer. `/setup-memory-system` |
+| **`add-vault/`** | Wraps `vault-memory add-vault` with a confirmation flow — appends to `config.toml`, writes `.mcp.json`, builds the initial index. Atomic and idempotent. | Adding an additional vault after the system is installed. `/add-vault` |
+
+### Installing the skills in a vault
+
+```bash
+# From the consuming vault's root:
+mkdir -p .claude/skills
+cp -R ~/Documents/GitHub/vault-memory/skills/{memory,setup-memory-system,add-vault} .claude/skills/
+```
+
+After Claude Code restarts, `/memory`, `/setup-memory-system`, and `/add-vault` are available as slash commands in that vault.
+
+### Autonomous mode
+
+`VAULT_MEMORY_AUTO=1` switches `setup-memory-system/setup.sh` to non-interactive mode: every non-destructive `confirm()` prompt auto-answers yes, with a `why:` line explaining what is being installed and why vault-memory needs it. Destructive operations (overwriting an existing multi-vault `config.toml`, rebuilding a clone with uncommitted changes) still prompt. This is what the `memory/` orchestrator uses under the hood.
 
 ## Configuration
 
