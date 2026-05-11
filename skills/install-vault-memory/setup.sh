@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# vault-memory setup script — invoked by /setup-memory-system skill.
+# vault-memory setup script — invoked by /install-vault-memory skill.
 #
-# Walks through 6 idempotent checkpoints. Each checkpoint either silently
+# Walks through 8 idempotent checkpoints (0–7). Each checkpoint either silently
 # passes when already met, or asks for permission once before applying a fix.
 # Never overwrites user data without confirmation. Never installs anything
 # without consent.
@@ -82,7 +82,7 @@ INSTALL_DIR="${VAULT_MEMORY_INSTALL_DIR:-$HOME/Documents/GitHub/vault-memory}"
 REPO_URL="${VAULT_MEMORY_REPO_URL:-https://github.com/owrede/vault-memory}"
 EMBEDDING_MODEL="${VAULT_MEMORY_EMBED_MODEL:-bge-m3}"
 CONFIG_FILE="$HOME/.vault-memory/config.toml"
-WIZARD="$VAULT_ROOT/.claude/skills/setup-memory-system/config-wizard.sh"
+WIZARD="$VAULT_ROOT/.claude/skills/install-vault-memory/config-wizard.sh"
 
 # ─── Platform check ──────────────────────────────────────────────────────────
 

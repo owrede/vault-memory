@@ -120,13 +120,12 @@ npm install && npm run build && npm link   # creates the global `vault-memory` b
 
 ## Skills (Claude Code integration)
 
-The `skills/` directory contains three Claude Code skills you can drop into any vault's `.claude/skills/` folder. They are the user-facing way to install and operate vault-memory without remembering CLI flags.
+The `skills/` directory contains two Claude Code skills you can drop into any vault's `.claude/skills/` folder. They are the user-facing way to install and operate vault-memory without remembering CLI flags.
 
 | Skill | What it does | When to invoke |
 |---|---|---|
-| **`install-vault-memory/`** | One-call orchestrator. Detects current state (system install? vault registered? index built? MCP server responding?) and autonomously runs the minimal set of steps to reach a working state. Asks the user only for destructive steps. | First-time setup, or repairing a broken state. `/install-vault-memory` |
-| **`setup-memory-system/`** | System-level install via 7 idempotent checkpoints: GitHub auth precheck, Homebrew, Node 22+, Ollama + service, embedding model (`bge-m3` default), `vault-memory` binary, end-to-end MCP smoketest. Honors `VAULT_MEMORY_AUTO=1` for non-interactive runs and includes a "why is this needed" reason for every install prompt. | Direct invocation when you only want the system layer. `/setup-memory-system` |
-| **`add-vault/`** | Wraps `vault-memory add-vault` with a confirmation flow — appends to `config.toml`, writes `.mcp.json`, builds the initial index. Atomic and idempotent. | Adding an additional vault after the system is installed. `/add-vault` |
+| **`install-vault-memory/`** | The complete installer — 8 idempotent checkpoints from Homebrew through MCP smoketest. Defaults to autonomous mode with a `why:` line on every install prompt. Re-running on a working setup verifies state in under 5 seconds and exits. | First-time setup of a vault, or repairing a broken state. `/install-vault-memory` |
+| **`add-vault/`** | Wraps `vault-memory add-vault` CLI with a confirmation flow — appends to `config.toml`, writes `.mcp.json`, builds the initial index. Atomic and idempotent. | Adding a *second or third* vault after vault-memory is already installed. `/add-vault` |
 
 ### Installing the skills in a vault
 
@@ -148,14 +147,14 @@ The script is idempotent — re-running it fetches the latest skill versions fro
 If you cloned the source repo, you can also copy directly:
 
 ```bash
-cp -R ~/Documents/GitHub/vault-memory/skills/{memory,setup-memory-system,add-vault} .claude/skills/
+cp -R ~/Documents/GitHub/vault-memory/skills/{install-vault-memory,add-vault} .claude/skills/
 ```
 
-After Claude Code restarts, `/install-vault-memory`, `/setup-memory-system`, and `/add-vault` are available as slash commands in that vault.
+After Claude Code restarts, `/install-vault-memory` and `/add-vault` are available as slash commands in that vault.
 
 ### Autonomous mode
 
-`VAULT_MEMORY_AUTO=1` switches `setup-memory-system/setup.sh` to non-interactive mode: every non-destructive `confirm()` prompt auto-answers yes, with a `why:` line explaining what is being installed and why vault-memory needs it. Destructive operations (overwriting an existing multi-vault `config.toml`, rebuilding a clone with uncommitted changes) still prompt. This is what the `install-vault-memory/` orchestrator uses under the hood.
+`VAULT_MEMORY_AUTO=1` switches `install-vault-memory/setup.sh` to non-interactive mode: every non-destructive `confirm()` prompt auto-answers yes, with a `why:` line explaining what is being installed and why vault-memory needs it. Destructive operations (overwriting an existing multi-vault `config.toml`, rebuilding a clone with uncommitted changes) still prompt. This is the default when the skill is invoked via `/install-vault-memory`; direct invocation of `setup.sh` defaults to fully-interactive mode.
 
 ## Configuration
 

@@ -17,13 +17,12 @@
 set -eu
 
 REPO_RAW="https://raw.githubusercontent.com/owrede/vault-memory/main"
-SKILLS=(install-vault-memory setup-memory-system add-vault)
+SKILLS=(install-vault-memory add-vault)
 
 # ─── Files per skill (kept in sync with the repo's skills/ tree) ─────────────
 files_for() {
   case "$1" in
-    install-vault-memory) echo "SKILL.md" ;;
-    setup-memory-system)  echo "SKILL.md setup.sh config-wizard.sh" ;;
+    install-vault-memory) echo "SKILL.md setup.sh config-wizard.sh" ;;
     add-vault)            echo "SKILL.md" ;;
     *)                    echo "" ;;
   esac
@@ -78,7 +77,7 @@ for skill in "${SKILLS[@]}"; do
 done
 
 # Make shell scripts executable
-chmod +x "$TARGET/.claude/skills/setup-memory-system"/*.sh 2>/dev/null || true
+chmod +x "$TARGET/.claude/skills/install-vault-memory"/*.sh 2>/dev/null || true
 
 if [ "$ok" -eq "$total" ]; then
   echo ""

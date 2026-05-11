@@ -15,7 +15,7 @@ One-shot onboarding for an additional Obsidian vault. After this skill runs, the
 
 ## Prerequisites
 
-`vault-memory` must already be installed system-wide. If not, run `/setup-memory-system` first.
+`vault-memory` must already be installed system-wide. If not, run `/install-vault-memory` first.
 
 Check via:
 
@@ -23,7 +23,7 @@ Check via:
 which vault-memory
 ```
 
-If missing: stop and tell the user to run `/setup-memory-system`. Do not try to install anything else from this skill.
+If missing: stop and tell the user to run `/install-vault-memory`. Do not try to install anything else from this skill.
 
 ## Behavior
 
