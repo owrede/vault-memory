@@ -51,8 +51,19 @@ export interface HybridSearchOptions {
    *  enough pool to include semantically-on-target chunks that the
    *  embedding ranks just below the plateau crest. At topK=10, a fanOut
    *  of 5 produces a 50-chunk pool — empirically enough to catch chunks
-   *  that the bi-encoder placed in rank 30-50 due to plateau noise.
-   *  Larger pools cost reranker inference time proportionally. */
+   *  the bi-encoder placed in rank 30-50 due to plateau noise.
+   *
+   *  Limitations: a wider pool cannot rescue chunks the bi-encoder ranks
+   *  beyond the pool. Cross-lingual queries against a model with weak
+   *  recall on the target language (e.g. BGE-M3 on EN→DE for some terms)
+   *  can place the relevant chunk past rank 150. The fix there is a model
+   *  switch, not a larger pool — pool growth costs reranker inference
+   *  linearly while the marginal recall gain plateaus.
+   *
+   *  Diagnostic: when the highest rerank score across the pool stays
+   *  below ~0.1, that is a signal that the desired chunk was never in
+   *  the pool. See `vault-memory-eval-v3-results.md` for the BGE-M3
+   *  cross-lingual case study. */
   rerankFanOut?: number;
 }
 
