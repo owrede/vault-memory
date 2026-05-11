@@ -880,22 +880,41 @@ function handleReadNote(
 /**
  * Resolve which vaults a search should hit.
  *
- * Priority (highest first):
+ * Scope resolution (priority highest first):
  *   1. Explicit `vaultFilter` from the request → exactly those vaults.
  *   2. `activeVault` from VAULT_MEMORY_ACTIVE_VAULT env var → just that one.
  *   3. Neither set → all configured vaults (legacy behaviour).
  *
- * Step 2 is what makes "search this vault by default" work without breaking
- * existing cross-vault callers — they still pass an explicit `vaults` array.
+ * Indexing-status filter:
+ *   - Vaults whose audit log shows an unfinished index run are excluded
+ *     ONLY when the caller didn't ask for them explicitly. Idea: implicit
+ *     cross-vault search shouldn't surface chunks whose embeddings aren't
+ *     ready yet. Explicit single-vault requests pass through unchanged
+ *     (caller takes responsibility, gets a `note` field in the response).
+ *
+ * Returns the resolved targets plus the names of any skipped vaults, so the
+ * caller can include a transparency note in the response.
  */
 function resolveVaultTargets(
   manager: VaultManager,
   vaultFilter: string[] | undefined,
   activeVault: string | undefined,
-): ReturnType<VaultManager["list"]> {
-  if (vaultFilter) return vaultFilter.map((n) => manager.require(n));
-  if (activeVault) return [manager.require(activeVault)];
-  return manager.list();
+): { targets: ReturnType<VaultManager["list"]>; skipped: string[] } {
+  // Explicit request → honour even if mid-index (caller's choice).
+  if (vaultFilter) {
+    return { targets: vaultFilter.map((n) => manager.require(n)), skipped: [] };
+  }
+  const candidates = activeVault ? [manager.require(activeVault)] : manager.list();
+  const targets: typeof candidates = [];
+  const skipped: string[] = [];
+  for (const v of candidates) {
+    if (v.db.audit.isIndexing()) {
+      skipped.push(v.config.name);
+    } else {
+      targets.push(v);
+    }
+  }
+  return { targets, skipped };
 }
 
 async function handleSearchSemantic(
@@ -908,10 +927,16 @@ async function handleSearchSemantic(
   topK: number,
   excludePaths: string[] | undefined,
 ): Promise<object> {
-  const targets = resolveVaultTargets(manager, vaultFilter, activeVault);
+  const { targets, skipped } = resolveVaultTargets(manager, vaultFilter, activeVault);
 
   if (targets.length === 0) {
-    return { hits: [], note: "No vaults configured." };
+    return {
+      hits: [],
+      note:
+        skipped.length > 0
+          ? `All eligible vaults are indexing; skipped: ${skipped.join(", ")}.`
+          : "No vaults configured.",
+    };
   }
 
   // When excluding paths, fan out wider so the filtered topK is well-stocked.
@@ -967,7 +992,14 @@ async function handleSearchSemantic(
   }
 
   allHits.sort((a, b) => b.score - a.score);
-  return { hits: allHits.slice(0, topK), count: allHits.length };
+  const out: Record<string, unknown> = {
+    hits: allHits.slice(0, topK),
+    count: allHits.length,
+  };
+  if (skipped.length > 0) {
+    out.note = `Skipped vault(s) currently indexing: ${skipped.join(", ")}.`;
+  }
+  return out;
 }
 
 function handleSearchText(
@@ -978,10 +1010,16 @@ function handleSearchText(
   topK: number,
   excludePaths: string[] | undefined,
 ): object {
-  const targets = resolveVaultTargets(manager, vaultFilter, activeVault);
+  const { targets, skipped } = resolveVaultTargets(manager, vaultFilter, activeVault);
 
   if (targets.length === 0) {
-    return { hits: [], note: "No vaults configured." };
+    return {
+      hits: [],
+      note:
+        skipped.length > 0
+          ? `All eligible vaults are indexing; skipped: ${skipped.join(", ")}.`
+          : "No vaults configured.",
+    };
   }
 
   const hasExclude = excludePaths !== undefined && excludePaths.length > 0;
@@ -1013,7 +1051,14 @@ function handleSearchText(
   }
 
   allHits.sort((a, b) => b.score - a.score);
-  return { hits: allHits.slice(0, topK), count: allHits.length };
+  const out: Record<string, unknown> = {
+    hits: allHits.slice(0, topK),
+    count: allHits.length,
+  };
+  if (skipped.length > 0) {
+    out.note = `Skipped vault(s) currently indexing: ${skipped.join(", ")}.`;
+  }
+  return out;
 }
 
 async function handleSearchHybrid(
@@ -1028,10 +1073,16 @@ async function handleSearchHybrid(
   excludePaths: string[] | undefined,
   reranker: Reranker | undefined,
 ): Promise<object> {
-  const targets = resolveVaultTargets(manager, vaultFilter, activeVault);
+  const { targets, skipped } = resolveVaultTargets(manager, vaultFilter, activeVault);
 
   if (targets.length === 0) {
-    return { hits: [], note: "No vaults configured." };
+    return {
+      hits: [],
+      note:
+        skipped.length > 0
+          ? `All eligible vaults are indexing; skipped: ${skipped.join(", ")}.`
+          : "No vaults configured.",
+    };
   }
 
   const hasExclude = excludePaths !== undefined && excludePaths.length > 0;
@@ -1055,7 +1106,14 @@ async function handleSearchHybrid(
     ? hits.filter((h) => !matchesAnyGlob(h.notePath, excludePaths!))
     : hits;
 
-  return { hits: filtered.slice(0, topK), count: filtered.length };
+  const out: Record<string, unknown> = {
+    hits: filtered.slice(0, topK),
+    count: filtered.length,
+  };
+  if (skipped.length > 0) {
+    out.note = `Skipped vault(s) currently indexing: ${skipped.join(", ")}.`;
+  }
+  return out;
 }
 
 // ─── Response helpers ────────────────────────────────────────────────────────
