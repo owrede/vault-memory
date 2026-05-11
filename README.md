@@ -130,22 +130,22 @@ The `skills/` directory contains three Claude Code skills you can drop into any 
 
 ### Installing the skills in a vault
 
-If you installed via `npm install -g @owrede/vault-memory`, fetch the skills directly from GitHub (the npm tarball intentionally excludes them):
+One-liner — works from anywhere, installs into the specified vault:
 
 ```bash
-# From the consuming vault's root:
-mkdir -p .claude/skills
-for skill in memory setup-memory-system add-vault; do
-  mkdir -p ".claude/skills/$skill"
-  for file in SKILL.md setup.sh config-wizard.sh; do
-    curl -fsSL "https://raw.githubusercontent.com/owrede/vault-memory/main/skills/$skill/$file" \
-      -o ".claude/skills/$skill/$file" 2>/dev/null || true
-  done
-done
-chmod +x .claude/skills/setup-memory-system/*.sh 2>/dev/null
+curl -fsSL https://raw.githubusercontent.com/owrede/vault-memory/main/scripts/install-skills.sh \
+  | bash -s -- "/path/to/your/obsidian/vault"
 ```
 
-If you installed from source, just copy:
+Or, from inside the vault's root directory:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/owrede/vault-memory/main/scripts/install-skills.sh | bash
+```
+
+The script is idempotent — re-running it fetches the latest skill versions from `main` and overwrites the local copies. Use it to update your skills whenever vault-memory ships a new release.
+
+If you cloned the source repo, you can also copy directly:
 
 ```bash
 cp -R ~/Documents/GitHub/vault-memory/skills/{memory,setup-memory-system,add-vault} .claude/skills/
