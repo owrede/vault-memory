@@ -313,6 +313,168 @@ describe("hybridSearch (integration)", () => {
     expect(reranker.score).toHaveBeenCalledTimes(1);
   });
 
+  it("skips near-empty chunks (< 20 trim chars) from the rerank pool", async () => {
+    // Add a near-empty chunk that would otherwise get reranked. The
+    // reranker mock asserts it never sees chunks shorter than the
+    // threshold — they keep their RRF position but bypass the cross-
+    // encoder pass entirely.
+    const tinyDb = new Database(":memory:");
+    const model = tinyDb.models.upsert({
+      name: "test-model",
+      provider: "test",
+      dim: DIM,
+    });
+    tinyDb.models.setActive(model.id);
+
+    const big = tinyDb.notes.upsertByPath({
+      path: "big.md",
+      content: "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda",
+      frontmatter: null,
+      title: "Big",
+      hash: "hbig",
+      mtime: 1,
+      wordCount: 11,
+    });
+    const tiny = tinyDb.notes.upsertByPath({
+      path: "tiny.md",
+      content: "x",
+      frontmatter: null,
+      title: "Tiny",
+      hash: "htiny",
+      mtime: 1,
+      wordCount: 1,
+    });
+    const bigIds = tinyDb.chunks.insertBatch(big.id, [
+      {
+        idx: 0,
+        text: "alpha and many other useful words for a long enough chunk to survive the filter",
+        headingPath: null,
+        startOffset: 0,
+        endOffset: 80,
+        tokenCount: 15,
+      },
+    ]);
+    const tinyIds = tinyDb.chunks.insertBatch(tiny.id, [
+      {
+        idx: 0,
+        text: "alpha", // 5 chars trim — below MIN_RERANK_TRIM_CHARS (20)
+        headingPath: null,
+        startOffset: 0,
+        endOffset: 5,
+        tokenCount: 1,
+      },
+    ]);
+    tinyDb.embeddings.insertBatch([
+      { chunkId: bigIds[0]!, modelId: model.id, vector: targetVec },
+      { chunkId: tinyIds[0]!, modelId: model.id, vector: otherVec1 },
+    ]);
+    const v: Vault = {
+      config: { name: "tiny-vault", path: "/dev/null" },
+      db: tinyDb,
+      dbPath: ":memory:",
+    };
+
+    const ollama = {
+      embed: vi.fn().mockResolvedValue({
+        vectors: [queryVec],
+        dim: DIM,
+        model: "test-model",
+      }),
+    } as unknown as OllamaClient;
+
+    let seenByReranker: string[] = [];
+    const reranker = {
+      score: vi.fn(async (_q: string, chunks: readonly string[]) => {
+        seenByReranker = [...chunks];
+        return chunks.map(() => 0.5);
+      }),
+    };
+
+    await hybridSearch({
+      query: "alpha",
+      embeddingModel: "test-model",
+      ollama,
+      vaults: [v],
+      topK: 5,
+      reranker,
+    });
+
+    // Reranker was called, but only with the long chunk.
+    expect(reranker.score).toHaveBeenCalledTimes(1);
+    expect(seenByReranker).toHaveLength(1);
+    expect(seenByReranker[0]).toContain("alpha and many other useful");
+
+    tinyDb.close();
+  });
+
+  it("falls back to RRF when ALL pool candidates are too short to rerank", async () => {
+    const tinyDb = new Database(":memory:");
+    const model = tinyDb.models.upsert({
+      name: "test-model",
+      provider: "test",
+      dim: DIM,
+    });
+    tinyDb.models.setActive(model.id);
+
+    const n = tinyDb.notes.upsertByPath({
+      path: "n.md",
+      content: "shorty",
+      frontmatter: null,
+      title: "N",
+      hash: "hn",
+      mtime: 1,
+      wordCount: 1,
+    });
+    const ids = tinyDb.chunks.insertBatch(n.id, [
+      {
+        idx: 0,
+        text: "alpha",
+        headingPath: null,
+        startOffset: 0,
+        endOffset: 5,
+        tokenCount: 1,
+      },
+    ]);
+    tinyDb.embeddings.insertBatch([
+      { chunkId: ids[0]!, modelId: model.id, vector: targetVec },
+    ]);
+    const v: Vault = {
+      config: { name: "all-tiny", path: "/dev/null" },
+      db: tinyDb,
+      dbPath: ":memory:",
+    };
+
+    const ollama = {
+      embed: vi.fn().mockResolvedValue({
+        vectors: [queryVec],
+        dim: DIM,
+        model: "test-model",
+      }),
+    } as unknown as OllamaClient;
+
+    const reranker = {
+      score: vi.fn(async () => [0.99]),
+    };
+
+    const hits = await hybridSearch({
+      query: "alpha",
+      embeddingModel: "test-model",
+      ollama,
+      vaults: [v],
+      topK: 5,
+      reranker,
+    });
+
+    // Reranker never called — pool was empty after filter.
+    expect(reranker.score).not.toHaveBeenCalled();
+    // Still get a result from the RRF fallback.
+    expect(hits.length).toBe(1);
+    expect(hits[0]?.chunkText).toBe("alpha");
+    expect(hits[0]?.scoreBreakdown?.rerank).toBeUndefined();
+
+    tinyDb.close();
+  });
+
   it("reranker failure falls back silently to RRF order", async () => {
     const ollama = {
       embed: vi.fn().mockResolvedValue({

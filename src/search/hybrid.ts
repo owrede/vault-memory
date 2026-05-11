@@ -50,6 +50,11 @@ export interface HybridSearchOptions {
 
 const DEFAULT_TOP_K = 10;
 const DEFAULT_RRF_K = 60;
+/** Minimum non-whitespace chars a chunk must contain to be sent to the
+ *  reranker. Defends against degenerate near-empty chunks that survived
+ *  the chunker (e.g. cross-version DBs) — they produce a constant rerank
+ *  score across the pool and dilute the top-k. */
+const MIN_RERANK_TRIM_CHARS = 20;
 
 /**
  * Internal: ranked list of opaque item identifiers + the raw scores that
@@ -198,10 +203,18 @@ export async function hybridSearch(
       if (!vault) continue;
       const chunk = vault.db.chunks.getById(h.chunkId);
       if (!chunk) continue;
+      // Skip near-empty chunks: cross-encoder produces a near-constant
+      // score for them, which would dilute the pool. They keep their RRF
+      // position (still appear in `flat`) but are not re-ranked.
+      if (chunk.text.trim().length < MIN_RERANK_TRIM_CHARS) continue;
       indexed.push({ hit: h, text: chunk.text });
       texts.push(chunk.text);
     }
-    try {
+    if (indexed.length === 0) {
+      // All pool candidates were filtered as too-short — fall back to RRF
+      // order across `flat` rather than calling the reranker on nothing.
+      winners = flat.slice(0, topK);
+    } else try {
       const scores = await opts.reranker.score(query, texts);
       if (scores.length !== indexed.length) {
         throw new Error(
