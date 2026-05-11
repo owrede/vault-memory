@@ -134,8 +134,15 @@ export class OnnxReranker implements Reranker {
         import("@huggingface/tokenizers"),
         readFile(tokenizerPath, "utf-8"),
       ]);
-      const tokenizerConfig = JSON.parse(tokJson);
-      const tokenizer = new (tokMod as any).Tokenizer(tokenizerConfig);
+      // @huggingface/tokenizers expects two args: the tokenizer.json object
+      // *and* a separate config object with special-token strings (bos/eos/
+      // pad/unk). HF distributions ship that as tokenizer_config.json, but
+      // for bge-reranker-v2-m3 only tokenizer.json is published. We derive
+      // the config from added_tokens — known stable: XLM-RoBERTa schema
+      // (<s>=0, <pad>=1, </s>=2, <unk>=3).
+      const tokenizerJson = JSON.parse(tokJson);
+      const config = deriveTokenizerConfig(tokenizerJson);
+      const tokenizer = new (tokMod as any).Tokenizer(tokenizerJson, config);
       const session = await (ort as any).InferenceSession.create(modelPath);
       const loaded: LoadedSession = { session, tokenizer, ort };
       this.loaded = loaded;
@@ -147,4 +154,28 @@ export class OnnxReranker implements Reranker {
 
 function sigmoid(x: number): number {
   return 1 / (1 + Math.exp(-x));
+}
+
+/**
+ * Derive the tokenizer config (special-token strings) from added_tokens.
+ * @huggingface/tokenizers needs this as a second constructor arg; HF
+ * usually ships it as a separate tokenizer_config.json, but bge-reranker-
+ * v2-m3 only publishes tokenizer.json — so we reconstruct from added_tokens.
+ *
+ * Falls back to XLM-RoBERTa defaults (the reranker's base architecture).
+ */
+function deriveTokenizerConfig(tokenizerJson: any): Record<string, string> {
+  const added: Array<{ id: number; content: string; special?: boolean }> =
+    tokenizerJson.added_tokens ?? [];
+  const byContent = new Map(added.map((t) => [t.content, t]));
+  const pick = (...candidates: string[]): string => {
+    for (const c of candidates) if (byContent.has(c)) return c;
+    return candidates[0]!;
+  };
+  return {
+    bos_token: pick("<s>"),
+    eos_token: pick("</s>"),
+    pad_token: pick("<pad>"),
+    unk_token: pick("<unk>"),
+  };
 }
