@@ -6,10 +6,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/owrede/vault-memory.git"
+    "url": "git+https://github.com/owrede/vault-memory.git"
   },
   "bin": {
-    "vault-memory": "./dist/cli.js"
+    "vault-memory": "dist/cli.js"
   },
   "files": [
     "dist",
