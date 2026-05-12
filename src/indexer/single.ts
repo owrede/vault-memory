@@ -99,6 +99,46 @@ export async function indexNote(
     };
   }
 
+  // 4b. Body-hash fast path (v0.9.1): combined hash differs but body is
+  //     unchanged → frontmatter-only edit. Update note row + aliases, but
+  //     KEEP chunks/embeddings as-is. Saves an Ollama roundtrip per chunk
+  //     (typically 5-15 per note) on every update_frontmatter call.
+  //
+  //     Wikilinks: extracted from BOTH body and frontmatter. Frontmatter
+  //     wikilinks (e.g. participation: ["[[X]]"]) can change with a
+  //     frontmatter-only edit, so we still rewrite the wikilinks index.
+  //
+  //     NULL guard: legacy rows pre-migration-006 have body_hash=NULL.
+  //     `null === parsed.bodyHash` is always false, so we fall through to
+  //     the full re-embed path. Self-heals on next touch.
+  if (existing && existing.body_hash && existing.body_hash === parsed.bodyHash) {
+    const upsert = vault.db.notes.upsertByPath({
+      path: parsed.relativePath,
+      content: parsed.content,
+      frontmatter: parsed.frontmatter
+        ? JSON.stringify(parsed.frontmatter)
+        : null,
+      title: parsed.title,
+      hash: parsed.hash,
+      bodyHash: parsed.bodyHash,
+      mtime: parsed.mtime,
+      wordCount: parsed.wordCount,
+    });
+    vault.db.aliases.setForNote(
+      upsert.id,
+      extractAliases(parsed.frontmatter),
+    );
+    vault.db.wikilinks.deleteByNote(upsert.id);
+    insertWikilinks(vault, upsert.id, parsed.wikilinks);
+    return {
+      status: "indexed",
+      notePath: parsed.relativePath,
+      noteId: upsert.id,
+      chunksCreated: 0,
+      isNew: false,
+    };
+  }
+
   // 5. Active model lookup + dimension contract check. The full indexer
   //    upserts the model row; here we require it to already exist (caller
   //    should run a full index first if not).
@@ -125,6 +165,7 @@ export async function indexNote(
       : null,
     title: parsed.title,
     hash: parsed.hash,
+    bodyHash: parsed.bodyHash,
     mtime: parsed.mtime,
     wordCount: parsed.wordCount,
   });

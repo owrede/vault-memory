@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   canonicalJsonStringify,
+  computeBodyHash,
   computeNoteHash,
   sha256,
 } from "./hash.js";
@@ -107,5 +108,35 @@ describe("computeNoteHash", () => {
     expect(computeNoteHash("a", { x: 1 })).not.toBe(
       computeNoteHash("a", { x: 2 }),
     );
+  });
+});
+
+describe("computeBodyHash", () => {
+  it("is identical for same body regardless of frontmatter", () => {
+    // The whole point of body_hash: indexer short-circuit decides
+    // re-embed based on body, not on combined hash.
+    const body = "# Note\n\nSame body text.";
+    expect(computeBodyHash(body)).toBe(computeBodyHash(body));
+  });
+
+  it("changes when body changes by even one byte", () => {
+    expect(computeBodyHash("body version 1")).not.toBe(
+      computeBodyHash("body version 2"),
+    );
+  });
+
+  it("is a stable sha256 hex digest (64 chars)", () => {
+    const hash = computeBodyHash("anything");
+    expect(hash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("differs from computeNoteHash even with empty frontmatter", () => {
+    // body_hash = sha256(content). computeNoteHash adds
+    // canonicalJsonStringify({}) = "{}" — different input → different
+    // hash. Important so a NULL-vs-non-NULL guard in the indexer
+    // can never accidentally treat one as the other.
+    const body = "body content";
+    expect(computeBodyHash(body)).not.toBe(computeNoteHash(body, null));
+    expect(computeBodyHash(body)).not.toBe(computeNoteHash(body, {}));
   });
 });

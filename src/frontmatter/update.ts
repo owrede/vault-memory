@@ -23,7 +23,7 @@
 import { promises as fs } from "node:fs";
 import matter from "gray-matter";
 import type { Vault } from "../vault/index.js";
-import { computeNoteHash } from "../reader/hash.js";
+import { computeNoteHash, computeBodyHash } from "../reader/hash.js";
 import { extractAliases } from "../indexer/indexer.js";
 import { atomicWriteFile, safeJoinInsideVault } from "../write/fs.js";
 
@@ -306,6 +306,7 @@ export async function updateFrontmatter(
         frontmatter: fmJson,
         title,
         hash: newHash,
+        bodyHash: computeBodyHash(content),
         mtime: Math.floor(stat.mtimeMs),
         wordCount,
       });

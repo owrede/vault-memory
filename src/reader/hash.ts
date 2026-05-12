@@ -57,3 +57,17 @@ export function computeNoteHash(
 ): string {
   return sha256(content + canonicalJsonStringify(frontmatter ?? {}));
 }
+
+/**
+ * Body-only hash: sha256(content) — independent of frontmatter.
+ *
+ * Used by the indexer to short-circuit chunk + embed work when the body
+ * is unchanged but frontmatter differs. See migration 006 for rationale.
+ *
+ * Note: this is intentionally NOT a substring of computeNoteHash's input —
+ * we want it to remain stable when frontmatter changes, which the
+ * combined hash explicitly does not.
+ */
+export function computeBodyHash(content: string): string {
+  return sha256(content);
+}

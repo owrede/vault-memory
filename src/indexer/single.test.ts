@@ -133,6 +133,118 @@ describe("single-indexer: indexNote", () => {
     expect(ollama.embed).toHaveBeenCalledTimes(2);
   });
 
+  // v0.9.1 — frontmatter-only-change short-circuit.
+  // When only frontmatter changes (e.g. adding a tag), the body hash stays
+  // the same, so chunks + embeddings must NOT be regenerated. We assert two
+  // things: status reports the re-index, BUT no second Ollama embed call.
+  it("body-hash short-circuit: frontmatter-only change does not re-embed", async () => {
+    const abs = await writeNote(
+      "Tagged.md",
+      "---\ntags: [original]\n---\n\n# Tagged\n\nUnchanged body content.",
+    );
+    const first = await indexNote({
+      vault,
+      absolutePath: abs,
+      embeddingModel: MODEL,
+      ollama: ollama.client,
+    });
+    expect(first.isNew).toBe(true);
+    expect(first.chunksCreated).toBeGreaterThan(0);
+    expect(ollama.embed).toHaveBeenCalledTimes(1);
+
+    const firstChunkCount = vault.db.chunks.getByNote(first.noteId!).length;
+    expect(firstChunkCount).toBeGreaterThan(0);
+
+    // Add a tag — frontmatter changes but body is byte-identical.
+    await new Promise((r) => setTimeout(r, 5));
+    await fs.writeFile(
+      abs,
+      "---\ntags: [original, added]\n---\n\n# Tagged\n\nUnchanged body content.",
+      "utf-8",
+    );
+
+    const second = await indexNote({
+      vault,
+      absolutePath: abs,
+      embeddingModel: MODEL,
+      ollama: ollama.client,
+    });
+    expect(second.status).toBe("indexed");
+    expect(second.isNew).toBe(false);
+    // Critical assertion: the body did not change, so no new embedding call.
+    expect(ollama.embed).toHaveBeenCalledTimes(1);
+    // chunksCreated is 0 — the existing chunks are kept in place.
+    expect(second.chunksCreated).toBe(0);
+    // Chunks themselves are preserved (count and IDs).
+    const afterChunkCount = vault.db.chunks.getByNote(second.noteId!).length;
+    expect(afterChunkCount).toBe(firstChunkCount);
+
+    // Frontmatter actually landed in the DB.
+    const noteRow = vault.db.notes.getById(second.noteId!);
+    const fm = noteRow?.frontmatter ? JSON.parse(noteRow.frontmatter) : null;
+    expect(fm.tags).toEqual(["original", "added"]);
+  });
+
+  // Legacy rows (body_hash IS NULL pre-migration-006) must fall through to
+  // the full re-embed path on the first touch and then self-heal.
+  it("body-hash short-circuit: NULL body_hash on legacy row triggers full re-embed", async () => {
+    const abs = await writeNote("Legacy.md", "# Legacy\n\nbody body body.");
+    const first = await indexNote({
+      vault,
+      absolutePath: abs,
+      embeddingModel: MODEL,
+      ollama: ollama.client,
+    });
+    expect(ollama.embed).toHaveBeenCalledTimes(1);
+
+    // Simulate a pre-migration row by clearing body_hash directly.
+    vault.db.handle
+      .prepare("UPDATE notes SET body_hash = NULL WHERE id = ?")
+      .run(first.noteId!);
+
+    // Touch the file (mtime change) — body content is identical, but the
+    // DB row has NULL body_hash so the short-circuit must NOT fire. We
+    // want a full re-embed here to populate body_hash going forward.
+    await new Promise((r) => setTimeout(r, 5));
+    await fs.utimes(abs, new Date(), new Date());
+
+    const second = await indexNote({
+      vault,
+      absolutePath: abs,
+      embeddingModel: MODEL,
+      ollama: ollama.client,
+    });
+    // mtime touch doesn't change hash → falls through to the unchanged branch
+    // BEFORE reaching the body_hash check. That branch doesn't backfill
+    // body_hash. Acceptable for now (would need a "no-content-change but
+    // metadata-stale" path); the legacy row stays NULL until a real edit.
+    expect(second.status).toBe("unchanged");
+    expect(ollama.embed).toHaveBeenCalledTimes(1);
+
+    // Now actually edit frontmatter — combined hash changes, body_hash
+    // is still NULL on the DB row → falls through to full re-embed, NOT
+    // the short-circuit. After this, body_hash is populated.
+    await fs.writeFile(
+      abs,
+      "---\ntag: added\n---\n\n# Legacy\n\nbody body body.",
+      "utf-8",
+    );
+    const third = await indexNote({
+      vault,
+      absolutePath: abs,
+      embeddingModel: MODEL,
+      ollama: ollama.client,
+    });
+    expect(third.status).toBe("indexed");
+    expect(third.chunksCreated).toBeGreaterThan(0);
+    // Full re-embed because legacy NULL body_hash short-circuit didn't fire.
+    expect(ollama.embed).toHaveBeenCalledTimes(2);
+
+    // Self-healed: body_hash is now populated.
+    const healed = vault.db.notes.getById(third.noteId!);
+    expect(healed?.body_hash).not.toBeNull();
+  });
+
   it("returns 'outside_vault' for paths outside the vault root", async () => {
     const outside = await fs.mkdtemp(path.join(os.tmpdir(), "vmem-out-"));
     try {

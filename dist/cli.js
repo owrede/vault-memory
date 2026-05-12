@@ -302,7 +302,7 @@ function runMigration005(db) {
     }
   }
 }
-var INITIAL_SCHEMA, MIGRATION_002_ALIASES, MIGRATION_003_FIX_DELETE_FKS, MIGRATION_004_VARIABLE_DIMS, MIGRATIONS;
+var INITIAL_SCHEMA, MIGRATION_002_ALIASES, MIGRATION_003_FIX_DELETE_FKS, MIGRATION_004_VARIABLE_DIMS, MIGRATION_006_BODY_HASH, MIGRATIONS;
 var init_schema = __esm({
   "src/db/schema.ts"() {
     "use strict";
@@ -310,6 +310,9 @@ var init_schema = __esm({
     INITIAL_SCHEMA = `
 -- \u2500\u2500 3.1 Raw Layer \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
+-- Migration 006 adds body_hash to this table (kept out of v1 schema so
+-- the migration chain has historical accuracy and frequent DB-rebuild
+-- tests do not trip over duplicate-column errors).
 CREATE TABLE IF NOT EXISTS notes (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   path          TEXT NOT NULL UNIQUE,
@@ -494,6 +497,10 @@ INSERT INTO embeddings_1024 (chunk_id, model_id, vector)
 
 DROP TABLE embeddings;
 `;
+    MIGRATION_006_BODY_HASH = `
+ALTER TABLE notes ADD COLUMN body_hash TEXT;
+CREATE INDEX IF NOT EXISTS idx_notes_body_hash ON notes(body_hash);
+`;
     MIGRATIONS = [
       {
         version: 1,
@@ -519,6 +526,11 @@ DROP TABLE embeddings;
         version: 5,
         description: "add partition key on model_id (two models per dim can coexist)",
         run: runMigration005
+      },
+      {
+        version: 6,
+        description: "add body_hash for frontmatter-only-change short-circuit",
+        sql: MIGRATION_006_BODY_HASH
       }
     ];
   }
@@ -540,8 +552,8 @@ var init_notes = __esm({
           "SELECT * FROM notes WHERE id = ?"
         );
         this._insert = db.prepare(`
-      INSERT INTO notes (path, content, frontmatter, title, hash, mtime, word_count, created_at, updated_at)
-      VALUES (@path, @content, @frontmatter, @title, @hash, @mtime, @word_count, @now, @now)
+      INSERT INTO notes (path, content, frontmatter, title, hash, body_hash, mtime, word_count, created_at, updated_at)
+      VALUES (@path, @content, @frontmatter, @title, @hash, @body_hash, @mtime, @word_count, @now, @now)
     `);
         this._update = db.prepare(`
       UPDATE notes
@@ -549,6 +561,7 @@ var init_notes = __esm({
           frontmatter = @frontmatter,
           title = @title,
           hash = @hash,
+          body_hash = @body_hash,
           mtime = @mtime,
           word_count = @word_count,
           updated_at = @now
@@ -583,6 +596,7 @@ var init_notes = __esm({
             frontmatter: input.frontmatter,
             title: input.title,
             hash: input.hash,
+            body_hash: input.bodyHash,
             mtime: input.mtime,
             word_count: input.wordCount,
             now
@@ -595,6 +609,7 @@ var init_notes = __esm({
           frontmatter: input.frontmatter,
           title: input.title,
           hash: input.hash,
+          body_hash: input.bodyHash,
           mtime: input.mtime,
           word_count: input.wordCount,
           now
@@ -2297,6 +2312,9 @@ function canonicalJsonStringify(value) {
 function computeNoteHash(content, frontmatter) {
   return sha256(content + canonicalJsonStringify(frontmatter ?? {}));
 }
+function computeBodyHash(content) {
+  return sha256(content);
+}
 var init_hash = __esm({
   "src/reader/hash.ts"() {
     "use strict";
@@ -2536,6 +2554,7 @@ async function parseNote(absolutePath, vaultRoot) {
   const frontmatter = fmData !== void 0 && Object.keys(fmData).length > 0 ? fmData : null;
   const title = extractTitle(content) ?? path3.basename(absolutePath, ".md");
   const hash = computeNoteHash(content, frontmatter);
+  const bodyHash = computeBodyHash(content);
   const mtime = Math.floor(stat.mtimeMs);
   const bodyLinks = extractWikilinks(content);
   const frontmatterLinks = extractFrontmatterWikilinks(frontmatter);
@@ -2550,6 +2569,7 @@ async function parseNote(absolutePath, vaultRoot) {
     frontmatter,
     title,
     hash,
+    bodyHash,
     mtime,
     wikilinks,
     wordCount
@@ -3038,6 +3058,7 @@ async function indexVault(vault, options) {
         frontmatter: parsed.frontmatter ? JSON.stringify(parsed.frontmatter) : null,
         title: parsed.title,
         hash: parsed.hash,
+        bodyHash: parsed.bodyHash,
         mtime: parsed.mtime,
         wordCount: parsed.wordCount
       });
@@ -3499,6 +3520,7 @@ async function updateFrontmatter(input) {
         frontmatter: fmJson,
         title,
         hash: newHash,
+        bodyHash: computeBodyHash(content),
         mtime: Math.floor(stat.mtimeMs),
         wordCount
       });
@@ -3582,6 +3604,31 @@ async function indexNote(options) {
       isNew: false
     };
   }
+  if (existing && existing.body_hash && existing.body_hash === parsed.bodyHash) {
+    const upsert2 = vault.db.notes.upsertByPath({
+      path: parsed.relativePath,
+      content: parsed.content,
+      frontmatter: parsed.frontmatter ? JSON.stringify(parsed.frontmatter) : null,
+      title: parsed.title,
+      hash: parsed.hash,
+      bodyHash: parsed.bodyHash,
+      mtime: parsed.mtime,
+      wordCount: parsed.wordCount
+    });
+    vault.db.aliases.setForNote(
+      upsert2.id,
+      extractAliases(parsed.frontmatter)
+    );
+    vault.db.wikilinks.deleteByNote(upsert2.id);
+    insertWikilinks2(vault, upsert2.id, parsed.wikilinks);
+    return {
+      status: "indexed",
+      notePath: parsed.relativePath,
+      noteId: upsert2.id,
+      chunksCreated: 0,
+      isNew: false
+    };
+  }
   const activeModel = vault.db.models.getActive();
   if (!activeModel) {
     throw new Error(
@@ -3599,6 +3646,7 @@ async function indexNote(options) {
     frontmatter: parsed.frontmatter ? JSON.stringify(parsed.frontmatter) : null,
     title: parsed.title,
     hash: parsed.hash,
+    bodyHash: parsed.bodyHash,
     mtime: parsed.mtime,
     wordCount: parsed.wordCount
   });
@@ -4133,6 +4181,7 @@ async function writeNote(input) {
         frontmatter: written.frontmatter ? JSON.stringify(written.frontmatter) : null,
         title,
         hash: written.hash,
+        bodyHash: computeBodyHash(written.content),
         mtime: Math.floor(stat.mtimeMs),
         wordCount: countWords3(written.content)
       });
@@ -5702,7 +5751,7 @@ var init_server = __esm({
     init_audit3();
     init_watcher2();
     init_indexer2();
-    VERSION = "0.9.0";
+    VERSION = "0.9.1";
     ReadNoteArgs = z3.object({
       vault: z3.string(),
       path: z3.string()

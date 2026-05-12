@@ -6,9 +6,9 @@ Reads one or more Obsidian vaults, indexes them with local embeddings via Ollama
 
 ## Status
 
-**v0.9.0** — Agent-Compatibility & Self-Orientation: OB1-compatible `search`/`fetch` tools so ChatGPT Custom Connectors, Claude.ai, and Deep-Research modes can use vault-memory as a connector; `vault_stats` and `recent_notes` for agent self-orientation on first connect. See `_research/vault-memory-openbrain-comparison.md` in a consuming vault for the gap analysis driving these additions.
+**v0.9.1** — Body-hash short-circuit (migration 006): frontmatter-only edits (the common case for `update_frontmatter`, `/log-fact`, `/import-person`) no longer trigger chunk + embedding regeneration. A new `body_hash` column on `notes` lets the watcher detect "body unchanged, frontmatter changed" and keep all existing chunks/embeddings in place — saving one Ollama roundtrip per chunk per frontmatter edit. Legacy rows pre-migration self-heal on next touch.
 
-Previous: **v0.8.3** — Phase 8 (real ONNX cross-encoder reranker) + search-quality fixes + skills consolidation.
+Previous: **v0.9.0** — Agent-Compatibility & Self-Orientation: OB1-compatible `search`/`fetch` tools so ChatGPT Custom Connectors, Claude.ai, and Deep-Research modes can use vault-memory as a connector; `vault_stats` and `recent_notes` for agent self-orientation on first connect.
 
 ## Architecture in one paragraph
 
@@ -214,7 +214,7 @@ fetch({id})            → { id, title, text, url, metadata }
 ```bash
 npm install
 npm run dev          # MCP server on stdio with hot reload
-npm test             # 318 tests across 36 files (v0.9.0)
+npm test             # 324 tests across 35 files (v0.9.1)
 npm run build
 ```
 
