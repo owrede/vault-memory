@@ -57,8 +57,11 @@ export interface ParsedNote {
   frontmatter: Record<string, unknown> | null;
   /** Title — H1 heading if present, else basename without .md. */
   title: string;
-  /** SHA-256 of `content + JSON.stringify(frontmatter)`. */
+  /** SHA-256 of `content + canonicalJson(frontmatter)`. */
   hash: string;
+  /** SHA-256 of `content` only — independent of frontmatter. Used by
+   *  the indexer to detect frontmatter-only changes and skip re-embedding. */
+  bodyHash: string;
   /** File mtime in epoch milliseconds. */
   mtime: number;
   /** Wikilinks extracted from content, in document order. */
@@ -141,6 +144,9 @@ export interface NoteRow {
   frontmatter: string | null; // JSON-stringified
   title: string;
   hash: string;
+  /** SHA-256 of content-only. NULL on legacy rows pre-migration 006;
+   *  filled lazily on next upsert. */
+  body_hash: string | null;
   mtime: number;
   word_count: number;
   created_at: number;

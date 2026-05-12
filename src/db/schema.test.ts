@@ -14,13 +14,13 @@ describe("schema", () => {
   });
 
   it("sets user_version to the latest migration version", () => {
-    expect(db.getSchemaVersion()).toBe(5);
+    expect(db.getSchemaVersion()).toBe(6);
   });
 
   it("migrate is idempotent", () => {
     db.migrate();
     db.migrate();
-    expect(db.getSchemaVersion()).toBe(5);
+    expect(db.getSchemaVersion()).toBe(6);
   });
 
   it.each([

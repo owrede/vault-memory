@@ -7,6 +7,9 @@ export interface UpsertNoteInput {
   frontmatter: string | null;
   title: string;
   hash: string;
+  /** Body-only SHA-256. Used by indexer's frontmatter-only-change
+   *  short-circuit (migration 006). */
+  bodyHash: string;
   mtime: number;
   wordCount: number;
 }
@@ -28,8 +31,8 @@ export class NotesQueries {
       "SELECT * FROM notes WHERE id = ?",
     );
     this._insert = db.prepare(`
-      INSERT INTO notes (path, content, frontmatter, title, hash, mtime, word_count, created_at, updated_at)
-      VALUES (@path, @content, @frontmatter, @title, @hash, @mtime, @word_count, @now, @now)
+      INSERT INTO notes (path, content, frontmatter, title, hash, body_hash, mtime, word_count, created_at, updated_at)
+      VALUES (@path, @content, @frontmatter, @title, @hash, @body_hash, @mtime, @word_count, @now, @now)
     `);
     this._update = db.prepare(`
       UPDATE notes
@@ -37,6 +40,7 @@ export class NotesQueries {
           frontmatter = @frontmatter,
           title = @title,
           hash = @hash,
+          body_hash = @body_hash,
           mtime = @mtime,
           word_count = @word_count,
           updated_at = @now
@@ -64,6 +68,7 @@ export class NotesQueries {
         frontmatter: input.frontmatter,
         title: input.title,
         hash: input.hash,
+        body_hash: input.bodyHash,
         mtime: input.mtime,
         word_count: input.wordCount,
         now,
@@ -76,6 +81,7 @@ export class NotesQueries {
       frontmatter: input.frontmatter,
       title: input.title,
       hash: input.hash,
+      body_hash: input.bodyHash,
       mtime: input.mtime,
       word_count: input.wordCount,
       now,

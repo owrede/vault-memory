@@ -12,7 +12,7 @@ import { promises as fs } from "node:fs";
 import { basename } from "node:path";
 import matter from "gray-matter";
 import type { Vault } from "../vault/index.js";
-import { computeNoteHash } from "../reader/index.js";
+import { computeNoteHash, computeBodyHash } from "../reader/index.js";
 import { extractAliases } from "../indexer/index.js";
 import { atomicWriteFile, safeJoinInsideVault } from "./fs.js";
 
@@ -211,6 +211,7 @@ export async function writeNote(input: WriteNoteInput): Promise<WriteResult> {
         frontmatter: written.frontmatter ? JSON.stringify(written.frontmatter) : null,
         title,
         hash: written.hash,
+        bodyHash: computeBodyHash(written.content),
         mtime: Math.floor(stat.mtimeMs),
         wordCount: countWords(written.content),
       });

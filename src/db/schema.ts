@@ -32,6 +32,9 @@ export type Migration =
 export const INITIAL_SCHEMA: string = `
 -- ── 3.1 Raw Layer ────────────────────────────────────────────────────────
 
+-- Migration 006 adds body_hash to this table (kept out of v1 schema so
+-- the migration chain has historical accuracy and frequent DB-rebuild
+-- tests do not trip over duplicate-column errors).
 CREATE TABLE IF NOT EXISTS notes (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   path          TEXT NOT NULL UNIQUE,
@@ -359,6 +362,29 @@ function runMigration005(db: BetterSqlite3Database): void {
 
 type BetterSqlite3Database = import("better-sqlite3").Database;
 
+/**
+ * Migration 006 — add `body_hash` to notes.
+ *
+ * Why: the existing `hash` column mixes content + frontmatter. Any
+ * frontmatter-only change (e.g. `update_frontmatter` adding a tag) flips
+ * the hash and forces the indexer to re-chunk + re-embed the entire
+ * note. The body is unchanged — embeddings should stay untouched.
+ *
+ * `body_hash` = sha256(content) only — independent of frontmatter.
+ * The indexer compares body_hash before deciding whether to re-embed:
+ *   - body_hash unchanged AND hash changed → frontmatter-only diff →
+ *     update note row + aliases, keep chunks/embeddings
+ *   - body_hash changed → full re-chunk + re-embed
+ *
+ * Existing rows have body_hash=NULL after this migration. The indexer
+ * treats NULL as "unknown — must recompute on next touch" and fills it
+ * in lazily during the next upsert. No backfill needed.
+ */
+const MIGRATION_006_BODY_HASH = `
+ALTER TABLE notes ADD COLUMN body_hash TEXT;
+CREATE INDEX IF NOT EXISTS idx_notes_body_hash ON notes(body_hash);
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   {
     version: 1,
@@ -385,5 +411,10 @@ export const MIGRATIONS: readonly Migration[] = [
     description:
       "add partition key on model_id (two models per dim can coexist)",
     run: runMigration005,
+  },
+  {
+    version: 6,
+    description: "add body_hash for frontmatter-only-change short-circuit",
+    sql: MIGRATION_006_BODY_HASH,
   },
 ];

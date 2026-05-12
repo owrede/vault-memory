@@ -170,6 +170,7 @@ export async function indexVault(
         frontmatter: parsed.frontmatter ? JSON.stringify(parsed.frontmatter) : null,
         title: parsed.title,
         hash: parsed.hash,
+        bodyHash: parsed.bodyHash,
         mtime: parsed.mtime,
         wordCount: parsed.wordCount,
       });

@@ -200,7 +200,7 @@ describe("migration 004→005 — legacy embeddings → per-model tables", () =>
     // user_version=3 — exactly what an existing v0.6.1 vault looks like.
     const db = new Database(":memory:");
     // Wipe migration-004 pre-tables; rebuild the legacy v3 table; reset
-    // user_version to 3 so the migration runner replays 4 + 5.
+    // user_version to 3 so the migration runner replays 4, 5, 6.
     db.handle.exec("DROP TABLE IF EXISTS embeddings_1024");
     db.handle.exec("DROP TABLE IF EXISTS embeddings_768");
     db.handle.exec(`
@@ -210,13 +210,36 @@ describe("migration 004→005 — legacy embeddings → per-model tables", () =>
         vector   FLOAT[1024]
       )
     `);
-    db.handle.pragma("user_version = 3");
+    // Migration 006 also adds body_hash to notes — rebuild notes without it
+    // so the replay actually exercises migration 006 instead of crashing
+    // on the duplicate column.
+    db.handle.exec("DROP TABLE IF EXISTS notes");
+    db.handle.exec(`
+      CREATE TABLE notes (
+        id            INTEGER PRIMARY KEY AUTOINCREMENT,
+        path          TEXT NOT NULL UNIQUE,
+        content       TEXT NOT NULL,
+        frontmatter   TEXT,
+        title         TEXT,
+        hash          TEXT NOT NULL,
+        mtime         INTEGER NOT NULL,
+        word_count    INTEGER,
+        created_at    INTEGER NOT NULL,
+        updated_at    INTEGER NOT NULL
+      )
+    `);
+    // Seed a note via raw SQL so we exercise the legacy schema shape — the
+    // NotesQueries prepared statements expect body_hash and would fail here.
+    const seedNow = Date.now();
+    const insertResult = db.handle
+      .prepare(
+        `INSERT INTO notes (path, content, frontmatter, title, hash, mtime, word_count, created_at, updated_at)
+         VALUES ('legacy.md', 'x', NULL, 'legacy', 'h', 1, 1, ?, ?)`,
+      )
+      .run(seedNow, seedNow);
+    const noteId = Number(insertResult.lastInsertRowid);
 
-    // Seed a chunk + model + legacy embedding row.
-    const { id: noteId } = db.notes.upsertByPath({
-      path: "legacy.md", content: "x", frontmatter: null, title: "legacy",
-      hash: "h", mtime: 1, wordCount: 1,
-    });
+    db.handle.pragma("user_version = 3");
     const [chunkId] = db.chunks.insertBatch(noteId, [
       { idx: 0, text: "old", headingPath: null, startOffset: 0, endOffset: 1, tokenCount: 1 },
     ]);
@@ -229,7 +252,7 @@ describe("migration 004→005 — legacy embeddings → per-model tables", () =>
 
     // Apply migrations forward.
     db.migrate();
-    expect(db.getSchemaVersion()).toBe(5);
+    expect(db.getSchemaVersion()).toBe(6);
 
     // Both legacy tables are gone:
     //   - `embeddings`         (v3) — dropped by migration 004
