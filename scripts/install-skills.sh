@@ -17,13 +17,16 @@
 set -eu
 
 REPO_RAW="https://raw.githubusercontent.com/owrede/vault-memory/main"
-SKILLS=(install-vault-memory add-vault)
+SKILLS=(install-vault-memory add-vault audit-vault-health find-stale-notes triage-inbox)
 
 # ─── Files per skill (kept in sync with the repo's skills/ tree) ─────────────
 files_for() {
   case "$1" in
     install-vault-memory) echo "SKILL.md setup.sh config-wizard.sh" ;;
     add-vault)            echo "SKILL.md" ;;
+    audit-vault-health)   echo "SKILL.md" ;;
+    find-stale-notes)     echo "SKILL.md" ;;
+    triage-inbox)         echo "SKILL.md" ;;
     *)                    echo "" ;;
   esac
 }
