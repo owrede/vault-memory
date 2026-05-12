@@ -1,12 +1,13 @@
-name: publish to npm
+name: publish to npm + GitHub release
 
 # Triggers on push of any tag matching v*.*.* — typically the result of
 # `git tag -a vX.Y.Z -m "..." && git push origin vX.Y.Z`. The workflow
 # rebuilds dist/ on a clean Linux runner (so the tarball is reproducible),
-# runs the test suite, and publishes the package to https://registry.npmjs.org
-# with --access public. The latest dist-tag follows the highest semver, so
-# users running `npm install -g @owrede/vault-memory` always get the most
-# recent release.
+# runs the test suite, publishes to npm with --access public, and then
+# creates a GitHub Release using the matching CHANGELOG.md section as the
+# release body. The latest dist-tag follows the highest semver, so users
+# running `npm install -g @owrede/vault-memory` always get the most recent
+# release.
 
 on:
   push:
@@ -15,7 +16,7 @@ on:
 
 # Skip in PR contexts entirely
 permissions:
-  contents: read
+  contents: write   # required by softprops/action-gh-release to create releases
   id-token: write   # required for npm provenance
 
 jobs:
@@ -63,3 +64,40 @@ jobs:
         run: npm publish --access public --provenance
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Extract CHANGELOG section for this tag
+        # Reads CHANGELOG.md and writes the section for the matching version
+        # (between the `## [X.Y.Z]` heading and the next `## [` heading) to
+        # /tmp/release-notes.md. Falls back to a generic note if no section
+        # is found, so the release still gets created.
+        id: changelog
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          awk -v ver="$VERSION" '
+            BEGIN { in_section = 0 }
+            /^## \[/ {
+              if (in_section) exit
+              if ($0 ~ "\\[" ver "\\]") { in_section = 1; next }
+            }
+            in_section { print }
+          ' CHANGELOG.md > /tmp/release-notes.md
+
+          if [ ! -s /tmp/release-notes.md ]; then
+            echo "No CHANGELOG section found for $VERSION — using fallback." >&2
+            printf "Release v%s. See [CHANGELOG.md](https://github.com/%s/blob/main/CHANGELOG.md) for details.\n" \
+              "$VERSION" "$GITHUB_REPOSITORY" > /tmp/release-notes.md
+          fi
+
+          echo "--- release notes preview ---" >&2
+          head -20 /tmp/release-notes.md >&2
+
+      - name: Create GitHub Release
+        # softprops/action-gh-release@v2 picks up the tag from GITHUB_REF and
+        # uses the body_path file. make_latest=legacy means: the highest
+        # semver tag (no pre-release suffix) becomes the "Latest" release on
+        # the repo's main page. Pre-release tags (e.g. v1.1.0-beta.1) skip
+        # the latest promotion automatically.
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: /tmp/release-notes.md
+          make_latest: legacy
