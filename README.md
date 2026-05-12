@@ -367,6 +367,39 @@ section — see the bottom of the changelog for the recipe.
 
 _Coming soon._
 
+## Filing issues
+
+Bug reports and feature requests are welcome. Open one via the
+[Issues tab](https://github.com/owrede/vault-memory/issues/new/choose) —
+two structured templates are available:
+
+- **Bug report** — for things that are broken or misbehave. Include repro
+  steps, your `vault-memory` version, and a one-line severity assessment.
+- **Feature request** — for new tools, behaviours, or skills. Describe the
+  use case and a concrete proposed shape.
+
+Both templates auto-label the issue (`bug` / `enhancement`) and route into
+the area-labels documented below. Anyone with a GitHub account can open
+issues; the maintainer triages and labels.
+
+### Area labels
+
+Issues are organised by which part of vault-memory they touch:
+
+| Label | Scope |
+|---|---|
+| `area:search` | search_hybrid, search_semantic, search_text, search, fetch |
+| `area:indexer` | catchup, watcher, body-hash short-circuit |
+| `area:schema-inference` | suggest_frontmatter + folder/neighbor/content layers |
+| `area:skills` | Claude Code skills bundled in `skills/` |
+| `area:cli` | `vault-memory` CLI (serve, add-vault, index) |
+| `area:graph` | wikilinks, backlinks, broken-link detection |
+| `area:reranker` | ONNX cross-encoder reranker |
+| `area:db-migration` | SQLite schema migrations, sqlite-vec |
+
+Plus the functional labels `eval`, `performance`, `breaking-change`,
+`needs-repro`, `good-first-fix`.
+
 ## License
 
 MIT.

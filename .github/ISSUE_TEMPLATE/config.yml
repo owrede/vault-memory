@@ -1,0 +1,18 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 Read the docs first
+    url: https://github.com/owrede/vault-memory#readme
+    about: |
+      The README covers installation, configuration, the full tool list, and
+      how the skills work. Most usage questions are answered there.
+  - name: 🔖 Check the CHANGELOG
+    url: https://github.com/owrede/vault-memory/blob/main/CHANGELOG.md
+    about: |
+      Recent releases (v0.9.0 / v0.9.1 / v0.9.2 / v0.10.0) added new MCP
+      tools and skills. Your question may already be answered by a recent
+      release note.
+  - name: 💬 Have a usage question, not a bug?
+    url: https://github.com/owrede/vault-memory/issues?q=label%3Aquestion
+    about: |
+      Browse existing "question" issues, or open a new one with the
+      [Bug report] form picking "Low" severity and noting it's a question.

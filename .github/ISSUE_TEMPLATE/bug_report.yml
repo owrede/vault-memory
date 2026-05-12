@@ -1,0 +1,101 @@
+name: Bug report
+description: Something is broken or behaves unexpectedly in vault-memory
+title: "[Bug] "
+labels: ["bug", "needs-repro"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report a bug! Filling out the sections below
+        helps maintainers reproduce and fix the issue quickly.
+
+        Before filing: check the
+        [latest release notes](https://github.com/owrede/vault-memory/releases)
+        — the bug may already be fixed.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What's broken?
+      description: One or two sentences describing the unexpected behaviour.
+      placeholder: |
+        `search_hybrid` returns no results when the vault has more than 2000 notes.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: |
+        Minimum steps a maintainer can follow to see the same problem.
+        If it involves a specific vault layout, describe it (folder structure,
+        approx note count, embedding model used).
+      placeholder: |
+        1. `vault-memory add-vault /path/to/vault`
+        2. Wait for initial index to complete
+        3. From Claude Code: call `search_hybrid({query: "...", limit: 10})`
+        4. Observe: empty `hits` array, no `note` field
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+      placeholder: |
+        At least the top-3 semantic matches for the query.
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: vault-memory version
+      description: |
+        Output of `npm list -g @owrede/vault-memory` or `vault-memory --version`.
+        Include any relevant model versions (bge-m3, embeddinggemma, ...).
+      placeholder: "0.10.0 (bge-m3 via Ollama)"
+    validations:
+      required: true
+
+  - type: input
+    id: env
+    attributes:
+      label: Environment
+      description: OS + Node version + how vault-memory was installed.
+      placeholder: "macOS 25.4 / Node 22.10 / npm install -g @owrede/vault-memory"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs or error output
+      description: |
+        Server stderr (`[catchup:...]`, `[watcher]`), Claude Code's tool-call
+        response, or any thrown errors. Triple-backtick fence preferred.
+      render: text
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity (your subjective assessment)
+      options:
+        - "Low — workaround exists, edge case"
+        - "Medium — degrades the primary workflow"
+        - "High — primary workflow broken, no workaround"
+        - "Critical — data loss or security risk"
+      default: 1
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: confirms
+    attributes:
+      label: Confirmation
+      options:
+        - label: I searched [existing issues](https://github.com/owrede/vault-memory/issues?q=is%3Aissue) and didn't find a duplicate.
+          required: true
+        - label: I'm running the latest release (or a version listed above with the bug still present).
+          required: true
