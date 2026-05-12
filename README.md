@@ -6,9 +6,11 @@ Reads one or more Obsidian vaults, indexes them with local embeddings via Ollama
 
 ## Status
 
-**v0.9.1** — Body-hash short-circuit (migration 006): frontmatter-only edits (the common case for `update_frontmatter`, `/log-fact`, `/import-person`) no longer trigger chunk + embedding regeneration. A new `body_hash` column on `notes` lets the watcher detect "body unchanged, frontmatter changed" and keep all existing chunks/embeddings in place — saving one Ollama roundtrip per chunk per frontmatter edit. Legacy rows pre-migration self-heal on next touch.
+**v0.9.2** — Vault-hygiene skill pack: three new Claude Code skills (`audit-vault-health`, `find-stale-notes`, `triage-inbox`) that compose the existing MCP tools into guided maintenance workflows. Pure-Markdown release — no code changes in the server. Distributed via the existing `install-skills.sh` one-liner.
 
-Previous: **v0.9.0** — Agent-Compatibility & Self-Orientation: OB1-compatible `search`/`fetch` tools so ChatGPT Custom Connectors, Claude.ai, and Deep-Research modes can use vault-memory as a connector; `vault_stats` and `recent_notes` for agent self-orientation on first connect.
+Previous releases:
+- **v0.9.1** — Body-hash short-circuit (migration 006): frontmatter-only edits no longer trigger chunk + embedding regeneration.
+- **v0.9.0** — Agent-Compatibility & Self-Orientation: OB1-compatible `search`/`fetch` tools, plus `vault_stats` and `recent_notes` for agent first-connect orientation.
 
 ## Architecture in one paragraph
 
@@ -122,12 +124,15 @@ npm install && npm run build && npm link   # creates the global `vault-memory` b
 
 ## Skills (Claude Code integration)
 
-The `skills/` directory contains two Claude Code skills you can drop into any vault's `.claude/skills/` folder. They are the user-facing way to install and operate vault-memory without remembering CLI flags.
+The `skills/` directory contains five Claude Code skills you can drop into any vault's `.claude/skills/` folder. They are the user-facing way to install and operate vault-memory without remembering CLI flags.
 
 | Skill | What it does | When to invoke |
 |---|---|---|
 | **`install-vault-memory/`** | The complete installer — 8 idempotent checkpoints from Homebrew through MCP smoketest. Defaults to autonomous mode with a `why:` line on every install prompt. Re-running on a working setup verifies state in under 5 seconds and exits. | First-time setup of a vault, or repairing a broken state. `/install-vault-memory` |
 | **`add-vault/`** | Wraps `vault-memory add-vault` CLI with a confirmation flow — appends to `config.toml`, writes `.mcp.json`, builds the initial index. Atomic and idempotent. | Adding a *second or third* vault after vault-memory is already installed. `/add-vault` |
+| **`audit-vault-health/`** (v0.9.2) | Read-only vault health audit — overview stats, broken wikilinks, tag drift (case/separator variants), frontmatter schema drift, indexing freshness. Pure read, never modifies notes. | Quarterly check, before relying on search after bulk import. `/audit-vault-health` |
+| **`find-stale-notes/`** (v0.9.2) | Discovers notes >6mo old with 0 backlinks. Presents candidates as a sortable table, walks through each one with per-note actions (Archive / Update / Delete / Skip / Keep). Hash-protected deletes; never bulk-acts. | Vault cleanup, after import-bursts. `/find-stale-notes` |
+| **`triage-inbox/`** (v0.9.2) | Walks through recent inbox-stage notes (sparse frontmatter, few tags, recent mtime). Per note: suggests target folder, tags, frontmatter, related wikilinks — based on semantic search against the rest of the vault. User accepts / edits / skips per note. | After a capture-burst (voice memos, web clippings, meeting transcripts). `/triage-inbox` |
 
 ### Installing the skills in a vault
 
@@ -149,7 +154,7 @@ The script is idempotent — re-running it fetches the latest skill versions fro
 If you cloned the source repo, you can also copy directly:
 
 ```bash
-cp -R ~/Documents/GitHub/vault-memory/skills/{install-vault-memory,add-vault} .claude/skills/
+cp -R ~/Documents/GitHub/vault-memory/skills/{install-vault-memory,add-vault,audit-vault-health,find-stale-notes,triage-inbox} .claude/skills/
 ```
 
 After Claude Code restarts, `/install-vault-memory` and `/add-vault` are available as slash commands in that vault.
