@@ -6,7 +6,9 @@ Reads one or more Obsidian vaults, indexes them with local embeddings via Ollama
 
 ## Status
 
-**v0.8.1** — Phase 8 (real ONNX cross-encoder reranker) + search-quality fixes. See `_research/vault-memory-spec.md` in a consuming vault for the design contract, `_research/vault-memory-eval-v2-results.md` for retrieval-quality benchmarks, and `_research/vault-memory-eval-v3-spec.md` for the planned reranker eval.
+**v0.9.0** — Agent-Compatibility & Self-Orientation: OB1-compatible `search`/`fetch` tools so ChatGPT Custom Connectors, Claude.ai, and Deep-Research modes can use vault-memory as a connector; `vault_stats` and `recent_notes` for agent self-orientation on first connect. See `_research/vault-memory-openbrain-comparison.md` in a consuming vault for the gap analysis driving these additions.
+
+Previous: **v0.8.3** — Phase 8 (real ONNX cross-encoder reranker) + search-quality fixes + skills consolidation.
 
 ## Architecture in one paragraph
 
@@ -183,7 +185,7 @@ exclude_globs = [".obsidian/**", ".trash/**", "_research/**", ".claude/**"]
 # secondary_embedding_model = "qwen3-embedding:0.6b"
 ```
 
-## MCP tools (18)
+## MCP tools (22)
 
 **Discovery & Read:** `list_vaults`, `read_note`
 **Search:** `search_semantic`, `search_text`, `search_hybrid` — all support optional `exclude_paths` (glob) and an explicit `vaults` filter; responses include a `note` field when vaults were skipped (e.g. mid-indexing)
@@ -193,13 +195,26 @@ exclude_globs = [".obsidian/**", ".trash/**", "_research/**", ".claude/**"]
 **Audit:** `audit_log`, `index_runs`
 **Model management (Phase 7c):** `list_models`, `start_shadow_index`, `switch_active_model`
 **Maintenance (v0.7.3):** `vacuum_embeddings` — drop orphaned embedding rows whose chunk_id no longer exists
+**Agent-Compatibility (v0.9.0):** `search`, `fetch` — OB1-compatible flat-shape adapters for ChatGPT Custom Connectors, Claude.ai, and Deep-Research modes. Backed by the hybrid (semantic+BM25+RRF) retrieval pipeline, so connector users get vault-memory's full search quality through the standardized interface.
+**Agent self-orientation (v0.9.0):** `vault_stats`, `recent_notes` — vault overview (note count, top tags, top frontmatter keys, last index run) and recently-modified notes (mtime DESC). Use these on first connect to brief an agent on what's in the vault and what the user has been working on.
+
+### Connector compatibility (v0.9.0)
+
+`search`/`fetch` follow the flat-shape spec used by OB1 and adopted by ChatGPT Custom Connectors / Claude.ai / Deep-Research:
+
+```
+search({query, limit}) → { results: [{ id, title, url, snippet }] }
+fetch({id})            → { id, title, text, url, metadata }
+```
+
+`id` is the opaque format `<vault>:<vault-relative-path>`. `url` is an `obsidian://open?…` URL — connectors render it as a clickable link that opens the note locally. Use the richer `search_hybrid` / `read_note` tools when working with a vault-memory-aware client (Claude Code's MCP integration); use `search` / `fetch` when integrating with a connector ecosystem that expects the standard shape.
 
 ## Development
 
 ```bash
 npm install
 npm run dev          # MCP server on stdio with hot reload
-npm test             # 278 tests across 33 files (v0.8.1)
+npm test             # 318 tests across 36 files (v0.9.0)
 npm run build
 ```
 

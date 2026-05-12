@@ -4652,7 +4652,13 @@ var init_watcher2 = __esm({
 // src/server.ts
 var server_exports = {};
 __export(server_exports, {
-  serve: () => serve
+  aggregateTopFrontmatterKeys: () => aggregateTopFrontmatterKeys,
+  aggregateTopTags: () => aggregateTopTags,
+  decodeNoteId: () => decodeNoteId,
+  encodeNoteId: () => encodeNoteId,
+  obsidianUrl: () => obsidianUrl,
+  serve: () => serve,
+  truncateSnippet: () => truncateSnippet
 });
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -5031,6 +5037,57 @@ async function serve() {
             limit: { type: "integer", minimum: 1, maximum: 200, default: 20 }
           }
         }
+      },
+      {
+        name: "search",
+        description: "OB1-compatible search adapter. Returns a flat list of {id, title, url, snippet} for connector ecosystems (ChatGPT Custom Connectors, Claude.ai, Deep-Research). Backed by hybrid (semantic+BM25+RRF) search. For richer output use search_hybrid.",
+        inputSchema: {
+          type: "object",
+          required: ["query"],
+          properties: {
+            query: { type: "string" },
+            limit: { type: "integer", minimum: 1, maximum: 50, default: 10 }
+          }
+        }
+      },
+      {
+        name: "fetch",
+        description: "OB1-compatible fetch adapter. Resolves an opaque id (from `search`) to {id, title, text, url, metadata}. Backed by read_note.",
+        inputSchema: {
+          type: "object",
+          required: ["id"],
+          properties: {
+            id: {
+              type: "string",
+              description: "Opaque id from `search` results, format: <vault>:<vault-relative-path>"
+            }
+          }
+        }
+      },
+      {
+        name: "vault_stats",
+        description: "Vault overview for agent self-orientation: note/word counts, top tags, top frontmatter keys, embedding model, last index run. Omit `vault` to get all configured vaults.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            vault: { type: "string", description: "Optional. Omit for all vaults." }
+          }
+        }
+      },
+      {
+        name: "recent_notes",
+        description: "List recently modified notes (mtime DESC). Use for agent self-orientation: 'what has the user been working on lately?'. No vector search, just SQL.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            vault: { type: "string", description: "Optional. Omit for all vaults." },
+            limit: { type: "integer", minimum: 1, maximum: 200, default: 20 },
+            since: {
+              type: "integer",
+              description: "Optional unix-ms threshold. Only notes with mtime > since."
+            }
+          }
+        }
       }
     ]
   }));
@@ -5210,6 +5267,39 @@ async function serve() {
           const vault = manager.require(parsed.vault);
           const runs = getIndexRuns({ vault, limit: parsed.limit });
           return ok({ runs, count: runs.length });
+        }
+        case "search": {
+          const parsed = SearchCompatArgs.parse(args2 ?? {});
+          return ok(
+            await handleSearchCompat(
+              manager,
+              ollama,
+              defaultModel,
+              activeVault,
+              parsed.query,
+              parsed.limit,
+              reranker
+            )
+          );
+        }
+        case "fetch": {
+          const parsed = FetchCompatArgs.parse(args2 ?? {});
+          return ok(handleFetchCompat(manager, parsed.id));
+        }
+        case "vault_stats": {
+          const parsed = VaultStatsArgs.parse(args2 ?? {});
+          return ok(handleVaultStats(manager, parsed.vault));
+        }
+        case "recent_notes": {
+          const parsed = RecentNotesArgs.parse(args2 ?? {});
+          return ok(
+            handleRecentNotes(
+              manager,
+              parsed.vault,
+              parsed.limit,
+              parsed.since
+            )
+          );
         }
         default:
           return errorResponse(`Unknown tool: ${name}`);
@@ -5409,6 +5499,181 @@ async function handleSearchHybrid(manager, ollama, defaultModel, activeVault, qu
   }
   return out;
 }
+function encodeNoteId(vault, path5) {
+  return `${vault}:${path5}`;
+}
+function decodeNoteId(id) {
+  const idx = id.indexOf(":");
+  if (idx <= 0 || idx === id.length - 1) {
+    throw new Error(
+      `Invalid id: ${id}. Expected format <vault>:<vault-relative-path>.`
+    );
+  }
+  return { vault: id.slice(0, idx), path: id.slice(idx + 1) };
+}
+function obsidianUrl(vaultName, notePath) {
+  return `obsidian://open?vault=${encodeURIComponent(vaultName)}&file=${encodeURIComponent(notePath)}`;
+}
+async function handleSearchCompat(manager, ollama, defaultModel, activeVault, query, limit, reranker) {
+  const { targets, skipped } = resolveVaultTargets(manager, void 0, activeVault);
+  if (targets.length === 0) {
+    return {
+      results: [],
+      note: skipped.length > 0 ? `All eligible vaults are indexing; skipped: ${skipped.join(", ")}.` : "No vaults configured."
+    };
+  }
+  const hits = await hybridSearch({
+    query,
+    embeddingModel: defaultModel,
+    ollama,
+    vaults: targets,
+    topK: limit,
+    rrfK: 60,
+    includeBreakdown: false,
+    reranker
+  });
+  const seen = /* @__PURE__ */ new Set();
+  const results = [];
+  for (const h of hits) {
+    const noteKey = `${h.vault}:${h.notePath}`;
+    if (seen.has(noteKey)) continue;
+    seen.add(noteKey);
+    results.push({
+      id: encodeNoteId(h.vault, h.notePath),
+      title: h.noteTitle ?? h.notePath,
+      url: obsidianUrl(h.vault, h.notePath),
+      snippet: truncateSnippet(h.chunkText, 280)
+    });
+    if (results.length >= limit) break;
+  }
+  const out = { results };
+  if (skipped.length > 0) {
+    out.note = `Skipped vault(s) currently indexing: ${skipped.join(", ")}.`;
+  }
+  return out;
+}
+function truncateSnippet(text, max) {
+  const collapsed = text.replace(/\s+/g, " ").trim();
+  if (collapsed.length <= max) return collapsed;
+  return collapsed.slice(0, max - 1).trimEnd() + "\u2026";
+}
+function handleFetchCompat(manager, id) {
+  const { vault: vaultName, path: path5 } = decodeNoteId(id);
+  const vault = manager.require(vaultName);
+  const note = vault.db.notes.getByPath(path5);
+  if (!note) {
+    throw new Error(`Note not found: ${vaultName}/${path5}`);
+  }
+  const metadata = {
+    vault: vaultName,
+    path: note.path,
+    mtime: note.mtime,
+    hash: note.hash,
+    word_count: note.word_count
+  };
+  if (note.frontmatter) {
+    try {
+      metadata.frontmatter = JSON.parse(note.frontmatter);
+    } catch {
+    }
+  }
+  return {
+    id,
+    title: note.title ?? note.path,
+    text: note.content,
+    url: obsidianUrl(vaultName, note.path),
+    metadata
+  };
+}
+function handleVaultStats(manager, vaultFilter) {
+  const targets = vaultFilter ? [manager.require(vaultFilter)] : manager.list();
+  const stats = targets.map((v) => {
+    const total_notes = v.db.notes.countAll();
+    const wordRow = v.db.handle.prepare(
+      "SELECT SUM(word_count) AS total FROM notes"
+    ).get();
+    const lastRun = v.db.audit.listRuns(1)[0];
+    const activeModel = v.db.models.getActive();
+    return {
+      vault: v.config.name,
+      vault_path: v.config.path,
+      total_notes,
+      total_words: wordRow?.total ?? 0,
+      embedding_model: activeModel?.name ?? v.config.embedding_model ?? null,
+      indexed_at: lastRun?.finished_at ?? null,
+      top_tags: aggregateTopTags(v.db.handle, 10),
+      top_frontmatter_keys: aggregateTopFrontmatterKeys(v.db.handle, 10)
+    };
+  });
+  if (vaultFilter) {
+    return stats[0];
+  }
+  return { vaults: stats, count: stats.length };
+}
+function aggregateTopTags(db, limit) {
+  const rows = db.prepare(
+    `
+      SELECT je.value AS tag, COUNT(*) AS count
+      FROM notes
+      JOIN json_each(json_extract(notes.frontmatter, '$.tags')) AS je
+      WHERE notes.frontmatter IS NOT NULL
+        AND json_type(notes.frontmatter, '$.tags') = 'array'
+        AND typeof(je.value) = 'text'
+      GROUP BY je.value
+      ORDER BY count DESC, tag ASC
+      LIMIT ?
+    `
+  ).all(limit);
+  return rows;
+}
+function aggregateTopFrontmatterKeys(db, limit) {
+  const rows = db.prepare(
+    `
+      SELECT je.key AS key, COUNT(*) AS count
+      FROM notes
+      JOIN json_each(notes.frontmatter) AS je
+      WHERE notes.frontmatter IS NOT NULL
+        AND json_type(notes.frontmatter) = 'object'
+      GROUP BY je.key
+      ORDER BY count DESC, key ASC
+      LIMIT ?
+    `
+  ).all(limit);
+  return rows;
+}
+function handleRecentNotes(manager, vaultFilter, limit, since) {
+  const targets = vaultFilter ? [manager.require(vaultFilter)] : manager.list();
+  const all = [];
+  for (const v of targets) {
+    const rows = since !== void 0 ? v.db.handle.prepare(
+      "SELECT path, title, mtime, word_count, frontmatter FROM notes WHERE mtime > ? ORDER BY mtime DESC LIMIT ?"
+    ).all(since, limit) : v.db.handle.prepare(
+      "SELECT path, title, mtime, word_count, frontmatter FROM notes ORDER BY mtime DESC LIMIT ?"
+    ).all(limit);
+    for (const r of rows) {
+      let tags = null;
+      if (r.frontmatter) {
+        try {
+          const fm = JSON.parse(r.frontmatter);
+          if (Array.isArray(fm.tags)) {
+            tags = fm.tags.filter((t) => typeof t === "string");
+          }
+        } catch {
+        }
+      }
+      all.push({
+        vault: v.config.name,
+        path: r.path,
+        title: r.title,
+        mtime: r.mtime,
+        word_count: r.word_count,
+        tags
+      });
+    }
+  }
+  all.sort((a, b) => b.mtime - a.mtime);
+  return { notes: all.slice(0, limit), count: Math.min(all.length, limit) };
+}
 function ok(data) {
   return {
     content: [{ type: "text", text: JSON.stringify(data, null, 2) }]
@@ -5420,7 +5685,7 @@ function errorResponse(message) {
     content: [{ type: "text", text: message }]
   };
 }
-var VERSION, ReadNoteArgs, SearchArgs, HybridSearchArgs, VaultPathArgs, ForwardLinksArgs, FindBrokenLinksArgs, PredicateSchema, QueryFrontmatterArgs, WriteNoteArgs, UpdateFrontmatterArgs, DeleteNoteArgs, AuditLogArgs, IndexRunsArgs, ListModelsArgs, StartShadowIndexArgs, SwitchActiveModelArgs, VacuumEmbeddingsArgs;
+var VERSION, ReadNoteArgs, SearchArgs, HybridSearchArgs, VaultPathArgs, ForwardLinksArgs, FindBrokenLinksArgs, PredicateSchema, QueryFrontmatterArgs, WriteNoteArgs, UpdateFrontmatterArgs, DeleteNoteArgs, AuditLogArgs, IndexRunsArgs, ListModelsArgs, StartShadowIndexArgs, SwitchActiveModelArgs, VacuumEmbeddingsArgs, SearchCompatArgs, FetchCompatArgs, VaultStatsArgs, RecentNotesArgs;
 var init_server = __esm({
   "src/server.ts"() {
     "use strict";
@@ -5437,7 +5702,7 @@ var init_server = __esm({
     init_audit3();
     init_watcher2();
     init_indexer2();
-    VERSION = "0.8.1";
+    VERSION = "0.9.0";
     ReadNoteArgs = z3.object({
       vault: z3.string(),
       path: z3.string()
@@ -5527,6 +5792,21 @@ var init_server = __esm({
     });
     VacuumEmbeddingsArgs = z3.object({
       vault: z3.string()
+    });
+    SearchCompatArgs = z3.object({
+      query: z3.string().min(1),
+      limit: z3.number().int().positive().max(50).optional().default(10)
+    });
+    FetchCompatArgs = z3.object({
+      id: z3.string().min(1)
+    });
+    VaultStatsArgs = z3.object({
+      vault: z3.string().optional()
+    });
+    RecentNotesArgs = z3.object({
+      vault: z3.string().optional(),
+      limit: z3.number().int().positive().max(200).optional().default(20),
+      since: z3.number().int().nonnegative().optional()
     });
   }
 });

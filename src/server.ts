@@ -18,6 +18,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import type BetterSqlite3 from "better-sqlite3";
 import { z } from "zod";
 import { loadConfig } from "./config/index.js";
 import { VaultManager } from "./vault/index.js";
@@ -46,7 +47,7 @@ import {
 } from "./indexer/index.js";
 import type { SearchHit } from "./types.js";
 
-const VERSION = "0.8.1";
+const VERSION = "0.9.0";
 
 // ─── Tool Input Schemas ──────────────────────────────────────────────────────
 
@@ -159,6 +160,32 @@ const SwitchActiveModelArgs = z.object({
 
 const VacuumEmbeddingsArgs = z.object({
   vault: z.string(),
+});
+
+// ─── v0.9.0 — Agent-Compatibility & Self-Orientation ────────────────────────
+//
+// `search` / `fetch` follow the OB1 / ChatGPT-Connector / Claude.ai
+// Deep-Research tool spec: a flat shape with opaque `id`s. The `id` here
+// encodes `<vault>:<notePath>` so `fetch(id)` can deterministically resolve
+// back to the underlying note without round-tripping a separate vault arg.
+
+const SearchCompatArgs = z.object({
+  query: z.string().min(1),
+  limit: z.number().int().positive().max(50).optional().default(10),
+});
+
+const FetchCompatArgs = z.object({
+  id: z.string().min(1),
+});
+
+const VaultStatsArgs = z.object({
+  vault: z.string().optional(),
+});
+
+const RecentNotesArgs = z.object({
+  vault: z.string().optional(),
+  limit: z.number().int().positive().max(200).optional().default(20),
+  since: z.number().int().nonnegative().optional(),
 });
 
 // ─── Server bootstrap ────────────────────────────────────────────────────────
@@ -605,6 +632,61 @@ export async function serve(): Promise<void> {
           },
         },
       },
+      {
+        name: "search",
+        description:
+          "OB1-compatible search adapter. Returns a flat list of {id, title, url, snippet} for connector ecosystems (ChatGPT Custom Connectors, Claude.ai, Deep-Research). Backed by hybrid (semantic+BM25+RRF) search. For richer output use search_hybrid.",
+        inputSchema: {
+          type: "object",
+          required: ["query"],
+          properties: {
+            query: { type: "string" },
+            limit: { type: "integer", minimum: 1, maximum: 50, default: 10 },
+          },
+        },
+      },
+      {
+        name: "fetch",
+        description:
+          "OB1-compatible fetch adapter. Resolves an opaque id (from `search`) to {id, title, text, url, metadata}. Backed by read_note.",
+        inputSchema: {
+          type: "object",
+          required: ["id"],
+          properties: {
+            id: {
+              type: "string",
+              description: "Opaque id from `search` results, format: <vault>:<vault-relative-path>",
+            },
+          },
+        },
+      },
+      {
+        name: "vault_stats",
+        description:
+          "Vault overview for agent self-orientation: note/word counts, top tags, top frontmatter keys, embedding model, last index run. Omit `vault` to get all configured vaults.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            vault: { type: "string", description: "Optional. Omit for all vaults." },
+          },
+        },
+      },
+      {
+        name: "recent_notes",
+        description:
+          "List recently modified notes (mtime DESC). Use for agent self-orientation: 'what has the user been working on lately?'. No vector search, just SQL.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            vault: { type: "string", description: "Optional. Omit for all vaults." },
+            limit: { type: "integer", minimum: 1, maximum: 200, default: 20 },
+            since: {
+              type: "integer",
+              description: "Optional unix-ms threshold. Only notes with mtime > since.",
+            },
+          },
+        },
+      },
     ],
   }));
 
@@ -806,6 +888,43 @@ export async function serve(): Promise<void> {
           const vault = manager.require(parsed.vault);
           const runs = getIndexRuns({ vault, limit: parsed.limit });
           return ok({ runs, count: runs.length });
+        }
+
+        case "search": {
+          const parsed = SearchCompatArgs.parse(args ?? {});
+          return ok(
+            await handleSearchCompat(
+              manager,
+              ollama,
+              defaultModel,
+              activeVault,
+              parsed.query,
+              parsed.limit,
+              reranker,
+            ),
+          );
+        }
+
+        case "fetch": {
+          const parsed = FetchCompatArgs.parse(args ?? {});
+          return ok(handleFetchCompat(manager, parsed.id));
+        }
+
+        case "vault_stats": {
+          const parsed = VaultStatsArgs.parse(args ?? {});
+          return ok(handleVaultStats(manager, parsed.vault));
+        }
+
+        case "recent_notes": {
+          const parsed = RecentNotesArgs.parse(args ?? {});
+          return ok(
+            handleRecentNotes(
+              manager,
+              parsed.vault,
+              parsed.limit,
+              parsed.since,
+            ),
+          );
         }
 
         default:
@@ -1114,6 +1233,332 @@ async function handleSearchHybrid(
     out.note = `Skipped vault(s) currently indexing: ${skipped.join(", ")}.`;
   }
   return out;
+}
+
+// ─── v0.9.0 handlers — Agent-Compatibility & Self-Orientation ───────────────
+
+/**
+ * Encode an opaque id for the OB1-compatible `search`/`fetch` API.
+ *
+ * Format: `<vault>:<vault-relative-path>`
+ *
+ * Vault names cannot contain `:` per config schema, and Obsidian paths use
+ * forward slashes — so the first `:` is an unambiguous separator. We pick
+ * this over a base64-encoded blob because the id stays human-readable in
+ * connector UIs (ChatGPT shows search results inline) and trivially
+ * round-trips through copy/paste.
+ */
+export function encodeNoteId(vault: string, path: string): string {
+  return `${vault}:${path}`;
+}
+
+export function decodeNoteId(id: string): { vault: string; path: string } {
+  const idx = id.indexOf(":");
+  if (idx <= 0 || idx === id.length - 1) {
+    throw new Error(
+      `Invalid id: ${id}. Expected format <vault>:<vault-relative-path>.`,
+    );
+  }
+  return { vault: id.slice(0, idx), path: id.slice(idx + 1) };
+}
+
+/**
+ * Build an `obsidian://` URL pointing at a note in the vault. Mirrors the
+ * pattern documented in our Linear-backlink convention (memory:
+ * feedback_linear_obsidian_backlinks): clickable from any connector UI,
+ * opens the actual note locally.
+ */
+export function obsidianUrl(vaultName: string, notePath: string): string {
+  return `obsidian://open?vault=${encodeURIComponent(vaultName)}&file=${encodeURIComponent(notePath)}`;
+}
+
+async function handleSearchCompat(
+  manager: VaultManager,
+  ollama: OllamaClient,
+  defaultModel: string,
+  activeVault: string | undefined,
+  query: string,
+  limit: number,
+  reranker: Reranker | undefined,
+): Promise<object> {
+  const { targets, skipped } = resolveVaultTargets(manager, undefined, activeVault);
+
+  if (targets.length === 0) {
+    return {
+      results: [],
+      note:
+        skipped.length > 0
+          ? `All eligible vaults are indexing; skipped: ${skipped.join(", ")}.`
+          : "No vaults configured.",
+    };
+  }
+
+  // We delegate to the hybrid pipeline so OB1-style search benefits from
+  // both BM25 and vector retrieval — this is the differentiator vs. OB1's
+  // pure-embedding implementation.
+  const hits = await hybridSearch({
+    query,
+    embeddingModel: defaultModel,
+    ollama,
+    vaults: targets,
+    topK: limit,
+    rrfK: 60,
+    includeBreakdown: false,
+    reranker,
+  });
+
+  // De-duplicate to one result per note (OB1 spec: one entry per
+  // document). Chunks of the same note collapse to the first/best chunk
+  // and contribute their snippet.
+  const seen = new Set<string>();
+  const results: Array<{
+    id: string;
+    title: string;
+    url: string;
+    snippet: string;
+  }> = [];
+  for (const h of hits) {
+    const noteKey = `${h.vault}:${h.notePath}`;
+    if (seen.has(noteKey)) continue;
+    seen.add(noteKey);
+    results.push({
+      id: encodeNoteId(h.vault, h.notePath),
+      title: h.noteTitle ?? h.notePath,
+      url: obsidianUrl(h.vault, h.notePath),
+      snippet: truncateSnippet(h.chunkText, 280),
+    });
+    if (results.length >= limit) break;
+  }
+
+  const out: Record<string, unknown> = { results };
+  if (skipped.length > 0) {
+    out.note = `Skipped vault(s) currently indexing: ${skipped.join(", ")}.`;
+  }
+  return out;
+}
+
+export function truncateSnippet(text: string, max: number): string {
+  const collapsed = text.replace(/\s+/g, " ").trim();
+  if (collapsed.length <= max) return collapsed;
+  return collapsed.slice(0, max - 1).trimEnd() + "…";
+}
+
+function handleFetchCompat(manager: VaultManager, id: string): object {
+  const { vault: vaultName, path } = decodeNoteId(id);
+  const vault = manager.require(vaultName);
+  const note = vault.db.notes.getByPath(path);
+  if (!note) {
+    throw new Error(`Note not found: ${vaultName}/${path}`);
+  }
+  const metadata: Record<string, unknown> = {
+    vault: vaultName,
+    path: note.path,
+    mtime: note.mtime,
+    hash: note.hash,
+    word_count: note.word_count,
+  };
+  if (note.frontmatter) {
+    try {
+      metadata.frontmatter = JSON.parse(note.frontmatter);
+    } catch {
+      // Stored frontmatter should always be valid JSON; if it isn't, treat
+      // as missing rather than failing the fetch.
+    }
+  }
+  return {
+    id,
+    title: note.title ?? note.path,
+    text: note.content,
+    url: obsidianUrl(vaultName, note.path),
+    metadata,
+  };
+}
+
+interface VaultStatsRow {
+  vault: string;
+  vault_path: string;
+  total_notes: number;
+  total_words: number;
+  embedding_model: string | null;
+  indexed_at: number | null;
+  top_tags: Array<{ tag: string; count: number }>;
+  top_frontmatter_keys: Array<{ key: string; count: number }>;
+}
+
+function handleVaultStats(
+  manager: VaultManager,
+  vaultFilter: string | undefined,
+): object {
+  const targets = vaultFilter
+    ? [manager.require(vaultFilter)]
+    : manager.list();
+
+  const stats: VaultStatsRow[] = targets.map((v) => {
+    const total_notes = v.db.notes.countAll();
+    const wordRow = v.db.handle
+      .prepare<[], { total: number | null }>(
+        "SELECT SUM(word_count) AS total FROM notes",
+      )
+      .get();
+    const lastRun = v.db.audit.listRuns(1)[0];
+    const activeModel = v.db.models.getActive();
+
+    return {
+      vault: v.config.name,
+      vault_path: v.config.path,
+      total_notes,
+      total_words: wordRow?.total ?? 0,
+      embedding_model: activeModel?.name ?? v.config.embedding_model ?? null,
+      indexed_at: lastRun?.finished_at ?? null,
+      top_tags: aggregateTopTags(v.db.handle, 10),
+      top_frontmatter_keys: aggregateTopFrontmatterKeys(v.db.handle, 10),
+    };
+  });
+
+  if (vaultFilter) {
+    // `targets` is non-empty when vaultFilter is set, because manager.require
+    // throws on miss — so stats[0] is guaranteed. The assertion narrows the
+    // type for the caller.
+    return stats[0] as VaultStatsRow;
+  }
+  return { vaults: stats, count: stats.length };
+}
+
+/**
+ * Aggregate the top-N tags across all notes in a vault.
+ *
+ * Tags can live in two places in our schema: a top-level `tags` array in
+ * frontmatter (Obsidian convention) or inline `#tag` hashtags in the body.
+ * For v0.9.0 we read the frontmatter form only — it is what the user
+ * curates explicitly and what other tools (Datacore queries, dataview)
+ * already aggregate. Inline hashtags would need a separate pass through
+ * note bodies and are deferred until users ask for it.
+ *
+ * Implementation uses SQLite's json_each over the stored frontmatter blob.
+ * `frontmatter` is TEXT containing a JSON object; we look up the `tags` key
+ * and iterate. Notes without frontmatter or without a tags array are
+ * silently skipped.
+ */
+export function aggregateTopTags(
+  db: BetterSqlite3.Database,
+  limit: number,
+): Array<{ tag: string; count: number }> {
+  // Real vaults accumulate frontmatter drift: `tags` may be an array,
+  // a single string, a nested object, or missing entirely. SQLite's
+  // json_each() throws on non-array/object inputs and aborts the whole
+  // query — so we pre-filter to rows where `tags` is actually an array.
+  // The CROSS JOIN with the JSON table then only sees well-formed inputs.
+  const rows = db
+    .prepare<[number], { tag: string; count: number }>(
+      `
+      SELECT je.value AS tag, COUNT(*) AS count
+      FROM notes
+      JOIN json_each(json_extract(notes.frontmatter, '$.tags')) AS je
+      WHERE notes.frontmatter IS NOT NULL
+        AND json_type(notes.frontmatter, '$.tags') = 'array'
+        AND typeof(je.value) = 'text'
+      GROUP BY je.value
+      ORDER BY count DESC, tag ASC
+      LIMIT ?
+    `,
+    )
+    .all(limit);
+  return rows;
+}
+
+/**
+ * Aggregate the top-N most common frontmatter keys across all notes.
+ * Surfaces the user's schema conventions to an agent on first connect.
+ */
+export function aggregateTopFrontmatterKeys(
+  db: BetterSqlite3.Database,
+  limit: number,
+): Array<{ key: string; count: number }> {
+  // Same filter rationale as aggregateTopTags: a single note with a
+  // non-object frontmatter blob (rare, but happens after manual edits)
+  // would abort the whole aggregate.
+  const rows = db
+    .prepare<[number], { key: string; count: number }>(
+      `
+      SELECT je.key AS key, COUNT(*) AS count
+      FROM notes
+      JOIN json_each(notes.frontmatter) AS je
+      WHERE notes.frontmatter IS NOT NULL
+        AND json_type(notes.frontmatter) = 'object'
+      GROUP BY je.key
+      ORDER BY count DESC, key ASC
+      LIMIT ?
+    `,
+    )
+    .all(limit);
+  return rows;
+}
+
+interface RecentNoteRow {
+  vault: string;
+  path: string;
+  title: string | null;
+  mtime: number;
+  word_count: number | null;
+  tags: string[] | null;
+}
+
+function handleRecentNotes(
+  manager: VaultManager,
+  vaultFilter: string | undefined,
+  limit: number,
+  since: number | undefined,
+): object {
+  const targets = vaultFilter
+    ? [manager.require(vaultFilter)]
+    : manager.list();
+
+  const all: RecentNoteRow[] = [];
+  for (const v of targets) {
+    const rows = since !== undefined
+      ? v.db.handle
+          .prepare<
+            [number, number],
+            { path: string; title: string | null; mtime: number; word_count: number | null; frontmatter: string | null }
+          >(
+            "SELECT path, title, mtime, word_count, frontmatter FROM notes WHERE mtime > ? ORDER BY mtime DESC LIMIT ?",
+          )
+          .all(since, limit)
+      : v.db.handle
+          .prepare<
+            [number],
+            { path: string; title: string | null; mtime: number; word_count: number | null; frontmatter: string | null }
+          >(
+            "SELECT path, title, mtime, word_count, frontmatter FROM notes ORDER BY mtime DESC LIMIT ?",
+          )
+          .all(limit);
+
+    for (const r of rows) {
+      let tags: string[] | null = null;
+      if (r.frontmatter) {
+        try {
+          const fm = JSON.parse(r.frontmatter) as { tags?: unknown };
+          if (Array.isArray(fm.tags)) {
+            tags = fm.tags.filter((t): t is string => typeof t === "string");
+          }
+        } catch {
+          // ignore
+        }
+      }
+      all.push({
+        vault: v.config.name,
+        path: r.path,
+        title: r.title,
+        mtime: r.mtime,
+        word_count: r.word_count,
+        tags,
+      });
+    }
+  }
+
+  // Cross-vault merge: re-sort by mtime and trim.
+  all.sort((a, b) => b.mtime - a.mtime);
+  return { notes: all.slice(0, limit), count: Math.min(all.length, limit) };
 }
 
 // ─── Response helpers ────────────────────────────────────────────────────────
