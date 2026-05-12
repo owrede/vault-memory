@@ -6448,7 +6448,7 @@ var init_server = __esm({
     init_audit3();
     init_watcher2();
     init_indexer2();
-    VERSION = "0.10.0";
+    VERSION = "1.0.0";
     ReadNoteArgs = z3.object({
       vault: z3.string(),
       path: z3.string()
