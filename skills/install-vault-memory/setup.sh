@@ -235,9 +235,23 @@ fi
 
 step "4/7  Embedding model: $EMBEDDING_MODEL"
 
-if ollama list 2>/dev/null | grep -q "^${EMBEDDING_MODEL%:*}"; then
-  # Tag-tolerant check: model name (without :tag) is present
-  if ollama list 2>/dev/null | awk '{print $1}' | grep -qx "$EMBEDDING_MODEL"; then
+# Capture `ollama list` output to a variable instead of piping to grep -q.
+# Under `set -o pipefail`, a short-circuiting `grep -q` can race with
+# `ollama list` and produce a SIGPIPE-induced exit 141, making the if-test
+# falsely report "model missing". Capturing first avoids the pipe entirely.
+ollama_list=$(ollama list 2>/dev/null || true)
+ollama_names=$(printf '%s\n' "$ollama_list" | awk 'NR>1 {print $1}')
+
+# Tag-tolerant check: if $EMBEDDING_MODEL has no explicit :tag, treat it as
+# :latest because `ollama list` always prints the resolved tag (e.g.
+# "bge-m3:latest"), never the bare name.
+case "$EMBEDDING_MODEL" in
+  *:*) model_with_tag="$EMBEDDING_MODEL" ;;
+  *)   model_with_tag="${EMBEDDING_MODEL}:latest" ;;
+esac
+
+if printf '%s\n' "$ollama_names" | grep -q "^${EMBEDDING_MODEL%:*}"; then
+  if printf '%s\n' "$ollama_names" | grep -qx "$model_with_tag"; then
     ok "Model $EMBEDDING_MODEL already pulled"
   else
     warn "A variant of ${EMBEDDING_MODEL%:*} is pulled, but not exactly $EMBEDDING_MODEL."
