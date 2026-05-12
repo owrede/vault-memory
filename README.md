@@ -11,7 +11,7 @@ atomic writes.
 
 Nothing leaves your machine. No cloud sync, no API keys, no telemetry.
 
-> See [CHANGELOG.md](./CHANGELOG.md) for release history. Latest: **v0.10.0**.
+> See [CHANGELOG.md](./CHANGELOG.md) for release history. Latest: **v1.0.0** — stable API; SemVer-locked.
 
 ## What is vault-memory?
 

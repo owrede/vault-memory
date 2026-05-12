@@ -14,6 +14,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [1.0.0] — 2026-05-12
+
+### Stability declaration
+
+The 0.x line is complete. All five items of the OB1 adoption plan shipped:
+
+- v0.9.0 — Agent compatibility (`search`/`fetch`) + self-orientation (`vault_stats`/`recent_notes`)
+- v0.9.1 — Body-hash short-circuit (migration 006)
+- v0.9.2 — Vault-hygiene skill pack (`audit-vault-health`, `find-stale-notes`, `triage-inbox`)
+- v0.10.0 — Schema inference (`suggest_frontmatter`, three-layer combiner)
+
+From v1.0.0 onward this project follows strict SemVer:
+- **MAJOR** bumps only for backwards-incompatible MCP-tool or CLI changes.
+- **MINOR** bumps for new tools, new skills, additive schema fields.
+- **PATCH** for bug fixes, internal refactors, doc-only updates.
+
+### What's stable
+
+- **23 MCP tools** with their documented input/output shapes (see README).
+  - Adding new fields to existing responses is non-breaking.
+  - Renaming a field or removing one requires a MAJOR bump.
+- **CLI**: `vault-memory serve`, `add-vault`, `index`, `init` (no flag removals
+  without MAJOR).
+- **SQLite schema**: migrations are forward-only and idempotent. Existing
+  `user_version` ≤ 6 DBs migrate cleanly.
+- **`~/.vault-memory/config.toml` keys** — additive only.
+- **5 Claude Code skills** in `skills/` — adding workflow steps is non-breaking;
+  renaming a skill is.
+
+### What's NOT under stability
+
+Internal modules without an exported MCP-tool surface (`src/chunker/`,
+`src/rerank/`, `src/indexer/single.ts`, `src/schema/combiner.ts` internals)
+can refactor at any time. Only the public MCP-tool inputs/outputs and the CLI
+flags carry the v1 stability contract.
+
+### No code changes from 0.10.0
+
+This release is a pure version bump + CHANGELOG marker. No new tools, no
+behavioural changes. The dist artefact (`dist/cli.js`) regenerates from
+the unchanged source.
+
 ## [0.10.0] — 2026-05-12
 
 ### Added
