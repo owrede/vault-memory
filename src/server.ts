@@ -35,6 +35,7 @@ import {
   findBrokenLinks,
 } from "./graph/index.js";
 import { queryFrontmatter, updateFrontmatter } from "./frontmatter/index.js";
+import { suggestFrontmatter } from "./schema/index.js";
 import { writeNote, deleteNote } from "./write/index.js";
 import { getAuditLog, getIndexRuns } from "./audit/index.js";
 import { SuppressionSet, VaultWatcher } from "./watcher/index.js";
@@ -47,7 +48,7 @@ import {
 } from "./indexer/index.js";
 import type { SearchHit } from "./types.js";
 
-const VERSION = "0.9.2";
+const VERSION = "0.10.0";
 
 // ─── Tool Input Schemas ──────────────────────────────────────────────────────
 
@@ -187,6 +188,30 @@ const RecentNotesArgs = z.object({
   limit: z.number().int().positive().max(200).optional().default(20),
   since: z.number().int().nonnegative().optional(),
 });
+
+// ─── v0.10.0 — suggest_frontmatter ───────────────────────────────────────────
+//
+// Two input modes:
+//   1. Existing note: {vault, path} — tool reads the note from DB, runs
+//      folder + neighbor + (optional) content inference.
+//   2. Draft note: {vault, content, folder_hint?} — tool uses folder_hint
+//      (or extracts from title) for folder-inference and the parsed
+//      content for heuristics. Useful for /import-person, /log-fact-style
+//      flows where the note isn't written yet.
+//
+// At least one of `path` or `content` must be present.
+
+const SuggestFrontmatterArgs = z
+  .object({
+    vault: z.string(),
+    path: z.string().optional(),
+    content: z.string().optional(),
+    title: z.string().optional(),
+    folder_hint: z.string().optional(),
+  })
+  .refine((v) => v.path !== undefined || v.content !== undefined, {
+    message: "suggest_frontmatter requires either `path` or `content`",
+  });
 
 // ─── Server bootstrap ────────────────────────────────────────────────────────
 
@@ -687,6 +712,38 @@ export async function serve(): Promise<void> {
           },
         },
       },
+      {
+        name: "suggest_frontmatter",
+        description:
+          "Suggest frontmatter fields for a note based on folder-conventions, wikilink-neighborhood, and title/body content-heuristics. Returns {existing, suggestions, conflicts}. Two input modes: (1) existing note via {path}; (2) draft via {content, folder_hint, title}. At least one of path/content required. Suggestions sorted by confidence DESC; conflicts list disagreements between sources.",
+        inputSchema: {
+          type: "object",
+          required: ["vault"],
+          properties: {
+            vault: { type: "string" },
+            path: {
+              type: "string",
+              description:
+                "Vault-relative path. Required for existing-note mode; for drafts, pass content instead (folder_hint controls folder-inference).",
+            },
+            content: {
+              type: "string",
+              description:
+                "Draft markdown body. When set, content-heuristics layer runs. If path is set AND content is omitted, the existing note's stored content is used.",
+            },
+            title: {
+              type: "string",
+              description:
+                "Title for content-heuristics. Falls back to path basename or first heading.",
+            },
+            folder_hint: {
+              type: "string",
+              description:
+                "For draft mode: the target folder (e.g. 'Personen/'). Ignored when `path` is set.",
+            },
+          },
+        },
+      },
     ],
   }));
 
@@ -925,6 +982,11 @@ export async function serve(): Promise<void> {
               parsed.since,
             ),
           );
+        }
+
+        case "suggest_frontmatter": {
+          const parsed = SuggestFrontmatterArgs.parse(args ?? {});
+          return ok(handleSuggestFrontmatter(manager, parsed));
         }
 
         default:
@@ -1559,6 +1621,108 @@ function handleRecentNotes(
   // Cross-vault merge: re-sort by mtime and trim.
   all.sort((a, b) => b.mtime - a.mtime);
   return { notes: all.slice(0, limit), count: Math.min(all.length, limit) };
+}
+
+/**
+ * Handler for the v0.10.0 `suggest_frontmatter` tool.
+ *
+ * Two-mode dispatch:
+ *   - `path` provided → existing-note inference. Reads stored content +
+ *     frontmatter + wikilinks from DB. Folder-conventions use the note's
+ *     own folder.
+ *   - `content` provided (no path) → draft inference. Folder-conventions
+ *     use `folder_hint` (or vault root). No backlinks. Forward-link
+ *     extraction would require a lightweight markdown parse — for v0.10.0
+ *     we skip it to keep the tool dependency-free and document the
+ *     limitation in the response.
+ */
+function handleSuggestFrontmatter(
+  manager: VaultManager,
+  parsed: {
+    vault: string;
+    path?: string;
+    content?: string;
+    title?: string;
+    folder_hint?: string;
+  },
+): object {
+  const vault = manager.require(parsed.vault);
+
+  // Mode 1: existing-note path.
+  if (parsed.path) {
+    const note = vault.db.notes.getByPath(parsed.path);
+    if (!note) {
+      throw new Error(
+        `Note not found: ${parsed.vault}/${parsed.path}. ` +
+          `Use draft mode ({content, folder_hint}) for unindexed notes.`,
+      );
+    }
+    const existingFm: Record<string, unknown> | null = note.frontmatter
+      ? safeParseFrontmatter(note.frontmatter)
+      : null;
+    const result = suggestFrontmatter({
+      vault,
+      path: note.path,
+      existingFrontmatter: existingFm,
+      content: parsed.content ?? note.content,
+      title: parsed.title ?? note.title ?? defaultBasename(note.path),
+      excludePath: note.path,
+    });
+    return {
+      mode: "existing",
+      path: note.path,
+      ...result,
+    };
+  }
+
+  // Mode 2: draft.
+  const folderHint = normalizeFolderHint(parsed.folder_hint);
+  // Synthesize a path under the folder hint so folder-conventions can
+  // resolve. The path itself never gets written; it's a probe.
+  const probePath = `${folderHint}__draft__${Date.now()}.md`;
+  const result = suggestFrontmatter({
+    vault,
+    path: probePath,
+    existingFrontmatter: null,
+    content: parsed.content!,
+    title: parsed.title ?? "Draft",
+    // Exclude the synthetic path explicitly — though it won't match any
+    // existing note, this future-proofs against collisions.
+    excludePath: probePath,
+  });
+  return {
+    mode: "draft",
+    folder_hint: folderHint,
+    note:
+      "Draft mode: no backlinks contributed. Provide `path` (and index the note first) for richer neighbor-inference.",
+    ...result,
+  };
+}
+
+function safeParseFrontmatter(s: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(s) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function defaultBasename(path: string): string {
+  const base = path.split("/").pop() ?? path;
+  return base.replace(/\.md$/i, "");
+}
+
+function normalizeFolderHint(hint: string | undefined): string {
+  if (!hint) return "";
+  let h = hint.trim();
+  // Strip leading slash; ensure trailing slash if non-empty.
+  if (h.startsWith("/")) h = h.slice(1);
+  if (h.length > 0 && !h.endsWith("/")) h = `${h}/`;
+  return h;
 }
 
 // ─── Response helpers ────────────────────────────────────────────────────────

@@ -11,7 +11,7 @@ atomic writes.
 
 Nothing leaves your machine. No cloud sync, no API keys, no telemetry.
 
-> See [CHANGELOG.md](./CHANGELOG.md) for release history. Latest: **v0.9.2**.
+> See [CHANGELOG.md](./CHANGELOG.md) for release history. Latest: **v0.10.0**.
 
 ## What is vault-memory?
 
@@ -35,7 +35,7 @@ notes. vault-memory handles the hard parts:
 
 ## What it provides
 
-### MCP tools (22)
+### MCP tools (23)
 
 **Discovery & read**
 - `list_vaults`, `read_note`
@@ -72,6 +72,20 @@ notes. vault-memory handles the hard parts:
 - `vault_stats` — note count, top tags, top frontmatter keys, last index run
 - `recent_notes` — most-recently-modified notes (mtime DESC). Use on first connect to
   brief an agent on what's in the vault and what the user has been working on.
+
+**Schema inference (v0.10.0)**
+- `suggest_frontmatter` — for an existing note (by `path`) or a draft (by `content +
+  folder_hint`), returns `{existing, suggestions, conflicts}` with calibrated confidence
+  per source. Three independent layers contribute:
+  - **folder-conventions** — frequency of frontmatter keys in sibling notes (same folder
+    prefix). Walks up one level when sibling count <3. Confidence = prevalence.
+  - **neighbor-inference** — frontmatter aggregate across wikilink-linked neighbors
+    (forward + backlink, deduped). Confidence = prevalence × 0.6 (dampened, since
+    indirect).
+  - **content-heuristics** — vault-agnostic title/body regex matchers for Email, Meeting,
+    Person, Clipping, Fact, and date-prefix patterns. Confidence fixed per rule.
+  Conflicts surface when sources disagree on a value. Existing-vs-suggested mismatches
+  are also flagged. No LLM, no embeddings.
 
 ### Claude Code skills
 

@@ -14,6 +14,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [0.10.0] — 2026-05-12
+
+### Added
+- **`suggest_frontmatter` MCP tool** — composes three independent inference layers into
+  a structured `{existing, suggestions, conflicts}` response with calibrated
+  confidence-per-source. Closes the final item of the OB1 adoption plan.
+  - **folder-conventions learner** (`src/schema/folder-conventions.ts`): per-key
+    prevalence across sibling notes (same path prefix). Falls back to parent folders
+    when sibling count is below 3. Dominant-value extraction when >50% agree on a value.
+  - **neighbor-inference learner** (`src/schema/neighbor-inference.ts`): frontmatter
+    aggregate across wikilink-linked neighbors (forward + backward, deduped).
+    Confidence × 0.6 damping factor — indirect signal.
+  - **content-heuristics learner** (`src/schema/content-heuristics.ts`): vault-agnostic
+    title/body regex matchers — Email, Meeting, Person, Clipping, Fact, date-prefix.
+    Fixed confidence per rule.
+  - **Combiner** (`src/schema/combiner.ts`): max-across-sources fusion, conflict
+    detection both within suggestions and against existing frontmatter. Below-threshold
+    candidates dropped. Stable sort order.
+- 44 new unit tests across 4 files. 368/368 total (+44).
+
+### Changed
+- README: `MCP tools (23)` count bumped; new "Schema inference" section explains the
+  three-layer architecture.
+
 ## [0.9.2] — 2026-05-12
 
 ### Added
