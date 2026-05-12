@@ -3573,6 +3573,606 @@ var init_frontmatter = __esm({
   }
 });
 
+// src/schema/folder-conventions.ts
+function folderOf(notePath) {
+  const idx = notePath.lastIndexOf("/");
+  return idx === -1 ? "" : notePath.slice(0, idx + 1);
+}
+function parentFolder(folder) {
+  if (folder === "") return null;
+  const trimmed = folder.endsWith("/") ? folder.slice(0, -1) : folder;
+  const idx = trimmed.lastIndexOf("/");
+  if (idx === -1) return "";
+  return trimmed.slice(0, idx + 1);
+}
+function countSiblings(vault, folder, excludePath) {
+  const handle = vault.db.handle;
+  if (folder === "") {
+    const row2 = handle.prepare(
+      "SELECT COUNT(*) AS c FROM notes WHERE instr(path, '/') = 0 AND path != COALESCE(?, '')"
+    ).get(excludePath);
+    return row2?.c ?? 0;
+  }
+  const row = handle.prepare(
+    "SELECT COUNT(*) AS c FROM notes WHERE path LIKE ? || '%' AND path != COALESCE(?, '')"
+  ).get(folder, excludePath);
+  return row?.c ?? 0;
+}
+function fetchSiblings(vault, folder, excludePath) {
+  const handle = vault.db.handle;
+  if (folder === "") {
+    return handle.prepare(
+      "SELECT path, frontmatter FROM notes WHERE instr(path, '/') = 0 AND path != COALESCE(?, '')"
+    ).all(excludePath);
+  }
+  return handle.prepare(
+    "SELECT path, frontmatter FROM notes WHERE path LIKE ? || '%' AND path != COALESCE(?, '')"
+  ).all(folder, excludePath);
+}
+function resolveInferenceFolder(vault, notePath, excludePath = notePath) {
+  const start = folderOf(notePath);
+  let current = start;
+  let levels = 0;
+  while (current !== null && levels < MAX_FALLBACK_LEVELS) {
+    const count = countSiblings(vault, current, excludePath);
+    if (count >= MIN_SIBLINGS || current === "") {
+      return {
+        folder: current,
+        fellBackFrom: current === start ? null : start,
+        siblingCount: count
+      };
+    }
+    current = parentFolder(current);
+    levels++;
+  }
+  return { folder: "", fellBackFrom: start, siblingCount: 0 };
+}
+function aggregateEntries(siblings) {
+  const total = siblings.length;
+  if (total === 0) return [];
+  const keyPresence = /* @__PURE__ */ new Map();
+  const keyValues = /* @__PURE__ */ new Map();
+  for (const row of siblings) {
+    if (!row.frontmatter) continue;
+    let fm;
+    try {
+      fm = JSON.parse(row.frontmatter);
+    } catch {
+      continue;
+    }
+    if (!fm || typeof fm !== "object" || Array.isArray(fm)) continue;
+    const obj = fm;
+    for (const [key, value] of Object.entries(obj)) {
+      keyPresence.set(key, (keyPresence.get(key) ?? 0) + 1);
+      const valKey = stableStringify(value);
+      if (!keyValues.has(key)) keyValues.set(key, /* @__PURE__ */ new Map());
+      const bucket = keyValues.get(key);
+      bucket.set(valKey, (bucket.get(valKey) ?? 0) + 1);
+    }
+  }
+  const entries = [];
+  for (const [key, presenceCount] of keyPresence) {
+    const valueBucket = keyValues.get(key);
+    const [domValStr, domCount] = pickDominant(valueBucket);
+    const dominantValue = domCount / presenceCount > 0.5 ? safeParse(domValStr) : null;
+    entries.push({
+      key,
+      presenceCount,
+      siblingCount: total,
+      prevalence: presenceCount / total,
+      dominantValue,
+      dominantValueRatio: domCount / presenceCount
+    });
+  }
+  entries.sort((a, b) => {
+    if (b.prevalence !== a.prevalence) return b.prevalence - a.prevalence;
+    return a.key.localeCompare(b.key);
+  });
+  return entries;
+}
+function pickDominant(bucket) {
+  let bestKey = "";
+  let bestCount = 0;
+  for (const [k, c] of bucket) {
+    if (c > bestCount) {
+      bestKey = k;
+      bestCount = c;
+    }
+  }
+  return [bestKey, bestCount];
+}
+function stableStringify(v) {
+  if (v === void 0) return "null";
+  return JSON.stringify(v, Object.keys(v ?? {}).sort());
+}
+function safeParse(s) {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
+}
+function inferFromFolder(vault, notePath, options = {}) {
+  const excludePath = options.excludePath ?? notePath;
+  const { folder, fellBackFrom, siblingCount } = resolveInferenceFolder(
+    vault,
+    notePath,
+    excludePath
+  );
+  const siblings = fetchSiblings(vault, folder, excludePath);
+  return {
+    resolvedFolder: folder,
+    siblingCount,
+    fellBackFrom,
+    entries: aggregateEntries(siblings)
+  };
+}
+var MIN_SIBLINGS, MAX_FALLBACK_LEVELS;
+var init_folder_conventions = __esm({
+  "src/schema/folder-conventions.ts"() {
+    "use strict";
+    init_esm_shims();
+    MIN_SIBLINGS = 3;
+    MAX_FALLBACK_LEVELS = 4;
+  }
+});
+
+// src/schema/neighbor-inference.ts
+function gatherNeighbors(vault, notePath, additionalForwardTargets = []) {
+  const seenIds = /* @__PURE__ */ new Set();
+  const out = [];
+  const note = vault.db.notes.getByPath(notePath);
+  if (note) {
+    const back = vault.db.wikilinks.getBacklinks(note.id);
+    for (const row of back) {
+      if (seenIds.has(row.sourceNoteId)) continue;
+      const src = vault.db.notes.getById(row.sourceNoteId);
+      if (!src) continue;
+      seenIds.add(src.id);
+      out.push({ path: src.path, frontmatter: src.frontmatter });
+    }
+    const forward = vault.db.wikilinks.getForwardLinks(note.id);
+    for (const row of forward) {
+      if (row.targetNoteId === null) continue;
+      if (seenIds.has(row.targetNoteId)) continue;
+      const target = vault.db.notes.getById(row.targetNoteId);
+      if (!target) continue;
+      seenIds.add(target.id);
+      out.push({ path: target.path, frontmatter: target.frontmatter });
+    }
+  }
+  for (const target of additionalForwardTargets) {
+    const candidate = vault.db.notes.getByPath(`${target}.md`) ?? vault.db.notes.getByPath(target);
+    if (!candidate) continue;
+    if (seenIds.has(candidate.id)) continue;
+    seenIds.add(candidate.id);
+    out.push({ path: candidate.path, frontmatter: candidate.frontmatter });
+  }
+  return out;
+}
+function aggregateEntries2(neighbors) {
+  const total = neighbors.length;
+  if (total === 0) return [];
+  const keyPresence = /* @__PURE__ */ new Map();
+  const keyValues = /* @__PURE__ */ new Map();
+  for (const row of neighbors) {
+    if (!row.frontmatter) continue;
+    let fm;
+    try {
+      fm = JSON.parse(row.frontmatter);
+    } catch {
+      continue;
+    }
+    if (!fm || typeof fm !== "object" || Array.isArray(fm)) continue;
+    const obj = fm;
+    for (const [key, value] of Object.entries(obj)) {
+      keyPresence.set(key, (keyPresence.get(key) ?? 0) + 1);
+      const valKey = JSON.stringify(value, Object.keys(value ?? {}).sort());
+      if (!keyValues.has(key)) keyValues.set(key, /* @__PURE__ */ new Map());
+      const bucket = keyValues.get(key);
+      bucket.set(valKey, (bucket.get(valKey) ?? 0) + 1);
+    }
+  }
+  const entries = [];
+  for (const [key, presenceCount] of keyPresence) {
+    const valueBucket = keyValues.get(key);
+    let bestKey = "";
+    let bestCount = 0;
+    for (const [k, c] of valueBucket) {
+      if (c > bestCount) {
+        bestKey = k;
+        bestCount = c;
+      }
+    }
+    const dominantValue = bestCount / presenceCount > 0.5 ? safeParse2(bestKey) : null;
+    entries.push({
+      key,
+      neighborCount: presenceCount,
+      totalNeighbors: total,
+      prevalence: presenceCount / total,
+      dominantValue,
+      dominantValueRatio: bestCount / presenceCount
+    });
+  }
+  entries.sort((a, b) => {
+    if (b.prevalence !== a.prevalence) return b.prevalence - a.prevalence;
+    return a.key.localeCompare(b.key);
+  });
+  return entries;
+}
+function safeParse2(s) {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
+}
+function inferFromNeighbors(vault, notePath, additionalForwardTargets = []) {
+  const neighbors = gatherNeighbors(
+    vault,
+    notePath,
+    additionalForwardTargets
+  );
+  const note = vault.db.notes.getByPath(notePath);
+  let forwardCount = 0;
+  let backwardCount = 0;
+  if (note) {
+    forwardCount = vault.db.wikilinks.getForwardLinks(note.id).filter((r) => r.targetNoteId !== null).length;
+    backwardCount = vault.db.wikilinks.getBacklinks(note.id).length;
+  }
+  return {
+    forwardCount,
+    backwardCount,
+    totalNeighbors: neighbors.length,
+    entries: aggregateEntries2(neighbors)
+  };
+}
+var init_neighbor_inference = __esm({
+  "src/schema/neighbor-inference.ts"() {
+    "use strict";
+    init_esm_shims();
+  }
+});
+
+// src/schema/content-heuristics.ts
+function inferFromContent(input) {
+  const heuristicInput = {
+    title: input.title,
+    bodyHead: input.body.slice(0, 2e3),
+    fullBody: input.body
+  };
+  const entries = [];
+  const matchedRules = [];
+  for (const rule of RULES) {
+    const matches = rule.match(heuristicInput);
+    if (matches.length > 0) {
+      matchedRules.push(rule.name);
+      for (const m of matches) {
+        entries.push({ ...m, rule: rule.name });
+      }
+    }
+  }
+  return { entries, matchedRules };
+}
+var DEFAULT_CONFIDENCE, STRONG_CONFIDENCE, WEAK_CONFIDENCE, emailRule, meetingRule, personRule, clippingRule, factRule, dateInTitleRule, RULES;
+var init_content_heuristics = __esm({
+  "src/schema/content-heuristics.ts"() {
+    "use strict";
+    init_esm_shims();
+    DEFAULT_CONFIDENCE = 0.7;
+    STRONG_CONFIDENCE = 0.85;
+    WEAK_CONFIDENCE = 0.5;
+    emailRule = {
+      name: "email-title-or-header",
+      match: ({ title, bodyHead }) => {
+        const titleMatch = /^(E-?Mail|Email|Mail)\s+(von|from)\s+\S+/i.test(title) || /^(Re|Fwd|AW|WG):\s/i.test(title);
+        const headerMatch = /^(From|Von):\s+\S+/im.test(bodyHead) && /^(To|An):\s+\S+/im.test(bodyHead);
+        if (!titleMatch && !headerMatch) return [];
+        return [
+          { key: "class", value: "Email", confidence: STRONG_CONFIDENCE },
+          { key: "type", value: "email", confidence: STRONG_CONFIDENCE }
+        ];
+      }
+    };
+    meetingRule = {
+      name: "meeting-title-keyword",
+      match: ({ title, bodyHead }) => {
+        const keywords = /\b(Meeting|Treffen|Call|Sondierung|Termin|Standup|Sync|Kickoff|Kick-off|Jour\s*fixe|Workshop)\b/i;
+        const isMeeting = keywords.test(title) || /^\d{4}-\d{2}-\d{2}.*\b(Meeting|Treffen|Call|Sondierung)/i.test(title);
+        if (!isMeeting) return [];
+        const attendeesPresent = /^(Attendees|Teilnehmer|Participants):/im.test(bodyHead);
+        const conf = attendeesPresent ? STRONG_CONFIDENCE : DEFAULT_CONFIDENCE;
+        return [
+          { key: "class", value: "Meeting", confidence: conf },
+          { key: "type", value: "meeting", confidence: conf }
+        ];
+      }
+    };
+    personRule = {
+      name: "person-name-title-with-corroboration",
+      match: ({ title, bodyHead }) => {
+        const nameLike = /^[A-ZÄÖÜ][a-zäöüß'\-]+( [A-ZÄÖÜ][a-zäöüß'\-]+){0,3}$/.test(title.trim());
+        if (!nameLike) return [];
+        const corroborating = /linkedin\.com\/in\//i.test(bodyHead) || /\b[\w._-]+@[\w.-]+\.[a-z]{2,}\b/i.test(bodyHead) || /\+?\d[\d\s\-./()]{6,}/.test(bodyHead);
+        if (!corroborating) return [];
+        return [
+          { key: "class", value: "Person", confidence: STRONG_CONFIDENCE },
+          { key: "type", value: "person", confidence: STRONG_CONFIDENCE },
+          { key: "participation", value: [], confidence: WEAK_CONFIDENCE }
+        ];
+      }
+    };
+    clippingRule = {
+      name: "clipping-source-url",
+      match: ({ bodyHead }) => {
+        const headSnippet = bodyHead.slice(0, 500);
+        const hasMdLink = /^\s*\[.+\]\(https?:\/\/[^\s)]+\)/m.test(headSnippet);
+        const hasSourceField = /^source:\s*https?:\/\//im.test(headSnippet);
+        if (!hasMdLink && !hasSourceField) return [];
+        return [
+          { key: "class", value: "Clipping", confidence: DEFAULT_CONFIDENCE },
+          { key: "tags", value: ["clippings"], confidence: DEFAULT_CONFIDENCE }
+        ];
+      }
+    };
+    factRule = {
+      name: "short-fact",
+      match: ({ fullBody }) => {
+        const trimmed = fullBody.trim();
+        if (trimmed.length === 0 || trimmed.length > 150) return [];
+        if (/\n\s*\n/.test(trimmed)) return [];
+        return [
+          { key: "class", value: "Fact", confidence: WEAK_CONFIDENCE }
+        ];
+      }
+    };
+    dateInTitleRule = {
+      name: "date-prefix-in-title",
+      match: ({ title }) => {
+        const m = title.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (!m) return [];
+        const iso = `${m[1]}-${m[2]}-${m[3]}`;
+        return [
+          { key: "created", value: iso, confidence: STRONG_CONFIDENCE }
+        ];
+      }
+    };
+    RULES = [
+      emailRule,
+      meetingRule,
+      personRule,
+      clippingRule,
+      factRule,
+      dateInTitleRule
+    ];
+  }
+});
+
+// src/schema/combiner.ts
+function valueKey(v) {
+  if (v === null || v === void 0) return "null";
+  if (Array.isArray(v)) {
+    return "[" + v.map(valueKey).join(",") + "]";
+  }
+  if (typeof v === "object") {
+    const obj = v;
+    const keys = Object.keys(obj).sort();
+    return "{" + keys.map((k) => JSON.stringify(k) + ":" + valueKey(obj[k])).join(",") + "}";
+  }
+  return JSON.stringify(v);
+}
+function suggestFrontmatter(input) {
+  const title = input.title ?? defaultTitleFromPath(input.path);
+  const folder = inferFromFolder(input.vault, input.path, {
+    excludePath: input.excludePath ?? input.path
+  });
+  const neighbor = inferFromNeighbors(
+    input.vault,
+    input.path,
+    input.draftWikilinkTargets ?? []
+  );
+  const content = input.content !== void 0 ? inferFromContent({ title, body: input.content }) : { entries: [], matchedRules: [] };
+  return combineSuggestions({
+    existingFrontmatter: input.existingFrontmatter ?? null,
+    folder,
+    neighbor,
+    content
+  });
+}
+function defaultTitleFromPath(path5) {
+  const base = path5.split("/").pop() ?? path5;
+  return base.replace(/\.md$/i, "");
+}
+function combineSuggestions(args2) {
+  const { existingFrontmatter, folder, neighbor, content } = args2;
+  const candidates = /* @__PURE__ */ new Map();
+  const push = (key, c) => {
+    if (!candidates.has(key)) candidates.set(key, []);
+    candidates.get(key).push(c);
+  };
+  for (const e of folder.entries) {
+    if (e.prevalence < MIN_PRESENTATION_CONFIDENCE) continue;
+    push(e.key, {
+      source: "folder",
+      value: e.dominantValue,
+      confidence: e.prevalence
+    });
+  }
+  for (const e of neighbor.entries) {
+    const conf = e.prevalence * NEIGHBOR_DAMPING;
+    if (conf < MIN_PRESENTATION_CONFIDENCE) continue;
+    push(e.key, {
+      source: "neighbor",
+      value: e.dominantValue,
+      confidence: conf
+    });
+  }
+  for (const e of content.entries) {
+    push(e.key, {
+      source: "content",
+      value: e.value,
+      confidence: e.confidence,
+      rule: e.rule
+    });
+  }
+  const existing = [];
+  const suggestions = [];
+  const conflicts = [];
+  const fm = existingFrontmatter ?? {};
+  const existingKeys = new Set(Object.keys(fm));
+  const allKeys = /* @__PURE__ */ new Set([
+    ...candidates.keys(),
+    ...existingKeys
+  ]);
+  for (const key of allKeys) {
+    const cands = candidates.get(key) ?? [];
+    const existingValue = existingKeys.has(key) ? fm[key] : void 0;
+    const hasExisting = existingValue !== void 0;
+    const existingValueKey = hasExisting ? valueKey(existingValue) : null;
+    const byValue = /* @__PURE__ */ new Map();
+    for (const c of cands) {
+      if (c.value === null) {
+        const k = "__keyonly__";
+        if (!byValue.has(k)) byValue.set(k, []);
+        byValue.get(k).push(c);
+      } else {
+        const k = valueKey(c.value);
+        if (!byValue.has(k)) byValue.set(k, []);
+        byValue.get(k).push(c);
+      }
+    }
+    const distinctValueCount = Array.from(byValue.keys()).filter(
+      (k) => k !== "__keyonly__"
+    ).length;
+    if (hasExisting) {
+      const agreeingBucket = byValue.get(existingValueKey);
+      if (agreeingBucket) {
+        byValue.delete(existingValueKey);
+      }
+      const disagreeingValues = Array.from(byValue.entries()).filter(
+        ([k]) => k !== "__keyonly__"
+      );
+      if (disagreeingValues.length === 0) {
+        existing.push({ key, value: existingValue });
+      } else {
+        const candidatesList = [
+          {
+            value: existingValue,
+            source: "existing",
+            confidence: 1
+          }
+        ];
+        for (const [, group] of disagreeingValues) {
+          const best = pickBestCandidate(group);
+          candidatesList.push({
+            value: best.value,
+            source: best.source,
+            confidence: best.confidence,
+            ...best.rule ? { rule: best.rule } : {}
+          });
+        }
+        conflicts.push({ key, candidates: candidatesList });
+      }
+    } else {
+      if (distinctValueCount > 1) {
+        const candidatesList = [];
+        for (const [k, group] of byValue) {
+          if (k === "__keyonly__") continue;
+          const best = pickBestCandidate(group);
+          candidatesList.push({
+            value: best.value,
+            source: best.source,
+            confidence: best.confidence,
+            ...best.rule ? { rule: best.rule } : {}
+          });
+        }
+        candidatesList.sort((a, b) => b.confidence - a.confidence);
+        conflicts.push({ key, candidates: candidatesList });
+      } else if (distinctValueCount === 1) {
+        const [valueKeyStr, group] = Array.from(byValue.entries()).find(
+          ([k]) => k !== "__keyonly__"
+        );
+        const best = pickBestCandidate(group);
+        const sources = uniqueSources(group);
+        suggestions.push({
+          key,
+          suggestedValue: best.value,
+          confidence: best.confidence,
+          sources,
+          ...best.rule ? { rule: best.rule } : {}
+        });
+        void valueKeyStr;
+      } else {
+        const group = byValue.get("__keyonly__");
+        const best = pickBestCandidate(group);
+        suggestions.push({
+          key,
+          suggestedValue: null,
+          confidence: best.confidence,
+          sources: uniqueSources(group)
+        });
+      }
+    }
+  }
+  suggestions.sort((a, b) => {
+    if (b.confidence !== a.confidence) return b.confidence - a.confidence;
+    return a.key.localeCompare(b.key);
+  });
+  conflicts.sort((a, b) => a.key.localeCompare(b.key));
+  existing.sort((a, b) => a.key.localeCompare(b.key));
+  return {
+    existing,
+    suggestions,
+    conflicts,
+    diagnostics: { folder, neighbor, content }
+  };
+}
+function pickBestCandidate(group) {
+  if (group.length === 0) {
+    throw new Error("pickBestCandidate called with empty group");
+  }
+  let best = group[0];
+  for (const c of group) {
+    if (c.confidence > best.confidence) best = c;
+  }
+  return best;
+}
+function uniqueSources(group) {
+  const seen = /* @__PURE__ */ new Set();
+  const out = [];
+  const sorted = [...group].sort((a, b) => b.confidence - a.confidence);
+  for (const c of sorted) {
+    if (seen.has(c.source)) continue;
+    seen.add(c.source);
+    out.push(c.source);
+  }
+  return out;
+}
+var NEIGHBOR_DAMPING, MIN_PRESENTATION_CONFIDENCE;
+var init_combiner = __esm({
+  "src/schema/combiner.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_folder_conventions();
+    init_neighbor_inference();
+    init_content_heuristics();
+    NEIGHBOR_DAMPING = 0.6;
+    MIN_PRESENTATION_CONFIDENCE = 0.2;
+  }
+});
+
+// src/schema/index.ts
+var init_schema2 = __esm({
+  "src/schema/index.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_folder_conventions();
+    init_neighbor_inference();
+    init_content_heuristics();
+    init_combiner();
+  }
+});
+
 // src/indexer/single.ts
 import * as path4 from "path";
 async function indexNote(options) {
@@ -5137,6 +5737,33 @@ async function serve() {
             }
           }
         }
+      },
+      {
+        name: "suggest_frontmatter",
+        description: "Suggest frontmatter fields for a note based on folder-conventions, wikilink-neighborhood, and title/body content-heuristics. Returns {existing, suggestions, conflicts}. Two input modes: (1) existing note via {path}; (2) draft via {content, folder_hint, title}. At least one of path/content required. Suggestions sorted by confidence DESC; conflicts list disagreements between sources.",
+        inputSchema: {
+          type: "object",
+          required: ["vault"],
+          properties: {
+            vault: { type: "string" },
+            path: {
+              type: "string",
+              description: "Vault-relative path. Required for existing-note mode; for drafts, pass content instead (folder_hint controls folder-inference)."
+            },
+            content: {
+              type: "string",
+              description: "Draft markdown body. When set, content-heuristics layer runs. If path is set AND content is omitted, the existing note's stored content is used."
+            },
+            title: {
+              type: "string",
+              description: "Title for content-heuristics. Falls back to path basename or first heading."
+            },
+            folder_hint: {
+              type: "string",
+              description: "For draft mode: the target folder (e.g. 'Personen/'). Ignored when `path` is set."
+            }
+          }
+        }
       }
     ]
   }));
@@ -5349,6 +5976,10 @@ async function serve() {
               parsed.since
             )
           );
+        }
+        case "suggest_frontmatter": {
+          const parsed = SuggestFrontmatterArgs.parse(args2 ?? {});
+          return ok(handleSuggestFrontmatter(manager, parsed));
         }
         default:
           return errorResponse(`Unknown tool: ${name}`);
@@ -5723,6 +6354,71 @@ function handleRecentNotes(manager, vaultFilter, limit, since) {
   all.sort((a, b) => b.mtime - a.mtime);
   return { notes: all.slice(0, limit), count: Math.min(all.length, limit) };
 }
+function handleSuggestFrontmatter(manager, parsed) {
+  const vault = manager.require(parsed.vault);
+  if (parsed.path) {
+    const note = vault.db.notes.getByPath(parsed.path);
+    if (!note) {
+      throw new Error(
+        `Note not found: ${parsed.vault}/${parsed.path}. Use draft mode ({content, folder_hint}) for unindexed notes.`
+      );
+    }
+    const existingFm = note.frontmatter ? safeParseFrontmatter(note.frontmatter) : null;
+    const result2 = suggestFrontmatter({
+      vault,
+      path: note.path,
+      existingFrontmatter: existingFm,
+      content: parsed.content ?? note.content,
+      title: parsed.title ?? note.title ?? defaultBasename(note.path),
+      excludePath: note.path
+    });
+    return {
+      mode: "existing",
+      path: note.path,
+      ...result2
+    };
+  }
+  const folderHint = normalizeFolderHint(parsed.folder_hint);
+  const probePath = `${folderHint}__draft__${Date.now()}.md`;
+  const result = suggestFrontmatter({
+    vault,
+    path: probePath,
+    existingFrontmatter: null,
+    content: parsed.content,
+    title: parsed.title ?? "Draft",
+    // Exclude the synthetic path explicitly — though it won't match any
+    // existing note, this future-proofs against collisions.
+    excludePath: probePath
+  });
+  return {
+    mode: "draft",
+    folder_hint: folderHint,
+    note: "Draft mode: no backlinks contributed. Provide `path` (and index the note first) for richer neighbor-inference.",
+    ...result
+  };
+}
+function safeParseFrontmatter(s) {
+  try {
+    const parsed = JSON.parse(s);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+function defaultBasename(path5) {
+  const base = path5.split("/").pop() ?? path5;
+  return base.replace(/\.md$/i, "");
+}
+function normalizeFolderHint(hint) {
+  if (!hint) return "";
+  let h = hint.trim();
+  if (h.startsWith("/")) h = h.slice(1);
+  if (h.length > 0 && !h.endsWith("/")) h = `${h}/`;
+  return h;
+}
 function ok(data) {
   return {
     content: [{ type: "text", text: JSON.stringify(data, null, 2) }]
@@ -5734,7 +6430,7 @@ function errorResponse(message) {
     content: [{ type: "text", text: message }]
   };
 }
-var VERSION, ReadNoteArgs, SearchArgs, HybridSearchArgs, VaultPathArgs, ForwardLinksArgs, FindBrokenLinksArgs, PredicateSchema, QueryFrontmatterArgs, WriteNoteArgs, UpdateFrontmatterArgs, DeleteNoteArgs, AuditLogArgs, IndexRunsArgs, ListModelsArgs, StartShadowIndexArgs, SwitchActiveModelArgs, VacuumEmbeddingsArgs, SearchCompatArgs, FetchCompatArgs, VaultStatsArgs, RecentNotesArgs;
+var VERSION, ReadNoteArgs, SearchArgs, HybridSearchArgs, VaultPathArgs, ForwardLinksArgs, FindBrokenLinksArgs, PredicateSchema, QueryFrontmatterArgs, WriteNoteArgs, UpdateFrontmatterArgs, DeleteNoteArgs, AuditLogArgs, IndexRunsArgs, ListModelsArgs, StartShadowIndexArgs, SwitchActiveModelArgs, VacuumEmbeddingsArgs, SearchCompatArgs, FetchCompatArgs, VaultStatsArgs, RecentNotesArgs, SuggestFrontmatterArgs;
 var init_server = __esm({
   "src/server.ts"() {
     "use strict";
@@ -5747,11 +6443,12 @@ var init_server = __esm({
     init_rerank();
     init_graph2();
     init_frontmatter();
+    init_schema2();
     init_write2();
     init_audit3();
     init_watcher2();
     init_indexer2();
-    VERSION = "0.9.2";
+    VERSION = "0.10.0";
     ReadNoteArgs = z3.object({
       vault: z3.string(),
       path: z3.string()
@@ -5856,6 +6553,15 @@ var init_server = __esm({
       vault: z3.string().optional(),
       limit: z3.number().int().positive().max(200).optional().default(20),
       since: z3.number().int().nonnegative().optional()
+    });
+    SuggestFrontmatterArgs = z3.object({
+      vault: z3.string(),
+      path: z3.string().optional(),
+      content: z3.string().optional(),
+      title: z3.string().optional(),
+      folder_hint: z3.string().optional()
+    }).refine((v) => v.path !== void 0 || v.content !== void 0, {
+      message: "suggest_frontmatter requires either `path` or `content`"
     });
   }
 });
