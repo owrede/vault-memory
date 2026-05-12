@@ -1,0 +1,84 @@
+name: Feature request
+description: Propose a new capability, tool, or behaviour
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement. The clearer the use case, the
+        easier it is to prioritise and implement.
+
+        For larger feature sets or open-ended discussion, consider opening a
+        Discussion instead once they're enabled.
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use case
+      description: |
+        Concrete scenario where this would help you. Describe what you're
+        trying to do and why current tools fall short.
+      placeholder: |
+        I want to bulk-tag all notes that mention a specific person, but
+        `update_frontmatter` only operates on one note at a time, and
+        query_frontmatter doesn't write.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: |
+        A concrete API/tool shape, even if rough. Helps maintainers
+        understand whether your idea fits the existing surface.
+      placeholder: |
+        New MCP tool `update_frontmatter_bulk({query, merge})` that takes a
+        query_frontmatter filter and applies the same merge to all matches.
+        Returns `{updated: number, paths: string[]}`.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: |
+        Other approaches you tried or thought about, and why they didn't fit.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Which area does this touch?
+      multiple: true
+      options:
+        - search (search_hybrid, search_semantic, search_text, search, fetch)
+        - indexer (catchup, watcher, body-hash)
+        - schema-inference (suggest_frontmatter)
+        - skills (Claude Code skills)
+        - CLI (serve, add-vault, install)
+        - graph (wikilinks, backlinks)
+        - reranker (ONNX cross-encoder)
+        - DB / migration (sqlite-vec, body_hash)
+        - other / not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional context
+      description: |
+        Links to related issues, papers, OB1/competing-tool comparisons,
+        screenshots, etc.
+
+  - type: checkboxes
+    id: confirms
+    attributes:
+      label: Confirmation
+      options:
+        - label: I searched [existing issues](https://github.com/owrede/vault-memory/issues?q=is%3Aissue) and didn't find a duplicate.
+          required: true
+        - label: This is a single, well-scoped feature (not a "build me a roadmap" request).
+          required: true
