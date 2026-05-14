@@ -2,8 +2,8 @@
 phase: 00-foundation-decisions
 plan: 09
 type: execute
-wave: 2
-depends_on: [01]
+wave: 3
+depends_on: [02]
 files_modified:
   - evals/fixtures/v2-test-vault/README.md
   - evals/fixtures/v2-test-vault/projects/
@@ -23,13 +23,14 @@ autonomous: false
 requirements: [FND-08]
 user_setup:
   - service: maintainer-authored-fixture
-    why: "Per D-08, notes are hand-authored by the maintainer (not LLM-drafted) so eval failures stay human-debuggable. Claude can scaffold structure and ~30 notes; the maintainer authors / reviews the rest in a `checkpoint:human-action` task."
+    why: "Per D-08, narrative notes (`projects/`, `meetings/`, `people/`, `decisions/`, `references/`) are hand-authored by the maintainer (not LLM-drafted) so eval failures stay human-debuggable. Claude scaffolds directory structure and 5 illustrative example notes (one per top-level folder) plus the `_memory/` subset (which simulates agent output and is allowed to be agent/LLM-drafted by its nature). The maintainer hand-authors the remaining 45+ narrative notes in a `checkpoint:human-action` task to reach the 50-note VALIDATION floor."
 must_haves:
   truths:
-    - "`evals/fixtures/v2-test-vault/` contains 50–110 markdown notes across the five top-level folders (`projects/`, `meetings/`, `people/`, `decisions/`, `references/`)"
+    - "`evals/fixtures/v2-test-vault/` reaches 50–110 markdown notes across the five top-level folders (`projects/`, `meetings/`, `people/`, `decisions/`, `references/`) AT TASK 4 (maintainer-resolved checkpoint), not at Task 2"
+    - "Claude's Task 2 contribution is 5 example notes (one per top-level folder) demonstrating the narrative voice, frontmatter shape, and wikilink usage"
     - "`_memory/` subset contains ≥15 notes (target ~20) with provenance properties matching MEMORY_CONTRACT.md"
     - "`_queries/<category>.yaml` exists for 7 categories (search, bundle, dossier, brief, graph, memory, contract) with ≥3 queries each in the D-09 schema"
-    - "Every `expected_doc_ids` value references a file that actually exists in the fixture (Pitfall 5 mitigation)"
+    - "Every `expected_doc_ids` value references a file that actually exists in the fixture (Pitfall 5 mitigation) — verified at Task 4 after the maintainer has authored the rest of the narrative notes"
   artifacts:
     - path: "evals/fixtures/v2-test-vault/README.md"
       provides: "Atlas Robotics narrative + folder map"
@@ -47,13 +48,13 @@ must_haves:
 ---
 
 <objective>
-Ship FND-08 — the Atlas Robotics fixture vault. Per D-07/D-08, this is the eval substrate for the entire v2 line (Phases 1–9), and notes are hand-authored by the maintainer rather than LLM-drafted so eval failures remain human-debuggable. Claude's role is to scaffold the directory structure, author the README + ~20–30 starter notes that demonstrate the narrative arc, define every `_queries/*.yaml` query fixture against those notes, and then explicitly hand off the remaining ~40–50 notes to the maintainer via a `checkpoint:human-action` task (per D-08).
+Ship FND-08 — the Atlas Robotics fixture vault. Per D-07/D-08, this is the eval substrate for the entire v2 line (Phases 1–9), and narrative notes are HAND-AUTHORED by the maintainer rather than LLM-drafted so eval failures remain human-debuggable. Claude's role is narrow: scaffold the directory structure, author the README, author exactly 5 illustrative example notes (one per top-level folder) demonstrating the desired voice and shape, author the `_memory/` subset (which simulates agent output and is allowed to be LLM-drafted by nature), and define the 7 `_queries/*.yaml` query fixtures. The maintainer then takes Task 4 (a `checkpoint:human-action`) to hand-author the remaining 45+ notes and reach the 50-note VALIDATION floor.
 
 Per CONTEXT canonical_refs, queries use VAULT-RELATIVE PATHS (e.g., `projects/Atlas-1.md`) in `expected_doc_ids`, NOT `obsidian-fs://` URIs (Open Question 5 — Phase 1's adapter extraction is where URI translation lands).
 
-Purpose: Phase 1 needs a fixture to index. Phase 2 needs `_memory/` documents to validate the memory namespace. Phase 5's brief eval needs `compiled_from` source documents. Hand-authoring once is the cost of buying all later phase evals.
+The 50-note floor is enforced AT TASK 4 (maintainer-resolved checkpoint), NOT at Task 2 (Claude's 5-example scaffold). This honors D-08's "hand-authored" requirement while still letting Claude do the cheap structural work upfront.
 
-Output: directory tree + README + ~20–30 Claude-authored seed notes + ≥15 `_memory/` notes + 7 query YAMLs with ≥3 entries each + a maintainer-hand-off checkpoint listing the remaining note authoring work.
+Output: directory tree + README + 5 Claude-authored example notes + ≥15 `_memory/` notes (LLM-allowed simulating agent output) + 7 query YAMLs with ≥3 entries each + maintainer-hand-off checkpoint that reaches the 50-note floor.
 </objective>
 
 <execution_context>
@@ -92,23 +93,32 @@ Output: directory tree + README + ~20–30 Claude-authored seed notes + ≥15 `_
 </task>
 
 <task type="auto">
-  <name>Task 2: Author ~25 Claude-scaffolded seed notes across the five top-level folders</name>
+  <name>Task 2: Author 5 illustrative example notes — one per top-level folder (Claude-scaffolded; bulk hand-authoring happens in Task 4)</name>
   <read_first>
     - evals/fixtures/v2-test-vault/README.md (the narrative just authored)
     - .planning/phases/00-foundation-decisions/00-RESEARCH.md §Pattern 3 — Atlas Robotics example narrative outline
-    - .planning/phases/00-foundation-decisions/00-CONTEXT.md (D-08 — hand-authored, but Claude scaffolding ~25 notes is acceptable as long as the maintainer reviews; document this in Task 4 checkpoint)
+    - .planning/phases/00-foundation-decisions/00-CONTEXT.md (D-08 — narrative notes are hand-authored by maintainer; Claude's contribution is limited to 5 example notes that demonstrate voice and shape)
   </read_first>
-  <action>Create ~25 markdown notes distributed across the five folders, each ~30–60 lines, each with YAML frontmatter (at minimum `title:`, `created:`, and category-specific keys). Distribution: ~3 people files (`people/alice-chen.md`, `people/bob-martinez.md`, `people/carlos-yim.md` — each with `role:`, `joined:`, `[[wikilink]]` references to projects they own), ~6 projects (`projects/atlas-1.md`, `projects/spire.md`, `projects/beacon.md`, `projects/atlas-1-q2-roadmap.md`, `projects/spire-pilot-warehouse-a.md`, `projects/beacon-sensor-evaluation.md`), ~6 meetings (`meetings/2026-04-15-q2-okr-review.md`, `meetings/2026-04-12-atlas-standup.md`, `meetings/2026-04-08-spire-pilot-readout.md`, `meetings/2026-03-12-strategy-offsite.md`, `meetings/2026-04-22-beacon-go-no-go.md`, `meetings/2026-05-06-allhands-q1-recap.md`), ~5 decisions (`decisions/2026-03-12-pivot-to-warehouse.md`, `decisions/2026-04-15-defer-beacon.md`, `decisions/2026-02-20-adopt-typescript.md`, `decisions/2026-03-05-hire-lead-engineer.md`, `decisions/2026-05-01-q2-okr-set.md`), ~5 references (`references/ieee-robotics-society-2025.md`, `references/warehouse-automation-market-report.md`, `references/atlas-1-component-spec.md`, `references/typescript-style-guide.md`, `references/customer-discovery-notes-2026.md`). Each note MUST: (a) have frontmatter with `title` matching the H1 heading; (b) contain at least one `[[wikilink]]` to another note that exists (sustains the graph eval queries); (c) be coherent narrative — no `lorem ipsum`; ~50% of content can be Claude-drafted as scaffolding per the task description with the explicit understanding that the maintainer revises in Task 4. Use kebab-case filenames. Do NOT use real names of real people or real companies beyond Atlas Robotics (fictional). The 25-note count is a lower bound on Claude's contribution; total fixture target (Task 4) is 50–100.</action>
+  <action>Create exactly 5 example markdown notes — one per top-level narrative folder — each ~30–60 lines, each with YAML frontmatter (at minimum `title:`, `created:`, and category-specific keys). The 5 notes are illustrative templates: they show the maintainer the desired note voice, frontmatter shape, and wikilink usage. The maintainer extends from this base in Task 4.
+
+  Required 5 notes (use these exact filenames):
+  - `people/alice-chen.md` — Alice Chen, CEO. Frontmatter keys: `title:`, `role:`, `joined:`, `created:`. Body: one-paragraph bio + bullets summarizing what she owns. Includes `[[wikilink]]` to `projects/atlas-1.md`.
+  - `projects/atlas-1.md` — Atlas-1 flagship robot. Frontmatter keys: `title:`, `status:`, `owner:`, `created:`. Body: 2–3 paragraphs covering goal, current state, recent decisions. Includes `[[wikilink]]` to `people/alice-chen.md` and at least one other wikilink (can be to a note that doesn't exist yet — maintainer will create it in Task 4).
+  - `meetings/2026-04-15-q2-okr-review.md` — Q2 OKR review meeting note. Frontmatter keys: `title:`, `date:`, `attendees:`, `created:`. Body: agenda + decisions + action items in standard meeting-note shape. Includes `[[wikilink]]` to `people/alice-chen.md` and `projects/atlas-1.md`.
+  - `decisions/2026-03-12-pivot-to-warehouse.md` — the pivot decision. Frontmatter keys: `title:`, `date:`, `status:`, `created:`. Body: decision statement + context + alternatives considered + consequences. Includes `[[wikilink]]` to `projects/atlas-1.md`.
+  - `references/atlas-1-component-spec.md` — a reference document for Atlas-1's BOM. Frontmatter keys: `title:`, `kind:`, `created:`. Body: a small markdown table listing 5–10 components with vendor + part number (fictional). Includes `[[wikilink]]` to `projects/atlas-1.md`.
+
+  Each note MUST: (a) have frontmatter with `title` matching the H1 heading; (b) contain at least one `[[wikilink]]` to another note (some may target notes the maintainer will author in Task 4 — that's expected); (c) be coherent narrative — no `lorem ipsum`; (d) explicitly NOT include LLM-flavor artifacts (no "as a large language model", no "I cannot…" disclaimers, no over-cautious hedging). Use kebab-case filenames. Do NOT use real names of real people or real companies beyond Atlas Robotics (fictional). Do NOT exceed 5 notes — the rest is the maintainer's work in Task 4.</action>
   <acceptance_criteria>
-    - At least 25 markdown notes total outside `_memory/` and `_queries/`: `[ $(find evals/fixtures/v2-test-vault -name '*.md' -not -path '*/_memory/*' -not -path '*/_queries/*' -not -name 'README.md' | wc -l) -ge 25 ]` exits 0.
-    - Each top-level narrative folder has ≥3 notes: `for d in projects meetings people decisions references; do [ $(find evals/fixtures/v2-test-vault/$d -name '*.md' | wc -l) -ge 3 ] || exit 1; done`.
-    - Every note has frontmatter (starts with `---`): `for f in $(find evals/fixtures/v2-test-vault -name '*.md' -not -path '*/_memory/*' -not -path '*/_queries/*' -not -name 'README.md'); do head -1 "$f" | grep -q '^---$' || { echo "Missing frontmatter: $f" >&2; exit 1; }; done`.
-    - Each note contains at least one `[[wikilink]]`: `for f in $(find evals/fixtures/v2-test-vault -name '*.md' -not -path '*/_memory/*' -not -path '*/_queries/*' -not -name 'README.md'); do grep -q '\\[\\[' "$f" || { echo "Missing wikilink: $f" >&2; exit 1; }; done`.
+    - Exactly 5 example notes exist at the documented paths: `for p in people/alice-chen.md projects/atlas-1.md meetings/2026-04-15-q2-okr-review.md decisions/2026-03-12-pivot-to-warehouse.md references/atlas-1-component-spec.md; do test -f "evals/fixtures/v2-test-vault/$p" || { echo "Missing: $p" >&2; exit 1; }; done`.
+    - Each example has frontmatter (first line is `---`): `for p in people/alice-chen.md projects/atlas-1.md meetings/2026-04-15-q2-okr-review.md decisions/2026-03-12-pivot-to-warehouse.md references/atlas-1-component-spec.md; do head -1 "evals/fixtures/v2-test-vault/$p" | grep -q '^---$' || exit 1; done`.
+    - Each example contains at least one `[[wikilink]]`: `for p in people/alice-chen.md projects/atlas-1.md meetings/2026-04-15-q2-okr-review.md decisions/2026-03-12-pivot-to-warehouse.md references/atlas-1-component-spec.md; do grep -q '\\[\\[' "evals/fixtures/v2-test-vault/$p" || exit 1; done`.
+    - Each top-level narrative folder has at least 1 note (the example) — note that the 50-note floor is NOT enforced at this task: `for d in projects meetings people decisions references; do [ $(find evals/fixtures/v2-test-vault/$d -name '*.md' | wc -l) -ge 1 ] || exit 1; done`.
   </acceptance_criteria>
   <verify>
-    <automated>[ $(find evals/fixtures/v2-test-vault -name '*.md' -not -path '*/_memory/*' -not -path '*/_queries/*' -not -name 'README.md' | wc -l) -ge 25 ] && for d in projects meetings people decisions references; do [ $(find evals/fixtures/v2-test-vault/$d -name '*.md' | wc -l) -ge 3 ] || exit 1; done</automated>
+    <automated>for p in people/alice-chen.md projects/atlas-1.md meetings/2026-04-15-q2-okr-review.md decisions/2026-03-12-pivot-to-warehouse.md references/atlas-1-component-spec.md; do test -f "evals/fixtures/v2-test-vault/$p" || exit 1; done && for d in projects meetings people decisions references; do [ $(find evals/fixtures/v2-test-vault/$d -name '*.md' | wc -l) -ge 1 ] || exit 1; done</automated>
   </verify>
-  <done>~25 narrative notes scaffolded across the five folders; all have frontmatter; all have ≥1 wikilink.</done>
+  <done>5 example narrative notes authored as templates; each has frontmatter + ≥1 wikilink; the rest of the 50-note floor is the maintainer's work in Task 4.</done>
 </task>
 
 <task type="auto">
@@ -119,57 +129,63 @@ Output: directory tree + README + ~20–30 Claude-authored seed notes + ≥15 `_
     - .planning/phases/00-foundation-decisions/00-CONTEXT.md (D-09 query schema: `{id, query, expected_doc_ids, expected_must_contain?, rationale}`)
     - .planning/phases/00-foundation-decisions/00-RESEARCH.md §Recommended Project Structure (7 query files: search, bundle, dossier, brief, graph, memory, contract)
     - .planning/phases/00-foundation-decisions/00-RESEARCH.md §Pitfall 5 (every `expected_doc_ids` must reference a file that exists)
-    - All files created in Task 2 (must reference them in `expected_doc_ids`)
+    - The 5 example files from Task 2 (queries here can reference these, plus the `_memory/` notes being authored here; queries that need to point at notes the maintainer will author in Task 4 should use placeholders documented in the query's `rationale` field — see action below)
   </read_first>
-  <action>(A) Create ≥15 markdown files under `evals/fixtures/v2-test-vault/_memory/`. Distribute across subfolders: `_memory/observations/` (~8 — agent-recorded micro-observations about the Atlas Robotics team and project state, each with `source: agent`, varied `confidence: direct|inferred|uncertain`, varied `type: observation`), `_memory/_briefs/` (~3 — sample compiled briefs with `type: brief`, `compiled_from: [<doc-uri-list>]`, `compiled_at: <iso>`, populated `evidence` array referencing real Task-2 notes), `_memory/status-updates/` (~4 — `type: status-update` entries with `confidence: direct` for status updates the agent has logged about projects). EVERY `_memory/` note MUST have all seven MEMORY_CONTRACT properties in its frontmatter (some, like `superseded_by`, can be `null` for active notes). At least one observation in `_memory/observations/` MUST be `status: superseded` with `superseded_by:` pointing to another note in `_memory/observations/` to give the `supersede`-tool eval a target. Use kebab-case filenames with date prefixes (e.g., `2026-04-16-alice-prefers-async-standups.md`). (B) Create the seven query YAMLs in `evals/fixtures/v2-test-vault/_queries/`: `search.yaml`, `bundle.yaml`, `dossier.yaml`, `brief.yaml`, `graph.yaml`, `memory.yaml`, `contract.yaml`. Each MUST be a valid YAML document with a top-level `queries:` list of ≥3 entries. Each entry has keys per D-09: `id` (kebab-case unique within file), `query` (free-text user question), `expected_doc_ids` (list of vault-relative paths — e.g., `projects/atlas-1.md`), optional `expected_must_contain` (list of substrings), `rationale` (short prose explaining why these are the expected hits). Every `expected_doc_ids` entry MUST be a vault-relative path that resolves to an existing file in the fixture (Task 2 or Task 3 output). For categories whose tools don't yet exist in v1 (bundle, dossier, brief, graph, memory, contract) the queries describe expected behavior for the Phase-3+ tools; for `search.yaml`, queries describe expected behavior for v1's `search_hybrid` / `search_semantic` / `search_text`. Vault-relative paths (not `obsidian-fs://` URIs) per RESEARCH Open Question 5.</action>
+  <action>(A) Create ≥15 markdown files under `evals/fixtures/v2-test-vault/_memory/`. _memory/ notes simulate agent output, so Claude-drafting them is allowed (and is the point — they represent what the agent would have written). Distribute across subfolders: `_memory/observations/` (~8 — agent-recorded micro-observations about the Atlas Robotics team and project state, each with `source: agent`, varied `confidence: direct|inferred|uncertain`, varied `type: observation`), `_memory/_briefs/` (~3 — sample compiled briefs with `type: brief`, `compiled_from: [<doc-uri-list>]`, `compiled_at: <iso>`, populated `evidence` array referencing the 5 Task-2 example notes), `_memory/status-updates/` (~4 — `type: status-update` entries with `confidence: direct` for status updates the agent has logged about projects). EVERY `_memory/` note MUST have all seven MEMORY_CONTRACT properties in its frontmatter (some, like `superseded_by`, can be `null` for active notes). At least one observation in `_memory/observations/` MUST be `status: superseded` with `superseded_by:` pointing to another note in `_memory/observations/` to give the `supersede`-tool eval a target. Use kebab-case filenames with date prefixes (e.g., `2026-04-16-alice-prefers-async-standups.md`). (B) Create the seven query YAMLs in `evals/fixtures/v2-test-vault/_queries/`: `search.yaml`, `bundle.yaml`, `dossier.yaml`, `brief.yaml`, `graph.yaml`, `memory.yaml`, `contract.yaml`. Each MUST be a valid YAML document with a top-level `queries:` list of ≥3 entries. Each entry has keys per D-09: `id` (kebab-case unique within file), `query` (free-text user question), `expected_doc_ids` (list of vault-relative paths — e.g., `projects/atlas-1.md`), optional `expected_must_contain` (list of substrings), `rationale` (short prose explaining why these are the expected hits). For Phase 0, ground every `expected_doc_ids` in files that EXIST AT TASK 3 TIME (the 5 example narrative notes from Task 2 + the `_memory/` notes from Task 3 (A)). The maintainer extends both the corpus AND the query coverage in Task 4. Vault-relative paths (not `obsidian-fs://` URIs) per RESEARCH Open Question 5.</action>
   <acceptance_criteria>
     - Match VALIDATION row 00-08-02: `[ $(find evals/fixtures/v2-test-vault/_memory -name '*.md' | wc -l) -ge 15 ]` exits 0.
     - Match VALIDATION row 00-08-03: every query yaml has ≥3 entries. `for f in evals/fixtures/v2-test-vault/_queries/*.yaml; do [ $(grep -c '^- id:' "$f") -ge 3 ] || { echo "Need 3+ in $f" >&2; exit 1; }; done`.
     - All seven category yamls exist: `for c in search bundle dossier brief graph memory contract; do test -f "evals/fixtures/v2-test-vault/_queries/${c}.yaml" || exit 1; done`.
     - Every `_memory/` note has the seven required keys in frontmatter: `for f in $(find evals/fixtures/v2-test-vault/_memory -name '*.md'); do for k in source confidence evidence status observed_at superseded_by type; do grep -q "^${k}:" "$f" || { echo "$f missing $k" >&2; exit 1; }; done; done`.
     - At least one `_memory/` note has `status: superseded`: `grep -rEq '^status: superseded' evals/fixtures/v2-test-vault/_memory/`.
-    - Referential integrity (Pitfall 5): every `expected_doc_ids` resolves to a real file. Loadable parse — for each query file, every listed path under `expected_doc_ids:` followed by a `- ` line must exist as a file at `evals/fixtures/v2-test-vault/<path>`. Shell script: `for f in evals/fixtures/v2-test-vault/_queries/*.yaml; do node -e 'const y=require("yaml");const fs=require("fs");const d=y.parse(fs.readFileSync(process.argv[1],"utf-8"));for (const q of (d.queries||[])) for (const p of (q.expected_doc_ids||[])) if (!fs.existsSync("evals/fixtures/v2-test-vault/"+p)) { console.error("missing: "+p+" in "+process.argv[1]); process.exit(1) }' "$f"; done` exits 0.
+    - Referential integrity (Pitfall 5) at Task-3 time: every `expected_doc_ids` resolves to a real file (either the 5 Task-2 examples or the Task-3 `_memory/` notes). Shell: `for f in evals/fixtures/v2-test-vault/_queries/*.yaml; do node -e 'const y=require("yaml");const fs=require("fs");const d=y.parse(fs.readFileSync(process.argv[1],"utf-8"));for (const q of (d.queries||[])) for (const p of (q.expected_doc_ids||[])) if (!fs.existsSync("evals/fixtures/v2-test-vault/"+p)) { console.error("missing: "+p+" in "+process.argv[1]); process.exit(1) }' "$f"; done` exits 0.
   </acceptance_criteria>
   <verify>
     <automated>[ $(find evals/fixtures/v2-test-vault/_memory -name '*.md' | wc -l) -ge 15 ] && for c in search bundle dossier brief graph memory contract; do test -f "evals/fixtures/v2-test-vault/_queries/${c}.yaml" && [ $(grep -c '^- id:' "evals/fixtures/v2-test-vault/_queries/${c}.yaml") -ge 3 ] || exit 1; done && grep -rEq '^status: superseded' evals/fixtures/v2-test-vault/_memory/</automated>
   </verify>
-  <done>≥15 `_memory/` notes with seven MEMORY_CONTRACT keys each, one superseded, plus seven query YAMLs each ≥3 entries with referential integrity.</done>
+  <done>≥15 `_memory/` notes with seven MEMORY_CONTRACT keys each, one superseded, plus seven query YAMLs each ≥3 entries with referential integrity at Task-3 time.</done>
 </task>
 
 <task type="checkpoint:human-action" gate="blocking">
-  <name>Task 4: Maintainer hand-off — author additional notes to reach 50–100 total + review Claude-scaffolded notes</name>
-  <what-built>Claude has scaffolded the fixture directory, the README, ~25 narrative notes across five folders, ~15 `_memory/` notes with full MEMORY_CONTRACT properties, and 7 query YAML files with ≥3 entries each referencing real notes. Total Claude-authored markdown count is ~40 notes.</what-built>
+  <name>Task 4: Maintainer hand-authors the remaining 45+ narrative notes (50-note floor enforced HERE) + reviews Claude's scaffold</name>
+  <what-built>Claude has scaffolded the fixture directory, the README, 5 illustrative example notes (one per top-level folder) demonstrating voice + shape, ~15 `_memory/` notes simulating agent output with full MEMORY_CONTRACT properties, and 7 query YAML files with ≥3 entries each referencing the Task-2/Task-3 outputs. Total Claude-authored markdown count is ~20 notes (5 examples + ~15 _memory/). The 50-note VALIDATION floor is NOT yet met — that is this task's responsibility per D-08 ("notes are hand-authored").</what-built>
   <how-to-verify>
     (1) Open `evals/fixtures/v2-test-vault/` and read the README — confirm the Atlas Robotics narrative makes sense and is one you can extend.
-    (2) Spot-check 3–4 Claude-scaffolded notes per folder — confirm they are legible, accurate to the narrative, free of LLM-flavor artifacts (per D-08).
-    (3) Decide how many additional notes you want to author personally. CONTEXT target is ~75 total; Claude has shipped ~40; you may either accept that floor (passes the 50-note VALIDATION threshold) or hand-author up to 35 more to reach the ~75 target. Per RESEARCH §Pattern 3 each note is ~10 minutes; reaching 75 from 40 is ~6 maintainer-hours, optional.
-    (4) Optionally adjust query YAMLs in `_queries/` to add 1–2 more queries per category against the notes you authored.
+    (2) Read the 5 Claude-scaffolded example notes (one per top-level folder). Confirm they demonstrate the voice and shape you want. Revise them if not. These are templates, not final content.
+    (3) **Hand-author the remaining narrative notes.** CONTEXT target is ~75 total; current count is ~20 (5 narrative examples + ~15 _memory/). To reach the 50-note VALIDATION floor you need at least 30 more narrative notes; to reach the 75-note target, 50–55 more. Per RESEARCH §Pattern 3 each note is ~10 minutes; reaching 50 from 20 is ~5 maintainer-hours, reaching 75 is ~9. Suggested distribution to reach floor: 5 more `people/`, 8 more `projects/`, 10 more `meetings/`, 5 more `decisions/`, 5 more `references/`.
+    (4) **Extend the query YAMLs in `_queries/`** to point at the notes you authored in step 3 (the Phase-0 query set Claude shipped only references the 5 example notes + `_memory/`). For each of the 7 `_queries/*.yaml` files, add 1–3 more queries grounded in the newly-authored notes so the Phase-1 eval surface has real coverage.
     (5) Run the referential-integrity check: `node -e 'const y=require("yaml");const fs=require("fs");for (const f of require("fs").readdirSync("evals/fixtures/v2-test-vault/_queries").filter(x=>x.endsWith(".yaml"))) { const d=y.parse(fs.readFileSync("evals/fixtures/v2-test-vault/_queries/"+f,"utf-8")); for (const q of (d.queries||[])) for (const p of (q.expected_doc_ids||[])) if (!fs.existsSync("evals/fixtures/v2-test-vault/"+p)) { console.error("MISSING: "+p+" in "+f); process.exit(1) } } console.log("OK")'` — if it prints `OK`, every query references a real file. If it prints `MISSING:`, fix the reference (rename the file, fix the query, or delete the query) before resuming.
-    (6) Update `evals/fixtures/v2-test-vault/README.md` `## Status` section listing what Claude scaffolded vs what you authored/revised.
+    (6) Update `evals/fixtures/v2-test-vault/README.md` `## Status` section listing what Claude scaffolded (the 5 examples + `_memory/`) vs what you authored/revised.
   </how-to-verify>
   <acceptance_criteria>
-    - Total fixture note count is in the documented bound. Match VALIDATION row 00-08-01: `[ $(find evals/fixtures/v2-test-vault -name '*.md' -not -path '*/_queries/*' | wc -l) -ge 50 ] && [ $(find evals/fixtures/v2-test-vault -name '*.md' -not -path '*/_queries/*' | wc -l) -le 110 ]` exits 0.
-    - README `## Status` section updated with the maintainer's accounting.
+    - **50-note floor enforced HERE (NOT in Task 2).** Match VALIDATION row 00-08-01: `[ $(find evals/fixtures/v2-test-vault -name '*.md' -not -path '*/_queries/*' | wc -l) -ge 50 ] && [ $(find evals/fixtures/v2-test-vault -name '*.md' -not -path '*/_queries/*' | wc -l) -le 110 ]` exits 0.
+    - Each top-level narrative folder has ≥3 notes after Task 4: `for d in projects meetings people decisions references; do [ $(find evals/fixtures/v2-test-vault/$d -name '*.md' | wc -l) -ge 3 ] || exit 1; done`.
+    - Every narrative note (outside `_memory/` and `_queries/`, excluding README) has frontmatter starting with `---`: `for f in $(find evals/fixtures/v2-test-vault -name '*.md' -not -path '*/_memory/*' -not -path '*/_queries/*' -not -name 'README.md'); do head -1 "$f" | grep -q '^---$' || { echo "Missing frontmatter: $f" >&2; exit 1; }; done`.
+    - Every narrative note contains at least one `[[wikilink]]`: `for f in $(find evals/fixtures/v2-test-vault -name '*.md' -not -path '*/_memory/*' -not -path '*/_queries/*' -not -name 'README.md'); do grep -q '\\[\\[' "$f" || { echo "Missing wikilink: $f" >&2; exit 1; }; done`.
+    - Referential integrity passes post-extension: re-run the node one-liner from step (5) above — exits 0.
+    - README `## Status` section updated with the maintainer's accounting (Claude-scaffolded vs maintainer-authored).
   </acceptance_criteria>
-  <resume-signal>Reply `approved` once the maintainer is satisfied with note coverage and the referential-integrity check passes. Optionally reply `approved with adjustments: <list>` describing additions.</resume-signal>
+  <resume-signal>Reply `approved` once the 50-note floor is reached, all narrative notes have frontmatter + wikilinks, the referential-integrity check passes, and the README `## Status` is updated. Optionally reply `approved with adjustments: <list>` describing additions or revisions to Claude's scaffold.</resume-signal>
 </task>
 
 </tasks>
 
 <verification>
-- VALIDATION rows 00-08-01 (50–110 note count), 00-08-02 (`_memory/` ≥15), 00-08-03 (each query yaml has ≥3 entries) all pass.
-- Referential integrity (Pitfall 5) verified by the node one-liner in Task 4 instructions.
+- VALIDATION row 00-08-01 (50–110 note count) is enforced at Task 4 (maintainer-resolved checkpoint), satisfying D-08's "hand-authored" requirement.
+- VALIDATION rows 00-08-02 (`_memory/` ≥15) and 00-08-03 (each query yaml has ≥3 entries) pass at Task 3.
+- Referential integrity (Pitfall 5) verified twice: at Task 3 (against the 5 examples + `_memory/`) and at Task 4 (against the full extended fixture).
 - Sentinel file (`_memory/.memory-sink`) present per ADR-004.
 </verification>
 
 <success_criteria>
-- Fixture vault exists with 50–110 total notes.
-- All five top-level narrative folders populated with ≥3 notes each.
+- Fixture vault reaches 50–110 total notes at Task 4 (maintainer-resolved).
+- All five top-level narrative folders populated with ≥3 notes each at Task 4.
+- Claude's Task-2 contribution is exactly 5 example notes (one per folder); the rest is maintainer-authored per D-08.
 - `_memory/` has ≥15 notes with full MEMORY_CONTRACT property coverage + at least one superseded entry.
 - 7 query YAMLs (search, bundle, dossier, brief, graph, memory, contract) each with ≥3 D-09-schema entries.
-- Every `expected_doc_ids` references an existing file.
+- Every `expected_doc_ids` references an existing file at both Task 3 and Task 4 checkpoint times.
 </success_criteria>
 
 <output>
-After completion, create `.planning/phases/00-foundation-decisions/00-09-SUMMARY.md` listing: total note count, per-folder counts, `_memory/` provenance-label diversity (which `confidence` values appear, which `type` values appear), how many queries per category, and the maintainer-vs-Claude authorship split.
+After completion, create `.planning/phases/00-foundation-decisions/00-09-SUMMARY.md` listing: total note count, per-folder counts, the 5 example notes Claude authored vs the rest maintainer-authored, `_memory/` provenance-label diversity (which `confidence` values appear, which `type` values appear), how many queries per category (Task-3 baseline vs Task-4 extension), and the maintainer-vs-Claude authorship split.
 </output>

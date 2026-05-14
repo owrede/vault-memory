@@ -1021,34 +1021,40 @@ chunks of that document as stale (per Invariant H-1 — hash covers properties).
 
 **If this table is empty:** N/A — seven assumptions are logged for user/maintainer confirmation before plan execution begins. A5 and A6 are the most consequential (they touch scope); A1, A2, A4 are operational; A3 is a future-validation; A7 is a defensive-implementation choice.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Should `src/tool-registry.ts` extraction be in Phase 0 or Phase 1?**
+   - **RESOLVED:** plan 02 Task 0 (A5) — maintainer ack of option-a (extract in Phase 0) or option-b (no `src/` change, in-process JSON-RPC harness).
    - What we know: D-CONTEXT says "zero `src/` changes." The micro-refactor is a 5-line non-behavioral extract.
    - What's unclear: Whether "zero src/ changes" is absolute or has an "obvious-mechanical-extract" exception.
    - Recommendation: Ask the maintainer in the planning loop. If "absolute," `dump-tools.mjs` instead spawns the MCP server in-process and issues a `tools/list` JSON-RPC call — about 30 lines of code, doable but heavier. If "extract is OK," do the extract — cleaner and faster.
 
 2. **Is `gsd-agent-knowledg-layer.md` (full v2 brief) public or private?**
+   - **RESOLVED:** plan 02 Task 0 (A6) — maintainer ack of public-vs-private; plan 01 Task 3 implements the default private and `--gaps` reflows if maintainer answers public.
    - What we know: Currently gitignored alongside the ADRs. Brief is the source of truth for v2.
    - What's unclear: Whether the brief itself should become public alongside the ADRs (it contains all the design rationale), or remain internal.
    - Recommendation: Default to internal — replace the directory-wide `docs/dev/` ignore with a narrow `docs/dev/gsd-agent-knowledg-layer.md` ignore. Confirm with maintainer.
 
 3. **Should the ADR file `002-source-and-delivery-seams.md` be renamed to `002-adapter-seams.md` per the CONTEXT canonical_refs reference?**
+   - **RESOLVED:** plan 03 Task 1 — `git mv docs/dev/002-source-and-delivery-seams.md docs/v2/adr/002-adapter-seams.md` (rename concurrent with relocation; two-commit pattern preserves history).
    - What we know: `docs/dev/002-source-and-delivery-seams.md` is the current filename. CONTEXT.md (line 76) explicitly says target → `docs/v2/adr/002-adapter-seams.md`.
    - What's unclear: This is a filename change concurrent with relocation — increases the same-commit-content-change risk for git rename detection.
    - Recommendation: Treat the rename as part of commit-1 (the `git mv` commit). `git mv` with a new name is fully supported and rename detection handles it. But if any history-preservation concern surfaces, fall back to keeping the old filename and adding an alias note in the index.
 
 4. **What's the format of the per-tool `<tool-name>.yaml` semantic-floor fixtures?**
+   - **RESOLVED:** plan 11 default schema — D-09 verbatim (`{id, query, expected_doc_ids, expected_must_contain?, rationale}`). Per-tool extensions deferred to Phase 1 if needed.
    - What we know: D-12 says "per-tool YAML at `evals/v1-baseline/<tool-name>.yaml` reusing the D-09 schema." D-09 schema is `{id, query, expected_doc_ids, expected_must_contain?, rationale}`.
    - What's unclear: Whether the schema needs additional fields per-tool (e.g., `expected_min_recall: 0.8` overriding the global D-14 default, or per-tool `top_k` to use when invoking).
    - Recommendation: Start with the D-09 schema verbatim. Add per-tool extensions only if Phase 1 reveals genuine need.
 
 5. **Should the `_queries/*.yaml` files in the fixture vault use vault-relative paths or `obsidian-fs://` URIs in `expected_doc_ids`?**
+   - **RESOLVED:** plan 09 — vault-relative paths for fixture queries (e.g., `projects/atlas-1.md`). Phase 1's adapter extraction owns URI translation in the eval harness.
    - What we know: The fixture exists in pre-ADR-001 form; vault-relative paths are the current shape.
    - What's unclear: Forward-compatibility — if the eval harness reads via the (future) `SourceConnector` interface, it will see `obsidian-fs://atlas/projects/Atlas-1.md`, not `projects/Atlas-1.md`.
    - Recommendation: Use vault-relative paths in Phase 0 (matches v1 reality). Phase 1's adapter extraction will provide a translation layer in the eval harness if needed. Don't pre-emptively encode `obsidian-fs://` in the fixture queries — it would require committing to the exact URI grammar before Phase 1 implements it.
 
 6. **What's the right place for `docs/v2/AGENT_AGNOSTIC_AUDIT.md` — Phase 0 or Phase 1?**
+   - **RESOLVED:** plan 08 — Phase 0 ships `AGENT_AGNOSTIC.md` (the positive spec); `AGENT_AGNOSTIC_AUDIT.md` is deferred to Phase 1 (ADP-11) where the audit happens against `src/`.
    - What we know: FND-07 says ship `AGENT_AGNOSTIC.md` (the *positive* doc — "MCP is canonical, Skills are one client"). Phase 1 (`ADP-11`) ships `AGENT_AGNOSTIC_AUDIT.md` (the audit — every Claude-specific assumption).
    - What's unclear: Whether the audit shapes the AGENT_AGNOSTIC.md in Phase 0 or follows it in Phase 1.
    - Recommendation: AGENT_AGNOSTIC.md is the *spec*; the audit is the *verification*. Phase 0 writes the spec, Phase 1 audits the implementation against it. Don't conflate.

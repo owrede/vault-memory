@@ -18,7 +18,7 @@ user_setup:
     why: "Per D-15 + D-16, the adversarial review MUST run in a fresh Claude session with the `gsd-advisor-researcher` agent acting as a hostile Phase-10 implementer. The reviewer must NOT have seen this planning context — the whole point is unbiased review of whether the ADRs+arch-docs alone (no v2 brief, no source code) are sufficient for a Notion-adapter implementation plan."
 must_haves:
   truths:
-    - "`docs/v2/adr/ADVERSARIAL-REVIEW.md` exists with at least 4 numbered findings (≥1 per ADR is the floor; healthy outcome is 3–8 total per RESEARCH Pitfall 6)"
+    - "`docs/v2/adr/ADVERSARIAL-REVIEW.md` exists with at least 4 numbered findings (≥1 per ADR is the floor; healthy outcome is 4–8 total per RESEARCH Pitfall 6)"
     - "Every finding has explicit `Status: Amended` (with a commit SHA reference) OR `Status: Deferred-v3` (with a one-line rationale and corresponding entry in `docs/v2/adr/README.md` Open ADRs)"
     - "No silent ignores — every finding terminates in one of the two states"
     - "ADR amendments resulting from `Amended` findings are committed into the appropriate ADR file"
@@ -36,7 +36,7 @@ must_haves:
 <objective>
 Execute the FND-04 adversarial review — the one non-formal gate in Phase 0 that confirms a Phase-10 Notion implementer could ship a working adapter from `docs/v2/adr/001..004` + the three architecture docs alone (no source code, no v2 brief). Per D-15, the review runs in a separate Claude session with the `gsd-advisor-researcher` agent given ONLY the seven canonical docs as input. Per D-16, the review is NOT a real spike (no Notion-skeleton code) — the gate is "are the ADRs unambiguous on what they DO cover", not "is v3 already designed".
 
-Per RESEARCH §Pitfall 6, a healthy outcome is 3–8 findings, ~half amended into ADR text, ~half marked `Deferred-v3` with explicit rationale and matching entries in the ADR-index Open-ADRs section (plan 13). Rubber-stamp output ("ADRs are comprehensive") is a failure mode — the prompt template from RESEARCH §Pitfall 6 forces concrete numbered findings.
+Per RESEARCH §Pitfall 6, a healthy outcome is 4–8 findings, ~half amended into ADR text, ~half marked `Deferred-v3` with explicit rationale and matching entries in the ADR-index Open-ADRs section (plan 13). Rubber-stamp output ("ADRs are comprehensive") is a failure mode — the prompt template from RESEARCH §Pitfall 6 forces concrete numbered findings.
 
 Plan is `autonomous: false` because Task 1 is run by the maintainer in a separate Claude session, NOT inside the execute-plan loop (the executor cannot spawn a fresh context with restricted document access from within its own context).
 
@@ -107,7 +107,7 @@ Output: `ADVERSARIAL-REVIEW.md` ledger + any ADR amendments resulting from findi
     **(4) Verify health (per RESEARCH §Pitfall 6 warning signs):**
       - ZERO findings → rubber-stamp; reject and re-run with a stricter prompt (this would be Assumption A2 failing).
       - All findings `Deferred-v3` → ADRs are not being tightened; reject and ask the reviewer to identify which findings are amendable now.
-      - Healthy: 3–8 findings, ~half `Recommended resolution: ADR amendment` (will become `Status: Amended` after Task 2) + ~half `Recommended resolution: index Deferred-v3` (will become `Status: Deferred-v3` after Task 2 cross-links to the Open ADRs in plan 13's output).
+      - Healthy: 4–8 findings, ~half `Recommended resolution: ADR amendment` (will become `Status: Amended` after Task 2) + ~half `Recommended resolution: index Deferred-v3` (will become `Status: Deferred-v3` after Task 2 cross-links to the Open ADRs in plan 13's output).
 
     **(5) Resume the original Claude session** (the one running this plan) and reply `approved`, attaching: the finding count, the amend-vs-defer split, and the path `docs/v2/adr/ADVERSARIAL-REVIEW.md`.
   </how-to-verify>

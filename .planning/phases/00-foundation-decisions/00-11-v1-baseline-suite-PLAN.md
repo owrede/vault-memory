@@ -2,7 +2,7 @@
 phase: 00-foundation-decisions
 plan: 11
 type: execute
-wave: 3
+wave: 4
 depends_on: [09, 10]
 files_modified:
   - evals/v1-baseline/baseline.test.ts
@@ -122,14 +122,13 @@ Loaded from `evals/v1-baseline/baseline.test.ts` via the `yaml` package (`^2.9.0
     - `test -f evals/v1-baseline/baseline.test.ts` exits 0.
     - Match VALIDATION row 00-09-02: `npx vitest run evals/v1-baseline/baseline.test.ts -t 'baseline fixtures parse'` exits 0 (test name present and passes).
     - Match VALIDATION row 00-10-02: `npx vitest run evals/v1-baseline/baseline.test.ts -t 'matches the pinned snapshot'` exits 0.
-    - Full suite still passes: `npm test` exits 0.
     - `npx tsc --noEmit` exits 0 (test file is type-clean).
     - `.todo` hooks visible: `npx vitest run evals/v1-baseline/baseline.test.ts 2>&1 | grep -q 'todo'` (some vitest version may format as `↓` or `Todo`; verify by running and checking the actual output emits a non-zero count of `.todo` items).
   </acceptance_criteria>
   <verify>
-    <automated>test -f evals/v1-baseline/baseline.test.ts && npx vitest run evals/v1-baseline/baseline.test.ts -t 'matches the pinned snapshot' && npx vitest run evals/v1-baseline/baseline.test.ts -t 'baseline fixtures parse' && npm test</automated>
+    <automated>test -f evals/v1-baseline/baseline.test.ts && npx vitest run evals/v1-baseline/baseline.test.ts</automated>
   </verify>
-  <done>`baseline.test.ts` runs under `npm test`; snapshot equality + fixture integrity tests pass; precision/recall hooks are `.todo` for Phase 1 wiring.</done>
+  <done>`baseline.test.ts` runs under `npx vitest run evals/v1-baseline/baseline.test.ts` (and is picked up by the default vitest glob in the full suite); snapshot equality + fixture integrity tests pass; precision/recall hooks are `.todo` for Phase 1 wiring.</done>
 </task>
 
 </tasks>

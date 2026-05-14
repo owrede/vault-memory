@@ -2,7 +2,7 @@
 phase: 00-foundation-decisions
 plan: 12
 type: execute
-wave: 3
+wave: 4
 depends_on: [01, 09]
 files_modified:
   - scripts/check-fixture-privacy.sh

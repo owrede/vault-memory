@@ -2,8 +2,8 @@
 phase: 00-foundation-decisions
 plan: 08
 type: execute
-wave: 2
-depends_on: [01]
+wave: 3
+depends_on: [02]
 files_modified:
   - docs/v2/AGENT_AGNOSTIC.md
 autonomous: true

@@ -103,7 +103,7 @@ Output: package.json + lockfile updated, .gitignore tightened, CHANGELOG.md seed
     - .planning/phases/00-foundation-decisions/00-CONTEXT.md (D-01 — relocation enabler; Claude's Discretion §`docs/optimization-todos/` stays ignored)
     - .planning/phases/00-foundation-decisions/00-RESEARCH.md §Runtime State Inventory + §Open Question 2 (the v2 brief stays internal)
   </read_first>
-  <action>Edit `.gitignore`: (a) delete line 16 `docs/dev/`. (b) Keep line 15 `docs/optimization-todos/` untouched per CONTEXT Claude's Discretion. (c) Add a new line: `docs/dev/gsd-agent-knowledg-layer.md` — this keeps the internal v2 brief private while opening `docs/dev/00X-*.md` for the upcoming `git mv` operation. Do NOT touch any other line. Preserve the existing comment block `# Internal roadmap notes — kept locally...` above `docs/optimization-todos/`.</action>
+  <action>Edit `.gitignore`: (a) delete line 16 `docs/dev/`. (b) Keep line 15 `docs/optimization-todos/` untouched per CONTEXT Claude's Discretion. (c) Add a new line: `docs/dev/gsd-agent-knowledg-layer.md` — this keeps the internal v2 brief private while opening `docs/dev/00X-*.md` for the upcoming `git mv` operation. Do NOT touch any other line. Preserve the existing comment block `# Internal roadmap notes — kept locally...` above `docs/optimization-todos/`. **A6 dependency note:** this task implements the default A6=private (RESEARCH Open Question 2's recommendation). Plan 02 Task 0 (the Phase-0 pre-execution assumption checkpoint) resolves A6 definitively. If plan 02 Task 0 returns `A6: public`, this `.gitignore` change MUST be revised via `/gsd-plan-phase 0 --gaps` BEFORE Wave 3 ADR work begins — specifically by removing the `docs/dev/gsd-agent-knowledg-layer.md` line and committing `git mv docs/dev/gsd-agent-knowledg-layer.md docs/v2/<location>`. Capture A6's answer in plan 02's SUMMARY before any A6-dependent action is taken.</action>
   <acceptance_criteria>
     - Match VALIDATION row 00-01-02 (negated form): `! grep -qE '^docs/dev/$' .gitignore` exits 0 (line removed).
     - `grep -q '^docs/dev/gsd-agent-knowledg-layer.md$' .gitignore` exits 0 (narrow line present).
@@ -114,7 +114,7 @@ Output: package.json + lockfile updated, .gitignore tightened, CHANGELOG.md seed
   <verify>
     <automated>! grep -qE '^docs/dev/$' .gitignore && grep -q '^docs/dev/gsd-agent-knowledg-layer.md$' .gitignore && ! git check-ignore docs/dev/001-document-identity.md</automated>
   </verify>
-  <done>Directory-wide ignore removed; v2 brief still private; ADR files are now reachable by `git add`/`git mv`.</done>
+  <done>Directory-wide ignore removed; v2 brief still private (default — pending A6 resolution in plan 02 Task 0); ADR files are now reachable by `git add`/`git mv`. If plan 02 Task 0 resolves A6=public, replan this task via `/gsd-plan-phase 0 --gaps`.</done>
 </task>
 
 <task type="auto">
