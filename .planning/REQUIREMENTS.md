@@ -74,7 +74,7 @@ Requirements for the v2.0.0 release of vault-memory. Each maps to a roadmap phas
 - [ ] **ASM-12**: Stubbed second adapter (fake connector returning hard-coded `Document` objects) passes the same eval suite — proves source-neutrality
 - [ ] **ASM-13**: List-style assembly ops promoted to MCP Resources where applicable (e.g. `list_dossiers`)
 
-### Graph-as-Retrieval (Phase 5 — moved before Phase 6)
+### Graph-as-Retrieval (Phase 4 — moved before brief layer)
 
 - [ ] **GRA-01**: `expand({seed_doc_ids, hops: 1|2, edge_types?, filter_properties?})` MCP tool — typed-edge neighborhood with metadata
 - [ ] **GRA-02**: `cluster({query | seed_doc_ids, method: "edge-community"})` MCP tool — community detection on typed edge graph; cluster summaries; deterministic per fixture; opt-in/feature-flagged if slow
@@ -82,10 +82,10 @@ Requirements for the v2.0.0 release of vault-memory. Each maps to a roadmap phas
 - [ ] **GRA-04**: Edges carry explicit `type` field per ADR-003 — schema supports `wikilink`, `frontmatter-ref`, `mention`, `hyperlink`
 - [ ] **GRA-05**: Eval fixture includes ≥5 "find me everything related to X" queries answered with expansion
 
-### Compiled Briefs (Phase 6 — signature differentiator)
+### Compiled Briefs (Phase 5 — signature differentiator)
 
 - [ ] **BRF-01**: Brief format and storage shape — `Document` in `_memory/_briefs/` with properties `compiled_from: [doc_id, ...]`, `compiled_at: <ts>`, `source_hashes: {chunk_id: hash}` (chunk-level), `confidence: inferred`, `target: <slug>`, `purpose: <free-text>`
-- [ ] **BRF-02**: Phase 6 ADR resolves LLM strategy — default ladder MCP Sampling → local Ollama → caller-passed text; never bundle a remote LLM SDK
+- [ ] **BRF-02**: Phase 5 ADR resolves LLM strategy — default ladder MCP Sampling → local Ollama → caller-passed text; never bundle a remote LLM SDK
 - [ ] **BRF-03**: `compile_brief({target, source_doc_ids, purpose, max_tokens})` MCP tool — returns brief's `doc_id`; routes through `DeliveryAdapter`
 - [ ] **BRF-04**: `get_brief({target, max_age_days?, allow_stale?})` MCP tool — returns fresh brief, or `stale: true` with changed-source list, or null forcing recompile
 - [ ] **BRF-05**: Staleness daemon subscribes to `ChangeFeed.subscribe()` — when a source chunk's hash changes, mark every brief referencing it `stale: true`; atomic, hash-protected
@@ -96,7 +96,7 @@ Requirements for the v2.0.0 release of vault-memory. Each maps to a roadmap phas
 - [ ] **BRF-10**: Eval scenario — compile a brief for a 20-document project; modify one source; verify brief flips to `stale: true` within one change-feed cycle
 - [ ] **BRF-11**: Same staleness scenario passes when the stub connector is used as the change-feed source — proves source-neutrality
 
-### Task Contract DSL (Phase 7)
+### Task Contract DSL (Phase 6)
 
 - [ ] **CON-01**: Contract schema specified in YAML (with comment preservation), validated by Zod 4 — `version`, `name`, `description`, `inputs`, `sources`, `assembly`, `output_shape`, `write_back`
 - [ ] **CON-02**: Contracts live as `Document`s in `_contracts/` namespace — discoverable through the same machinery as everything else; addressed by `name`
@@ -108,10 +108,10 @@ Requirements for the v2.0.0 release of vault-memory. Each maps to a roadmap phas
 - [ ] **CON-08**: Each reference contract has eval scenarios with expected output shape
 - [ ] **CON-09**: A non-Claude MCP client successfully lists and instantiates contracts
 - [ ] **CON-10**: Override mechanism proven — test pointing a contract at the stub connector yields the same shaped output
-- [ ] **CON-11**: Decision (Phase 7 ADR): whether contracts surface as MCP Tools, MCP Prompts, or both
+- [ ] **CON-11**: Decision (Phase 6 ADR): whether contracts surface as MCP Tools, MCP Prompts, or both
 - [ ] **CON-12**: New runtime dep: `yaml ^2.6` added (with rationale doc)
 
-### Visual Contract Editor — Canvas (Phase 8 — spike-gated)
+### Visual Contract Editor — Canvas (Phase 7 — spike-gated)
 
 - [ ] **CAN-01**: Spike resolves canonical direction — default recommendation: file-watcher recompile, NOT full Obsidian plugin; descope to "Canvas as view, YAML as authoring" if spike fails
 - [ ] **CAN-02**: Canvas-to-contract compiler — parses Obsidian's `.canvas` JSON, validates the graph, emits YAML contract
@@ -123,19 +123,19 @@ Requirements for the v2.0.0 release of vault-memory. Each maps to a roadmap phas
 - [ ] **CAN-08**: Hash-gated watcher reuses v1 `SuppressionSet` to prevent infinite recompile loops
 - [ ] **CAN-09**: Documentation + screencast walkthrough
 
-### Release & Polish (Phase 9 — v2.0.0)
+### Release & Polish (Phase 8 — v2.0.0)
 
 - [ ] **REL-01**: Full eval suite passing; eval suite integrated in CI
 - [ ] **REL-02**: CHANGELOG curated for v2.0.0 — every user-visible v2 change listed
 - [ ] **REL-03**: README rewritten around new pitch — "agentic knowledge layer over Obsidian; more sources coming"
-- [ ] **REL-04**: README "Roadmap" section names Phase 10 explicitly so users know multi-source is coming
+- [ ] **REL-04**: README "Roadmap" section names Phase 9/v3 explicitly so users know multi-source is coming
 - [ ] **REL-05**: `MIGRATION-V1-TO-V2.md` — notes SDK and Zod major bumps for downstream library users; tool API delta (no breaking changes, additive only)
 - [ ] **REL-06**: v2.0.0 git tag exists; CI auto-creates GitHub Release
 - [ ] **REL-07**: npm publish completed
 - [ ] **REL-08**: Tool surface inventory ≤32 tools (after MCP Resources promotion) or ≤40 (without)
 - [ ] **REL-09**: Maintainer signs off on README rewrite
 
-### Pre-Phase-10 Gate (Phase 9.5 — NEW)
+### Pre-Phase-10 Gate (Phase 9 — HARD GATE)
 
 - [ ] **GAT-01**: All Phase 1 CI greps zero-hit on `main` — verified by gate script
 - [ ] **GAT-02**: ADRs 001–004 unviolated — adversarial-review sub-agent run; findings closed
@@ -176,10 +176,10 @@ Explicitly excluded for v2.0.0. Documented to prevent scope creep.
 | Feature | Reason |
 |---------|--------|
 | Cloud sync / hosted service | Local-first is the brand. No telemetry, no API keys for v2. |
-| LLM calls from vault-memory core (beyond opt-in via Sampling/Ollama in Phase 6) | Embeddings via Ollama only. Cross-encoder is opt-in. Phase 6 ADR decides brief-compile path; never bundles a remote LLM SDK. |
-| Network calls beyond `localhost:11434` | Phase 10 (Notion) introduces optional outbound, gated per-connector, off by default. v2 stays local-only. |
+| LLM calls from vault-memory core (beyond opt-in via Sampling/Ollama in Phase 5) | Embeddings via Ollama only. Cross-encoder is opt-in. Phase 5 ADR decides brief-compile path; never bundles a remote LLM SDK. |
+| Network calls beyond `localhost:11434` | Phase 10 (Notion, deferred to v3) introduces optional outbound, gated per-connector, off by default. v2 stays local-only. |
 | Breaking v1.x tool shapes or behavior | Backwards compat non-negotiable until a major version. Net-new tools get net-new names. |
-| Obsidian community plugin store publication | Phase 8's plugin (if built) is bundled with the repo, not published this milestone. |
+| Obsidian community plugin store publication | Phase 7's plugin (if built) is bundled with the repo, not published this milestone. |
 | Non-MCP delivery surfaces (REST/GraphQL/websocket/native UI) | MCP is canonical per AGENT_AGNOSTIC.md. Out of scope for v2. |
 | Multi-user / collaboration / sharing / CRDTs | Single-user, single-machine product. |
 | LLM-as-router / agent orchestration layer in vault-memory | vault-memory is a knowledge layer; the calling agent orchestrates. |
@@ -189,11 +189,11 @@ Explicitly excluded for v2.0.0. Documented to prevent scope creep.
 | YAML-frontmatter-specific logic outside the obsidian-fs adapter | Seam preservation invariant. Enforced by CI grep. |
 | File-path manipulation outside `src/adapters/source/`, `delivery/`, `config/`, `cli.ts` | Seam preservation invariant. |
 | Path-as-primary-key in DB after Phase 1 | Replaced by opaque `doc_uri` per ADR-001. |
-| Phase 8 plugin distribution outside this repo | Bundled-only this milestone; community-store publication deferred to v3. |
+| Phase 7 plugin distribution outside this repo | Bundled-only this milestone; community-store publication deferred to v3. |
 
 ## Traceability
 
-Phase mapping populated by the roadmapper. Initial layout:
+Phase mapping (sequential numbering 0–9; brief's Phase 4 folded into Phase 3; brief's Phase 9.5 renumbered to Phase 9; brief's Phase 10 deferred to v3 as Notion connector milestone).
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
@@ -201,20 +201,24 @@ Phase mapping populated by the roadmapper. Initial layout:
 | ADP-01 to ADP-15 | Phase 1 | Pending |
 | MEM-01 to MEM-12 | Phase 2 | Pending |
 | ASM-01 to ASM-13 | Phase 3 | Pending |
-| GRA-01 to GRA-05 | Phase 5 | Pending |
-| BRF-01 to BRF-11 | Phase 6 | Pending |
-| CON-01 to CON-12 | Phase 7 | Pending |
-| CAN-01 to CAN-09 | Phase 8 | Pending |
-| REL-01 to REL-09 | Phase 9 | Pending |
-| GAT-01 to GAT-05 | Phase 9.5 | Pending |
+| GRA-01 to GRA-05 | Phase 4 | Pending |
+| BRF-01 to BRF-11 | Phase 5 | Pending |
+| CON-01 to CON-12 | Phase 6 | Pending |
+| CAN-01 to CAN-09 | Phase 7 | Pending |
+| REL-01 to REL-09 | Phase 8 | Pending |
+| GAT-01 to GAT-05 | Phase 9 | Pending |
+| NOT-01 to NOT-07 | v3.0.0 (deferred) | Deferred |
+| DMN-01 to DMN-03 | v2.1.x / v3.0.0 (deferred) | Deferred |
+| TPC-01 to TPC-03 | post-v3 (deferred) | Deferred |
 
 **Coverage:**
 - v1 requirements: 114 total
-- Mapped to phases: 114
+- Mapped to phases 0–9: 114 ✓
 - Unmapped: 0 ✓
+- v2/v3 deferred: 13 (NOT-* + DMN-* + TPC-*)
 
-(Phase 4 from the brief folded into Phase 3; Phase 9.5 added per research synthesis; Phase 10 deferred to v3.)
+(Brief's Phase 4 folded into Phase 3 — shared result shape: `mtime`/`status`/`superseded_by` on `Document.properties`. Brief's Phase 9.5 promoted to a real hard gate, renumbered to Phase 9 for sequential clarity. Brief's Phase 10 deferred to v3.0.0.)
 
 ---
 *Requirements defined: 2026-05-14*
-*Last updated: 2026-05-14 after initial definition*
+*Last updated: 2026-05-14 — phase mapping populated by roadmapper*
