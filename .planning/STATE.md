@@ -10,8 +10,8 @@ progress:
   total_phases: 10
   completed_phases: 0
   total_plans: 15
-  completed_plans: 6
-  percent: 40
+  completed_plans: 10
+  percent: 67
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-14)
 ## Current Position
 
 Phase: 00 (Foundation & decisions) — EXECUTING
-Plan: 6 of 15 complete (Waves 1, 2, 3a done; Wave 3b next)
-Status: Executing Phase 00 — Wave 3a docs + fixture scaffold merged; Wave 3b ADR fanout next
-Last activity: 2026-05-14 -- Wave 3a merged (00-06 ARCHITECTURE, 00-07 MEMORY_CONTRACT, 00-08 AGENT_AGNOSTIC, 00-09 fixture scaffold Tasks 1-3)
+Plan: 10 of 15 complete (Waves 1, 2, 3 done; Wave 4 next)
+Status: Executing Phase 00 — Wave 4 (baseline + CI lints + ADR index finalize) next
+Last activity: 2026-05-14 -- Wave 3 complete: all four ADRs Accepted, fixture corpus 40 narrative + 15 _memory, tool-registry extracted, snapshot pinned
 
-Progress: [████░░░░░░] 40%
+Progress: [██████░░░░] 67%
 
 ## Performance Metrics
 
