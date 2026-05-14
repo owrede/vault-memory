@@ -36,7 +36,22 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
   3. Architecture, memory-contract, and agent-agnostic docs published under `docs/v2/`; ADR index page at `docs/v2/adr/README.md` lists every contested choice
   4. Eval fixture vault (`evals/fixtures/v2-test-vault/` — 50–100 notes, coherent narrative) and v1-baseline regression suite (`evals/v1-baseline/`) frozen; tool-snapshot tests pin `tools/list` JSON for all 23 v1 tools
   5. Adversarial-review sub-agent confirms a Phase 10 agent could implement Notion from ADRs 001–004 alone; fixture-privacy and no-telemetry CI lints gate CI; maintainer signs off on all Phase 0 docs
-**Plans**: TBD
+**Plans**: 15 plans
+- [ ] 00-01-bootstrap-PLAN.md — install `yaml@^2.9.0`, add `lint:check`/`eval:baseline`/`eval:snapshot` scripts, narrow `docs/dev/` gitignore, seed CHANGELOG `[Unreleased] → ### Documentation`
+- [ ] 00-02-adr-001-vertical-slice-PLAN.md — MVP walking-skeleton: relocate ADR-001 via two-commit `git mv`+amend, add Invariants+Examples, seed `docs/v2/adr/README.md` index (proves the pattern for plans 03–05)
+- [ ] 00-03-adr-002-adapter-seams-PLAN.md — relocate ADR-002 to `002-adapter-seams.md` (filename rewrite), amend with Invariants+Examples covering all three seam interfaces, append index row
+- [ ] 00-04-adr-003-document-shape-PLAN.md — relocate ADR-003, amend with hash-semantics pseudocode (`sha256(canonical(blocks) || canonical(PropertyBag))`, NFC, LF, RFC 8785) + chunk-level `source_hashes` schema (D-05)
+- [ ] 00-05-adr-004-memory-sink-PLAN.md — relocate ADR-004, amend specifying folder-default sink as only code path with config-only separate-vault option, document `.memory-sink` sentinel (D-06)
+- [ ] 00-06-architecture-doc-PLAN.md — publish `docs/v2/ARCHITECTURE.md` layer model (L0 retrieval → L4 contracts) ≤800 lines
+- [ ] 00-07-memory-contract-doc-PLAN.md — publish `docs/v2/MEMORY_CONTRACT.md` defining the PropertyBag contract (`source`, `confidence`, `evidence`, `status`, `observed_at`, `superseded_by`, `type`)
+- [ ] 00-08-agent-agnostic-doc-PLAN.md — publish `docs/v2/AGENT_AGNOSTIC.md` ("MCP is canonical; Skills are one delivery mechanism")
+- [ ] 00-09-atlas-robotics-fixture-PLAN.md — ship hand-authored Atlas Robotics fixture vault (~75 notes across projects/meetings/people/decisions/references/_memory + per-category `_queries/*.yaml`)
+- [ ] 00-10-tool-registry-and-snapshot-PLAN.md — extract `src/tool-registry.ts` from `src/server.ts` (the one pre-approved src/ change), ship `dump-tools.mjs`, pin `evals/v1-baseline/tools-list.snapshot.json` for all 23 v1 tools
+- [ ] 00-11-v1-baseline-suite-PLAN.md — author `evals/v1-baseline/baseline.test.ts` (snapshot equality + parse-only behavioral floors with `.todo` execution stubs) and per-tool semantic-floor YAMLs
+- [ ] 00-12-ci-lints-and-workflow-PLAN.md — ship POSIX `scripts/check-fixture-privacy.sh` (FND-11), `scripts/lint-no-telemetry.sh` (FND-12), and `.github/workflows/ci.yml` gating both on PR + push-to-main
+- [ ] 00-13-adr-index-finalize-PLAN.md — audit and finalize `docs/v2/adr/README.md` (MADR-style table with 4 Accepted ADRs + ≥14 Open ADRs for v3-Phase-10)
+- [ ] 00-14-adversarial-review-PLAN.md — run `gsd-advisor-researcher` in a fresh Claude session against the four ADRs + three architecture docs, write `docs/v2/adr/ADVERSARIAL-REVIEW.md`, resolve every finding as Amended or Deferred-v3
+- [ ] 00-15-sign-off-PLAN.md — author `docs/v2/SIGN-OFF.md` (FND-01..14 checklist with resolving commit SHAs), refine CHANGELOG, capture maintainer PR approval (D-17)
 
 ### Phase 1: Adapter extraction & tech-debt-up
 **Goal**: Stand up `SourceConnector` / `DeliveryAdapter` / `ChangeFeed` adapter seams with `obsidian-fs` as the v2 implementation, bundle MCP SDK 1.29 + Zod 4 upgrades, and prove client-agnosticism — all without user-visible behavior change
