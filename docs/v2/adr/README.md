@@ -84,6 +84,30 @@ Phases 2–8, conformance suite green, capability-descriptor coverage meeting
 threshold, and explicit maintainer sign-off. Until then, no v3 code is
 written and no Open ADR is promoted.
 
+## Deferred-v3
+
+Findings surfaced by the Phase-0 adversarial review (see
+[`ADVERSARIAL-REVIEW.md`](ADVERSARIAL-REVIEW.md)) that are
+Notion-specific operational realities — not v2 architectural gaps —
+are deferred to v3 Phase-10 work. They are catalogued here for the
+Phase-10 contractor; each finding's source language lives in
+ADVERSARIAL-REVIEW.md.
+
+| # | Finding source | Theme | Lands in (v3 Open ADR) | Status |
+|---|---|---|---|---|
+| F3 | ADVERSARIAL-REVIEW §Finding 3 | `listDocuments` scope — Notion's `/v1/search` returns only the integration's *shared* set; "list everything in the workspace" is impossible without an externally configured seed (`root_pages`, `root_databases`). Adapter MUST document its visibility scope as part of identity for staleness/audit. | ADR-010 (Auth & OAuth for Notion) + ADR-018 (Capability discovery) | Deferred-v3 |
+| F5 | ADVERSARIAL-REVIEW §Finding 5 | `ListOptions.modifiedSince` as hint vs guarantee. Notion has no server-side `last_edited_time` filter — pagination is full-workspace every catchup. Adapter MUST publish `listSupportsModifiedSince: boolean` capability. Operational impact: 30+ second startups against large workspaces. | ADR-011 (Watch / change-feed for Notion) + ADR-018 (Capability discovery) | Deferred-v3 |
+| F6 | ADVERSARIAL-REVIEW §Finding 6 | `ListOptions.excludeGlobs` grammar — "semantically interpreted by adapter" is too loose for non-filesystem sources. Each adapter MUST document its glob grammar in its capability descriptor or README; Notion's proposed grammar matches `page/<uuid>` / `database/<uuid>` as exact-DocId blocklist entries, ignoring path-shaped patterns with a startup warning. | ADR-018 (Capability discovery — runtime feature flags vs static descriptors) | Deferred-v3 |
+| F8 | ADVERSARIAL-REVIEW §Finding 8 | `BlockNode` unbounded depth/size — Notion pages can have thousands of blocks and pathological toggle nesting. Adapter MUST publish `maxBlockCount`, `maxBlockDepth`, `readTimeoutMs` and on overflow return a partial `Document` ending in a `RawNode { format: 'truncated' }` with `truncated: true` in `Document.properties` (the truncation marker is part of the hash so repeat reads are stable). | ADR-008 (Document granularity) + ADR-018 (Capability discovery) | Deferred-v3 |
+
+These four findings did NOT trigger v2 ADR amendments because the
+underlying decisions are adapter-internal capability surface, not
+cross-source architectural invariants. The general principle —
+adapters publish honest capability descriptors and core code branches
+on capabilities — is already established by ADR-002 I-7 and the
+SourceCapabilities/DeliveryCapabilities contracts. v3 Phase-10 work
+will land each finding's resolution in the listed Open ADR(s).
+
 ## Contributing new ADRs
 
 When writing a new ADR (whether amending a v2 ADR or promoting an Open ADR
