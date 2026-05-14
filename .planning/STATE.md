@@ -10,8 +10,8 @@ progress:
   total_phases: 10
   completed_phases: 0
   total_plans: 15
-  completed_plans: 13
-  percent: 87
+  completed_plans: 14
+  percent: 93
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-14)
 ## Current Position
 
 Phase: 00 (Foundation & decisions) — EXECUTING
-Plan: 13 of 15 complete (Waves 1-4 done; Wave 5 adversarial review next)
-Status: Executing Phase 00 — 397 tests + 11 todo green; Wave 5 next
-Last activity: 2026-05-14 -- Wave 4 complete: v1 baseline suite (12 YAMLs + test), CI lints (privacy + telemetry), ADR index finalized with v3 open ADRs
+Plan: 14 of 15 complete (Waves 1-5 done; Wave 6 sign-off next)
+Status: Executing Phase 00 — adversarial review dispositioned (6 amend / 4 defer-v3), 397 tests green, lints clean
+Last activity: 2026-05-14 -- Wave 5 complete: ADRs 001/002/003 amended per findings 1/2/4/7/9/10; findings 3/5/6/8 deferred to v3
 
-Progress: [████████░░] 87%
+Progress: [█████████░] 93%
 
 ## Performance Metrics
 
