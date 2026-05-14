@@ -13,6 +13,7 @@ v3 / Phase-10 connector work and are listed once all four v2 ADRs land.
 | # | Title | Status | Phase | Supersedes | Tags |
 |---|---|---|---|---|---|
 | 001 | [Document identity is opaque, URI-style](001-document-identity.md) | Accepted | 0 | — | identity, source-agnostic, uri, opaque-id |
+| 002 | [Source & Delivery Seams](002-adapter-seams.md) | Accepted | 0 | — | adapters, seams, source-connector, delivery-adapter, change-feed, capability-descriptors |
 
 ## Open ADRs (v3 / Phase 10)
 
