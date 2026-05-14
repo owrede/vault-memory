@@ -13,4 +13,4 @@ bin/
 # Internal roadmap notes — kept locally for maintainer use, not part of
 # the public repo or npm tarball.
 docs/optimization-todos/
-docs/dev/
+docs/dev/gsd-agent-knowledg-layer.md
