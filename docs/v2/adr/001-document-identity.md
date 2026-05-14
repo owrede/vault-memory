@@ -133,6 +133,34 @@ future ADR-conformance audit) greps for these.
 - **I-5**: `obsidian://` URLs are DISPLAY-ONLY. They MUST NOT appear as
   identity in DB rows, audit logs, or tool inputs/outputs (except as the
   citation packet's `display_url` field per ADR-003).
+- **I-6**: For adapters whose source IDs have multiple canonical
+  serializations, the adapter MUST pick exactly one canonical form,
+  document it in the adapter's README and capability descriptor, and
+  emit only that form in `<resource>`. Re-encoding/normalization happens
+  at the adapter boundary on ingest; core code MUST treat `<resource>`
+  as a byte-stable opaque string and MUST NOT attempt its own
+  normalization. Two adapters processing the same logical source
+  document MUST emit the same `DocId` — divergent serializations of the
+  same underlying ID violate the identity-stability guarantee that the
+  `notes`-table primary key depends on.
+
+  Concrete adapter rules (must be honored by Phase-10 and later
+  adapters; non-exhaustive — each adapter records its own
+  normalization in its README):
+
+  - `notion-api`: Notion page/database IDs are UUIDs with two
+    serializations (hyphenated `c5b9f3a2-1234-4abc-9def-0123456789ab`
+    and unhyphenated `c5b9f3a212344abc9def0123456789ab`). The
+    canonical form is **lowercase hyphenated UUID (RFC 4122)**. The
+    adapter MUST normalize both forms (and any mixed-case variant) to
+    lowercase hyphenated at ingest before minting the `DocId`. The
+    `page/`-prefix convention (`page/<uuid>`, `database/<uuid>`) is
+    part of the canonical resource grammar.
+  - `obsidian-fs`: vault-relative paths are normalized to forward
+    slashes (`/`), with no leading slash. Percent-encoding of
+    non-ASCII / space characters is left to the Phase-1 follow-up
+    decision below; the adapter's chosen encoding is canonical once
+    committed.
 
 ## SQLite schema migration
 
