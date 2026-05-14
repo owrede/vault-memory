@@ -1,11 +1,22 @@
+---
+title: Memory Sink Handles
+status: Accepted
+phase: 0
+tags: memory, memory-sink, provenance, sentinel-file, folder-default, separate-vault
+depends-on: ADR-001, ADR-002, ADR-003
+---
+
 # ADR-004: Memory Sink Handles
 
-**Status:** Proposed — Phase 0 foundation
+**Status:** Accepted — Phase 0 foundation
 **Date:** 2026-05-14
 **Scope:** Phase 2 (memory namespace & provenance contract), Phase 6 (briefs),
 Phase 7 (contracts)
 **Depends on:** ADR-001 (Document Identity), ADR-002 (Seams), ADR-003 (Document
 Shape)
+**Related:** [`docs/v2/MEMORY_CONTRACT.md`](../MEMORY_CONTRACT.md) — the
+operational, validator-level expression of the safety invariant this ADR
+establishes.
 **Supersedes:** —
 **Superseded by:** —
 
@@ -228,6 +239,137 @@ The graph table stores these edges with full URIs. Phase 5 (`expand`,
 `cluster`) walks them transparently. In v2 (single source type) this is
 exercised only between two obsidian-fs handles; in v3 it works across schemes.
 
+## Amendment — Folder-default is the only code path
+
+The original `## Decision` section above (drafted before this amendment) left
+the choice of folder-default vs separate-vault open as a "Phase 2 implementer
+decision" in the *Hard-isolation question* subsection. **This amendment closes
+that question.**
+
+The folder-default `MemorySink` — a `_memory/` folder inside an existing
+Obsidian vault — is the **ONLY code path in v2**. Routing a memory sink to a
+separate Obsidian vault is achieved purely through `config.toml`: **no code branch** distinguishes folder-inside-vault from separate-dedicated-vault. The
+handle parser in `src/adapters/registry.ts` resolves both forms uniformly:
+both are `obsidian-fs://<authority>/<sink-resource>` URIs and both go through
+the same `DeliveryAdapter` instance.
+
+The user-facing differentiation lives in the `[memory]` and `[[memory_sinks]]`
+config blocks (illustrated in `### Config examples` below): the user picks
+which folder, or which dedicated vault, by editing TOML — not by selecting a
+different code path. This is a tightening of the original handle abstraction,
+not a redesign: the URI shape `obsidian-fs://<authority>/<resource>` always
+supported both forms; this amendment commits to the *implementation* having
+exactly one code path for them.
+
+**Rationale.** The handle abstraction already provides isolation through the
+URI scheme + authority. A separate code branch for "separate vault" would
+duplicate the resolution logic and create two places to keep in sync. By
+making the separation a config-only concern, we get:
+
+1. A single code path to test (Phase 2 ADP-13 conformance — see ADR-002).
+2. Zero-cost migration from folder-default to separate-vault: edit
+   `config.toml`, no rebuild, no migration step.
+3. A natural extension point for v3 connectors: a `notion-api://` sink is
+   resolved by the same registry call, with the same handle shape — see the
+   Examples section for the parallel `notion-api://` worked example.
+
+### Sentinel file — `.memory-sink`
+
+Any folder used as a memory sink **MUST** contain a `.memory-sink` file at its
+root. The handle parser refuses to resolve a `MemorySink` against a folder
+that lacks the sentinel.
+
+- **Purpose.** Defense in depth against accidental memory-sink misconfiguration
+  ("I deleted the `_memory/` folder; my next agent write created a top-level
+  `_memory/observations/...md` in my regular vault root, polluting my notes").
+  The sentinel is a positive marker: only folders explicitly opted in receive
+  agent writes.
+- **Content.** The sentinel file is informational only (timestamp of sink
+  creation + the sink's configured `name` for human readability); its
+  *presence* is the gate. The parser does not validate sentinel contents.
+- **Provisioning.** Server startup creates the sentinel automatically the
+  first time a configured sink resolves successfully and the target folder
+  exists but lacks the sentinel — provided the folder is empty or contains
+  only files matching the contract's expected document shape. If the folder
+  has unrelated user notes, startup aborts with a structured error rather
+  than silently labeling user data as a memory sink.
+- **Sync hygiene.** The sentinel is checked into Obsidian's sync mechanism
+  (whatever the user uses — Git, Obsidian Sync, iCloud, Syncthing) so other
+  machines recognize the same folder as a sink without re-provisioning.
+
+### Config examples
+
+Both examples below use the same code path. The only difference is the TOML
+shape — folder inside a vault vs a dedicated second vault.
+
+**(a) Folder-default — the recommended starting configuration.**
+
+```toml
+# config.toml — folder-default
+[[vaults]]
+name = "my-vault"
+path = "/Users/me/Documents/Obsidian Vaults/My Vault"
+
+[[memory_sinks]]
+name = "default"
+handle = "obsidian-fs://my-vault/_memory"
+default = true
+contract = "default-memory-v1"
+
+[memory]
+# The agent-tool surface (record_observation, supersede, recall) refers to
+# memory by the named sink. `sink = "@default"` is the implicit value when
+# no sink is specified by the caller.
+sink = "@default"
+```
+
+`obsidian-fs://my-vault/_memory` resolves to `<my-vault path>/_memory/`. The
+sentinel lives at `<my-vault path>/_memory/.memory-sink`. Agent writes from
+Phase 2's `record_observation` tool land at
+`<my-vault path>/_memory/observations/<date>-<slug>.md`. User write tools
+(`write_note`, `update_frontmatter`, `delete_note`) refuse target paths
+under `<my-vault path>/_memory/` (Guard A); they also refuse `source: agent`
+writes anywhere outside this folder (Guard B). See `### Write-guard logic`
+inside `## Decision` for the guard text.
+
+**(b) Separate-vault — recommended production deployment.**
+
+```toml
+# config.toml — separate-vault (config-only difference; same code path)
+[[vaults]]
+name = "my-vault"
+path = "/Users/me/Documents/Obsidian Vaults/My Vault"
+
+[[vaults]]
+name = "agent-memory"
+path = "/Users/me/Documents/Obsidian Vaults/Agent Memory"
+
+[[memory_sinks]]
+name = "default"
+handle = "obsidian-fs://agent-memory/"
+default = true
+contract = "default-memory-v1"
+
+[memory]
+sink = "@default"
+```
+
+`obsidian-fs://agent-memory/` resolves through the same handle parser as the
+folder-default case — the parser sees `agent-memory` as just another
+`<authority>` in `obsidian-fs://<authority>/<resource>` (per ADR-001's
+URI-opaque identity rule). The trailing `/` (empty resource) means the entire
+second vault is the sink. The sentinel lives at the vault root:
+`<agent-memory path>/.memory-sink`. From the code's perspective there is no
+distinction: `registry.resolveMemorySink("@default")` returns a
+`DeliveryAdapter` configured for vault `agent-memory`, and writes land at
+`<agent-memory path>/observations/<date>-<slug>.md`.
+
+The user-visible benefit (hard isolation; separately syncable; wipeable
+without touching user notes) is real, but it is achieved through TOML, not
+through a code branch. The `add-vault` skill grows a `--memory-vault` flag
+(Phase 2 enhancement) that creates the second vault and writes the
+`[[memory_sinks]]` stanza for the user — pure config code-gen.
+
 ## Consequences
 
 ### Positive
@@ -309,3 +451,205 @@ write/read tools, and vault-memory would just be a client. Rejected as the
 v2 internal architecture — too much overhead for in-process operations. The
 external interface (tools that take sink handles) is compatible with that
 internal restructure if it ever matters; this ADR does not foreclose it.
+
+## Invariants
+
+These are the normative statements Phase 9's adversarial review will grep for
+(`^- \*\*M-[1-9]\*\*:`). They are MUST/MUST-NOT statements about the memory
+sink subsystem; any implementation that violates one of them is non-conformant
+and the relevant phase deliverable must be reworked.
+
+- **M-1**: A MemorySink handle MUST follow ADR-001 URI syntax
+  (`<scheme>://<authority>/<resource>`). The handle parser in
+  `src/adapters/registry.ts` is the ONLY resolver of sink-as-path; no other
+  module MUST interpret a sink handle as a filesystem path or a Notion
+  database ID directly.
+- **M-2**: The folder-default and separate-vault forms differ ONLY in
+  `config.toml`. No source code MUST branch on which form is in use. A
+  unit test in Phase 2 enforces this by exercising the same
+  `DeliveryAdapter.write()` code path through both config shapes and
+  asserting bytewise-equal call graphs.
+- **M-3**: A `.memory-sink` sentinel file MUST be present at the sink-folder
+  root before any agent write resolves to that folder. The handle parser MUST
+  refuse to resolve against a folder lacking the sentinel and MUST return a
+  structured error rather than creating the sentinel implicitly when the
+  folder contains pre-existing user content.
+- **M-4**: All agent writes to a MemorySink MUST route through
+  `DeliveryAdapter.write()` (per ADR-002's single-chokepoint invariant).
+  Bypass paths — direct `fs.writeFile`, `vault.queries.upsertNote`, raw SQL
+  inserts into the notes table — are FORBIDDEN for `source: agent` documents.
+  Phase 2 enforces this with a static lint (CI grep) and a runtime audit log.
+- **M-5**: User-facing write tools (`write_note`, `update_frontmatter`,
+  `delete_note`) MUST refuse to target a path that resolves into any
+  configured MemorySink (Guard A) AND MUST refuse `source: agent` property
+  writes outside any configured sink (Guard B). The two guards together
+  preserve the memory-namespace safety invariant from both directions:
+  agents cannot write to user notes, and users cannot accidentally write
+  agent-provenance content to non-sink locations.
+
+## Examples
+
+The two worked examples below demonstrate the property M-2 enshrines: the
+same `DeliveryAdapter.write()` call site, configured by two different TOML
+shapes (one in v2 with `obsidian-fs://`, one in v3 with `notion-api://`),
+resolves through the same registry and produces analogous outputs without
+any code-level differentiation.
+
+### Example A — Folder-default worked example (v2, ships)
+
+**Config**
+
+```toml
+[[vaults]]
+name = "my-vault"
+path = "/Users/me/Documents/Obsidian Vaults/My Vault"
+
+[[memory_sinks]]
+name = "default"
+handle = "obsidian-fs://my-vault/_memory"
+default = true
+contract = "default-memory-v1"
+
+[memory]
+sink = "@default"
+```
+
+**Sentinel**
+
+```
+/Users/me/Documents/Obsidian Vaults/My Vault/_memory/.memory-sink
+```
+
+(Contents: `created_at: 2026-05-14T10:00:00Z\nsink_name: default\n`. Presence
+is the gate; content is informational.)
+
+**Resolution**
+
+```typescript
+const sink = registry.resolveMemorySink("@default");
+// → MemorySink {
+//     name: "default",
+//     handle: "obsidian-fs://my-vault/_memory",
+//     adapter: <ObsidianFsDeliveryAdapter for "my-vault">,
+//     contract: <MemoryContract "default-memory-v1">,
+//     default: true,
+//   }
+```
+
+**Write call (Phase 2 `record_observation` tool)**
+
+```typescript
+await sink.adapter.write({
+  sink,
+  doc: {
+    id: "obsidian-fs://my-vault/_memory/observations/2026-05-14-alice.md",
+    properties: {
+      source: "agent",
+      confidence: "observed",
+      status: "active",
+      "observed-at": "2026-05-14",
+      evidence: ["obsidian-fs://my-vault/people/Alice.md"],
+    },
+    blocks: [
+      { type: "paragraph", text: "Alice confirmed the Q3 deadline shift." },
+    ],
+  },
+});
+```
+
+**On-disk result**
+
+```
+/Users/me/Documents/Obsidian Vaults/My Vault/_memory/observations/2026-05-14-alice.md
+```
+
+```yaml
+---
+source: agent
+confidence: observed
+status: active
+observed-at: 2026-05-14
+evidence:
+  - obsidian-fs://my-vault/people/Alice.md
+---
+
+Alice confirmed the Q3 deadline shift.
+```
+
+User-write tools refuse this path (Guard A); the agent-write path validates
+required properties (the `default-memory-v1` contract) before writing
+(Guard B's converse — agent writes require a configured sink).
+
+### Example B — Parallel `notion-api://` worked example (v3 sketch, same code path)
+
+This example does not ship in v2. It demonstrates M-2: the v3 Notion sink is
+introduced by adding a `[[memory_sinks]]` block with a `notion-api://` handle
+and a `NotionDeliveryAdapter` registration — **no change** to the
+`record_observation` tool, the registry's `resolveMemorySink` signature, or
+the call site shown in Example A.
+
+**Config**
+
+```toml
+[[memory_sinks]]
+name = "team-memory"
+handle = "notion-api://acme/databases/agent-memory"
+default = false
+contract = "default-memory-v1"
+
+[memory]
+sink = "@default"  # still points at the obsidian-fs default
+```
+
+(The Notion sink is added alongside, not as a replacement. The `[memory]`
+block's `sink = "@default"` still routes implicit writes to the v2
+obsidian-fs sink; explicit `sink: "@team-memory"` arguments route to Notion.)
+
+**Resolution (same parser, different adapter)**
+
+```typescript
+const sink = registry.resolveMemorySink("@team-memory");
+// → MemorySink {
+//     name: "team-memory",
+//     handle: "notion-api://acme/databases/agent-memory",
+//     adapter: <NotionDeliveryAdapter for workspace "acme">,
+//     contract: <MemoryContract "default-memory-v1">,
+//     default: false,
+//   }
+```
+
+**Write call — bytewise-identical shape to Example A**
+
+```typescript
+await sink.adapter.write({
+  sink,
+  doc: {
+    id: "notion-api://acme/page/<assigned-on-create>",
+    properties: {
+      source: "agent",
+      confidence: "observed",
+      status: "active",
+      "observed-at": "2026-05-14",
+      evidence: ["obsidian-fs://my-vault/people/Alice.md"],
+    },
+    blocks: [
+      { type: "paragraph", text: "Alice confirmed the Q3 deadline shift." },
+    ],
+  },
+});
+```
+
+**Result** — a new Notion page in the `agent-memory` database with the
+contract's required properties as typed Notion properties, the block text as
+Notion blocks, and a cross-source `evidence` reference pointing into the
+obsidian-fs vault. The Notion adapter assigns the page ID
+(`naming.strategy: adapter-assigned`); the rest of the call is identical.
+
+**Source-neutrality conclusion.** Adding the v3 Notion sink required: (1) a
+`[[memory_sinks]]` config block, (2) a `NotionDeliveryAdapter` implementation
+behind the existing `DeliveryAdapter` interface (ADR-002), (3) a registry
+registration. It required **zero** changes to: the handle parser, the
+`record_observation` tool, the `MemoryContract` validator, the user-facing
+write-guard logic, or the `Document` shape. This is the property M-2
+enshrines — and is the reason ADR-004 commits the folder-vs-separate-vault
+distinction to config.
