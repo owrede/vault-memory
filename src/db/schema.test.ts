@@ -1,11 +1,14 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Database } from "./database.js";
+import { MIGRATIONS } from "./schema.js";
+
+const LATEST_VERSION = MIGRATIONS[MIGRATIONS.length - 1]!.version;
 
 describe("schema", () => {
   let db: Database;
 
   beforeEach(() => {
-    db = new Database(":memory:");
+    db = new Database(":memory:", "test-vault");
     db.migrate();
   });
 
@@ -14,13 +17,13 @@ describe("schema", () => {
   });
 
   it("sets user_version to the latest migration version", () => {
-    expect(db.getSchemaVersion()).toBe(6);
+    expect(db.getSchemaVersion()).toBe(LATEST_VERSION);
   });
 
   it("migrate is idempotent", () => {
     db.migrate();
     db.migrate();
-    expect(db.getSchemaVersion()).toBe(6);
+    expect(db.getSchemaVersion()).toBe(LATEST_VERSION);
   });
 
   it.each(["notes", "chunks", "models", "wikilinks", "index_runs", "write_audit", "note_aliases"])(

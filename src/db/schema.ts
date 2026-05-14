@@ -398,6 +398,29 @@ ALTER TABLE notes ADD COLUMN body_hash TEXT;
 CREATE INDEX IF NOT EXISTS idx_notes_body_hash ON notes(body_hash);
 `;
 
+/**
+ * Migration 007: doc_uri Strategy A — additive nullable column.
+ *
+ * Adds the v2 canonical identifier column to `notes`. Stored UN-ENCODED:
+ * a raw forward-slash path with spaces / Unicode passed through (matches
+ * the existing `path` column shape). Percent-encoding happens only at
+ * formatDisplayUrl time per RESEARCH Pitfall 5.
+ *
+ * Indexer behavior: new writes populate doc_uri alongside path (plan 01-02
+ * Task 04 wires this into NotesQueries.upsertByPath). Backfill of existing
+ * rows is migration 008. Reads continue to use path as PK until phase 3 or
+ * later flips read preference.
+ *
+ * Strategy A staging (RESEARCH §doc_uri Dual-Column Migration):
+ *   v7 = this migration (ADD COLUMN; nullable)
+ *   v8 = backfill (function-style; idempotent)
+ *   v9 = NOT NULL assertion + drop path PK — DEFERRED to phase 3+
+ */
+const MIGRATION_007_DOC_URI_ADD = `
+ALTER TABLE notes ADD COLUMN doc_uri TEXT;
+CREATE INDEX IF NOT EXISTS idx_notes_doc_uri ON notes(doc_uri);
+`;
+
 export const MIGRATIONS: readonly Migration[] = [
   {
     version: 1,
@@ -428,5 +451,10 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 6,
     description: "add body_hash for frontmatter-only-change short-circuit",
     sql: MIGRATION_006_BODY_HASH,
+  },
+  {
+    version: 7,
+    description: "add doc_uri column to notes (Strategy A, additive)",
+    sql: MIGRATION_007_DOC_URI_ADD,
   },
 ];
