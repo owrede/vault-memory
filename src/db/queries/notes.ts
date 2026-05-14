@@ -79,9 +79,7 @@ export class NotesQueries {
     // 008 backfills it on the next replay, and Phase 3+ flips reads.
     const docUri: string | null =
       input.docUri ??
-      (input.vaultName !== undefined
-        ? `obsidian-fs://${input.vaultName}/${input.path}`
-        : null);
+      (input.vaultName !== undefined ? `obsidian-fs://${input.vaultName}/${input.path}` : null);
     if (existing) {
       if (existing.hash === input.hash) {
         return { id: existing.id, isNew: false };
