@@ -34,7 +34,10 @@ choice is user-visible and irreversible.
 "Connector secrets MUST be read from `VAULT_MEMORY_<SCHEME>_*` env vars,
 with `${env:VAULT_MEMORY_NOTION_TOKEN}` substitution supported in
 `config.toml`. OS keychain integration deferred."
-**Status:** Open
+**Status**: Amended in 709339a (ADR-002 §Open follow-ups — "Adapter
+configuration secrets" subsection now carries the
+`VAULT_MEMORY_<SCHEME>_*` convention + `${env:VAULT_MEMORY_*}`
+substitution rule).
 
 ### Finding 2
 **ADR / doc:** ADR-002 §Decision — `SourceCapabilities`; ADR-003 §"Adapter-
@@ -56,7 +59,11 @@ adapter MUST guarantee bytewise-identical normalized output across
 supported API versions and document that guarantee in its capability
 descriptor." Recommend the latter for Notion: the parse layer
 normalizes away version differences.
-**Status:** Open
+**Status**: Amended in 01ba6bd (ADR-003 new invariant H-6 — adapters
+interfacing with versioned external APIs MUST either include the
+version in the hash input or guarantee cross-version normalized
+output; notion-api adapter ships under the latter option, asserted by
+the Phase-1 conformance suite).
 
 ### Finding 3
 **ADR / doc:** ADR-002 §Decision — `SourceConnector.listDocuments`.
@@ -77,7 +84,12 @@ returns the *visible* document set for the adapter's authentication
 scope. For adapters where visibility is configured externally (Notion's
 integration sharing model), the configured scope is part of the adapter's
 identity for staleness/audit purposes."
-**Status:** Open
+**Status**: Deferred-v3 (index row added in e911d53 — docs/v2/adr/README.md
+§Deferred-v3 row F3; resolution lands in ADR-010 Auth/OAuth + ADR-018
+Capability discovery). Notion's integration-sharing model is genuinely
+Notion-specific operational reality, not a cross-source architectural
+gap; the general principle that adapters publish honest capability
+descriptors is already ADR-002 I-7.
 
 ### Finding 4
 **ADR / doc:** ADR-001 §Decision — `<resource>` grammar; ADR-001 §Open
@@ -100,7 +112,11 @@ authoritative.
 adapters whose source IDs have multiple canonical serializations, the
 adapter MUST pick exactly one and document it. For `notion-api`, page IDs
 are serialized as lowercase hyphenated UUIDs (RFC 4122 form)."
-**Status:** Open
+**Status**: Amended in aa320de (ADR-001 new invariant I-6 — adapters
+whose source IDs admit multiple serializations MUST pick exactly one
+canonical form at the adapter boundary and emit only that form; concrete
+rule for notion-api is lowercase hyphenated UUID with `page/`/`database/`
+prefix).
 
 ### Finding 5
 **ADR / doc:** ADR-002 §`ListOptions` — `modifiedSince`.
@@ -120,7 +136,11 @@ MAY do so by full enumeration. Adapters MUST publish
 `listSupportsModifiedSince: boolean` in `SourceCapabilities`." OR mark as
 Deferred-v3 with a `Deferred-v3` index row noting that Notion startups
 will paginate the full workspace.
-**Status:** Open
+**Status**: Deferred-v3 (index row added in e911d53 — docs/v2/adr/README.md
+§Deferred-v3 row F5; resolution lands in ADR-011 Watch/change-feed for
+Notion + ADR-018 Capability discovery). The capability-flag pattern
+(`listSupportsModifiedSince`) is adapter-capability detail rather than
+a v2 architectural gap.
 
 ### Finding 6
 **ADR / doc:** ADR-002 §`ListOptions` — `excludeGlobs: string[]`
@@ -141,7 +161,11 @@ its README. For `notion-api`, glob entries matching `page/<id>` or
 `database/<id>` (with `<id>` being a lowercase hyphenated UUID) act as
 exact DocId blocklist matches; all other entries are ignored with a
 startup warning."
-**Status:** Open
+**Status**: Deferred-v3 (index row added in e911d53 — docs/v2/adr/README.md
+§Deferred-v3 row F6; resolution lands in ADR-018 Capability discovery).
+The per-adapter glob-grammar declaration is adapter-internal capability
+surface; the general principle (capability descriptors carry adapter
+grammars) is already in ADR-002 I-7.
 
 ### Finding 7
 **ADR / doc:** ADR-002 §`SourceConnector` — `hash(id)` "cheap relative to
@@ -168,7 +192,13 @@ produce both cheaply; otherwise it MAY be any deterministic function of
 metadata that changes-iff-content-changes (e.g.
 `sha256(last_modified_marker)`). Indexer treats inequality as
 'must re-read'; never as 'staleness'."
-**Status:** Open
+**Status**: Amended in 709339a (ADR-002 new §`DocumentRef.hash` contract
+subsection under `SourceConnector`, plus `SourceCapabilities.refHashKind:
+'content' | 'marker'` field). The indexer treats `DocumentRef.hash`
+inequality as a re-read signal, never as a staleness verdict; the
+authoritative staleness comparison uses `Document.hash` from
+`readDocument()`. notion-api ships `refHashKind: 'marker'`; obsidian-fs
+ships `refHashKind: 'content'`.
 
 ### Finding 8
 **ADR / doc:** ADR-003 §`BlockNode` — body shape; ARCHITECTURE.md
@@ -194,7 +224,13 @@ a single trailing `RawNode { format: 'truncated', text: <reason> }` and
 include `truncated: true` in `Document.properties`. The truncation marker
 is part of the hash input — re-reading a truncated doc produces a stable
 hash even though the underlying source is larger."
-**Status:** Open
+**Status**: Deferred-v3 (index row added in e911d53 — docs/v2/adr/README.md
+§Deferred-v3 row F8; resolution lands in ADR-008 Document granularity +
+ADR-018 Capability discovery). The `maxBlockCount` / `maxBlockDepth` /
+`readTimeoutMs` cap and truncation-marker mechanism are adapter
+capability-descriptor details, not a v2 cross-source architectural gap;
+ADR-002 I-7 already establishes that adapters publish honest capability
+descriptors.
 
 ### Finding 9
 **ADR / doc:** ADR-003 §"Hash semantics" — H-1 (hash covers both
@@ -220,7 +256,13 @@ interacts with the indexer's existing chunk-level caching is undefined.
 a `__adapter_<scheme>_` prefix) of `(DocId, modification-marker) →
 Document.hash`. Cache invalidation is the adapter's responsibility;
 the cache MUST NOT be visible to core code."
-**Status:** Open
+**Status**: Amended in 709339a + 01ba6bd (ADR-002 §Open follow-ups grants
+adapters permission to maintain `__adapter_<scheme>_*` SQLite tables —
+core code MUST NOT read or mutate, conformance suite enforces. ADR-003
+§Hash semantics adds a "Cost note for fetch-heavy adapters" paragraph
+cross-linking to this permission, closing the apparent cost
+contradiction between H-1 (hash covers blocks AND properties) and
+ADR-002's "cheap relative to read" framing).
 
 ### Finding 10
 **ADR / doc:** ADR-002 §`DeliveryCapabilities` — `atomic: boolean`,
@@ -257,7 +299,15 @@ contract-author's expectations.
 documented by the adapter. `'none'` = no concurrency control.
 Contracts MAY declare `min_hashProtected: 'best-effort'` (default) or
 `'strong'`." Notion adapter ships as `'best-effort'`.
-**Status:** Open
+**Status**: Amended in 709339a (ADR-002 §`DeliveryCapabilities`
+`hashProtected` field changed from `boolean` to enum `'strong' |
+'best-effort' | 'none'`; new "hashProtected tier semantics" subsection
+documents tier definitions and `write_back.minHashProtected` contract
+declaration default `'best-effort'`. obsidian-fs ships `'strong'`
+(rename(2) + fsync); notion-api ships `'best-effort'` (documented
+TOCTOU window between GET and PATCH). Memory-sink writes against
+`'none'` rejected by Phase-2 write-guard unless contract opts in
+explicitly).
 
 ---
 
@@ -279,3 +329,68 @@ Recommended next action: maintainer triages the 10 findings into either
 ADR amendments (preferred for 1, 2, 4, 7, 9, 10 — they affect more than
 just Notion) or `Deferred-v3` index rows (acceptable for 3, 5, 6, 8 —
 they are Notion-specific operational realities).
+
+---
+
+## Audit
+
+**Date:** 2026-05-14
+**Agent identity:** `gsd-advisor-researcher` (per D-15) — Phase-10
+Notion-adapter contractor with restricted document access (the seven
+canonical v2 docs only: ADR-001..004, ARCHITECTURE.md,
+MEMORY_CONTRACT.md, AGENT_AGNOSTIC.md). v2 brief and `src/` source
+code were NOT consulted.
+**Prompt used:** Verbatim from Phase-0 plan
+`00-14-adversarial-review-PLAN.md` Task 1 (which itself quotes
+RESEARCH §Pitfall 6). Future audits can re-run the prompt against the
+post-amendment ADRs to verify gaps were genuinely closed.
+**Plan reference:** `.planning/phases/00-foundation-decisions/00-14-adversarial-review-PLAN.md`.
+**Companion artifact:** `docs/v2/adr/NOTION-ADAPTER-PLAN.md` (the
+Phase-10 contractor's in-progress implementation draft that surfaced
+the 10 findings).
+
+**Finding count:** 10. **Amend:** 6 (Findings 1, 2, 4, 7, 9, 10).
+**Deferred-v3:** 4 (Findings 3, 5, 6, 8). The amend/defer split
+matches the reviewer's own recommendation in §Stop summary above —
+findings that affect more than just Notion (cross-source
+architectural gaps) become v2 ADR amendments; findings that are
+adapter-internal capability surface defer to v3 Phase-10 work.
+
+### Disposition table
+
+| Finding | Disposition | Target file | Commit | One-line summary |
+|---|---|---|---|---|
+| 1 | Amended | ADR-002 §Open follow-ups | `709339a` | Connector secrets read from `VAULT_MEMORY_<SCHEME>_*`; `${env:…}` substitution in `config.toml`. |
+| 2 | Amended | ADR-003 §Invariants (new H-6) | `01ba6bd` | Versioned-API adapters MUST version-or-normalize hash input; notion-api ships under the normalize option. |
+| 3 | Deferred-v3 | README.md §Deferred-v3 row F3 | `e911d53` | `listDocuments` scope is Notion's integration-sharing surface; lands in ADR-010 + ADR-018. |
+| 4 | Amended | ADR-001 §Invariants (new I-6) | `aa320de` | Multi-serialization source IDs MUST pick exactly one canonical form at the adapter boundary; notion-api = lowercase hyphenated UUID. |
+| 5 | Deferred-v3 | README.md §Deferred-v3 row F5 | `e911d53` | `modifiedSince` as hint vs guarantee; capability flag `listSupportsModifiedSince`; lands in ADR-011 + ADR-018. |
+| 6 | Deferred-v3 | README.md §Deferred-v3 row F6 | `e911d53` | `excludeGlobs` grammar per adapter; lands in ADR-018. |
+| 7 | Amended | ADR-002 §SourceConnector (new `DocumentRef.hash` contract) | `709339a` | Two-tier hash contract: `content` vs `marker`; `SourceCapabilities.refHashKind` field. |
+| 8 | Deferred-v3 | README.md §Deferred-v3 row F8 | `e911d53` | BlockNode caps + truncation marker; lands in ADR-008 + ADR-018. |
+| 9 | Amended | ADR-002 §Open follow-ups + ADR-003 §Hash semantics | `709339a` + `01ba6bd` | Adapter-private `__adapter_<scheme>_*` SQLite cache permission; ADR-003 cost note cross-links. |
+| 10 | Amended | ADR-002 §DeliveryCapabilities + new "hashProtected tier semantics" | `709339a` | `hashProtected` extended from boolean to `'strong' \| 'best-effort' \| 'none'` enum; contracts declare `minHashProtected`. |
+
+### Commit ledger
+
+| SHA | Scope | Subject |
+|---|---|---|
+| `aa320de` | adr-001 | add I-6 — canonical serialization invariant (Finding 4) |
+| `709339a` | adr-002 | amend per ADVERSARIAL-REVIEW Findings 1, 7, 9, 10 |
+| `01ba6bd` | adr-003 | amend hash semantics — versioned APIs + Notion cost note (Findings 2, 9) |
+| `e911d53` | adr-index | add Deferred-v3 section for Findings 3, 5, 6, 8 |
+
+### Health check (per RESEARCH §Pitfall 6 warning signs)
+
+- Finding count: 10 ≥ 4 (floor). PASS.
+- Amend-to-defer ratio: 6:4 ≈ 60%:40%. Within healthy band (RESEARCH
+  warned that *all*-deferred would mean ADRs are not being tightened;
+  *zero*-findings would be rubber-stamp). PASS.
+- Per-ADR coverage: ADR-001 (1 amendment), ADR-002 (4 amendments),
+  ADR-003 (2 amendments), ADR-004 (no findings — note that ADR-004's
+  memory-sink contract is the *most* tightly specified of the four and
+  the reviewer surfaced nothing additional). PASS.
+- Silent ignores: zero — every finding terminates in Amended or
+  Deferred-v3 with a captured SHA.
+- VALIDATION row 00-17-02 grep parity: 10 findings, 10 Status lines
+  matching `(Amended|Deferred-v3)`.
