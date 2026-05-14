@@ -297,6 +297,24 @@ In one line: `Document.hash = sha256(canonical(blocks_text) || canonical(Propert
 cause divergent hashes if not handled per the RFC. See `### Failure
 modes` below.
 
+**Cost note for fetch-heavy adapters.** Invariant **H-1** requires the
+hash to cover *both* `blocks` and `properties`. For adapters whose
+backing store returns metadata cheaply but block content expensively
+(Notion is the canonical example — page properties via
+`/v1/pages/<id>` are one call; full block tree requires recursive
+`/v1/blocks/<id>/children`), a literal "every `hash(id)` call refetches
+the full body" implementation defeats ADR-002's "cheap relative to
+read" framing for `SourceConnector.hash()`. ADR-002 §"Open follow-ups"
+grants such adapters permission to maintain an `__adapter_<scheme>_*`
+private SQLite cache keyed by `(DocId, last_modified_marker)` with
+value `Document.hash`; on cache hit the adapter answers `hash()`
+without a body fetch. The cache invalidation key is the same
+`last_modified_marker` used in `SourceCapabilities.refHashKind:
+'marker'` adapters (see ADR-002 §`DocumentRef.hash` contract). This
+keeps H-1 honest without making Phase-5's staleness daemon
+(BRF-05) economically infeasible against a multi-thousand-page Notion
+workspace.
+
 ### Algorithm
 
 ```
@@ -441,6 +459,25 @@ covers `properties`).
   `ChunkId` is `<DocId>#chunk-<n>`. A brief is stale iff any cited
   chunk's currently-indexed `ChunkHash` diverges from its recorded value.
   Briefs with no `source_hashes` map MUST be treated as `status: stale`.
+- **H-6**: For adapters that fetch from versioned external APIs (e.g.
+  `notion-api` with its `Notion-Version` header), the adapter MUST
+  EITHER (a) include the API version it was running against as part of
+  the canonical input feeding `hash()` — making version drift a content
+  change that flips affected briefs to stale — OR (b) guarantee that
+  its parse layer produces bytewise-identical normalized `Document`
+  output across the set of supported API versions, and document that
+  invariant in its capability descriptor. Option (b) is preferred (it
+  avoids false-positive staleness on harmless API revisions), but
+  option (a) is the safe default when the adapter cannot prove
+  cross-version normalization. The adapter MUST document its choice in
+  its README so a Phase-5 staleness-daemon observer can reason about
+  the failure mode. Adapters that read from a versionless source (file
+  systems, RSS) are exempt — H-6 is vacuously satisfied. The
+  `notion-api` adapter ships under option (b): the parse layer
+  normalizes `paragraph.rich_text[].plain_text`, `unique_id`,
+  `synced_block`, and the other version-sensitive fields away before
+  emitting `BlockNode`s, and the conformance suite asserts identical
+  hashes across the supported `Notion-Version` set.
 
 ## Consequences
 
