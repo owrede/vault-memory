@@ -190,3 +190,218 @@ export interface SearchHit {
     rerank?: number;
   };
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v2 canonical types (Phase 1, ADR-002 / ADR-003 / ADR-004)
+//
+// These types form the canonical surface for the v2 adapter seams. They are
+// declared here so all adapter modules (src/adapters/**) and downstream
+// consumers (assembly, memory, brief layers) can import without depending on
+// any concrete adapter implementation.
+//
+// Identity rules (ADR-001):
+//   - DocId is opaque, URI-style: `<scheme>://<authority>/<resource>`.
+//   - DocId is a NOMINAL (branded) type — raw string assignment is a
+//     compile error. The single minting point is src/adapters/registry.ts;
+//     only the validating `parseDocId(s)` function is exported.
+//   - SourceHandle is the bare `<scheme>://<authority>` prefix that names
+//     a registered adapter triple (SourceConnector + DeliveryAdapter +
+//     ChangeFeed).
+//
+// Content shape (ADR-003):
+//   - `Document` is the canonical content unit. Every assembly tool
+//     consumes it. `properties: Record<string, unknown>` subsumes both
+//     YAML frontmatter (obsidian-fs) and (future) Notion typed properties.
+//   - `BlockNode` is the Phase 1 minimal block shape; Phase 3 will enrich
+//     it (callouts, tables, images, embeds).
+//   - `Edge` is reserved for typed link structure. Phase 1 leaves it
+//     unused at runtime (D-04 defers wikilinks-as-edges to Phase 4); the
+//     TYPE must still compile so 01-03..06 can reference it.
+//
+// Memory namespace (ADR-004):
+//   - `MemorySinkHandle` is declared here so the delivery seam can name
+//     a sink at the type level without circular-importing Phase 2's
+//     `src/memory/`. Phase 2 (MEM-01..12) populates the runtime shape.
+//
+// Change-feed (ADR-002 §ChangeFeed):
+//   - `ChangeEvent` is a tagged union with create / update / delete /
+//     rename. The obsidian-fs change-feed (Plan 01-05) emits only
+//     create+update+delete (RESEARCH A3 / Risk #3); the type permits
+//     rename for future adapters.
+//
+// Phase 1 backwards-compat (PROJECT.md):
+//   - This block is APPEND-ONLY. No existing exports above this line are
+//     modified or removed. All 23 v1 tools continue to compile and behave
+//     unchanged.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Opaque, URI-style document identifier — `<scheme>://<authority>/<resource>`.
+ *
+ * NOMINAL (branded) type — raw `string` values cannot be assigned to a
+ * `DocId` parameter at compile time. The only validated minting point is
+ * `parseDocId` in `src/adapters/registry.ts`; the module-private
+ * `mintDocId` is closed inside an IIFE there.
+ *
+ * Compile-time enforcement: tests/types/docid-brand.test-d.ts. See ADR-001.
+ */
+export type DocId = string & { readonly __brand: "DocId" };
+
+/**
+ * Opaque source-handle — `<scheme>://<authority>` — names a registered
+ * adapter triple (SourceConnector + DeliveryAdapter + ChangeFeed) in
+ * `AdapterRegistry`. NOMINAL (branded) for the same reason as DocId.
+ *
+ * Minted by `parseSourceHandle` in `src/adapters/registry.ts`.
+ */
+export type SourceHandle = string & { readonly __brand: "SourceHandle" };
+
+/**
+ * Opaque memory-sink-handle — `mem-sink://<authority>/<name>` (or
+ * equivalent per ADR-004). NOMINAL (branded). Declared here so the
+ * delivery seam (`DeliveryAdapter`) can reference it at the type level
+ * without forward-importing Phase 2's `src/memory/` package.
+ *
+ * Phase 1 does not populate any runtime parser; Phase 2 (MEM-01..12)
+ * adds the canonical parser per ADR-004 §"MemorySink handle shape".
+ */
+export type MemorySinkHandle = string & { readonly __brand: "MemorySinkHandle" };
+
+/**
+ * A single intra-document block. The minimal Phase 1 shape per ADR-003;
+ * Phase 3 will enrich it (callouts, tables, images, embeds).
+ *
+ * `kind` is the discriminant. Adapters MUST emit valid `kind` values
+ * even when the source has no concept of blocks (in which case a single
+ * `{ kind: "paragraph", text: body }` block is the canonical fallback —
+ * see `BodyShape = "flat-text"` in `src/adapters/capabilities.ts`).
+ */
+export type BlockNode =
+  | { kind: "paragraph"; text: string }
+  | { kind: "heading"; level: 1 | 2 | 3 | 4 | 5 | 6; text: string }
+  | { kind: "code"; lang?: string; text: string }
+  | { kind: "list"; ordered: boolean; items: string[] };
+
+/**
+ * A typed link between documents. Reserved for Phase 4 (GRA-04: typed-edge
+ * schema). Phase 1 does not populate `Document.links` at runtime — the
+ * obsidian-fs source adapter surfaces wikilinks via
+ * `Document.properties.wikilinks: WikilinkRef[]` (D-05), and the existing
+ * wikilinks resolver continues to consume that shape until Phase 4.
+ *
+ * `target` is a DocId when the link has been resolved to a known
+ * document; a raw `string` when unresolved (dangling wikilink, external
+ * URL, or pending resolution). `rel` is an optional adapter-specific
+ * sub-classifier (e.g. "is-superseded-by", "cites").
+ */
+export interface Edge {
+  /** Link category. Cross-adapter neutral. */
+  type: "wikilink" | "mention" | "frontmatter-ref" | "hyperlink";
+  /** Resolved DocId or a raw string (unresolved / external). */
+  target: DocId | string;
+  /** Optional adapter-specific sub-classifier. */
+  rel?: string;
+}
+
+/**
+ * Wikilink reference — the lightweight intermediate shape used by the
+ * obsidian-fs source adapter to populate `Document.properties.wikilinks`
+ * (D-05). The existing `WikilinkResolver` (`src/indexer/resolver.ts`)
+ * continues to consume this shape in Phase 1; Phase 4 promotes wikilinks
+ * to first-class `Document.links: Edge[]` entries with `type: "wikilink"`.
+ *
+ * Distinct from `ParsedWikilink` above: `ParsedWikilink` carries
+ * line-number + raw-target metadata used during parsing; `WikilinkRef`
+ * is the trimmed shape that survives into the `Document.properties`
+ * surface for downstream consumers.
+ */
+export interface WikilinkRef {
+  /** Normalized target — basename without `.md`, no section anchor. */
+  target: string;
+  /** Display alias if the wikilink used `[[target|alias]]` syntax. */
+  alias?: string;
+  /** Section anchor if the wikilink used `[[target#section]]`. */
+  section?: string;
+}
+
+/**
+ * The canonical content unit. Adapters return `Document` objects from
+ * `SourceConnector.readDocument(id)`; every assembly tool, brief
+ * compiler, and citation builder downstream consumes this shape.
+ *
+ * Field semantics (ADR-003):
+ *   - `id` — opaque, branded DocId; identity contract per ADR-001.
+ *   - `source` — the adapter handle that produced this document.
+ *   - `title` — short human-readable title. Adapters MAY derive from
+ *     H1, filename, or remote metadata; the field is non-null.
+ *   - `blocks` — content split into block-level nodes per ADR-003. For
+ *     adapters with `BodyShape = "flat-text"` this is a single
+ *     paragraph node; for `BodyShape = "blocks"` this carries the full
+ *     block tree.
+ *   - `properties` — untyped property bag (YAML frontmatter, Notion
+ *     typed properties, headers, labels). Adapter capabilities
+ *     declare `PropertiesShape = "untyped" | "typed-schema-bound"`.
+ *   - `links` — typed edges (Phase 4 surface). Phase 1 leaves this
+ *     empty; the type-shape exists so downstream code can be written
+ *     against it now.
+ *   - `mtime` — last-modified time, epoch milliseconds. Adapter-source
+ *     timestamp; semantics depend on `SourceCapabilities.refHashKind`
+ *     (file mtime for obsidian-fs; remote last-edited-at for Notion).
+ *   - `hash` — opaque content hash. Stable iff
+ *     `SourceCapabilities.contentHashStable === true`. See ADR-003 H-1..H-6.
+ *   - `display_url` — adapter-provided deep-link URL (D-01). Populated
+ *     by `SourceConnector.formatDisplayUrl(id)` at read time.
+ */
+export interface Document {
+  /** Opaque, branded DocId. */
+  id: DocId;
+  /** The adapter handle that produced this document. */
+  source: SourceHandle;
+  /** Short human-readable title. Always non-null. */
+  title: string;
+  /** Block-level content per ADR-003. */
+  blocks: BlockNode[];
+  /** Untyped property bag (frontmatter, headers, labels, …). */
+  properties: Record<string, unknown>;
+  /** Typed edges — Phase 4 surface. Empty array in Phase 1. */
+  links: Edge[];
+  /** Last-modified time, epoch milliseconds. */
+  mtime: number;
+  /** Opaque content hash. See ADR-003 H-1..H-6. */
+  hash: string;
+  /** Adapter-provided deep-link URL (D-01); `null` when unsupported. */
+  display_url?: string | null;
+}
+
+/**
+ * Change-feed event — emitted by `ChangeFeed.subscribe(handler)`.
+ *
+ * Tagged union per ADR-002 §ChangeFeed. The obsidian-fs change-feed
+ * (Plan 01-05) emits only create+update+delete (RESEARCH A3 / Risk #3:
+ * a true rename is observed by chokidar as `unlink` + `add` — Phase 1
+ * keeps that v1 behavior). The type permits `rename` so future adapters
+ * with real rename semantics (e.g. notion-api) can emit it without a
+ * type-shape change.
+ */
+export type ChangeEvent =
+  | { kind: "create"; id: DocId; at: number }
+  | { kind: "update"; id: DocId; at: number }
+  | { kind: "delete"; id: DocId; at: number }
+  | { kind: "rename"; old_id: DocId; new_id: DocId; at: number };
+
+/**
+ * Minimal Phase 1 MemorySink shape per ADR-004.
+ *
+ * Phase 2 (MEM-01..12) populates the full sink surface — provenance
+ * guards (Guard A: provenance required; Guard B: source:agent outside
+ * configured sink rejected), `.memory-sink` sentinel resolution,
+ * sink-prefix → DocId mapping. Phase 1 declares the type so the
+ * delivery adapter (`DeliveryAdapter.write`) compiles against the
+ * shape; runtime guards land in Phase 2.
+ */
+export interface MemorySink {
+  /** Opaque sink handle (`mem-sink://<authority>/<name>` or equivalent). */
+  handle: MemorySinkHandle;
+  /** DocId resolution target — where `write()` calls under this sink land. */
+  resolveTo: DocId;
+}
