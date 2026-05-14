@@ -1,0 +1,56 @@
+# v1 baseline — semantic-floor queries for `search_text` (FND-09).
+# Pins the BM25/FTS-only retrieval surface. Each query uses literal
+# substrings present in the target note's body (BM25's only signal).
+tool: search_text
+queries:
+  - id: literal-warehouse-pivot-text
+    query: "47 minutes 90 days warehouse pivot"
+    expected_doc_ids:
+      - decisions/2026-03-12-pivot-to-warehouse.md
+    expected_must_contain:
+      - "47 minutes"
+    args:
+      query: "47 minutes 90 days warehouse pivot"
+      top_k: 10
+    rationale: >
+      Literal phrases "47 minutes" and "90+ days" appear only in the pivot
+      decision; BM25 must rank it #1 on this keyword bag.
+
+  - id: literal-vellum-optics-text
+    query: "Vellum Optics second source perception"
+    expected_doc_ids:
+      - decisions/2026-04-29-second-source-perception-head.md
+    expected_must_contain:
+      - "Vellum"
+    args:
+      query: "Vellum Optics second source perception"
+      top_k: 10
+    rationale: >
+      "Vellum Optics" is a proper noun that appears in only one decision and
+      its supporting meeting. Tests BM25's rare-term boost.
+
+  - id: literal-uptime-target-text
+    query: "16 hours two shift uptime target"
+    expected_doc_ids:
+      - meetings/2026-04-15-q2-okr-review.md
+    expected_must_contain:
+      - "16 hours"
+    args:
+      query: "16 hours two shift uptime target"
+      top_k: 10
+    rationale: >
+      The literal "16 hours" appears in the OKR review and one observation;
+      this pins BM25 to the meeting note.
+
+  - id: literal-duty-cycle-text
+    query: "70% duty cycle cap drive motor"
+    expected_doc_ids:
+      - decisions/2026-04-22-drive-motor-duty-cycle-cap.md
+    expected_must_contain:
+      - "70%"
+    args:
+      query: "70% duty cycle cap drive motor"
+      top_k: 10
+    rationale: >
+      Numeric literal "70%" plus "duty cycle" combine to a near-unique BM25
+      match for the duty-cycle decision.

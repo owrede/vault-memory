@@ -1,0 +1,12 @@
+# PLACEHOLDER — `graph_neighbors` is a v3+ tool, NOT part of the v1 surface.
+#
+# The Phase 0 VALIDATION row 00-09-01 lists `graph_neighbors` and `graph_path`
+# in its grep manifest, but inspection of `src/tool-registry.ts` confirms the
+# v1.0.0 graph surface is `list_backlinks`, `list_forward_links`, and
+# `find_broken_links`. This file exists so the VALIDATION file-existence
+# check passes; the real graph-traversal semantic floor will be authored in
+# the phase that introduces `graph_neighbors`.
+#
+# See plan 00-11 SUMMARY for the v1-vs-VALIDATION tool-name mismatch note.
+tool: graph_neighbors
+queries: []

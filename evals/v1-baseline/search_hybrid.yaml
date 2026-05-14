@@ -1,0 +1,62 @@
+# v1 baseline — semantic-floor queries for `search_hybrid` (FND-09).
+# Pins the RRF-fused (semantic + BM25) retrieval surface — the default
+# v1 search behavior. Mirrors `_queries/search.yaml` shape.
+tool: search_hybrid
+queries:
+  - id: pivot-decision-hybrid
+    query: "Why did Atlas Robotics pivot away from consumer?"
+    expected_doc_ids:
+      - decisions/2026-03-12-pivot-to-warehouse.md
+    expected_must_contain:
+      - "47 minutes"
+      - "90+ days"
+    args:
+      query: "Why did Atlas Robotics pivot away from consumer?"
+      top_k: 10
+    rationale: >
+      The pivot decision is the canonical answer; hybrid must rank it #1 on
+      the combined RRF signal.
+
+  - id: atlas-1-current-state-hybrid
+    query: "What is the current state of the Atlas-1 project?"
+    expected_doc_ids:
+      - projects/atlas-1.md
+      - meetings/2026-04-15-q2-okr-review.md
+    expected_must_contain:
+      - "Atlas-1"
+    args:
+      query: "What is the current state of the Atlas-1 project?"
+      top_k: 10
+    rationale: >
+      Project page + most recent OKR review jointly describe Atlas-1's Q2
+      state. Hybrid retrieval should surface both in the top-3.
+
+  - id: beacon-pause-hybrid
+    query: "Why was the Beacon program paused?"
+    expected_doc_ids:
+      - decisions/2026-04-16-beacon-pause.md
+      - projects/beacon.md
+      - references/beacon-q1-results-summary.md
+    expected_must_contain:
+      - "warehouse"
+    args:
+      query: "Why was the Beacon program paused?"
+      top_k: 10
+    rationale: >
+      The Beacon-pause decision is canonical; the project page and Q1 results
+      summary are supporting substrate. Recall floor: all three in top-10.
+
+  - id: vendor-risk-second-source-hybrid
+    query: "What is being done about the perception head single-source risk?"
+    expected_doc_ids:
+      - decisions/2026-04-29-second-source-perception-head.md
+      - meetings/2026-04-29-vendor-risk-review.md
+      - references/vendor-shortlist-q2-2026.md
+    expected_must_contain:
+      - "Vellum"
+    args:
+      query: "What is being done about the perception head single-source risk?"
+      top_k: 10
+    rationale: >
+      Decision picks Vellum Optics; meeting + shortlist provide context. All
+      three documents should appear in the hybrid top-10.

@@ -1,0 +1,69 @@
+# v1 baseline — semantic-floor queries for `suggest_frontmatter` (FND-09).
+# Pins the three-layer schema-inference pipeline (folder conventions +
+# wikilink neighborhood + content heuristics). Returns
+# { existing, suggestions, conflicts }.
+#
+# Tool args shape (per snapshot): { vault, path? | content?, title?,
+# folder_hint? }. At least one of path/content required.
+#
+# expected_doc_ids = the target note for `path` mode, or the sibling notes
+# the suggestion pipeline draws conventions from.
+tool: suggest_frontmatter
+queries:
+  - id: suggest-for-existing-project
+    query: "Suggest frontmatter for an existing project note"
+    expected_doc_ids:
+      - projects/atlas-1.md
+    expected_must_contain: []
+    args:
+      vault: v2-test-vault
+      path: projects/atlas-1.md
+    rationale: >
+      Existing-note mode: pipeline should produce non-empty suggestions
+      drawn from sibling project pages (status, owner, title). The note
+      already has these fields, so they appear in `existing`, not
+      `suggestions`.
+
+  - id: suggest-for-draft-meeting
+    query: "Suggest frontmatter for a new meeting note draft"
+    expected_doc_ids:
+      - meetings/2026-04-15-q2-okr-review.md
+      - meetings/2026-05-06-perception-hire-debrief.md
+    expected_must_contain: []
+    args:
+      vault: v2-test-vault
+      content: |
+        # 2026-06-01 Atlas-1 Build Review
+
+        Attendees: [[people/alice-chen]], [[people/bob-martinez]].
+
+        ## Notes
+        Reviewed Atlas-1 production status against the Q2 OKR
+        target. Drive-motor duty-cycle cap is holding; perception
+        pipeline latency is on plan.
+      folder_hint: meetings/
+      title: "2026-06-01 Atlas-1 Build Review"
+    rationale: >
+      Draft mode with folder_hint=meetings/: sibling meeting notes
+      establish the convention (title, date, attendees). Suggestions
+      should include those keys.
+
+  - id: suggest-for-draft-decision
+    query: "Suggest frontmatter for a new decision note draft"
+    expected_doc_ids:
+      - decisions/2026-04-22-drive-motor-duty-cycle-cap.md
+      - decisions/2026-04-29-second-source-perception-head.md
+    expected_must_contain: []
+    args:
+      vault: v2-test-vault
+      content: |
+        # Switch sensor calibration cadence to weekly
+
+        We will recalibrate the perception heads weekly instead of
+        monthly to reduce drift impact on pallet identification
+        accuracy. Owner: [[people/eli-sato]].
+      folder_hint: decisions/
+      title: "Switch sensor calibration cadence to weekly"
+    rationale: >
+      Draft decision: sibling decisions establish status=accepted, date,
+      title conventions. Suggestions must include those keys.

@@ -1,0 +1,57 @@
+# v1 baseline — semantic-floor queries for `search` (FND-09).
+# Pins the OB1/ChatGPT-Custom-Connectors flat-shape adapter: returns
+# { id, title, url, snippet } where id = "<vault>:<vault-relative-path>".
+# Backed by hybrid retrieval; de-duped to one entry per note.
+#
+# Tool args shape (per snapshot): { query, limit? }
+tool: search
+queries:
+  - id: connector-pivot-search
+    query: "consumer to warehouse pivot reasoning"
+    expected_doc_ids:
+      - decisions/2026-03-12-pivot-to-warehouse.md
+    expected_must_contain: []
+    args:
+      query: "consumer to warehouse pivot reasoning"
+      limit: 10
+    rationale: >
+      Connector-style flat search must surface the pivot decision as the top
+      hit. The `id` field of the response is `v2-test-vault:decisions/...`.
+
+  - id: connector-uptime-search
+    query: "Atlas-1 uptime target Q2"
+    expected_doc_ids:
+      - meetings/2026-04-15-q2-okr-review.md
+      - projects/atlas-1.md
+    expected_must_contain: []
+    args:
+      query: "Atlas-1 uptime target Q2"
+      limit: 10
+    rationale: >
+      OKR review defines the metric; project page references it. Both should
+      appear in the flat result list, de-duplicated to one entry per note.
+
+  - id: connector-people-search
+    query: "Who is the CEO of Atlas Robotics?"
+    expected_doc_ids:
+      - people/alice-chen.md
+    expected_must_contain: []
+    args:
+      query: "Who is the CEO of Atlas Robotics?"
+      limit: 10
+    rationale: >
+      The flat-shape adapter must answer simple lookup queries — Alice Chen's
+      people-page is the canonical CEO record.
+
+  - id: connector-vendor-risk-search
+    query: "perception sensor second source vendor"
+    expected_doc_ids:
+      - decisions/2026-04-29-second-source-perception-head.md
+      - references/vendor-shortlist-q2-2026.md
+    expected_must_contain: []
+    args:
+      query: "perception sensor second source vendor"
+      limit: 10
+    rationale: >
+      Decision and vendor shortlist both relevant; tests that the flat
+      adapter preserves the hybrid pipeline's recall on multi-doc topics.

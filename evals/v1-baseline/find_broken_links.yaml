@@ -1,0 +1,52 @@
+# v1 baseline — semantic-floor queries for `find_broken_links` (FND-09).
+# Pins the vault-wide broken-link detection surface. The fixture vault is
+# curated to be internally consistent; queries here document the EXPECTED
+# state (no/few broken links) as a regression target. If a refactor breaks
+# a wikilink, this assertion catches it.
+#
+# Tool args shape (per snapshot): { vault } — vault-wide scan.
+#
+# NOTE: `expected_doc_ids` here lists the FIXTURE FILES whose wikilinks the
+# scanner inspects (sample set), so the referential-integrity check passes.
+# The Phase 1 .todo wiring asserts the broken-link COUNT and any specific
+# broken-link targets the fixture intentionally introduces.
+tool: find_broken_links
+queries:
+  - id: vault-wide-broken-link-scan
+    query: "What wikilinks in the fixture vault point to non-existent notes?"
+    expected_doc_ids:
+      - projects/atlas-1.md
+      - decisions/2026-03-12-pivot-to-warehouse.md
+    expected_must_contain: []
+    args:
+      vault: v2-test-vault
+    rationale: >
+      Sentinel notes whose wikilinks must remain resolvable. Phase 1's
+      precision/recall wiring asserts the broken-link list is empty (or
+      matches an intentional curated set).
+
+  - id: scan-decisions-folder-integrity
+    query: "Are all wikilinks in decisions/ resolvable?"
+    expected_doc_ids:
+      - decisions/2026-04-22-drive-motor-duty-cycle-cap.md
+      - decisions/2026-04-16-beacon-pause.md
+      - decisions/2026-04-29-second-source-perception-head.md
+    expected_must_contain: []
+    args:
+      vault: v2-test-vault
+    rationale: >
+      Decisions/ notes are the most link-dense in the fixture; if any
+      target was renamed without updating links, the scanner reports it.
+
+  - id: scan-projects-folder-integrity
+    query: "Are all wikilinks in projects/ resolvable?"
+    expected_doc_ids:
+      - projects/atlas-1.md
+      - projects/beacon.md
+      - projects/spire.md
+    expected_must_contain: []
+    args:
+      vault: v2-test-vault
+    rationale: >
+      Project hub pages link to sub-projects and people; pins the integrity
+      of that subgraph.

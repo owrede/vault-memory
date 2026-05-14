@@ -1,0 +1,48 @@
+# v1 baseline — semantic-floor queries for `list_backlinks` (FND-09).
+# Pins the "what notes link TO this note?" surface. Each query targets a
+# well-connected hub note in the fixture vault; expected_doc_ids enumerate
+# the notes that link to the target via [[wikilinks]].
+#
+# Tool args shape (per snapshot): { vault, path }
+tool: list_backlinks
+queries:
+  - id: backlinks-to-atlas-1
+    query: "What notes link to the Atlas-1 project page?"
+    expected_doc_ids:
+      - projects/atlas-1-perception-stack.md
+      - projects/atlas-1-warehouse-task-library.md
+      - projects/atlas-1-reliability-program.md
+    expected_must_contain: []
+    args:
+      vault: v2-test-vault
+      path: projects/atlas-1.md
+    rationale: >
+      Atlas-1 is the program hub; the three sub-project pages (perception
+      stack, warehouse task library, reliability program) all backlink to it.
+      Recall floor: all three must appear in the backlinks list.
+
+  - id: backlinks-to-alice-chen
+    query: "What notes mention Alice Chen via wikilink?"
+    expected_doc_ids:
+      - meetings/2026-04-15-q2-okr-review.md
+      - meetings/2026-05-06-perception-hire-debrief.md
+    expected_must_contain: []
+    args:
+      vault: v2-test-vault
+      path: people/alice-chen.md
+    rationale: >
+      Meeting notes link to attendees via people/<slug> wikilinks; the OKR
+      review and perception-hire debrief both name Alice as an attendee.
+
+  - id: backlinks-to-pivot-decision
+    query: "What notes reference the consumer-to-warehouse pivot decision?"
+    expected_doc_ids:
+      - projects/beacon.md
+      - decisions/2026-04-16-beacon-pause.md
+    expected_must_contain: []
+    args:
+      vault: v2-test-vault
+      path: decisions/2026-03-12-pivot-to-warehouse.md
+    rationale: >
+      The pivot decision is the upstream cause for the Beacon pause; both the
+      Beacon project page and the pause decision wikilink back to it.

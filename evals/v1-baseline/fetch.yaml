@@ -1,0 +1,50 @@
+# v1 baseline — semantic-floor queries for `fetch` (FND-09).
+# Pins the OB1/ChatGPT-Custom-Connectors content-fetch adapter: takes an
+# opaque id from `search` (format `<vault>:<vault-relative-path>`) and
+# returns { id, title, text, url, metadata }. Backed by `read_note`.
+#
+# Tool args shape (per snapshot): { id: string }
+#
+# For `fetch`, `expected_doc_ids` IS the single target document; the
+# expected_must_contain values are substrings the returned `text` must
+# include — pins that the body is round-tripped, not just metadata.
+tool: fetch
+queries:
+  - id: fetch-pivot-decision
+    query: "Retrieve the body of the pivot-to-warehouse decision"
+    expected_doc_ids:
+      - decisions/2026-03-12-pivot-to-warehouse.md
+    expected_must_contain:
+      - "47 minutes"
+      - "warehouse"
+    args:
+      id: "v2-test-vault:decisions/2026-03-12-pivot-to-warehouse.md"
+    rationale: >
+      Fetch must return the full markdown body so downstream agents can
+      quote it. Spot-checks the unique "47 minutes" phrase.
+
+  - id: fetch-alice-chen
+    query: "Retrieve the people-page body for Alice Chen"
+    expected_doc_ids:
+      - people/alice-chen.md
+    expected_must_contain:
+      - "Alice Chen"
+      - "CEO"
+    args:
+      id: "v2-test-vault:people/alice-chen.md"
+    rationale: >
+      Tests that fetch resolves a people-folder id and returns the bio
+      content including the role string.
+
+  - id: fetch-duty-cycle-decision
+    query: "Retrieve the drive-motor duty-cycle decision body"
+    expected_doc_ids:
+      - decisions/2026-04-22-drive-motor-duty-cycle-cap.md
+    expected_must_contain:
+      - "70%"
+      - "thermal cycling"
+    args:
+      id: "v2-test-vault:decisions/2026-04-22-drive-motor-duty-cycle-cap.md"
+    rationale: >
+      Numeric content ("70%") and causal phrase ("thermal cycling") must
+      survive the read_note → fetch shape transformation.

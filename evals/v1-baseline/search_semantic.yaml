@@ -1,0 +1,67 @@
+# v1 baseline — semantic-floor queries for `search_semantic` (FND-09).
+# Pins the embedding-cosine-only retrieval surface against the Atlas Robotics
+# fixture vault (evals/fixtures/v2-test-vault/). Each query reaches an
+# authoritative source-of-truth document. Phase 1 wires precision/recall via
+# `it(...)` after the fixture vault is Ollama-indexed.
+#
+# Schema (D-09):
+#   queries:
+#     - id, query, expected_doc_ids[], (expected_must_contain[]), rationale, (args)
+tool: search_semantic
+queries:
+  - id: pivot-decision-semantic
+    query: "Why did Atlas Robotics pivot away from consumer products?"
+    expected_doc_ids:
+      - decisions/2026-03-12-pivot-to-warehouse.md
+    expected_must_contain:
+      - "warehouse"
+    args:
+      query: "Why did Atlas Robotics pivot away from consumer products?"
+      top_k: 10
+    rationale: >
+      The pivot decision record is the single authoritative source; pure
+      semantic search must rank it #1 even with no keyword overlap on
+      "consumer products".
+
+  - id: ceo-background-semantic
+    query: "Who founded the company and what is her engineering background?"
+    expected_doc_ids:
+      - people/alice-chen.md
+    expected_must_contain:
+      - "Alice Chen"
+    args:
+      query: "Who founded the company and what is her engineering background?"
+      top_k: 10
+    rationale: >
+      Alice Chen's people-page is the canonical CEO bio. Tests that semantic
+      retrieval finds the founder note when neither "CEO" nor "Alice" appear
+      in the query.
+
+  - id: motor-thermal-failure-semantic
+    query: "What is causing the drive motors to overheat under sustained load?"
+    expected_doc_ids:
+      - decisions/2026-04-22-drive-motor-duty-cycle-cap.md
+    expected_must_contain:
+      - "thermal cycling"
+    args:
+      query: "What is causing the drive motors to overheat under sustained load?"
+      top_k: 10
+    rationale: >
+      The duty-cycle-cap decision diagnoses motor-B thermal cycling. The query
+      avoids any literal terms from the title ("duty cycle", "cap") to force
+      a semantic-only hit.
+
+  - id: perception-second-source-semantic
+    query: "How are we mitigating single-supplier risk in our vision pipeline?"
+    expected_doc_ids:
+      - decisions/2026-04-29-second-source-perception-head.md
+      - meetings/2026-04-29-vendor-risk-review.md
+    expected_must_contain:
+      - "Vellum"
+    args:
+      query: "How are we mitigating single-supplier risk in our vision pipeline?"
+      top_k: 10
+    rationale: >
+      Tests that the second-source decision and its supporting vendor-review
+      meeting both surface for a semantic paraphrase ("single-supplier risk"
+      → "second source", "vision pipeline" → "perception head").

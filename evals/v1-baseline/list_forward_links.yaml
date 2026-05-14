@@ -1,0 +1,50 @@
+# v1 baseline — semantic-floor queries for `list_forward_links` (FND-09).
+# Pins the "what notes does this note link TO?" surface (outbound wikilinks).
+#
+# Tool args shape (per snapshot): { vault, path, include_broken? }
+tool: list_forward_links
+queries:
+  - id: forward-links-from-duty-cycle-decision
+    query: "What notes does the drive-motor duty-cycle cap decision link to?"
+    expected_doc_ids:
+      - references/atlas-1-component-spec.md
+      - people/carlos-yim.md
+      - projects/atlas-1-reliability-program.md
+    expected_must_contain: []
+    args:
+      vault: v2-test-vault
+      path: decisions/2026-04-22-drive-motor-duty-cycle-cap.md
+      include_broken: true
+    rationale: >
+      The decision body wikilinks the component spec, Carlos (engineer who
+      diagnosed it), and the reliability-program project page. All three
+      must appear in forward links.
+
+  - id: forward-links-from-okr-review
+    query: "What notes does the Q2 OKR review link to?"
+    expected_doc_ids:
+      - people/alice-chen.md
+      - people/bob-martinez.md
+      - people/carlos-yim.md
+    expected_must_contain: []
+    args:
+      vault: v2-test-vault
+      path: meetings/2026-04-15-q2-okr-review.md
+      include_broken: true
+    rationale: >
+      Attendee wikilinks (alice-chen, bob-martinez, carlos-yim) are the
+      primary outbound edges from a meeting note. All three must surface.
+
+  - id: forward-links-from-beacon-pause
+    query: "What notes does the Beacon-pause decision link to?"
+    expected_doc_ids:
+      - projects/beacon.md
+      - decisions/2026-03-12-pivot-to-warehouse.md
+    expected_must_contain: []
+    args:
+      vault: v2-test-vault
+      path: decisions/2026-04-16-beacon-pause.md
+      include_broken: true
+    rationale: >
+      The pause decision references the upstream pivot decision and the
+      Beacon project page as causes/affected entities.

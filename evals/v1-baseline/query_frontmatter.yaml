@@ -1,0 +1,66 @@
+# v1 baseline — semantic-floor queries for `query_frontmatter` (FND-09).
+# Pins the YAML-frontmatter predicate-filter surface (=, $in, $exists,
+# $contains; AND-combined across keys).
+#
+# Tool args shape (per snapshot): { vault, where: object, limit? }
+tool: query_frontmatter
+queries:
+  - id: active-projects
+    query: "List all projects with status: active"
+    expected_doc_ids:
+      - projects/atlas-1.md
+      - projects/atlas-1-perception-stack.md
+      - projects/atlas-1-warehouse-task-library.md
+      - projects/atlas-1-reliability-program.md
+      - projects/spire.md
+      - projects/spire-fleet-orchestrator.md
+      - projects/spire-pallet-identification.md
+    expected_must_contain: []
+    args:
+      vault: v2-test-vault
+      where:
+        status: active
+      limit: 100
+    rationale: >
+      All seven currently-active project pages in the Atlas-1 and Spire
+      programs. Tests scalar-equality predicate.
+
+  - id: accepted-decisions
+    query: "List all decisions with status: accepted"
+    expected_doc_ids:
+      - decisions/2026-03-12-pivot-to-warehouse.md
+      - decisions/2026-04-08-rgbd-over-stereo-only.md
+      - decisions/2026-04-16-beacon-pause.md
+      - decisions/2026-04-22-drive-motor-duty-cycle-cap.md
+      - decisions/2026-04-29-second-source-perception-head.md
+      - decisions/2026-04-25-orchestrator-library-split.md
+    expected_must_contain: []
+    args:
+      vault: v2-test-vault
+      where:
+        status: accepted
+      limit: 100
+    rationale: >
+      Every decision record in the fixture is `status: accepted` (no
+      "proposed" / "rejected" records); pins the predicate-filter behavior.
+
+  - id: people-by-role-existence
+    query: "List all people notes that have a role field"
+    expected_doc_ids:
+      - people/alice-chen.md
+      - people/bob-martinez.md
+      - people/carlos-yim.md
+      - people/dana-park.md
+      - people/eli-sato.md
+      - people/priya-rao.md
+      - people/quinn-vega.md
+    expected_must_contain: []
+    args:
+      vault: v2-test-vault
+      where:
+        role:
+          $exists: true
+      limit: 100
+    rationale: >
+      All seven fixture people have a `role:` frontmatter key. Tests the
+      `$exists` predicate.

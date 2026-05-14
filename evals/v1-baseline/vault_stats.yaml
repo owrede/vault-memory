@@ -1,0 +1,48 @@
+# v1 baseline — semantic-floor queries for `vault_stats` (FND-09).
+# Pins the vault-overview surface: note/word counts, top tags, top
+# frontmatter keys, embedding model, last index run. Used by agents for
+# self-orientation.
+#
+# Tool args shape (per snapshot): { vault? } — omit for all vaults.
+#
+# For `vault_stats`, expected_doc_ids are SENTINEL fixture files whose
+# existence proves the fixture vault is intact. The Phase 1 .todo wiring
+# asserts numeric thresholds (note_count, word_count, top tags).
+tool: vault_stats
+queries:
+  - id: stats-fixture-vault
+    query: "Report stats for the v2-test-vault fixture"
+    expected_doc_ids:
+      - projects/atlas-1.md
+      - decisions/2026-03-12-pivot-to-warehouse.md
+      - people/alice-chen.md
+    expected_must_contain: []
+    args:
+      vault: v2-test-vault
+    rationale: >
+      Sentinel files that must exist in the fixture vault. Phase 1 wiring
+      asserts the response's note_count is >= 40 (current fixture size) and
+      top frontmatter keys include "status" and "title".
+
+  - id: stats-all-vaults
+    query: "Report stats across all configured vaults"
+    expected_doc_ids:
+      - projects/atlas-1.md
+    expected_must_contain: []
+    args: {}
+    rationale: >
+      Omitting `vault` exercises the all-vaults fan-out path. Phase 1 wiring
+      asserts the response is keyed by vault name.
+
+  - id: stats-frontmatter-coverage
+    query: "Verify frontmatter coverage across fixture folders"
+    expected_doc_ids:
+      - meetings/2026-04-15-q2-okr-review.md
+      - references/atlas-1-component-spec.md
+      - _memory/_briefs/2026-04-20-atlas-1-state-of-the-project.md
+    expected_must_contain: []
+    args:
+      vault: v2-test-vault
+    rationale: >
+      Sentinels from each major folder (meetings, references, _memory). The
+      stats response must reflect tag/frontmatter signals from all of them.
