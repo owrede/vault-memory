@@ -12,7 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_Nothing yet._
+### Documentation
+
+- Begin v2 documentation track under `docs/v2/` (Phase 0 of v2 roadmap). See `docs/v2/SIGN-OFF.md` once Phase 0 ships.
 
 ## [1.0.0] — 2026-05-12
 
