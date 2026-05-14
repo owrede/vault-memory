@@ -37,8 +37,8 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
   4. Eval fixture vault (`evals/fixtures/v2-test-vault/` — 50–100 notes, coherent narrative) and v1-baseline regression suite (`evals/v1-baseline/`) frozen; tool-snapshot tests pin `tools/list` JSON for all 23 v1 tools
   5. Adversarial-review sub-agent confirms a Phase 10 agent could implement Notion from ADRs 001–004 alone; fixture-privacy and no-telemetry CI lints gate CI; maintainer signs off on all Phase 0 docs
 **Plans**: 15 plans
-- [ ] 00-01-bootstrap-PLAN.md — install `yaml@^2.9.0`, add `lint:check`/`eval:baseline`/`eval:snapshot` scripts, narrow `docs/dev/` gitignore, seed CHANGELOG `[Unreleased] → ### Documentation`
-- [ ] 00-02-adr-001-vertical-slice-PLAN.md — MVP walking-skeleton: relocate ADR-001 via two-commit `git mv`+amend, add Invariants+Examples, seed `docs/v2/adr/README.md` index (proves the pattern for plans 03–05)
+- [x] 00-01-bootstrap-PLAN.md — install `yaml@^2.9.0`, add `lint:check`/`eval:baseline`/`eval:snapshot` scripts, narrow `docs/dev/` gitignore, seed CHANGELOG `[Unreleased] → ### Documentation`
+- [x] 00-02-adr-001-vertical-slice-PLAN.md — MVP walking-skeleton: relocate ADR-001 via two-commit `git mv`+amend, add Invariants+Examples, seed `docs/v2/adr/README.md` index (proves the pattern for plans 03–05)
 - [ ] 00-03-adr-002-adapter-seams-PLAN.md — relocate ADR-002 to `002-adapter-seams.md` (filename rewrite), amend with Invariants+Examples covering all three seam interfaces, append index row
 - [ ] 00-04-adr-003-document-shape-PLAN.md — relocate ADR-003, amend with hash-semantics pseudocode (`sha256(canonical(blocks) || canonical(PropertyBag))`, NFC, LF, RFC 8785) + chunk-level `source_hashes` schema (D-05)
 - [ ] 00-05-adr-004-memory-sink-PLAN.md — relocate ADR-004, amend specifying folder-default sink as only code path with config-only separate-vault option, document `.memory-sink` sentinel (D-06)
