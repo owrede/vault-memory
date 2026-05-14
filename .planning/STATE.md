@@ -8,10 +8,10 @@ last_updated: "2026-05-14T13:48:32.041Z"
 last_activity: 2026-05-14 -- Phase 00 execution started
 progress:
   total_phases: 10
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 15
-  completed_plans: 14
-  percent: 93
+  completed_plans: 15
+  percent: 100
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-14)
 
 **Core value:** Local-first, source-agnostic-ready, agentic knowledge layer over your Obsidian notes — with the memory namespace as a non-negotiable safety invariant.
-**Current focus:** Phase 00 — Foundation & decisions
+**Current focus:** Phase 1 — Adapter extraction & tech-debt-up (Phase 0 complete)
 
 ## Current Position
 
-Phase: 00 (Foundation & decisions) — EXECUTING
-Plan: 14 of 15 complete (Waves 1-5 done; Wave 6 sign-off next)
-Status: Executing Phase 00 — adversarial review dispositioned (6 amend / 4 defer-v3), 397 tests green, lints clean
-Last activity: 2026-05-14 -- Wave 5 complete: ADRs 001/002/003 amended per findings 1/2/4/7/9/10; findings 3/5/6/8 deferred to v3
+Phase: 00 (Foundation & decisions) — COMPLETE
+Plan: 15 of 15 complete
+Status: Phase 00 signed off; ready for verifier audit; Phase 1 unblocked
+Last activity: 2026-05-14 -- Phase 0 sign-off committed (2a2dfbc); maintainer approved; SIGN-OFF.md FND-14 audit event landed
 
-Progress: [█████████░] 93%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
