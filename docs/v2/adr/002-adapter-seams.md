@@ -67,6 +67,7 @@ interface DocumentRef {
   id: DocId;
   mtime: number;
   hash: string;                              // cheap pre-flight hash; may be coarse
+                                             // (see DocumentRef.hash contract below)
 }
 
 interface ListOptions {
@@ -79,6 +80,45 @@ The connector returns normalized `Document` objects per ADR-003. The connector
 is responsible for translating its native representation (markdown text + YAML
 frontmatter for `obsidian-fs`; block API responses for `notion-api`) into the
 canonical shape. Core code never sees the native format.
+
+#### `DocumentRef.hash` contract
+
+`DocumentRef.hash` is the cheap pre-flight hash returned during
+`listDocuments()`; `Document.hash` (per ADR-003 §Hash semantics) is the
+authoritative content fingerprint returned from `readDocument()`. These
+two hashes have **different contracts**:
+
+- `DocumentRef.hash` MUST equal `Document.hash` when the adapter can
+  produce both cheaply (e.g. `obsidian-fs`, where the file body is
+  already available during enumeration). In this case the indexer's
+  short-circuit `if (ref.hash === stored.hash) skip` is a true content
+  comparison.
+- `DocumentRef.hash` MAY be any deterministic function of metadata that
+  changes iff the underlying content changes (e.g.
+  `sha256(last_modified_marker)`) when computing `Document.hash` would
+  require fetching the full body. The Notion adapter is the canonical
+  example: `sha256(last_edited_time)` is cheap, never matches
+  `Document.hash` byte-for-byte, and is correct as long as it changes on
+  every content change.
+- The indexer MUST treat `DocumentRef.hash !== stored.hash` as a
+  signal to re-read the document, NOT as a staleness verdict on the
+  brief layer. The authoritative comparison for staleness uses
+  `Document.hash` after `readDocument()`. Adapters MUST publish whether
+  their `DocumentRef.hash` is content-identical or marker-only via
+  `SourceCapabilities.refHashKind: 'content' | 'marker'` (added in the
+  capability-descriptor section below).
+- The signature requirement (changes-iff-content-changes) is normative:
+  an adapter that emits a `DocumentRef.hash` which can stay stable
+  across a real content change is broken — the indexer will silently
+  skip the re-read. Adapters whose backing store provides no
+  monotone-on-change marker MUST emit `DocumentRef.hash === ''` (or
+  similar sentinel) which the indexer treats as "always re-read".
+
+This contract is what makes Finding-9's adapter-private cache
+permission (below) tractable: the cache key is `(DocId,
+last_modified_marker)` and the cache value is the authoritative
+`Document.hash`, so the adapter answers a `hash(id)` query without a
+full body fetch on cache hit.
 
 ### `DeliveryAdapter`
 
@@ -155,12 +195,14 @@ interface SourceCapabilities {
   readonly identityStable: boolean;
   readonly permissions: boolean;                  // does it enforce per-document permissions?
   readonly contentHashStable: boolean;            // is hash() cheap & deterministic?
+  readonly refHashKind: 'content' | 'marker';     // DocumentRef.hash semantics (see contract above)
   readonly watch: 'push' | 'poll' | 'none';       // change-feed model
 }
 
 interface DeliveryCapabilities {
   readonly atomic: boolean;                       // write is atomic
-  readonly hashProtected: boolean;                // supports expectedHash for OCC
+  readonly hashProtected: 'strong' | 'best-effort' | 'none';
+                                                  // OCC tier — see contract below
   readonly enforcedSchema: boolean;               // properties must match a registered schema (notion DBs)
   readonly naming: 'caller-provided' | 'adapter-assigned' | 'either';
 }
@@ -171,6 +213,39 @@ configured adapter doesn't provide, `describe_contract` surfaces the
 incompatibility. Example: a contract specifies `write_back: {atomic: true}`,
 configured sink is a non-atomic adapter — `describe_contract` warns; the user
 chooses to override or repoint the sink.
+
+#### `hashProtected` tier semantics
+
+The three tiers express *how* the adapter implements optimistic
+concurrency on writes, not whether it does at all:
+
+- **`'strong'`** — the underlying store supports an atomic
+  compare-and-swap (e.g. `obsidian-fs` uses `rename(2)` over a
+  hash-name temp file + `fsync`). No TOCTOU window. `If-Match`-style
+  semantics; a writer that lost the race observes
+  `{ok:false, reason:'conflict'}`.
+- **`'best-effort'`** — the adapter implements OCC as
+  read-compare-write with a documented TOCTOU window (e.g. the Notion
+  adapter must `GET`, compare, then `PATCH`; another writer between
+  the two calls is undetectable). The window MUST be documented in the
+  adapter's README under "Concurrency caveats".
+- **`'none'`** — no concurrency control. The adapter silently
+  last-writer-wins. Memory-sink writes against a `'none'` sink MUST be
+  rejected by the Phase-2 write-guard unless the contract explicitly
+  opts in (`write_back: {minHashProtected: 'none'}`).
+
+Contracts (Phase 7) MAY declare `write_back: {minHashProtected:
+'strong' | 'best-effort' | 'none'}` (default `'best-effort'`).
+`describe_contract` rejects sinks whose `hashProtected` is below the
+declared minimum. The team-memory sink described in ADR-004 Example B
+defaults to `minHashProtected: 'best-effort'` so a Notion-backed sink
+is usable; a clinical / legal contract that takes OCC seriously
+declares `'strong'` and only an `obsidian-fs` sink will satisfy it.
+
+Invariant I-7 (honest capability descriptors, below) extends to this
+enum: an adapter advertising `'strong'` MUST actually deliver atomic
+compare-and-swap. A best-effort implementation that claims `'strong'`
+is a conformance-suite failure.
 
 ### Registry
 
@@ -286,8 +361,40 @@ future ADR-conformance audit) greps for these. Phase 1's CI lint script
   Revisit in Phase 10 — extending to a plugin-loader is a real ADR of its own,
   with sandboxing and trust considerations.
 - **Adapter configuration secrets.** Notion needs an API token. Obsidian-fs
-  needs none. Phase 10 defines how secrets are passed (env vars, OS keychain,
-  …). v2 needs no secrets; `config.toml` is sufficient.
+  needs none. v2 needs no secrets; `config.toml` is sufficient.
+
+  **Decided for v3 / Phase 10** (resolved per ADVERSARIAL-REVIEW Finding 1):
+  Connector secrets MUST be read from `VAULT_MEMORY_<SCHEME>_*`
+  environment variables. The scheme is the registered adapter scheme,
+  uppercased and hyphens converted to underscores. Examples:
+  `VAULT_MEMORY_NOTION_API_TOKEN`, `VAULT_MEMORY_RSS_FEED_BASIC_AUTH`.
+  Vendor-prefixed variables (`NOTION_TOKEN`, `OPENAI_API_KEY`, …) MUST
+  NOT be read directly — AGENT_AGNOSTIC.md forbids vendor-prefixed
+  reads. `config.toml` supports `${env:VAULT_MEMORY_*}` substitution at
+  load time (resolved in `src/config/loader.ts`); the substituted value
+  is never logged. OS keychain integration is deferred to a future ADR
+  (the namespacing + substitution convention does not block that
+  future). Startup validation MUST fail fast with a clear error
+  identifying the missing variable when a required secret is absent.
+
+- **Adapter-private SQLite tables.** Adapters MAY maintain private
+  SQLite tables for caching, sync-state, or capability negotiation.
+  Such tables MUST be prefixed `__adapter_<scheme>_` (e.g.
+  `__adapter_notion_api_content_hash_cache`). The double-underscore
+  prefix signals that core code MUST NOT read or mutate the table, and
+  the conformance suite enforces this by greping cross-module accesses.
+  Cache invalidation, migration, and TTL policy are the adapter's
+  responsibility; the cache MUST NOT be visible in any tool response,
+  audit-log entry, or `describe_contract` output. Schema migrations for
+  adapter-private tables live in the adapter's own migration list,
+  separate from the core migration list in `src/db/migrations/`.
+
+  Canonical use case (resolves ADVERSARIAL-REVIEW Finding 9): the
+  Notion adapter caches `(DocId, last_edited_time) → Document.hash` so
+  that `hash(id)` can answer without a full body fetch on cache hit.
+  Without this permission, the H-1 hash invariant (covers blocks AND
+  properties) is impossible to honor for Notion at the latency
+  ADR-002's "cheap relative to read" framing implies.
 - **Performance characterization.** The Obsidian-fs adapter abstracts file
   reads behind an async interface. Phase 1 includes a micro-benchmark
   comparing v1.x indexer throughput to the post-refactor indexer; regression
@@ -317,6 +424,7 @@ export class ObsidianFsSource implements SourceConnector {
     identityStable: false,        // paths can change → rename events
     permissions: false,
     contentHashStable: true,      // sha256 of file body
+    refHashKind: "content",       // DocumentRef.hash === sha256(body) — full content match
     watch: "push",                // chokidar
   };
 
@@ -355,6 +463,7 @@ export class NotionApiSource implements SourceConnector {
     identityStable: true,         // page IDs survive rename → no rename events
     permissions: true,            // Notion enforces per-page ACLs
     contentHashStable: true,      // hash of normalized block tree
+    refHashKind: "marker",        // DocumentRef.hash = sha256(last_edited_time) — re-read on any change
     watch: "poll",                // polling change feed; pollOnly: true
   };
 
@@ -385,6 +494,8 @@ export class NotionApiSource implements SourceConnector {
 | `bodyShape` | `flat-text` | `blocks` |
 | `watch` | `push` (chokidar) | `poll` |
 | `permissions` | `false` | `true` |
+| `refHashKind` | `content` | `marker` |
+| `hashProtected` (delivery) | `strong` (rename(2)+fsync) | `best-effort` (read-check-write; TOCTOU window) |
 
 The assembly layer (search, brief compiler, contracts) never branches on
 the source scheme. It branches on capabilities when behavior must differ
