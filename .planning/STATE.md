@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: release
-status: verifying
-stopped_at: Phase 1 context gathered
-last_updated: "2026-05-14T20:49:14.532Z"
-last_activity: "2026-05-14 -- Verifier surfaced prettier-drift blocker on lint:check; resolved via one-shot prettier --write on 76 src/ files; npm run lint:check now exit 0"
+status: planning
+stopped_at: Phase 1 plans ready for execution
+last_updated: "2026-05-14T21:30:00.000Z"
+last_activity: "2026-05-14 -- Phase 1 planned: RESEARCH.md (1008 lines, HIGH confidence), PATTERNS.md (54 files mapped), VALIDATION.md (ADP-01..15 verify map, 15 Wave-0 artifacts), 6 PLAN.md files (01-01..06). Plan-checker: PASS-with-caveats (no blockers); W4 + W6 caveats applied surgically. Ready for /gsd-execute-phase 1."
 progress:
   total_phases: 10
   completed_phases: 1
-  total_plans: 15
+  total_plans: 21
   completed_plans: 15
-  percent: 100
+  percent: 71
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-05-14)
 
 ## Current Position
 
-Phase: 00 (Foundation & decisions) — COMPLETE + VERIFIED
-Plan: 15 of 15 complete
-Status: Phase 00 signed off (2a2dfbc), verified PASS-with-caveats (b3948d9), CI gate green (5f6dfad). Phase 1 fully unblocked.
-Last activity: 2026-05-14 -- Verifier surfaced prettier-drift blocker on lint:check; resolved via one-shot prettier --write on 76 src/ files; npm run lint:check now exit 0
+Phase: 01 (Adapter extraction & tech-debt-up) — PLANNED, ready for execution
+Plan: 0 of 6 complete
+Status: 6 PLAN.md files written (01-01..06), plan-checker PASS-with-caveats (d9d466c). RESEARCH.md HIGH confidence, PATTERNS.md (54 files), VALIDATION.md (15 Wave-0 artifacts) all committed. Next: /gsd-execute-phase 1 — wave 1 unlocks immediately (01-01 has no upstream deps); 01-02 and 01-03 parallelizable after 01-01.
+Last activity: 2026-05-14 -- Phase 1 planned end-to-end; plans encode SDK 1.29 pitfalls (#1143 description, #1643 discriminatedUnion), doc_uri encoding (un-encoded in DB, percent-encoded at format), DocId IIFE branded type, git-mv discipline; W4 (obsidianUrl encoding parity pre-read) and W6 (snapshot description-diff checkpoint) caveats applied.
 
-Progress: [██████████] 100%
+Progress: [███████░░░] 71%
 
 ## Performance Metrics
 
@@ -94,6 +94,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-14T20:49:14.523Z
-Stopped at: Phase 1 context gathered
-Resume file: .planning/phases/01-adapter-extraction-tech-debt-up/01-CONTEXT.md
+Last session: 2026-05-14T21:30:00.000Z
+Stopped at: Phase 1 plans ready for execution
+Resume file: .planning/phases/01-adapter-extraction-tech-debt-up/01-01-PLAN.md (start of wave 1)

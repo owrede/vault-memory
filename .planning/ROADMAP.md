@@ -64,7 +64,13 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
   3. `scripts/smoketest-non-claude.mjs` passes end-to-end against MCP Inspector or another non-Claude MCP client; README leads with "any MCP-aware agent" framing
   4. `@modelcontextprotocol/sdk` is on `^1.29.x` and `zod` is on `^4.x`; tool registrations migrated to `registerTool(...)`; Standard Schema wiring works
   5. Stub-adapter conformance test suite (pulled forward from brief Phase 10) is green; doc_uri dual-column migration (Strategy A) applied and backfilled
-**Plans**: TBD
+**Plans**: 6 plans
+- [ ] 01-01-PLAN.md — Type surface + branded DocId + adapter directory bootstrap (ADP-04, ADP-05, partial ADP-06)
+- [ ] 01-02-PLAN.md — doc_uri dual-column migration, Strategy A (v7 additive + v8 backfill) (ADP-07)
+- [ ] 01-03-PLAN.md — Source adapter extraction + `obsidian-fs` source impl + StubSource + conformance (ADP-01, partial ADP-06, partial ADP-13)
+- [ ] 01-04-PLAN.md — Delivery adapter + D-01 `formatDisplayUrl` + D-02 `client_info` + StubDelivery + conformance (ADP-02, partial ADP-06, partial ADP-13)
+- [ ] 01-05-PLAN.md — ChangeFeed adapter + StubChangeFeed + conformance + MCP SDK ^1.29 + Zod ^4 + `registerTool` × 23 + snapshot regen (ADP-03, ADP-08, ADP-09, partial ADP-06, partial ADP-13)
+- [ ] 01-06-PLAN.md — `scripts/lint-adapters.sh` + Inspector smoketest + AGENT_AGNOSTIC_AUDIT.md + README "any MCP-aware agent" rewrite + CI wiring + final phase-gate verification (ADP-10, ADP-11, ADP-12, ADP-14, ADP-15)
 
 ### Phase 2: Memory namespace & provenance contract
 **Goal**: Establish the single non-negotiable safety invariant — agent writes go only to a labeled `MemorySink` with mandatory provenance properties, centralized at the `DeliveryAdapter.write()` chokepoint
