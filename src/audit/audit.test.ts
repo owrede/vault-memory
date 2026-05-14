@@ -28,7 +28,7 @@ describe("audit module", () => {
   let note2Id: number;
 
   beforeEach(() => {
-    db = new Database(":memory:");
+    db = new Database(":memory:", "test-vault");
     db.migrate();
     vault = makeVault(db);
 

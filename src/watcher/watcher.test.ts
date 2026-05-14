@@ -55,7 +55,7 @@ describe("VaultWatcher", () => {
 
   beforeEach(async () => {
     vaultDir = await mkdtemp(join(tmpdir(), "vm-watcher-"));
-    db = new Database(":memory:");
+    db = new Database(":memory:", "test-vault");
     db.migrate();
     db.models.upsert({ name: "test-model", provider: "ollama", dim: 1024 });
     vault = {

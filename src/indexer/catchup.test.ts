@@ -33,7 +33,7 @@ describe("catchupVault", () => {
 
   beforeEach(async () => {
     dir = await mkdtemp(join(tmpdir(), "vm-catchup-"));
-    db = new Database(":memory:");
+    db = new Database(":memory:", "test-vault");
     db.migrate();
     db.models.upsert({ name: "test", provider: "ollama", dim: 1024 });
     vault = {

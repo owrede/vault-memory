@@ -11,7 +11,7 @@ describe("FtsQueries", () => {
   let chunkUnrelatedId: number;
 
   beforeEach(() => {
-    db = new Database(":memory:");
+    db = new Database(":memory:", "test-vault");
 
     const a = db.notes.upsertByPath({
       path: "a.md",

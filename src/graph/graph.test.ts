@@ -75,7 +75,7 @@ describe("graph", () => {
   let vault: Vault;
 
   beforeEach(() => {
-    db = new Database(":memory:");
+    db = new Database(":memory:", "test-vault");
     db.migrate();
     vault = makeVault(db);
     seed(db);
@@ -144,7 +144,7 @@ describe("graph", () => {
     });
 
     it("returns empty when no broken links exist", () => {
-      const fresh = new Database(":memory:");
+      const fresh = new Database(":memory:", "test-vault");
       fresh.migrate();
       const v = makeVault(fresh);
       const id = fresh.notes.upsertByPath({

@@ -421,6 +421,46 @@ ALTER TABLE notes ADD COLUMN doc_uri TEXT;
 CREATE INDEX IF NOT EXISTS idx_notes_doc_uri ON notes(doc_uri);
 `;
 
+/**
+ * Migration 008: doc_uri Strategy A — backfill existing rows.
+ *
+ * For every notes row, derives:
+ *   doc_uri = 'obsidian-fs://' + ctx.vaultName + '/' + path
+ *
+ * Path is stored un-encoded (matches the existing `path` column shape).
+ * Percent-encoding is a presentation concern handled by formatDisplayUrl
+ * (per RESEARCH Pitfall 5).
+ *
+ * IDEMPOTENT: rows where doc_uri IS already NOT NULL are skipped. Re-running
+ * the migration on a fully backfilled DB is a no-op. The runner is wrapped
+ * in the existing SQLite transaction (database.ts:99) so failure rolls back.
+ *
+ * Requires `ctx.vaultName` (plumbed from VaultManager via Database constructor).
+ * Throws clearly if vaultName is undefined — see RESEARCH §Pitfall 5 / A8.
+ */
+function runMigration008(db: BetterSqlite3Database, ctx: MigrationContext): void {
+  // Short-circuit: zero notes to backfill means we don't need vaultName at
+  // all. This lets `:memory:` fresh DBs migrate cleanly without forcing
+  // every test fixture to specify a vault name.
+  const pending = db
+    .prepare<[], { c: number }>("SELECT COUNT(*) AS c FROM notes WHERE doc_uri IS NULL")
+    .get();
+  if (!pending || pending.c === 0) return;
+
+  if (!ctx.vaultName) {
+    throw new Error(
+      "runMigration008 requires vaultName context to backfill doc_uri on existing notes (Database constructor must be called with the vault name; check src/vault/manager.ts).",
+    );
+  }
+  const prefix = `obsidian-fs://${ctx.vaultName}/`;
+  const update = db.prepare(`
+    UPDATE notes
+       SET doc_uri = @prefix || path
+     WHERE doc_uri IS NULL
+  `);
+  update.run({ prefix });
+}
+
 export const MIGRATIONS: readonly Migration[] = [
   {
     version: 1,
@@ -456,5 +496,10 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 7,
     description: "add doc_uri column to notes (Strategy A, additive)",
     sql: MIGRATION_007_DOC_URI_ADD,
+  },
+  {
+    version: 8,
+    description: "backfill doc_uri from <vault-name>/path",
+    run: runMigration008,
   },
 ];

@@ -13,7 +13,7 @@ describe("ModelsQueries — shadow + setActive (Phase 7c)", () => {
   let db: Database;
 
   beforeEach(() => {
-    db = new Database(":memory:");
+    db = new Database(":memory:", "test-vault");
   });
 
   afterEach(() => {

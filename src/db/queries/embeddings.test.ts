@@ -7,12 +7,13 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Database } from "../database.js";
+import { MIGRATIONS } from "../schema.js";
 
 describe("EmbeddingsQueries — variable dims", () => {
   let db: Database;
 
   beforeEach(() => {
-    db = new Database(":memory:");
+    db = new Database(":memory:", "test-vault");
   });
 
   afterEach(() => {
@@ -189,7 +190,7 @@ describe("migration 004→005 — legacy embeddings → per-model tables", () =>
   it("preserves rows from a pre-v4 DB through migration 005 (per-model layout)", () => {
     // Hand-craft a v3-shaped DB: notes/chunks/models/embeddings with one row,
     // user_version=3 — exactly what an existing v0.6.1 vault looks like.
-    const db = new Database(":memory:");
+    const db = new Database(":memory:", "test-vault");
     // Wipe migration-004 pre-tables; rebuild the legacy v3 table; reset
     // user_version to 3 so the migration runner replays 4, 5, 6.
     db.handle.exec("DROP TABLE IF EXISTS embeddings_1024");
@@ -243,7 +244,9 @@ describe("migration 004→005 — legacy embeddings → per-model tables", () =>
 
     // Apply migrations forward.
     db.migrate();
-    expect(db.getSchemaVersion()).toBe(6);
+    // Use the latest version from MIGRATIONS so this test doesn't drift on
+    // every new migration (plan 01-02 added 7+8).
+    expect(db.getSchemaVersion()).toBe(MIGRATIONS[MIGRATIONS.length - 1]!.version);
 
     // Both legacy tables are gone:
     //   - `embeddings`         (v3) — dropped by migration 004

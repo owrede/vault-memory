@@ -10,7 +10,7 @@ import type { Vault } from "../vault/index.js";
 import { vacuumEmbeddings } from "./vacuum.js";
 
 function makeVault(): Vault {
-  const db = new Database(":memory:");
+  const db = new Database(":memory:", "test-vault");
   return {
     config: { name: "test", path: "/tmp/dummy" },
     db,

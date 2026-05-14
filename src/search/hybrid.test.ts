@@ -74,7 +74,7 @@ describe("hybridSearch (integration)", () => {
   })();
 
   beforeEach(() => {
-    db = new Database(":memory:");
+    db = new Database(":memory:", "test-vault");
 
     const model = db.models.upsert({
       name: "test-model",
@@ -192,7 +192,7 @@ describe("hybridSearch (integration)", () => {
 
   it("BM25-only path works when active model is missing", async () => {
     // No model registered → semantic skipped.
-    const db2 = new Database(":memory:");
+    const db2 = new Database(":memory:", "test-vault");
     const n = db2.notes.upsertByPath({
       path: "x.md",
       content: "hello",
@@ -318,7 +318,7 @@ describe("hybridSearch (integration)", () => {
     // reranker mock asserts it never sees chunks shorter than the
     // threshold — they keep their RRF position but bypass the cross-
     // encoder pass entirely.
-    const tinyDb = new Database(":memory:");
+    const tinyDb = new Database(":memory:", "test-vault");
     const model = tinyDb.models.upsert({
       name: "test-model",
       provider: "test",
@@ -408,7 +408,7 @@ describe("hybridSearch (integration)", () => {
   });
 
   it("falls back to RRF when ALL pool candidates are too short to rerank", async () => {
-    const tinyDb = new Database(":memory:");
+    const tinyDb = new Database(":memory:", "test-vault");
     const model = tinyDb.models.upsert({
       name: "test-model",
       provider: "test",

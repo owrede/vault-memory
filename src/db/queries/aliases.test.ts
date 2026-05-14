@@ -5,7 +5,7 @@ describe("AliasesQueries", () => {
   let db: Database;
 
   beforeEach(() => {
-    db = new Database(":memory:");
+    db = new Database(":memory:", "test-vault");
     db.migrate();
   });
 

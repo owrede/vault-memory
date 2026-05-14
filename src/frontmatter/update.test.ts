@@ -16,7 +16,7 @@ interface TestCtx {
 
 async function makeCtx(opts?: { writeEnabled?: boolean }): Promise<TestCtx> {
   const vaultRoot = await fs.mkdtemp(join(tmpdir(), "vm-fm-update-"));
-  const db = new Database(":memory:");
+  const db = new Database(":memory:", "test-vault");
   db.migrate();
   const vault: Vault = {
     config: {
