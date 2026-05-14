@@ -12,6 +12,24 @@ export interface UpsertNoteInput {
   bodyHash: string;
   mtime: number;
   wordCount: number;
+  /**
+   * v2 canonical identifier (plan 01-02 Task 04). When provided, written
+   * verbatim into the `doc_uri` column. When omitted but `vaultName` IS
+   * provided, the writer synthesizes `obsidian-fs://<vaultName>/<path>`
+   * un-encoded. When both are omitted, the column is left NULL — the
+   * v8 backfill catches it on the next migration replay.
+   *
+   * UPDATE semantics: an undefined `docUri` on an existing row PRESERVES
+   * the existing value via SQL COALESCE — callers can safely omit the
+   * field on edit-style upserts without clobbering data.
+   */
+  docUri?: string;
+  /**
+   * Vault name used only to synthesize a default `docUri` when the caller
+   * hasn't precomputed one. Indexer / write-path callers that already know
+   * the vault SHOULD pass this so new rows ship with doc_uri populated.
+   */
+  vaultName?: string;
 }
 
 export class NotesQueries {
@@ -27,9 +45,12 @@ export class NotesQueries {
     this._selectByPath = db.prepare<[string], NoteRow>("SELECT * FROM notes WHERE path = ?");
     this._selectById = db.prepare<[number], NoteRow>("SELECT * FROM notes WHERE id = ?");
     this._insert = db.prepare(`
-      INSERT INTO notes (path, content, frontmatter, title, hash, body_hash, mtime, word_count, created_at, updated_at)
-      VALUES (@path, @content, @frontmatter, @title, @hash, @body_hash, @mtime, @word_count, @now, @now)
+      INSERT INTO notes (path, content, frontmatter, title, hash, body_hash, doc_uri, mtime, word_count, created_at, updated_at)
+      VALUES (@path, @content, @frontmatter, @title, @hash, @body_hash, @doc_uri, @mtime, @word_count, @now, @now)
     `);
+    // doc_uri uses COALESCE(@doc_uri, doc_uri) so that a caller passing
+    // undefined / null PRESERVES the existing value instead of clobbering it.
+    // See UpsertNoteInput.docUri TSDoc and plan 01-02 W3 caveat.
     this._update = db.prepare(`
       UPDATE notes
       SET content = @content,
@@ -37,6 +58,7 @@ export class NotesQueries {
           title = @title,
           hash = @hash,
           body_hash = @body_hash,
+          doc_uri = COALESCE(@doc_uri, doc_uri),
           mtime = @mtime,
           word_count = @word_count,
           updated_at = @now
@@ -52,6 +74,14 @@ export class NotesQueries {
   upsertByPath(input: UpsertNoteInput): { id: number; isNew: boolean } {
     const existing = this._selectByPath.get(input.path);
     const now = Date.now();
+    // doc_uri resolution: explicit > synthesized-from-vaultName > NULL.
+    // NULL is acceptable during the Phase 1 dual-column window — migration
+    // 008 backfills it on the next replay, and Phase 3+ flips reads.
+    const docUri: string | null =
+      input.docUri ??
+      (input.vaultName !== undefined
+        ? `obsidian-fs://${input.vaultName}/${input.path}`
+        : null);
     if (existing) {
       if (existing.hash === input.hash) {
         return { id: existing.id, isNew: false };
@@ -63,6 +93,9 @@ export class NotesQueries {
         title: input.title,
         hash: input.hash,
         body_hash: input.bodyHash,
+        // Pass null when the caller didn't compute one — COALESCE in the
+        // UPDATE statement keeps the existing doc_uri intact.
+        doc_uri: docUri,
         mtime: input.mtime,
         word_count: input.wordCount,
         now,
@@ -76,6 +109,7 @@ export class NotesQueries {
       title: input.title,
       hash: input.hash,
       body_hash: input.bodyHash,
+      doc_uri: docUri,
       mtime: input.mtime,
       word_count: input.wordCount,
       now,
