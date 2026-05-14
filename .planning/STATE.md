@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: release
 status: executing
-stopped_at: Wave 1 (plan 01-01) complete; ready for /gsd-execute-phase 1 --wave 2
-last_updated: "2026-05-15T07:30:00.000Z"
-last_activity: "2026-05-15 -- Wave 1 (01-01) executed in worktree, merged to main (194c1ae): canonical v2 types + branded DocId IIFE + 3 adapter directory bootstraps. 7 task commits + SUMMARY. npm run lint:check + 430 tests + eval:baseline all green. 3 minor deviations documented in SUMMARY (IIFE return-shape narrowing, tsconfig rootDir drop, registry comment phrasing)."
+stopped_at: Wave 2 (plan 01-02) complete; ready for /gsd-execute-phase 1 --wave 3
+last_updated: "2026-05-15T07:55:00.000Z"
+last_activity: "2026-05-15 -- Wave 2 (01-02) executed in worktree, merged to main (fbabcfc): doc_uri Strategy A. MIGRATIONS 007 (additive nullable doc_uri + idx_notes_doc_uri) + 008 (idempotent backfill with zero-pending short-circuit). Database(dbPath, vaultName?) constructor + MigrationContext. NotesQueries.upsertByPath writes doc_uri with COALESCE preservation. 6 task commits + SUMMARY. 447 tests pass (+13 new doc_uri tests; W3 caveat addressed), lint:check + eval:baseline green. Deviation: executor used `obsidian-fs://` prefix (matches the registry shipped by 01-01) rather than the orchestrator-prompt's `obsidian://` — correct call, 01-01's registry is canonical."
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 21
-  completed_plans: 16
-  percent: 76
+  completed_plans: 17
+  percent: 81
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-14)
 ## Current Position
 
 Phase: 01 (adapter-extraction-tech-debt-up) — EXECUTING
-Plan: 1 of 6 complete; 5 remaining (01-02..06)
-Status: Wave 1 merged (194c1ae). 01-01 SUMMARY committed (74094c0). Worktree pruned. lint+tests+eval all green on main. Resume with /gsd-execute-phase 1 --wave 2 (doc_uri Strategy A migration).
-Last activity: 2026-05-15 -- Wave 1 merged; types + branded DocId + adapter directory bootstraps land on main
+Plan: 2 of 6 complete; 4 remaining (01-03..06)
+Status: Wave 2 merged (fbabcfc). 01-02 SUMMARY committed (34d4de7). Worktree pruned. lint:check + 447 tests (+13 new) + eval:baseline all green. doc_uri now populated for every existing row; new writes carry it through. Resume with /gsd-execute-phase 1 --wave 3 (Source adapter extraction — first vertical seam slice).
+Last activity: 2026-05-15 -- Wave 2 merged; doc_uri Strategy A migrations (v7 additive + v8 idempotent backfill) land on main
 
-Progress: [████████░░] 76%
+Progress: [████████░░] 81%
 
 ## Performance Metrics
 
@@ -94,6 +94,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-15T07:30:00.000Z
-Stopped at: Wave 1 (plan 01-01) complete; ready for /gsd-execute-phase 1 --wave 2
-Resume file: .planning/phases/01-adapter-extraction-tech-debt-up/01-02-PLAN.md (wave 2 — doc_uri Strategy A migration)
+Last session: 2026-05-15T07:55:00.000Z
+Stopped at: Wave 2 (plan 01-02) complete; ready for /gsd-execute-phase 1 --wave 3
+Resume file: .planning/phases/01-adapter-extraction-tech-debt-up/01-03-PLAN.md (wave 3 — Source adapter extraction + obsidian-fs source impl)
