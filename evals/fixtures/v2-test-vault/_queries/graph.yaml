@@ -31,3 +31,29 @@ queries:
   rationale: >
     The pivot decision links to the project and to the OKR review where
     its consequences were implemented.
+
+- id: perception-stack-neighbors
+  query: "What links to or from the Atlas-1 perception stack?"
+  expected_doc_ids:
+  - projects/atlas-1.md
+  - people/bob-martinez.md
+  - people/eli-sato.md
+  - references/perception-stack-spec.md
+  - decisions/2026-04-08-rgbd-over-stereo-only.md
+  - decisions/2026-04-29-second-source-perception-head.md
+  rationale: >
+    1-hop neighbors of projects/atlas-1-perception-stack.md across people,
+    refs, and decisions.
+
+- id: spire-2-hop
+  query: "Two-hop graph neighborhood of projects/spire.md."
+  expected_doc_ids:
+  - projects/spire-fleet-orchestrator.md
+  - projects/spire-pallet-identification.md
+  - people/dana-park.md
+  - references/spire-architecture.md
+  - decisions/2026-03-12-pivot-to-warehouse.md
+  - meetings/2026-05-04-dana-onboarding-kickoff.md
+  rationale: >
+    Spire 1-hop: sub-projects, PM, architecture, parent decision. From
+    those: onboarding kickoff is 2-hop via Dana.

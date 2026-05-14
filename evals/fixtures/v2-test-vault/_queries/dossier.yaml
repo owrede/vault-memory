@@ -36,3 +36,39 @@ queries:
   rationale: >
     The decision itself, the OKR rewrite that implemented its consequences,
     the aftermath brief, and the supporting cycle-time observation.
+
+- id: bob-martinez-dossier
+  query: "Build me a dossier for Bob Martinez."
+  expected_doc_ids:
+  - people/bob-martinez.md
+  - projects/atlas-1-perception-stack.md
+  - projects/atlas-1-reliability-program.md
+  - decisions/2026-04-08-rgbd-over-stereo-only.md
+  - meetings/2026-04-13-weekly-engineering-sync.md
+  rationale: >
+    Bob's bio plus the two programs he co-owns plus the decision where
+    his position prevailed plus the weekly sync he runs.
+
+- id: spire-dossier
+  query: "Project dossier for Spire."
+  expected_doc_ids:
+  - projects/spire.md
+  - projects/spire-fleet-orchestrator.md
+  - projects/spire-pallet-identification.md
+  - references/spire-architecture.md
+  - people/dana-park.md
+  - meetings/2026-05-04-dana-onboarding-kickoff.md
+  rationale: >
+    The Spire family of notes plus the PM bio plus the onboarding kickoff
+    where the program's structure was formalized.
+
+- id: reliability-program-dossier
+  query: "Dossier on the Atlas-1 reliability program."
+  expected_doc_ids:
+  - projects/atlas-1-reliability-program.md
+  - decisions/2026-04-22-drive-motor-duty-cycle-cap.md
+  - meetings/2026-04-30-april-reliability-retro.md
+  - _memory/observations/2026-04-16-two-shift-uptime-metric.md
+  rationale: >
+    The program itself, the headline duty-cycle decision, the April retro,
+    and the metric definition.

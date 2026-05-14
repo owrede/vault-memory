@@ -32,3 +32,27 @@ queries:
   rationale: >
     Alice's own bio + the project she personally owns + the most recent
     meeting where she made decisions on it.
+
+- id: warehouse-task-library-bundle
+  query: "Give me everything about the warehouse task library."
+  expected_doc_ids:
+  - projects/atlas-1-warehouse-task-library.md
+  - projects/spire-pallet-identification.md
+  - references/warehouse-task-library-api.md
+  - decisions/2026-04-25-orchestrator-library-split.md
+  - meetings/2026-04-27-parcel-singulation-design-review.md
+  rationale: >
+    The library project, the pallet-id sub-project, the API contract,
+    the orchestrator/library split decision, and the singulation design
+    review.
+
+- id: vendor-risk-bundle
+  query: "Bundle: vendor risk and second-sourcing."
+  expected_doc_ids:
+  - meetings/2026-04-29-vendor-risk-review.md
+  - decisions/2026-04-29-second-source-perception-head.md
+  - references/vendor-shortlist-q2-2026.md
+  - references/atlas-1-component-spec.md
+  rationale: >
+    The vendor risk review meeting, its headline decision, the candidate
+    shortlist, and the BOM the risk is against.

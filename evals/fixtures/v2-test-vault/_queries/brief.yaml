@@ -32,3 +32,22 @@ queries:
   rationale: >
     The working-style brief is the compiled answer; the people/ note is
     raw substrate. Brief should rank first.
+
+- id: reliability-program-brief-intent
+  query: "Latest summary of the reliability program."
+  expected_doc_ids:
+  - projects/atlas-1-reliability-program.md
+  - meetings/2026-04-30-april-reliability-retro.md
+  rationale: >
+    Placeholder — no compiled brief exists yet for the reliability
+    program; the program note + April retro are the closest substrate.
+    Maintainer adds a `_memory/_briefs/` entry when one is compiled.
+
+- id: spire-architecture-brief-intent
+  query: "Brief on the Spire architecture decisions."
+  expected_doc_ids:
+  - references/spire-architecture.md
+  - decisions/2026-04-25-orchestrator-library-split.md
+  rationale: >
+    Placeholder — no compiled brief for Spire architecture yet; the
+    reference doc + the split decision are the substrate.

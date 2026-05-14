@@ -40,3 +40,24 @@ queries:
     Placeholder — the pivot decision shows the desired decision-record
     shape (Decision / Context / Alternatives / Consequences). Replace
     with a formal contract when defined.
+
+- id: meeting-note-intent
+  query: "Find a contract for writing a meeting note."
+  expected_doc_ids:
+  - meetings/2026-04-15-q2-okr-review.md
+  - meetings/2026-04-23-pilot-onboarding-kickoff.md
+  expected_must_contain:
+  - "Action items"
+  rationale: >
+    Placeholder — these meeting notes demonstrate the canonical shape
+    (Agenda / Discussion / Decisions / Action items). Replace with a
+    formal contract when defined.
+
+- id: pilot-onboarding-intent
+  query: "Find a contract for onboarding a new pilot customer."
+  expected_doc_ids:
+  - references/customer-pilot-playbook.md
+  rationale: >
+    The customer-pilot playbook is the closest existing contract-shaped
+    artifact. Replace with a formal `contracts/pilot-onboarding.md` when
+    the contract format lands.

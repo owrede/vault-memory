@@ -39,3 +39,23 @@ queries:
   - _memory/observations/2026-04-20-atlas-1-pilot-target-was-12.md
   rationale: >
     Filter to `status: superseded`. There is exactly one in this fixture.
+
+- id: spire-pm-hiring-history
+  query: "What is the agent's record of the Spire PM hiring process?"
+  expected_doc_ids:
+  - _memory/observations/2026-04-18-spire-needs-pm.md
+  - _memory/status-updates/2026-04-20-spire-pm-jd-published.md
+  rationale: >
+    The observation and the follow-up status update together form the
+    memory trace of the Spire PM hiring action item.
+
+- id: q2-okr-followthrough-trace
+  query: "Trace agent observations from the Q2 OKR review."
+  expected_doc_ids:
+  - _memory/observations/2026-04-16-atlas-1-pilot-count-reduced.md
+  - _memory/observations/2026-04-16-beacon-paused-q2.md
+  - _memory/observations/2026-04-16-two-shift-uptime-metric.md
+  - _memory/observations/2026-04-18-spire-needs-pm.md
+  rationale: >
+    Four memory observations derived from the 2026-04-15 OKR review,
+    all referencing it in their evidence field.

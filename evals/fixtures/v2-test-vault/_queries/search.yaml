@@ -43,3 +43,38 @@ queries:
   rationale: >
     The OKR review defined the metric; the _memory observation records the
     agent's awareness of it.
+
+- id: why-beacon-paused
+  query: "Why was the Beacon program paused?"
+  expected_doc_ids:
+  - decisions/2026-04-16-beacon-pause.md
+  - projects/beacon.md
+  - references/beacon-q1-results-summary.md
+  expected_must_contain:
+  - "warehouse"
+  rationale: >
+    The Beacon-pause decision record is the canonical answer; the project
+    page and Q1 results summary are supporting substrate.
+
+- id: drive-motor-duty-cycle
+  query: "What is the drive-motor duty-cycle cap and why?"
+  expected_doc_ids:
+  - decisions/2026-04-22-drive-motor-duty-cycle-cap.md
+  expected_must_contain:
+  - "70%"
+  - "thermal cycling"
+  rationale: >
+    Single authoritative decision record with the cap value and the
+    motor-B failure rationale.
+
+- id: vendor-risk-second-source
+  query: "What is being done about the perception head single-source risk?"
+  expected_doc_ids:
+  - decisions/2026-04-29-second-source-perception-head.md
+  - meetings/2026-04-29-vendor-risk-review.md
+  - references/vendor-shortlist-q2-2026.md
+  expected_must_contain:
+  - "Vellum"
+  rationale: >
+    The decision picks Vellum Optics as second source; the meeting and
+    shortlist hold the evaluation context.
