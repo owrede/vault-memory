@@ -11,6 +11,19 @@
  */
 
 /**
+ * Context passed to every function-style migration. New optional fields can be
+ * added here without rewriting existing migrations — they accept the whole
+ * context as a single arg and ignore the bits they don't need.
+ *
+ * `vaultName` is plumbed in from the Database constructor (see database.ts).
+ * Migration 008 (doc_uri backfill) requires it; earlier function-style
+ * migrations (005) accept it and ignore it.
+ */
+export interface MigrationContext {
+  readonly vaultName: string | undefined;
+}
+
+/**
  * A migration either ships static SQL or a function that runs imperative
  * steps against the DB. Function-style migrations are used when the steps
  * depend on the current schema state (e.g. discover all `embeddings_<dim>`
@@ -25,7 +38,7 @@ export type Migration =
   | {
       version: number;
       description: string;
-      run: (db: BetterSqlite3Database) => void;
+      run: (db: BetterSqlite3Database, ctx: MigrationContext) => void;
     };
 
 /** Section 3 of the spec — full initial schema. */
@@ -295,7 +308,7 @@ DROP TABLE embeddings;
  * registered a 768-dim model). The runner therefore calls a function-style
  * migration: see `Migration.run()` below.
  */
-function runMigration005(db: BetterSqlite3Database): void {
+function runMigration005(db: BetterSqlite3Database, _ctx: MigrationContext): void {
   // Phase 7e bugfix: split per-dim tables into per-model tables so two models
   // with the same dim (e.g. qwen3 + bge-m3, both 1024) can coexist for the
   // same chunk_ids. New naming: `embeddings_m<modelId>_d<dim>`.
