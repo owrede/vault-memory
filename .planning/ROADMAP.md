@@ -65,7 +65,7 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
   4. `@modelcontextprotocol/sdk` is on `^1.29.x` and `zod` is on `^4.x`; tool registrations migrated to `registerTool(...)`; Standard Schema wiring works
   5. Stub-adapter conformance test suite (pulled forward from brief Phase 10) is green; doc_uri dual-column migration (Strategy A) applied and backfilled
 **Plans**: 6 plans
-- [ ] 01-01-PLAN.md — Type surface + branded DocId + adapter directory bootstrap (ADP-04, ADP-05, partial ADP-06)
+- [x] 01-01-PLAN.md — Type surface + branded DocId + adapter directory bootstrap (ADP-04, ADP-05, partial ADP-06)
 - [ ] 01-02-PLAN.md — doc_uri dual-column migration, Strategy A (v7 additive + v8 backfill) (ADP-07)
 - [ ] 01-03-PLAN.md — Source adapter extraction + `obsidian-fs` source impl + StubSource + conformance (ADP-01, partial ADP-06, partial ADP-13)
 - [ ] 01-04-PLAN.md — Delivery adapter + D-01 `formatDisplayUrl` + D-02 `client_info` + StubDelivery + conformance (ADP-02, partial ADP-06, partial ADP-13)

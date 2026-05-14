@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: release
-status: planning
-stopped_at: Phase 1 plans ready for execution
-last_updated: "2026-05-14T21:30:00.000Z"
-last_activity: "2026-05-14 -- Phase 1 planned: RESEARCH.md (1008 lines, HIGH confidence), PATTERNS.md (54 files mapped), VALIDATION.md (ADP-01..15 verify map, 15 Wave-0 artifacts), 6 PLAN.md files (01-01..06). Plan-checker: PASS-with-caveats (no blockers); W4 + W6 caveats applied surgically. Ready for /gsd-execute-phase 1."
+status: executing
+stopped_at: Wave 1 (plan 01-01) complete; ready for /gsd-execute-phase 1 --wave 2
+last_updated: "2026-05-15T07:30:00.000Z"
+last_activity: "2026-05-15 -- Wave 1 (01-01) executed in worktree, merged to main (194c1ae): canonical v2 types + branded DocId IIFE + 3 adapter directory bootstraps. 7 task commits + SUMMARY. npm run lint:check + 430 tests + eval:baseline all green. 3 minor deviations documented in SUMMARY (IIFE return-shape narrowing, tsconfig rootDir drop, registry comment phrasing)."
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 21
-  completed_plans: 15
-  percent: 71
+  completed_plans: 16
+  percent: 76
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-14)
 
 **Core value:** Local-first, source-agnostic-ready, agentic knowledge layer over your Obsidian notes — with the memory namespace as a non-negotiable safety invariant.
-**Current focus:** Phase 1 — Adapter extraction & tech-debt-up (Phase 0 complete)
+**Current focus:** Phase 01 — adapter-extraction-tech-debt-up
 
 ## Current Position
 
-Phase: 01 (Adapter extraction & tech-debt-up) — PLANNED, ready for execution
-Plan: 0 of 6 complete
-Status: 6 PLAN.md files written (01-01..06), plan-checker PASS-with-caveats (d9d466c). RESEARCH.md HIGH confidence, PATTERNS.md (54 files), VALIDATION.md (15 Wave-0 artifacts) all committed. Next: /gsd-execute-phase 1 — wave 1 unlocks immediately (01-01 has no upstream deps); 01-02 and 01-03 parallelizable after 01-01.
-Last activity: 2026-05-14 -- Phase 1 planned end-to-end; plans encode SDK 1.29 pitfalls (#1143 description, #1643 discriminatedUnion), doc_uri encoding (un-encoded in DB, percent-encoded at format), DocId IIFE branded type, git-mv discipline; W4 (obsidianUrl encoding parity pre-read) and W6 (snapshot description-diff checkpoint) caveats applied.
+Phase: 01 (adapter-extraction-tech-debt-up) — EXECUTING
+Plan: 1 of 6 complete; 5 remaining (01-02..06)
+Status: Wave 1 merged (194c1ae). 01-01 SUMMARY committed (74094c0). Worktree pruned. lint+tests+eval all green on main. Resume with /gsd-execute-phase 1 --wave 2 (doc_uri Strategy A migration).
+Last activity: 2026-05-15 -- Wave 1 merged; types + branded DocId + adapter directory bootstraps land on main
 
-Progress: [███████░░░] 71%
+Progress: [████████░░] 76%
 
 ## Performance Metrics
 
@@ -94,6 +94,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-14T21:30:00.000Z
-Stopped at: Phase 1 plans ready for execution
-Resume file: .planning/phases/01-adapter-extraction-tech-debt-up/01-01-PLAN.md (start of wave 1)
+Last session: 2026-05-15T07:30:00.000Z
+Stopped at: Wave 1 (plan 01-01) complete; ready for /gsd-execute-phase 1 --wave 2
+Resume file: .planning/phases/01-adapter-extraction-tech-debt-up/01-02-PLAN.md (wave 2 — doc_uri Strategy A migration)
