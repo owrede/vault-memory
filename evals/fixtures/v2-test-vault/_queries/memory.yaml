@@ -1,0 +1,41 @@
+# Memory eval queries — exercise the memory namespace surface.
+# Includes provenance-filtered retrieval, supersede-chain following, and
+# authority-aware tie-breaking.
+queries:
+- id: active-observations-about-alice
+  query: "What does the agent currently know about Alice's preferences?"
+  expected_doc_ids:
+  - _memory/observations/2026-04-16-alice-prefers-async-standups.md
+  expected_must_contain:
+  - "async"
+  rationale: >
+    Only one active observation targets Alice's preferences directly;
+    retrieval must scope to `_memory/` with `status: active`.
+
+- id: supersede-chain
+  query: "What is the current pilot-count target for Atlas-1, and what was the previous one?"
+  expected_doc_ids:
+  - _memory/observations/2026-04-16-atlas-1-pilot-count-reduced.md
+  - _memory/observations/2026-04-20-atlas-1-pilot-target-was-12.md
+  expected_must_contain:
+  - "12"
+  - "8"
+  rationale: >
+    The current value (8) is in the active observation; the prior value
+    (12) is in the superseded one. The supersede chain must be navigable
+    from either end.
+
+- id: brief-vs-raw-precedence
+  query: "Latest agent-compiled summary of Atlas-1 state."
+  expected_doc_ids:
+  - _memory/_briefs/2026-04-20-atlas-1-state-of-the-project.md
+  rationale: >
+    Filter to `type: brief`. The Atlas-1 state-of-project brief is the
+    single matching entry.
+
+- id: superseded-only
+  query: "Show me observations that are no longer current."
+  expected_doc_ids:
+  - _memory/observations/2026-04-20-atlas-1-pilot-target-was-12.md
+  rationale: >
+    Filter to `status: superseded`. There is exactly one in this fixture.

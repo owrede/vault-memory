@@ -1,0 +1,34 @@
+# Brief eval queries — exercise the compiled-brief retrieval surface.
+# A "brief" is a previously-compiled summary (type: brief in _memory/) — the
+# query layer should surface the existing brief rather than recompiling.
+queries:
+- id: atlas-1-status-brief
+  query: "Give me the latest brief on Atlas-1."
+  expected_doc_ids:
+  - _memory/_briefs/2026-04-20-atlas-1-state-of-the-project.md
+  expected_must_contain:
+  - "Positioning"
+  - "two-shift uptime"
+  rationale: >
+    Atlas-1 has one compiled state brief; it should be returned ahead of
+    raw narrative notes for status-style queries.
+
+- id: pivot-aftermath-brief
+  query: "What changed across the org after the pivot?"
+  expected_doc_ids:
+  - _memory/_briefs/2026-04-20-pivot-aftermath-brief.md
+  expected_must_contain:
+  - "five"
+  rationale: >
+    The pivot-aftermath brief enumerates the five org-level changes; should
+    be retrieved over re-reading the meeting note + decision record.
+
+- id: alice-comms-brief
+  query: "How should I communicate with Alice?"
+  expected_doc_ids:
+  - _memory/_briefs/2026-04-22-alice-working-style-brief.md
+  expected_must_contain:
+  - "Async"
+  rationale: >
+    The working-style brief is the compiled answer; the people/ note is
+    raw substrate. Brief should rank first.

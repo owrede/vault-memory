@@ -1,0 +1,45 @@
+# Search eval queries — exercise the hybrid retrieval surface (semantic + BM25 + RRF).
+# Each entry: id, query, expected_doc_ids (vault-relative), optional expected_must_contain, rationale.
+queries:
+- id: pivot-decision-lookup
+  query: "Why did Atlas Robotics pivot away from consumer?"
+  expected_doc_ids:
+  - decisions/2026-03-12-pivot-to-warehouse.md
+  expected_must_contain:
+  - "47 minutes"
+  - "90+ days"
+  rationale: >
+    The pivot decision record is the single authoritative source for the
+    consumer-to-warehouse pivot and contains the three primary signals.
+
+- id: who-is-the-ceo
+  query: "Who is the CEO of Atlas Robotics and what is her background?"
+  expected_doc_ids:
+  - people/alice-chen.md
+  expected_must_contain:
+  - "Alice Chen"
+  - "CEO"
+  rationale: >
+    The people/ note for Alice is the canonical CEO bio.
+
+- id: atlas-1-current-state
+  query: "What is the current state of the Atlas-1 project?"
+  expected_doc_ids:
+  - projects/atlas-1.md
+  - meetings/2026-04-15-q2-okr-review.md
+  expected_must_contain:
+  - "Atlas-1"
+  rationale: >
+    Both the project page and the most recent OKR review describe Atlas-1's
+    Q2 state and revised targets.
+
+- id: two-shift-uptime-metric
+  query: "What is the two-shift uptime target for Atlas-1?"
+  expected_doc_ids:
+  - meetings/2026-04-15-q2-okr-review.md
+  - _memory/observations/2026-04-16-two-shift-uptime-metric.md
+  expected_must_contain:
+  - "16 hours"
+  rationale: >
+    The OKR review defined the metric; the _memory observation records the
+    agent's awareness of it.

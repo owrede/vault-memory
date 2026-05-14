@@ -1,0 +1,34 @@
+# Bundle eval queries — exercise the document-tree retrieval surface.
+# A "bundle" returns a coherent set of related Documents for a topic.
+queries:
+- id: atlas-1-full-bundle
+  query: "Give me everything about the Atlas-1 project."
+  expected_doc_ids:
+  - projects/atlas-1.md
+  - decisions/2026-03-12-pivot-to-warehouse.md
+  - meetings/2026-04-15-q2-okr-review.md
+  - references/atlas-1-component-spec.md
+  rationale: >
+    The four notes that together form the Atlas-1 narrative: project page,
+    pivot decision that reshaped it, OKR review that retuned the metrics,
+    and the BOM reference doc.
+
+- id: pivot-bundle
+  query: "What's the context around the 2026 pivot?"
+  expected_doc_ids:
+  - decisions/2026-03-12-pivot-to-warehouse.md
+  - meetings/2026-04-15-q2-okr-review.md
+  - projects/atlas-1.md
+  rationale: >
+    The pivot decision plus its downstream OKR rewrite plus the project
+    whose direction changed.
+
+- id: alice-bundle
+  query: "Bundle of context relevant to Alice Chen's current focus."
+  expected_doc_ids:
+  - people/alice-chen.md
+  - projects/atlas-1.md
+  - meetings/2026-04-15-q2-okr-review.md
+  rationale: >
+    Alice's own bio + the project she personally owns + the most recent
+    meeting where she made decisions on it.

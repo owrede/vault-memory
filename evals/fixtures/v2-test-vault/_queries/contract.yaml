@@ -1,0 +1,42 @@
+# Contract eval queries — exercise the task-contract discovery surface.
+# A contract is a user-defined task template the agent can discover and
+# instantiate. At Phase 0 the fixture has no formal contract files yet —
+# the maintainer will add them in Task 4 or in a Phase-1+ contract plan.
+# These queries express the intent the eval surface needs to support: the
+# expected_doc_ids reference the closest existing substrate notes, so
+# referential integrity holds at Task 3. The maintainer will swap in real
+# contract notes when the contract format lands.
+queries:
+- id: status-update-template-intent
+  query: "Find a contract for writing a weekly status update."
+  expected_doc_ids:
+  - _memory/status-updates/2026-04-19-atlas-1-uptime-progress.md
+  expected_must_contain:
+  - "status"
+  rationale: >
+    Placeholder — the status-update notes demonstrate the shape a contract
+    template should produce. Maintainer replaces with a formal contract
+    note (`contracts/weekly-status.md` or similar) when the contract
+    format is defined.
+
+- id: brief-compilation-intent
+  query: "Find a contract for compiling a project-state brief."
+  expected_doc_ids:
+  - _memory/_briefs/2026-04-20-atlas-1-state-of-the-project.md
+  expected_must_contain:
+  - "compiled_from"
+  rationale: >
+    Placeholder — the existing brief demonstrates the desired output shape
+    (positioning, hardware, software, targets, risks). Replace with a
+    formal contract when defined.
+
+- id: pivot-decision-intent
+  query: "Find a contract for documenting a strategic decision."
+  expected_doc_ids:
+  - decisions/2026-03-12-pivot-to-warehouse.md
+  expected_must_contain:
+  - "Alternatives considered"
+  rationale: >
+    Placeholder — the pivot decision shows the desired decision-record
+    shape (Decision / Context / Alternatives / Consequences). Replace
+    with a formal contract when defined.

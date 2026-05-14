@@ -1,0 +1,33 @@
+# Graph eval queries — exercise the graph-as-retrieval surface.
+# Queries are wikilink-graph traversals: starting node + traversal intent;
+# expected_doc_ids enumerates the reachable nodes within scope.
+queries:
+- id: atlas-1-neighbors
+  query: "What notes wikilink to or from projects/atlas-1.md?"
+  expected_doc_ids:
+  - people/alice-chen.md
+  - decisions/2026-03-12-pivot-to-warehouse.md
+  - meetings/2026-04-15-q2-okr-review.md
+  - references/atlas-1-component-spec.md
+  rationale: >
+    Direct 1-hop neighbors of projects/atlas-1.md in the wikilink graph.
+
+- id: alice-2-hop
+  query: "Two-hop graph neighborhood of people/alice-chen.md."
+  expected_doc_ids:
+  - projects/atlas-1.md
+  - meetings/2026-04-15-q2-okr-review.md
+  - decisions/2026-03-12-pivot-to-warehouse.md
+  - references/atlas-1-component-spec.md
+  rationale: >
+    Alice links to Atlas-1 and the OKR meeting (1-hop). From those:
+    pivot decision and BOM (2-hop).
+
+- id: decision-fan-out
+  query: "What is linked from the 2026-03-12 pivot decision?"
+  expected_doc_ids:
+  - projects/atlas-1.md
+  - meetings/2026-04-15-q2-okr-review.md
+  rationale: >
+    The pivot decision links to the project and to the OKR review where
+    its consequences were implemented.

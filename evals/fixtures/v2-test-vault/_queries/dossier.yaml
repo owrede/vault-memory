@@ -1,0 +1,38 @@
+# Dossier eval queries — person- or project-centric exhaustive context assembly.
+# A "dossier" is a focused, person- or entity-scoped retrieval of all relevant
+# notes for working with / on that entity.
+queries:
+- id: alice-chen-dossier
+  query: "Build me a dossier for Alice Chen."
+  expected_doc_ids:
+  - people/alice-chen.md
+  - projects/atlas-1.md
+  - meetings/2026-04-15-q2-okr-review.md
+  - _memory/observations/2026-04-16-alice-prefers-async-standups.md
+  - _memory/_briefs/2026-04-22-alice-working-style-brief.md
+  rationale: >
+    Her bio + the project she owns + the recent meeting + observed
+    preferences + the working-style brief — everything an agent would need
+    to interact with her.
+
+- id: atlas-1-dossier
+  query: "Project dossier for Atlas-1."
+  expected_doc_ids:
+  - projects/atlas-1.md
+  - decisions/2026-03-12-pivot-to-warehouse.md
+  - meetings/2026-04-15-q2-okr-review.md
+  - references/atlas-1-component-spec.md
+  - _memory/_briefs/2026-04-20-atlas-1-state-of-the-project.md
+  rationale: >
+    All Atlas-1 narrative notes plus the compiled state brief.
+
+- id: pivot-dossier
+  query: "Dossier on the 2026-03-12 pivot decision."
+  expected_doc_ids:
+  - decisions/2026-03-12-pivot-to-warehouse.md
+  - meetings/2026-04-15-q2-okr-review.md
+  - _memory/_briefs/2026-04-20-pivot-aftermath-brief.md
+  - _memory/observations/2026-04-25-warehouse-sales-cycle-faster.md
+  rationale: >
+    The decision itself, the OKR rewrite that implemented its consequences,
+    the aftermath brief, and the supporting cycle-time observation.
