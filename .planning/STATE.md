@@ -10,8 +10,8 @@ progress:
   total_phases: 10
   completed_phases: 0
   total_plans: 15
-  completed_plans: 10
-  percent: 67
+  completed_plans: 13
+  percent: 87
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-14)
 ## Current Position
 
 Phase: 00 (Foundation & decisions) — EXECUTING
-Plan: 10 of 15 complete (Waves 1, 2, 3 done; Wave 4 next)
-Status: Executing Phase 00 — Wave 4 (baseline + CI lints + ADR index finalize) next
-Last activity: 2026-05-14 -- Wave 3 complete: all four ADRs Accepted, fixture corpus 40 narrative + 15 _memory, tool-registry extracted, snapshot pinned
+Plan: 13 of 15 complete (Waves 1-4 done; Wave 5 adversarial review next)
+Status: Executing Phase 00 — 397 tests + 11 todo green; Wave 5 next
+Last activity: 2026-05-14 -- Wave 4 complete: v1 baseline suite (12 YAMLs + test), CI lints (privacy + telemetry), ADR index finalized with v3 open ADRs
 
-Progress: [██████░░░░] 67%
+Progress: [████████░░] 87%
 
 ## Performance Metrics
 
@@ -76,10 +76,11 @@ None yet.
 
 [Issues that affect future work]
 
-- Phase 0: ADRs 001–004 currently gitignored at `docs/dev/`; first Phase 0 PR must relocate them to public `docs/v2/adr/`
-- Phase 2: ADR-004 amendment (folder vs separate-vault) must land before implementation
+- ~~Phase 0: ADRs 001–004 currently gitignored at `docs/dev/`; first Phase 0 PR must relocate them to public `docs/v2/adr/`~~ — resolved Wave 2/3, all four ADRs now Accepted at `docs/v2/adr/`
+- ~~Phase 2: ADR-004 amendment (folder vs separate-vault) must land before implementation~~ — resolved in plan 00-05 (folder-default + sentinel)
 - Phase 5: ADR on LLM strategy (MCP Sampling → Ollama → caller-text ladder) must land before implementation
 - Phase 7: Spike outcome (file-watcher vs full Obsidian plugin) decides scope; descope path to "Canvas as view, YAML as authoring" if spike fails
+- Phase 0 follow-up: Alpine docker bake-test for CI lint scripts (00-12) — static review + telemetry red-test + suppression test passed locally; Alpine container POSIX run deferred (Docker daemon was unavailable). Re-verify before Phase 1.
 
 ## Deferred Items
 

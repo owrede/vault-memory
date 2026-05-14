@@ -47,9 +47,9 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
 - [x] 00-08-agent-agnostic-doc-PLAN.md — publish `docs/v2/AGENT_AGNOSTIC.md` ("MCP is canonical; Skills are one delivery mechanism")
 - [x] 00-09-atlas-robotics-fixture-PLAN.md — ship hand-authored Atlas Robotics fixture vault (~75 notes across projects/meetings/people/decisions/references/_memory + per-category `_queries/*.yaml`)
 - [x] 00-10-tool-registry-and-snapshot-PLAN.md — extract `src/tool-registry.ts` from `src/server.ts` (the one pre-approved src/ change), ship `dump-tools.mjs`, pin `evals/v1-baseline/tools-list.snapshot.json` for all 23 v1 tools
-- [ ] 00-11-v1-baseline-suite-PLAN.md — author `evals/v1-baseline/baseline.test.ts` (snapshot equality + parse-only behavioral floors with `.todo` execution stubs) and per-tool semantic-floor YAMLs
-- [ ] 00-12-ci-lints-and-workflow-PLAN.md — ship POSIX `scripts/check-fixture-privacy.sh` (FND-11), `scripts/lint-no-telemetry.sh` (FND-12), and `.github/workflows/ci.yml` gating both on PR + push-to-main
-- [ ] 00-13-adr-index-finalize-PLAN.md — audit and finalize `docs/v2/adr/README.md` (MADR-style table with 4 Accepted ADRs + ≥14 Open ADRs for v3-Phase-10)
+- [x] 00-11-v1-baseline-suite-PLAN.md — author `evals/v1-baseline/baseline.test.ts` (snapshot equality + parse-only behavioral floors with `.todo` execution stubs) and per-tool semantic-floor YAMLs
+- [x] 00-12-ci-lints-and-workflow-PLAN.md — ship POSIX `scripts/check-fixture-privacy.sh` (FND-11), `scripts/lint-no-telemetry.sh` (FND-12), and `.github/workflows/ci.yml` gating both on PR + push-to-main
+- [x] 00-13-adr-index-finalize-PLAN.md — audit and finalize `docs/v2/adr/README.md` (MADR-style table with 4 Accepted ADRs + ≥14 Open ADRs for v3-Phase-10)
 - [ ] 00-14-adversarial-review-PLAN.md — run `gsd-advisor-researcher` in a fresh Claude session against the four ADRs + three architecture docs, write `docs/v2/adr/ADVERSARIAL-REVIEW.md`, resolve every finding as Amended or Deferred-v3
 - [ ] 00-15-sign-off-PLAN.md — author `docs/v2/SIGN-OFF.md` (FND-01..14 checklist with resolving commit SHAs), refine CHANGELOG, capture maintainer PR approval (D-17)
 
