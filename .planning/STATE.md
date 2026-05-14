@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-14)
 
 ## Current Position
 
-Phase: 00 (Foundation & decisions) — COMPLETE
+Phase: 00 (Foundation & decisions) — COMPLETE + VERIFIED
 Plan: 15 of 15 complete
-Status: Phase 00 signed off; ready for verifier audit; Phase 1 unblocked
-Last activity: 2026-05-14 -- Phase 0 sign-off committed (2a2dfbc); maintainer approved; SIGN-OFF.md FND-14 audit event landed
+Status: Phase 00 signed off (2a2dfbc), verified PASS-with-caveats (b3948d9), CI gate green (5f6dfad). Phase 1 fully unblocked.
+Last activity: 2026-05-14 -- Verifier surfaced prettier-drift blocker on lint:check; resolved via one-shot prettier --write on 76 src/ files; npm run lint:check now exit 0
 
 Progress: [██████████] 100%
 
