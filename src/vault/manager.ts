@@ -42,7 +42,9 @@ export class VaultManager {
       if (this.vaults.has(cfg.name)) continue;
 
       const dbPath = VaultManager.dbPathFor(cfg.name);
-      const db = new Database(dbPath);
+      // Pass vault name explicitly so migration 008 (doc_uri backfill) can
+      // derive `obsidian-fs://<vaultName>/<path>` without parsing dbPath.
+      const db = new Database(dbPath, cfg.name);
       db.migrate();
 
       this.vaults.set(cfg.name, { config: cfg, db, dbPath });

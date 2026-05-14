@@ -9,7 +9,7 @@ import { writeNote, deleteNote } from "./write.js";
 import { OutsideVaultError } from "./fs.js";
 
 function makeVault(path: string, writeEnabled = true): Vault {
-  const db = new Database(":memory:");
+  const db = new Database(":memory:", "test-vault");
   return {
     config: {
       name: "test",

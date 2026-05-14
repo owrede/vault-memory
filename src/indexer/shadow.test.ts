@@ -28,7 +28,7 @@ const SECONDARY = "secondary-embed";
 const SECONDARY_DIM = 768;
 
 function makeVault(vaultRoot: string): Vault {
-  const db = new Database(":memory:");
+  const db = new Database(":memory:", "test-vault");
   return {
     config: { name: "test", path: vaultRoot },
     db,

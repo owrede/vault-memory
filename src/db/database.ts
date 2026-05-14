@@ -1,7 +1,7 @@
 import BetterSqlite3 from "better-sqlite3";
 import * as sqliteVec from "sqlite-vec";
 
-import { MIGRATIONS } from "./schema.js";
+import { MIGRATIONS, type MigrationContext } from "./schema.js";
 import { NotesQueries } from "./queries/notes.js";
 import { ChunksQueries } from "./queries/chunks.js";
 import { EmbeddingsQueries } from "./queries/embeddings.js";
@@ -31,7 +31,17 @@ export class Database {
   readonly fts: FtsQueries;
   readonly aliases: AliasesQueries;
 
-  constructor(dbPath: string) {
+  /**
+   * Name of the vault this DB belongs to, or `undefined` for `:memory:` /
+   * unrecognised paths. Threaded into function-style migrations as
+   * `MigrationContext.vaultName` so migration 008 can derive
+   * `obsidian-fs://<vaultName>/<path>` (RESEARCH §doc_uri Dual-Column Migration,
+   * plan 01-02).
+   */
+  readonly vaultName: string | undefined;
+
+  constructor(dbPath: string, vaultName?: string) {
+    this.vaultName = vaultName ?? deriveVaultNameFromPath(dbPath);
     this.handle = new BetterSqlite3(dbPath);
     // WAL is invalid for :memory: databases — skip it there.
     if (dbPath !== ":memory:") {
@@ -59,8 +69,8 @@ export class Database {
     this.aliases = new AliasesQueries(this.handle);
   }
 
-  static async open(dbPath: string): Promise<Database> {
-    return new Database(dbPath);
+  static async open(dbPath: string, vaultName?: string): Promise<Database> {
+    return new Database(dbPath, vaultName);
   }
 
   close(): void {
@@ -99,13 +109,14 @@ export class Database {
     if (fkWasOn) this.handle.pragma("foreign_keys = OFF");
 
     let highest = current;
+    const ctx: MigrationContext = { vaultName: this.vaultName };
     try {
       const tx = this.handle.transaction(() => {
         for (const m of pending) {
           if ("sql" in m) {
             this.handle.exec(m.sql);
           } else {
-            m.run(this.handle);
+            m.run(this.handle, ctx);
           }
           highest = m.version;
         }
@@ -130,6 +141,26 @@ export class Database {
   transaction<T>(fn: () => T): T {
     return this.handle.transaction(fn)();
   }
+}
+
+/**
+ * Best-effort vault-name derivation from the dbPath. Standard layout is
+ * `<homedir>/.vault-memory/vaults/<name>.db` (see VaultManager.dbPathFor).
+ * Returns `undefined` for `:memory:`, empty strings, or any path whose
+ * basename doesn't match `<name>.db`. Callers can override by passing an
+ * explicit `vaultName` to the Database constructor (the normal path —
+ * VaultManager always passes `vault.config.name`).
+ */
+function deriveVaultNameFromPath(dbPath: string): string | undefined {
+  if (!dbPath || dbPath === ":memory:") return undefined;
+  // basename: split on POSIX or Windows separator
+  const segs = dbPath.split(/[\\/]/);
+  const base = segs[segs.length - 1];
+  if (!base) return undefined;
+  if (!base.endsWith(".db")) return undefined;
+  const name = base.slice(0, -3);
+  if (!name) return undefined;
+  return name;
 }
 
 function loadSqliteVec(db: BetterSqlite3.Database): void {

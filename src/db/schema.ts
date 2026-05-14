@@ -11,6 +11,19 @@
  */
 
 /**
+ * Context passed to every function-style migration. New optional fields can be
+ * added here without rewriting existing migrations — they accept the whole
+ * context as a single arg and ignore the bits they don't need.
+ *
+ * `vaultName` is plumbed in from the Database constructor (see database.ts).
+ * Migration 008 (doc_uri backfill) requires it; earlier function-style
+ * migrations (005) accept it and ignore it.
+ */
+export interface MigrationContext {
+  readonly vaultName: string | undefined;
+}
+
+/**
  * A migration either ships static SQL or a function that runs imperative
  * steps against the DB. Function-style migrations are used when the steps
  * depend on the current schema state (e.g. discover all `embeddings_<dim>`
@@ -25,7 +38,7 @@ export type Migration =
   | {
       version: number;
       description: string;
-      run: (db: BetterSqlite3Database) => void;
+      run: (db: BetterSqlite3Database, ctx: MigrationContext) => void;
     };
 
 /** Section 3 of the spec — full initial schema. */
@@ -295,7 +308,7 @@ DROP TABLE embeddings;
  * registered a 768-dim model). The runner therefore calls a function-style
  * migration: see `Migration.run()` below.
  */
-function runMigration005(db: BetterSqlite3Database): void {
+function runMigration005(db: BetterSqlite3Database, _ctx: MigrationContext): void {
   // Phase 7e bugfix: split per-dim tables into per-model tables so two models
   // with the same dim (e.g. qwen3 + bge-m3, both 1024) can coexist for the
   // same chunk_ids. New naming: `embeddings_m<modelId>_d<dim>`.
@@ -385,6 +398,69 @@ ALTER TABLE notes ADD COLUMN body_hash TEXT;
 CREATE INDEX IF NOT EXISTS idx_notes_body_hash ON notes(body_hash);
 `;
 
+/**
+ * Migration 007: doc_uri Strategy A — additive nullable column.
+ *
+ * Adds the v2 canonical identifier column to `notes`. Stored UN-ENCODED:
+ * a raw forward-slash path with spaces / Unicode passed through (matches
+ * the existing `path` column shape). Percent-encoding happens only at
+ * formatDisplayUrl time per RESEARCH Pitfall 5.
+ *
+ * Indexer behavior: new writes populate doc_uri alongside path (plan 01-02
+ * Task 04 wires this into NotesQueries.upsertByPath). Backfill of existing
+ * rows is migration 008. Reads continue to use path as PK until phase 3 or
+ * later flips read preference.
+ *
+ * Strategy A staging (RESEARCH §doc_uri Dual-Column Migration):
+ *   v7 = this migration (ADD COLUMN; nullable)
+ *   v8 = backfill (function-style; idempotent)
+ *   v9 = NOT NULL assertion + drop path PK — DEFERRED to phase 3+
+ */
+const MIGRATION_007_DOC_URI_ADD = `
+ALTER TABLE notes ADD COLUMN doc_uri TEXT;
+CREATE INDEX IF NOT EXISTS idx_notes_doc_uri ON notes(doc_uri);
+`;
+
+/**
+ * Migration 008: doc_uri Strategy A — backfill existing rows.
+ *
+ * For every notes row, derives:
+ *   doc_uri = 'obsidian-fs://' + ctx.vaultName + '/' + path
+ *
+ * Path is stored un-encoded (matches the existing `path` column shape).
+ * Percent-encoding is a presentation concern handled by formatDisplayUrl
+ * (per RESEARCH Pitfall 5).
+ *
+ * IDEMPOTENT: rows where doc_uri IS already NOT NULL are skipped. Re-running
+ * the migration on a fully backfilled DB is a no-op. The runner is wrapped
+ * in the existing SQLite transaction (database.ts:99) so failure rolls back.
+ *
+ * Requires `ctx.vaultName` (plumbed from VaultManager via Database constructor).
+ * Throws clearly if vaultName is undefined — see RESEARCH §Pitfall 5 / A8.
+ */
+function runMigration008(db: BetterSqlite3Database, ctx: MigrationContext): void {
+  // Short-circuit: zero notes to backfill means we don't need vaultName at
+  // all. This lets `:memory:` fresh DBs migrate cleanly without forcing
+  // every test fixture to specify a vault name.
+  const pending = db
+    .prepare<[], { c: number }>("SELECT COUNT(*) AS c FROM notes WHERE doc_uri IS NULL")
+    .get();
+  if (!pending || pending.c === 0) return;
+
+  if (!ctx.vaultName) {
+    throw new Error(
+      "runMigration008 requires vaultName context to backfill doc_uri on existing notes (Database constructor must be called with the vault name; check src/vault/manager.ts).",
+    );
+  }
+  const prefix = `obsidian-fs://${ctx.vaultName}/`;
+  const update = db.prepare(`
+    UPDATE notes
+       SET doc_uri = @prefix || path
+     WHERE doc_uri IS NULL
+  `);
+  update.run({ prefix });
+}
+
 export const MIGRATIONS: readonly Migration[] = [
   {
     version: 1,
@@ -415,5 +491,15 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 6,
     description: "add body_hash for frontmatter-only-change short-circuit",
     sql: MIGRATION_006_BODY_HASH,
+  },
+  {
+    version: 7,
+    description: "add doc_uri column to notes (Strategy A, additive)",
+    sql: MIGRATION_007_DOC_URI_ADD,
+  },
+  {
+    version: 8,
+    description: "backfill doc_uri from <vault-name>/path",
+    run: runMigration008,
   },
 ];

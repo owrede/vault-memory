@@ -4,7 +4,7 @@ import type { Vault } from "../vault/index.js";
 import { suggestFrontmatter, combineSuggestions } from "./combiner.js";
 
 function makeVault(): Vault {
-  const db = new Database(":memory:");
+  const db = new Database(":memory:", "test-vault");
   db.migrate();
   return {
     config: { name: "test", path: "/tmp/test" },

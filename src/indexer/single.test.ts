@@ -12,7 +12,7 @@ const MODEL = "test-embed";
 const DIM = 1024;
 
 function makeVault(vaultRoot: string): Vault {
-  const db = new Database(":memory:");
+  const db = new Database(":memory:", "test-vault");
   // Pre-register the embedding model so single-indexer can find it.
   db.models.upsert({ name: MODEL, provider: "ollama", dim: DIM });
   return {

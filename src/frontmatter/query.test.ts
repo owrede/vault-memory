@@ -4,7 +4,7 @@ import { queryFrontmatter } from "./query.js";
 import type { Vault } from "../vault/index.js";
 
 function makeVault(): Vault {
-  const db = new Database(":memory:");
+  const db = new Database(":memory:", "test-vault");
   db.migrate();
   return {
     config: { name: "test", path: "/tmp/test" },

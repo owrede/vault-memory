@@ -147,6 +147,12 @@ export interface NoteRow {
   /** SHA-256 of content-only. NULL on legacy rows pre-migration 006;
    *  filled lazily on next upsert. */
   body_hash: string | null;
+  /** v2 canonical identifier — `obsidian-fs://<vault-name>/<vault-relative-path>`.
+   *  Stored UN-ENCODED (raw path with spaces / Unicode passed through; see
+   *  RESEARCH §Pitfall 5). Added by migration 007 (additive nullable).
+   *  Migration 008 backfills existing rows from `<vault-name> + '/' + path`.
+   *  v9 (deferred to phase 3+) will assert NOT NULL and drop `path` as PK. */
+  doc_uri: string | null;
   mtime: number;
   word_count: number;
   created_at: number;
