@@ -3,11 +3,7 @@ import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { mkdtemp, rm } from "node:fs/promises";
-import {
-  atomicWriteFile,
-  safeJoinInsideVault,
-  OutsideVaultError,
-} from "./fs.js";
+import { atomicWriteFile, safeJoinInsideVault, OutsideVaultError } from "./fs.js";
 
 describe("atomicWriteFile", () => {
   let dir: string;
@@ -68,42 +64,38 @@ describe("safeJoinInsideVault", () => {
   });
 
   it("rejects ../ traversal", async () => {
-    await expect(
-      safeJoinInsideVault(root, "../etc/passwd"),
-    ).rejects.toBeInstanceOf(OutsideVaultError);
+    await expect(safeJoinInsideVault(root, "../etc/passwd")).rejects.toBeInstanceOf(
+      OutsideVaultError,
+    );
   });
 
   it("rejects deeper ../../ traversal", async () => {
-    await expect(
-      safeJoinInsideVault(root, "a/../../escape.md"),
-    ).rejects.toBeInstanceOf(OutsideVaultError);
+    await expect(safeJoinInsideVault(root, "a/../../escape.md")).rejects.toBeInstanceOf(
+      OutsideVaultError,
+    );
   });
 
   it("rejects absolute paths", async () => {
-    await expect(
-      safeJoinInsideVault(root, "/etc/passwd"),
-    ).rejects.toBeInstanceOf(OutsideVaultError);
+    await expect(safeJoinInsideVault(root, "/etc/passwd")).rejects.toBeInstanceOf(
+      OutsideVaultError,
+    );
   });
 
   it("rejects empty input", async () => {
-    await expect(safeJoinInsideVault(root, "")).rejects.toBeInstanceOf(
-      OutsideVaultError,
-    );
+    await expect(safeJoinInsideVault(root, "")).rejects.toBeInstanceOf(OutsideVaultError);
   });
 
   it("rejects targeting the vault root itself", async () => {
-    await expect(safeJoinInsideVault(root, ".")).rejects.toBeInstanceOf(
-      OutsideVaultError,
-    );
+    await expect(safeJoinInsideVault(root, ".")).rejects.toBeInstanceOf(OutsideVaultError);
   });
 
   it("rejects a path beneath a symlink that escapes the vault", async () => {
     // Create symlink inside vault pointing to a directory outside the vault.
     const linkPath = join(root, "escape");
     await fs.symlink(outsideDir, linkPath, "dir");
-    await expect(
-      safeJoinInsideVault(root, "escape/passwd"),
-    ).rejects.toBeInstanceOf(OutsideVaultError);
+    await expect(safeJoinInsideVault(root, "escape/passwd")).rejects.toBeInstanceOf(
+      OutsideVaultError,
+    );
   });
 
   it("rejects a symlinked file that points outside the vault", async () => {
@@ -111,9 +103,7 @@ describe("safeJoinInsideVault", () => {
     await fs.writeFile(outsideFile, "secret", "utf-8");
     const linkPath = join(root, "leak.txt");
     await fs.symlink(outsideFile, linkPath, "file");
-    await expect(
-      safeJoinInsideVault(root, "leak.txt"),
-    ).rejects.toBeInstanceOf(OutsideVaultError);
+    await expect(safeJoinInsideVault(root, "leak.txt")).rejects.toBeInstanceOf(OutsideVaultError);
   });
 
   it("accepts a symlink that points to a location INSIDE the vault", async () => {

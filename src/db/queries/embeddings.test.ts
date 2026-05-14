@@ -68,31 +68,23 @@ describe("EmbeddingsQueries — variable dims", () => {
 
     // Searches against the 1024 model only return chunks from A.md.
     const hits1024 = db.embeddings.searchSemantic(m1024.id, unitAxis(1, 1024), 10);
-    expect(hits1024.map((h) => h.chunkId).sort()).toEqual(
-      [...chunks1024].sort(),
-    );
+    expect(hits1024.map((h) => h.chunkId).sort()).toEqual([...chunks1024].sort());
     expect(hits1024[0]?.chunkId).toBe(chunks1024[1]); // nearest = axis-1
 
     // Searches against the 768 model only return chunks from B.md.
     const hits768 = db.embeddings.searchSemantic(m768.id, unitAxis(2, 768), 10);
-    expect(hits768.map((h) => h.chunkId).sort()).toEqual(
-      [...chunks768].sort(),
-    );
+    expect(hits768.map((h) => h.chunkId).sort()).toEqual([...chunks768].sort());
     expect(hits768[0]?.chunkId).toBe(chunks768[2]);
 
     // Verify the underlying tables really are separate (per-model, post-7e).
     const count1024 = (
       db.handle
-        .prepare<[], { c: number }>(
-          `SELECT COUNT(*) AS c FROM embeddings_m${m1024.id}_d1024`,
-        )
+        .prepare<[], { c: number }>(`SELECT COUNT(*) AS c FROM embeddings_m${m1024.id}_d1024`)
         .get() as { c: number }
     ).c;
     const count768 = (
       db.handle
-        .prepare<[], { c: number }>(
-          `SELECT COUNT(*) AS c FROM embeddings_m${m768.id}_d768`,
-        )
+        .prepare<[], { c: number }>(`SELECT COUNT(*) AS c FROM embeddings_m${m768.id}_d768`)
         .get() as { c: number }
     ).c;
     expect(count1024).toBe(3);
@@ -130,9 +122,9 @@ describe("EmbeddingsQueries — variable dims", () => {
   });
 
   it("throws on unknown model_id (no silent defaults)", () => {
-    expect(() =>
-      db.embeddings.searchSemantic(999, [0, 0, 0], 5),
-    ).toThrowError(/model_id 999 not found/);
+    expect(() => db.embeddings.searchSemantic(999, [0, 0, 0], 5)).toThrowError(
+      /model_id 999 not found/,
+    );
     expect(() =>
       db.embeddings.insertBatch([{ chunkId: 1, modelId: 999, vector: [0] }]),
     ).toThrowError(/model_id 999 not found/);
@@ -141,15 +133,14 @@ describe("EmbeddingsQueries — variable dims", () => {
   it("materializes new dim tables on demand for unusual dims", () => {
     const m384 = db.models.upsert({ name: "minilm", provider: "ollama", dim: 384 });
     const [c0] = makeNoteWithChunks("M.md", 1);
-    db.embeddings.insertBatch([
-      { chunkId: c0!, modelId: m384.id, vector: unitAxis(0, 384) },
-    ]);
+    db.embeddings.insertBatch([{ chunkId: c0!, modelId: m384.id, vector: unitAxis(0, 384) }]);
     // Table was created lazily — per-model naming in v5.
     const expectedTable = `embeddings_m${m384.id}_d384`;
     const row = db.handle
-      .prepare<[string], { name: string }>(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
-      )
+      .prepare<
+        [string],
+        { name: string }
+      >("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
       .get(expectedTable);
     expect(row?.name).toBe(expectedTable);
 
@@ -260,9 +251,10 @@ describe("migration 004→005 — legacy embeddings → per-model tables", () =>
     // and the row was moved into the per-model table.
     for (const oldName of ["embeddings", "embeddings_1024"]) {
       const legacy = db.handle
-        .prepare<[string], { name: string }>(
-          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
-        )
+        .prepare<
+          [string],
+          { name: string }
+        >("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
         .get(oldName);
       expect(legacy).toBeUndefined();
     }
@@ -274,9 +266,10 @@ describe("migration 004→005 — legacy embeddings → per-model tables", () =>
     expect(moved?.c).toBe(1);
 
     const row = db.handle
-      .prepare<[bigint], { chunk_id: number }>(
-        `SELECT chunk_id FROM ${newTable} WHERE chunk_id = ?`,
-      )
+      .prepare<
+        [bigint],
+        { chunk_id: number }
+      >(`SELECT chunk_id FROM ${newTable} WHERE chunk_id = ?`)
       .get(BigInt(chunkId!));
     expect(row?.chunk_id).toBe(chunkId);
 

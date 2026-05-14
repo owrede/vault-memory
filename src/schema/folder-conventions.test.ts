@@ -1,11 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Database } from "../db/index.js";
 import type { Vault } from "../vault/index.js";
-import {
-  folderOf,
-  inferFromFolder,
-  resolveInferenceFolder,
-} from "./folder-conventions.js";
+import { folderOf, inferFromFolder, resolveInferenceFolder } from "./folder-conventions.js";
 
 function makeVault(): Vault {
   const db = new Database(":memory:");
@@ -130,9 +126,7 @@ describe("inferFromFolder", () => {
     seedNote(vault, "Foo/clean.md", { tags: ["a", "b"] });
     // Directly insert a note with non-object frontmatter (rare but happens).
     vault.db.handle
-      .prepare(
-        "UPDATE notes SET frontmatter = ? WHERE path = ?",
-      )
+      .prepare("UPDATE notes SET frontmatter = ? WHERE path = ?")
       .run('"just a string"', "Foo/clean.md");
     // Add a second note to keep siblings ≥ MIN.
     seedNote(vault, "Foo/2.md", { tags: ["a", "b"] });

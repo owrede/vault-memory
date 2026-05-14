@@ -8,15 +8,11 @@ describe("matchesAnyGlob", () => {
 
   it("matches single-level wildcard", () => {
     expect(matchesAnyGlob("Personen/Holger.md", ["Personen/*.md"])).toBe(true);
-    expect(matchesAnyGlob("Personen/Sub/Holger.md", ["Personen/*.md"])).toBe(
-      false,
-    );
+    expect(matchesAnyGlob("Personen/Sub/Holger.md", ["Personen/*.md"])).toBe(false);
   });
 
   it("matches recursive double-star", () => {
-    expect(matchesAnyGlob("Personen/Sub/Holger.md", ["Personen/**"])).toBe(
-      true,
-    );
+    expect(matchesAnyGlob("Personen/Sub/Holger.md", ["Personen/**"])).toBe(true);
     expect(matchesAnyGlob("Personen/Holger.md", ["**/*.md"])).toBe(true);
   });
 
@@ -31,24 +27,15 @@ describe("matchesAnyGlob", () => {
   });
 
   it("returns true if any pattern matches", () => {
-    expect(
-      matchesAnyGlob("Personen/Holger.md", [
-        "Org/*.md",
-        "Personen/*.md",
-      ]),
-    ).toBe(true);
+    expect(matchesAnyGlob("Personen/Holger.md", ["Org/*.md", "Personen/*.md"])).toBe(true);
   });
 
   it("eval-note-bias case from v0.6.0 eval report", () => {
     expect(
-      matchesAnyGlob("_research/vault-memory-eval.md", [
-        "_research/vault-memory-eval.md",
-      ]),
+      matchesAnyGlob("_research/vault-memory-eval.md", ["_research/vault-memory-eval.md"]),
     ).toBe(true);
     expect(
-      matchesAnyGlob("Netzwerk/Personen/Holger Hoos.md", [
-        "_research/vault-memory-eval.md",
-      ]),
+      matchesAnyGlob("Netzwerk/Personen/Holger Hoos.md", ["_research/vault-memory-eval.md"]),
     ).toBe(false);
   });
 });

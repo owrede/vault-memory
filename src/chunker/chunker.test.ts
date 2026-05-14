@@ -41,8 +41,7 @@ describe("chunkNote", () => {
   it("respects heading boundaries when possible", () => {
     // Three H2 sections, each ~250 tokens — together too big for one chunk
     // but each fits → expect 3 chunks, each starting at its heading.
-    const section = (title: string) =>
-      `## ${title}\n\n` + makeLongText(150) + "\n";
+    const section = (title: string) => `## ${title}\n\n` + makeLongText(150) + "\n";
     const content =
       section("Section A") + "\n" + section("Section B") + "\n" + section("Section C");
 
@@ -133,11 +132,7 @@ describe("chunkNote", () => {
   });
 
   it("attaches headingPath based on chunk start offset in original content", () => {
-    const content =
-      "# Top\n\n" +
-      makeLongText(150) +
-      "\n\n## Deep\n\n" +
-      makeLongText(150);
+    const content = "# Top\n\n" + makeLongText(150) + "\n\n## Deep\n\n" + makeLongText(150);
     const chunks = chunkNote(content);
     // At least one chunk should report the Deep heading.
     const paths = chunks.map((c) => c.headingPath);

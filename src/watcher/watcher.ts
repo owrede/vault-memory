@@ -83,7 +83,7 @@ export class VaultWatcher {
         // chokidar handles glob-like patterns. Provide both raw and absolute.
         ...excludes.map((g) => posix.join(vaultPath, g)),
         /(^|[\\/])\../, // hidden files at any level
-        "**/*.tmp.*",   // our atomic-write artifacts
+        "**/*.tmp.*", // our atomic-write artifacts
       ],
       // Only watch markdown files — saves event volume.
       // chokidar's `ignored` runs against absolute paths, so we filter via

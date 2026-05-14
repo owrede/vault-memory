@@ -49,24 +49,17 @@ describe("addVault", () => {
 
     expect(result.name).toBe("my-test-vault");
     expect(result.resolvedPath).toBe(vaultDir);
-    expect(result.steps.map((s) => s.kind)).toEqual([
-      "config-added",
-      "mcp-json-created",
-    ]);
+    expect(result.steps.map((s) => s.kind)).toEqual(["config-added", "mcp-json-created"]);
 
     const cfg = await readFile(cfgFile, "utf-8");
-    expect(cfg).toContain('[[vaults]]');
+    expect(cfg).toContain("[[vaults]]");
     expect(cfg).toContain('name = "my-test-vault"');
     expect(cfg).toContain(`path = "${vaultDir}"`);
     expect(cfg).toContain("write_enabled = false");
 
-    const mcp = JSON.parse(
-      await readFile(join(vaultDir, ".mcp.json"), "utf-8"),
-    );
+    const mcp = JSON.parse(await readFile(join(vaultDir, ".mcp.json"), "utf-8"));
     expect(mcp.mcpServers["vault-memory"].command).toBe("vault-memory");
-    expect(mcp.mcpServers["vault-memory"].env.VAULT_MEMORY_ACTIVE_VAULT).toBe(
-      "my-test-vault",
-    );
+    expect(mcp.mcpServers["vault-memory"].env.VAULT_MEMORY_ACTIVE_VAULT).toBe("my-test-vault");
   });
 
   it("respects custom name and write_enabled", async () => {
@@ -107,44 +100,26 @@ describe("addVault", () => {
         },
       },
     };
-    await writeFile(
-      join(vaultDir, ".mcp.json"),
-      JSON.stringify(existingMcp, null, 2),
-      "utf-8",
-    );
+    await writeFile(join(vaultDir, ".mcp.json"), JSON.stringify(existingMcp, null, 2), "utf-8");
 
     const result = await addVault({ path: vaultDir, configFile: cfgFile });
-    expect(result.steps.map((s) => s.kind)).toEqual([
-      "config-added",
-      "mcp-json-merged",
-    ]);
+    expect(result.steps.map((s) => s.kind)).toEqual(["config-added", "mcp-json-merged"]);
 
-    const mcp = JSON.parse(
-      await readFile(join(vaultDir, ".mcp.json"), "utf-8"),
-    );
-    expect(Object.keys(mcp.mcpServers).sort()).toEqual([
-      "other-tool",
-      "vault-memory",
-    ]);
+    const mcp = JSON.parse(await readFile(join(vaultDir, ".mcp.json"), "utf-8"));
+    expect(Object.keys(mcp.mcpServers).sort()).toEqual(["other-tool", "vault-memory"]);
     expect(mcp.mcpServers["other-tool"].command).toBe("other-tool");
-    expect(mcp.mcpServers["vault-memory"].env.VAULT_MEMORY_ACTIVE_VAULT).toBe(
-      "my-test-vault",
-    );
+    expect(mcp.mcpServers["vault-memory"].env.VAULT_MEMORY_ACTIVE_VAULT).toBe("my-test-vault");
   });
 
   it("rejects when a different vault already holds the same name", async () => {
     // Pre-existing config with name=my-test-vault pointing somewhere else.
     const otherDir = join(scratch, "Other Place");
     await mkdir(otherDir, { recursive: true });
-    await writeFile(
-      cfgFile,
-      `[[vaults]]\nname = "my-test-vault"\npath = "${otherDir}"\n`,
-      "utf-8",
-    );
+    await writeFile(cfgFile, `[[vaults]]\nname = "my-test-vault"\npath = "${otherDir}"\n`, "utf-8");
 
-    await expect(
-      addVault({ path: vaultDir, configFile: cfgFile }),
-    ).rejects.toThrow(/already registered under name/);
+    await expect(addVault({ path: vaultDir, configFile: cfgFile })).rejects.toThrow(
+      /already registered under name/,
+    );
   });
 
   it("rejects when the path does not exist", async () => {
@@ -159,9 +134,9 @@ describe("addVault", () => {
   it("rejects when the path is a file, not a directory", async () => {
     const filePath = join(scratch, "regular-file.md");
     await writeFile(filePath, "x", "utf-8");
-    await expect(
-      addVault({ path: filePath, configFile: cfgFile }),
-    ).rejects.toThrow(/not a directory/);
+    await expect(addVault({ path: filePath, configFile: cfgFile })).rejects.toThrow(
+      /not a directory/,
+    );
   });
 
   it("rejects malformed custom names", async () => {

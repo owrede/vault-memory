@@ -15,9 +15,7 @@ function textResponse(text: string, status: number): Response {
 }
 
 function makeEmbeddings(count: number, dim = 3): number[][] {
-  return Array.from({ length: count }, (_, i) =>
-    Array.from({ length: dim }, (_, j) => i + j / 10),
-  );
+  return Array.from({ length: count }, (_, i) => Array.from({ length: dim }, (_, j) => i + j / 10));
 }
 
 let originalFetch: typeof globalThis.fetch;
@@ -84,9 +82,7 @@ describe("OllamaClient.embed", () => {
 
     // Verify batch sizes 10, 10, 5
     const sizes = fetchMock.mock.calls.map(
-      (c) =>
-        (JSON.parse((c[1] as RequestInit).body as string) as { input: string[] })
-          .input.length,
+      (c) => (JSON.parse((c[1] as RequestInit).body as string) as { input: string[] }).input.length,
     );
     expect(sizes).toEqual([10, 10, 5]);
   });
@@ -131,9 +127,9 @@ describe("OllamaClient.embed", () => {
       timeoutMs: 10,
     });
 
-    await expect(
-      client.embed({ model: "m", texts: ["x"] }),
-    ).rejects.toMatchObject({ name: "AbortError" });
+    await expect(client.embed({ model: "m", texts: ["x"] })).rejects.toMatchObject({
+      name: "AbortError",
+    });
   });
 
   it("returns empty result when texts is empty", async () => {
@@ -189,23 +185,17 @@ describe("OllamaClient.healthCheck", () => {
 
 describe("OllamaClient.modelExists", () => {
   function mockTags(names: string[]): FetchMock {
-    return vi.fn(async () =>
-      jsonResponse({ models: names.map((name) => ({ name })) }),
-    );
+    return vi.fn(async () => jsonResponse({ models: names.map((name) => ({ name })) }));
   }
 
   it("matches exact name", async () => {
-    globalThis.fetch = mockTags([
-      "qwen3-embedding:latest",
-    ]) as unknown as typeof fetch;
+    globalThis.fetch = mockTags(["qwen3-embedding:latest"]) as unknown as typeof fetch;
     const client = new OllamaClient();
     expect(await client.modelExists("qwen3-embedding:latest")).toBe(true);
   });
 
   it("matches name without tag against tagged loaded model", async () => {
-    globalThis.fetch = mockTags([
-      "qwen3-embedding:latest",
-    ]) as unknown as typeof fetch;
+    globalThis.fetch = mockTags(["qwen3-embedding:latest"]) as unknown as typeof fetch;
     const client = new OllamaClient();
     expect(await client.modelExists("qwen3-embedding")).toBe(true);
   });
@@ -223,9 +213,7 @@ describe("OllamaClient.modelExists", () => {
   });
 
   it("returns false when health check fails", async () => {
-    globalThis.fetch = vi.fn(async () =>
-      textResponse("err", 500),
-    ) as unknown as typeof fetch;
+    globalThis.fetch = vi.fn(async () => textResponse("err", 500)) as unknown as typeof fetch;
     const client = new OllamaClient();
     expect(await client.modelExists("anything")).toBe(false);
   });

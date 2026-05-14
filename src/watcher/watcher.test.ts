@@ -120,11 +120,7 @@ describe("VaultWatcher", () => {
 
   it("ignores .obsidian/ files", async () => {
     await mkdir(join(vaultDir, ".obsidian"), { recursive: true });
-    await writeFile(
-      join(vaultDir, ".obsidian", "workspace.md"),
-      "# nope",
-      "utf-8",
-    );
+    await writeFile(join(vaultDir, ".obsidian", "workspace.md"), "# nope", "utf-8");
     await sleep(800);
     expect(vault.db.notes.getByPath(".obsidian/workspace.md")).toBeNull();
   });

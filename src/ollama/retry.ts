@@ -25,10 +25,7 @@ function computeDelay(attempt: number, baseDelayMs: number, maxDelayMs: number):
   return Math.min(exp + jitter, maxDelayMs);
 }
 
-export async function withRetry<T>(
-  fn: () => Promise<T>,
-  options: RetryOptions,
-): Promise<T> {
+export async function withRetry<T>(fn: () => Promise<T>, options: RetryOptions): Promise<T> {
   const retries = options.retries;
   const baseDelayMs = options.baseDelayMs ?? DEFAULT_BASE_DELAY_MS;
   const maxDelayMs = options.maxDelayMs ?? DEFAULT_MAX_DELAY_MS;

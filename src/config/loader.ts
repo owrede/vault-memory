@@ -65,9 +65,7 @@ export async function loadConfig(path: string = configPath()): Promise<AppConfig
   try {
     parsed = parseToml(raw);
   } catch (err) {
-    throw new Error(
-      `Failed to parse TOML at ${path}: ${(err as Error).message}`,
-    );
+    throw new Error(`Failed to parse TOML at ${path}: ${(err as Error).message}`);
   }
 
   const validated = AppConfigSchema.parse(parsed);

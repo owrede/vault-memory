@@ -21,11 +21,7 @@ import type { NoteRow } from "../types.js";
 
 type Scalar = string | number | boolean | null;
 
-export type Predicate =
-  | Scalar
-  | { $in: Scalar[] }
-  | { $exists: boolean }
-  | { $contains: Scalar };
+export type Predicate = Scalar | { $in: Scalar[] } | { $exists: boolean } | { $contains: Scalar };
 
 export interface QueryFrontmatterInput {
   where: Record<string, Predicate>;
@@ -100,10 +96,7 @@ function compileClause(field: string, predicate: Predicate): CompiledClause {
   throw new Error(`Unsupported predicate for field "${field}": ${JSON.stringify(predicate)}`);
 }
 
-export function queryFrontmatter(
-  vault: Vault,
-  input: QueryFrontmatterInput,
-): NoteRow[] {
+export function queryFrontmatter(vault: Vault, input: QueryFrontmatterInput): NoteRow[] {
   const clauses: CompiledClause[] = [];
   for (const [field, predicate] of Object.entries(input.where)) {
     clauses.push(compileClause(field, predicate));

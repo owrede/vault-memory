@@ -98,9 +98,7 @@ describe("vacuumEmbeddings", () => {
     // Delete one chunk directly — embeddings table is not cascaded for the
     // pre-v0.7.0 schema; that's exactly the orphan case vacuum targets.
     const orphanedChunkId = chunkIds[1]!;
-    vault.db.handle
-      .prepare("DELETE FROM chunks WHERE id = ?")
-      .run(BigInt(orphanedChunkId));
+    vault.db.handle.prepare("DELETE FROM chunks WHERE id = ?").run(BigInt(orphanedChunkId));
 
     const result = vacuumEmbeddings(vault);
     expect(result.total_removed).toBe(1);
@@ -108,9 +106,10 @@ describe("vacuumEmbeddings", () => {
     expect(result.per_model[0]?.kept).toBe(2);
 
     const remaining = vault.db.handle
-      .prepare<[], { chunk_id: number }>(
-        `SELECT chunk_id FROM embeddings_m${model.id}_d1024 ORDER BY chunk_id`,
-      )
+      .prepare<
+        [],
+        { chunk_id: number }
+      >(`SELECT chunk_id FROM embeddings_m${model.id}_d1024 ORDER BY chunk_id`)
       .all();
     expect(remaining.map((r) => r.chunk_id)).toEqual(
       chunkIds.filter((id) => id !== orphanedChunkId),

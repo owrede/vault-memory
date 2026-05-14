@@ -67,9 +67,7 @@ export function vacuumEmbeddings(vault: Vault): VacuumResult {
         .all();
 
       if (orphans.length > 0) {
-        const stmt = vault.db.handle.prepare(
-          `DELETE FROM ${table} WHERE chunk_id = ?`,
-        );
+        const stmt = vault.db.handle.prepare(`DELETE FROM ${table} WHERE chunk_id = ?`);
         for (const o of orphans) {
           stmt.run(BigInt(o.chunk_id));
         }

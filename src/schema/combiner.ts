@@ -17,18 +17,9 @@
  */
 
 import type { Vault } from "../vault/index.js";
-import {
-  inferFromFolder,
-  type FolderConventionResult,
-} from "./folder-conventions.js";
-import {
-  inferFromNeighbors,
-  type NeighborInferenceResult,
-} from "./neighbor-inference.js";
-import {
-  inferFromContent,
-  type ContentHeuristicResult,
-} from "./content-heuristics.js";
+import { inferFromFolder, type FolderConventionResult } from "./folder-conventions.js";
+import { inferFromNeighbors, type NeighborInferenceResult } from "./neighbor-inference.js";
+import { inferFromContent, type ContentHeuristicResult } from "./content-heuristics.js";
 
 const NEIGHBOR_DAMPING = 0.6;
 const MIN_PRESENTATION_CONFIDENCE = 0.2;
@@ -138,19 +129,13 @@ function valueKey(v: unknown): string {
  * Core orchestration entrypoint. Runs all three learners and combines
  * their output into the structured response.
  */
-export function suggestFrontmatter(
-  input: SuggestFrontmatterInput,
-): SuggestFrontmatterResult {
+export function suggestFrontmatter(input: SuggestFrontmatterInput): SuggestFrontmatterResult {
   const title = input.title ?? defaultTitleFromPath(input.path);
 
   const folder = inferFromFolder(input.vault, input.path, {
     excludePath: input.excludePath ?? input.path,
   });
-  const neighbor = inferFromNeighbors(
-    input.vault,
-    input.path,
-    input.draftWikilinkTargets ?? [],
-  );
+  const neighbor = inferFromNeighbors(input.vault, input.path, input.draftWikilinkTargets ?? []);
   const content =
     input.content !== undefined
       ? inferFromContent({ title, body: input.content })
@@ -229,10 +214,7 @@ export function combineSuggestions(args: {
 
   // Process each key from candidates + every existing key (so existing
   // keys that no source touched still land in `existing`).
-  const allKeys = new Set<string>([
-    ...candidates.keys(),
-    ...existingKeys,
-  ]);
+  const allKeys = new Set<string>([...candidates.keys(), ...existingKeys]);
 
   for (const key of allKeys) {
     const cands = candidates.get(key) ?? [];
@@ -257,9 +239,7 @@ export function combineSuggestions(args: {
       }
     }
 
-    const distinctValueCount = Array.from(byValue.keys()).filter(
-      (k) => k !== "__keyonly__",
-    ).length;
+    const distinctValueCount = Array.from(byValue.keys()).filter((k) => k !== "__keyonly__").length;
 
     if (hasExisting) {
       // Anything in candidates that disagrees with the existing value is
@@ -270,9 +250,7 @@ export function combineSuggestions(args: {
         // pure existing.
         byValue.delete(existingValueKey!);
       }
-      const disagreeingValues = Array.from(byValue.entries()).filter(
-        ([k]) => k !== "__keyonly__",
-      );
+      const disagreeingValues = Array.from(byValue.entries()).filter(([k]) => k !== "__keyonly__");
       if (disagreeingValues.length === 0) {
         // No conflict — existing stays as-is.
         existing.push({ key, value: existingValue });

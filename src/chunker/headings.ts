@@ -74,10 +74,7 @@ export function extractHeadings(content: string): HeadingRef[] {
  * This is an MVP-style path: only the immediate predecessor, not a full
  * `H1 > H2 > H3` breadcrumb.
  */
-export function headingPathAtOffset(
-  headings: HeadingRef[],
-  offset: number,
-): string | null {
+export function headingPathAtOffset(headings: HeadingRef[], offset: number): string | null {
   let last: HeadingRef | null = null;
   for (const h of headings) {
     if (h.startOffset <= offset) {

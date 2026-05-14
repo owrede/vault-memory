@@ -3,14 +3,12 @@
 export const TOOLS = [
   {
     name: "list_vaults",
-    description:
-      "List configured vaults with their status (note count, last indexed run).",
+    description: "List configured vaults with their status (note count, last indexed run).",
     inputSchema: { type: "object", properties: {} },
   },
   {
     name: "read_note",
-    description:
-      "Read the full content + frontmatter of a note by its vault-relative path.",
+    description: "Read the full content + frontmatter of a note by its vault-relative path.",
     inputSchema: {
       type: "object",
       required: ["vault", "path"],
@@ -18,16 +16,14 @@ export const TOOLS = [
         vault: { type: "string", description: "Configured vault name" },
         path: {
           type: "string",
-          description:
-            "Vault-relative path with forward slashes, ending in .md",
+          description: "Vault-relative path with forward slashes, ending in .md",
         },
       },
     },
   },
   {
     name: "search_semantic",
-    description:
-      "Semantic search via embedding cosine similarity. Searches all vaults by default.",
+    description: "Semantic search via embedding cosine similarity. Searches all vaults by default.",
     inputSchema: {
       type: "object",
       required: ["query"],
@@ -51,16 +47,14 @@ export const TOOLS = [
   },
   {
     name: "search_text",
-    description:
-      "Full-text BM25 search via SQLite FTS5. Best for exact-word and phrase matches.",
+    description: "Full-text BM25 search via SQLite FTS5. Best for exact-word and phrase matches.",
     inputSchema: {
       type: "object",
       required: ["query"],
       properties: {
         query: {
           type: "string",
-          description:
-            "FTS5 query — whitespace-separated tokens are AND'd; use OR explicitly.",
+          description: "FTS5 query — whitespace-separated tokens are AND'd; use OR explicitly.",
         },
         vaults: { type: "array", items: { type: "string" } },
         top_k: {
@@ -98,8 +92,7 @@ export const TOOLS = [
           minimum: 1,
           maximum: 1000,
           default: 60,
-          description:
-            "RRF constant — higher dampens emphasis on top ranks.",
+          description: "RRF constant — higher dampens emphasis on top ranks.",
         },
         exclude_paths: {
           type: "array",
@@ -129,8 +122,7 @@ export const TOOLS = [
   },
   {
     name: "list_forward_links",
-    description:
-      "List all wikilinks FROM a given note. Optionally include broken links.",
+    description: "List all wikilinks FROM a given note. Optionally include broken links.",
     inputSchema: {
       type: "object",
       required: ["vault", "path"],
@@ -214,8 +206,7 @@ export const TOOLS = [
         path: { type: "string" },
         merge: {
           type: "object",
-          description:
-            "Field → value | {$unset:bool} | {$push:scalar} | {$pull:scalar}",
+          description: "Field → value | {$unset:bool} | {$push:scalar} | {$pull:scalar}",
         },
         expected_hash: { type: "string" },
         client_id: { type: "string" },
@@ -224,8 +215,7 @@ export const TOOLS = [
   },
   {
     name: "delete_note",
-    description:
-      "Delete a note. Requires write_enabled=true AND expected_hash (no blind deletes).",
+    description: "Delete a note. Requires write_enabled=true AND expected_hash (no blind deletes).",
     inputSchema: {
       type: "object",
       required: ["vault", "path", "expected_hash"],
@@ -323,8 +313,7 @@ export const TOOLS = [
   },
   {
     name: "index_runs",
-    description:
-      "List recent index runs for a vault — what was scanned, when, how long, errors.",
+    description: "List recent index runs for a vault — what was scanned, when, how long, errors.",
     inputSchema: {
       type: "object",
       required: ["vault"],

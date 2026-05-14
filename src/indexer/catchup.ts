@@ -32,9 +32,7 @@ export interface CatchupResult {
   durationMs: number;
 }
 
-export async function catchupVault(
-  options: CatchupOptions,
-): Promise<CatchupResult> {
+export async function catchupVault(options: CatchupOptions): Promise<CatchupResult> {
   const started = Date.now();
   const log = options.log ?? (() => {});
   const { vault } = options;
@@ -66,9 +64,7 @@ export async function catchupVault(
     });
     if (result.status === "indexed") {
       reindexed++;
-      log(
-        `catch-up indexed ${parsed.relativePath} (${result.isNew ? "new" : "updated"})`,
-      );
+      log(`catch-up indexed ${parsed.relativePath} (${result.isNew ? "new" : "updated"})`);
     }
   }
 

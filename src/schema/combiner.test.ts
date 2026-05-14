@@ -13,11 +13,7 @@ function makeVault(): Vault {
   };
 }
 
-function seedNote(
-  vault: Vault,
-  path: string,
-  frontmatter: Record<string, unknown> | null,
-): number {
+function seedNote(vault: Vault, path: string, frontmatter: Record<string, unknown> | null): number {
   const r = vault.db.notes.upsertByPath({
     path,
     content: "body",

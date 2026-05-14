@@ -17,10 +17,7 @@ interface ModelStatements {
   insert: BetterSqlite3.Statement;
   deleteByChunk: BetterSqlite3.Statement<[bigint]>;
   deleteAll: BetterSqlite3.Statement;
-  search: BetterSqlite3.Statement<
-    [string, number],
-    { chunk_id: number; distance: number }
-  >;
+  search: BetterSqlite3.Statement<[string, number], { chunk_id: number; distance: number }>;
 }
 
 /**
@@ -80,9 +77,7 @@ export class EmbeddingsQueries {
   private dimForModel(modelId: number): number {
     const row = this.models.getById(modelId);
     if (!row) {
-      throw new Error(
-        `EmbeddingsQueries: model_id ${modelId} not found in models table`,
-      );
+      throw new Error(`EmbeddingsQueries: model_id ${modelId} not found in models table`);
     }
     return row.dim;
   }
@@ -95,17 +90,10 @@ export class EmbeddingsQueries {
     this.ensureTableForModel(modelId, dim);
     const table = this.tableName(modelId, dim);
     const stmts: ModelStatements = {
-      insert: this.db.prepare(
-        `INSERT INTO ${table} (chunk_id, vector) VALUES (?, ?)`,
-      ),
-      deleteByChunk: this.db.prepare(
-        `DELETE FROM ${table} WHERE chunk_id = ?`,
-      ),
+      insert: this.db.prepare(`INSERT INTO ${table} (chunk_id, vector) VALUES (?, ?)`),
+      deleteByChunk: this.db.prepare(`DELETE FROM ${table} WHERE chunk_id = ?`),
       deleteAll: this.db.prepare(`DELETE FROM ${table}`),
-      search: this.db.prepare<
-        [string, number],
-        { chunk_id: number; distance: number }
-      >(
+      search: this.db.prepare<[string, number], { chunk_id: number; distance: number }>(
         `SELECT chunk_id, distance
          FROM ${table}
          WHERE vector MATCH ? AND k = ?
@@ -163,11 +151,7 @@ export class EmbeddingsQueries {
     stmts.deleteAll.run();
   }
 
-  searchSemantic(
-    modelId: number,
-    queryVector: number[],
-    topK: number,
-  ): SemanticHit[] {
+  searchSemantic(modelId: number, queryVector: number[], topK: number): SemanticHit[] {
     const dim = this.dimForModel(modelId);
     if (queryVector.length !== dim) {
       throw new Error(

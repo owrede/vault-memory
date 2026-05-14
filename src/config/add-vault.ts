@@ -114,9 +114,7 @@ export async function addVault(opts: AddVaultOptions): Promise<AddVaultResult> {
   // 3. Read existing config to check for duplicates.
   const existing = await loadConfig(cfgFile);
   const sameName = existing.vaults.find((v) => v.name === proposedName);
-  const samePath = existing.vaults.find(
-    (v) => resolve(v.path) === resolvedPath,
-  );
+  const samePath = existing.vaults.find((v) => resolve(v.path) === resolvedPath);
 
   if (samePath) {
     steps.push({
@@ -225,9 +223,7 @@ async function writeOrMergeMcpJson(
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;
     if (code !== "ENOENT") {
-      throw new Error(
-        `Failed to read existing .mcp.json at ${mcpPath}: ${(err as Error).message}`,
-      );
+      throw new Error(`Failed to read existing .mcp.json at ${mcpPath}: ${(err as Error).message}`);
     }
   }
 

@@ -116,8 +116,7 @@ export function getIndexRuns(input: GetIndexRunsInput): IndexRunEntry[] {
       const found = all.find((m) => m.id === row.model_id);
       modelName = found?.name ?? null;
     }
-    const durationMs =
-      row.finished_at !== null ? row.finished_at - row.started_at : null;
+    const durationMs = row.finished_at !== null ? row.finished_at - row.started_at : null;
     return {
       runId: row.run_id,
       vaultName: row.vault_name,

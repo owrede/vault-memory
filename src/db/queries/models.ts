@@ -23,26 +23,18 @@ export class ModelsQueries {
   private readonly _listAll: BetterSqlite3.Statement<[], ModelRow>;
 
   constructor(private readonly db: BetterSqlite3.Database) {
-    this._selectByName = db.prepare<[string], ModelRow>(
-      "SELECT * FROM models WHERE name = ?",
-    );
+    this._selectByName = db.prepare<[string], ModelRow>("SELECT * FROM models WHERE name = ?");
     this._selectActive = db.prepare<[], ModelRow>(
       "SELECT * FROM models WHERE active = 1 ORDER BY id DESC LIMIT 1",
     );
-    this._selectById = db.prepare<[number], ModelRow>(
-      "SELECT * FROM models WHERE id = ?",
-    );
+    this._selectById = db.prepare<[number], ModelRow>("SELECT * FROM models WHERE id = ?");
     this._insert = db.prepare(`
       INSERT INTO models (name, provider, dim, created_at, active)
       VALUES (@name, @provider, @dim, @created_at, @active)
     `);
     this._deactivateAll = db.prepare("UPDATE models SET active = 0");
-    this._activate = db.prepare<[number]>(
-      "UPDATE models SET active = 1 WHERE id = ?",
-    );
-    this._listAll = db.prepare<[], ModelRow>(
-      "SELECT * FROM models ORDER BY id",
-    );
+    this._activate = db.prepare<[number]>("UPDATE models SET active = 1 WHERE id = ?");
+    this._listAll = db.prepare<[], ModelRow>("SELECT * FROM models ORDER BY id");
   }
 
   upsert(input: UpsertModelInput): ModelRow {

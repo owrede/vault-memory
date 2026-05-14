@@ -26,11 +26,13 @@ function makeOllama(): {
   client: OllamaClient;
   embed: ReturnType<typeof vi.fn>;
 } {
-  const embed = vi.fn(async (req: EmbedRequest): Promise<EmbedResponse> => ({
-    vectors: req.texts.map((_, i) => unitVector(DIM, i)),
-    dim: DIM,
-    model: req.model,
-  }));
+  const embed = vi.fn(
+    async (req: EmbedRequest): Promise<EmbedResponse> => ({
+      vectors: req.texts.map((_, i) => unitVector(DIM, i)),
+      dim: DIM,
+      model: req.model,
+    }),
+  );
   // We only use `.embed`; cast through unknown to satisfy the structural
   // OllamaClient contract without instantiating the real HTTP client.
   const client = { embed } as unknown as OllamaClient;
@@ -67,10 +69,7 @@ describe("single-indexer: indexNote", () => {
   }
 
   it("indexes a brand-new note", async () => {
-    const abs = await writeNote(
-      "Foo.md",
-      "# Foo\n\nHello world. This is body text.",
-    );
+    const abs = await writeNote("Foo.md", "# Foo\n\nHello world. This is body text.");
     const result = await indexNote({
       vault,
       absolutePath: abs,
@@ -198,9 +197,7 @@ describe("single-indexer: indexNote", () => {
     expect(ollama.embed).toHaveBeenCalledTimes(1);
 
     // Simulate a pre-migration row by clearing body_hash directly.
-    vault.db.handle
-      .prepare("UPDATE notes SET body_hash = NULL WHERE id = ?")
-      .run(first.noteId!);
+    vault.db.handle.prepare("UPDATE notes SET body_hash = NULL WHERE id = ?").run(first.noteId!);
 
     // Touch the file (mtime change) — body content is identical, but the
     // DB row has NULL body_hash so the short-circuit must NOT fire. We
@@ -224,11 +221,7 @@ describe("single-indexer: indexNote", () => {
     // Now actually edit frontmatter — combined hash changes, body_hash
     // is still NULL on the DB row → falls through to full re-embed, NOT
     // the short-circuit. After this, body_hash is populated.
-    await fs.writeFile(
-      abs,
-      "---\ntag: added\n---\n\n# Legacy\n\nbody body body.",
-      "utf-8",
-    );
+    await fs.writeFile(abs, "---\ntag: added\n---\n\n# Legacy\n\nbody body body.", "utf-8");
     const third = await indexNote({
       vault,
       absolutePath: abs,
@@ -280,9 +273,7 @@ describe("single-indexer: indexNote", () => {
   it("persists frontmatter aliases for resolution", async () => {
     const abs = await writeNote(
       "People/Oliver.md",
-      ["---", "aliases:", "  - OWR", "  - Oliver W.", "---", "", "Body."].join(
-        "\n",
-      ),
+      ["---", "aliases:", "  - OWR", "  - Oliver W.", "---", "", "Body."].join("\n"),
     );
     await indexNote({
       vault,

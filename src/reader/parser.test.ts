@@ -21,9 +21,7 @@ describe("parseNote", () => {
     "End.",
   ].join("\n");
 
-  const fileContent = ["---", "tag: foo", "count: 3", "---", "", body].join(
-    "\n",
-  );
+  const fileContent = ["---", "tag: foo", "count: 3", "---", "", body].join("\n");
 
   beforeAll(async () => {
     root = await fs.mkdtemp(path.join(os.tmpdir(), "vm-parse-"));
@@ -96,24 +94,18 @@ describe("parseNote", () => {
 
     // INFORM GmbH appears in body AND in frontmatter → only the body entry
     // is kept (frontmatter is deduped against body on (target, anchor)).
-    const inform = note.wikilinks.filter(
-      (w) => w.normalizedTarget === "INFORM GmbH",
-    );
+    const inform = note.wikilinks.filter((w) => w.normalizedTarget === "INFORM GmbH");
     expect(inform).toHaveLength(1);
     expect(inform[0]?.line).toBeGreaterThan(0); // came from body
 
     // Intelligence Impact appears only in frontmatter (in two keys, but
     // both have target=II, anchor=null → dedupe collapses to one).
-    const ii = note.wikilinks.filter(
-      (w) => w.normalizedTarget === "Intelligence Impact",
-    );
+    const ii = note.wikilinks.filter((w) => w.normalizedTarget === "Intelligence Impact");
     expect(ii).toHaveLength(1);
     expect(ii[0]?.line).toBe(0); // came from frontmatter
 
     // RWTH Aachen appears only in frontmatter (past_roles).
-    const rwth = note.wikilinks.filter(
-      (w) => w.normalizedTarget === "RWTH Aachen",
-    );
+    const rwth = note.wikilinks.filter((w) => w.normalizedTarget === "RWTH Aachen");
     expect(rwth).toHaveLength(1);
     expect(rwth[0]?.line).toBe(0);
   });

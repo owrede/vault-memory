@@ -34,10 +34,7 @@ export interface BrokenLinkResult {
  *
  * @throws if `notePath` does not resolve to a known note.
  */
-export function listBacklinks(
-  vault: Vault,
-  notePath: string,
-): BacklinkResult[] {
+export function listBacklinks(vault: Vault, notePath: string): BacklinkResult[] {
   const note = vault.db.notes.getByPath(notePath);
   if (!note) {
     throw new Error(`Note not found: ${notePath}`);

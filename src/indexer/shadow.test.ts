@@ -20,11 +20,7 @@ import type { Vault } from "../vault/index.js";
 import type { OllamaClient } from "../ollama/index.js";
 import type { EmbedRequest, EmbedResponse } from "../types.js";
 import { indexVault } from "./indexer.js";
-import {
-  listModels,
-  startShadowIndex,
-  switchActiveModel,
-} from "./shadow.js";
+import { listModels, startShadowIndex, switchActiveModel } from "./shadow.js";
 
 const PRIMARY = "primary-embed";
 const PRIMARY_DIM = 1024;
@@ -224,9 +220,7 @@ describe("Phase 7c — startShadowIndex + switchActiveModel", () => {
     expect(vault.db.models.getActive()?.name).toBe(SECONDARY);
 
     // Exactly one active row.
-    const active = vault.db.models
-      .listAll()
-      .filter((m) => m.active === 1);
+    const active = vault.db.models.listAll().filter((m) => m.active === 1);
     expect(active).toHaveLength(1);
     expect(active[0]!.name).toBe(SECONDARY);
   });

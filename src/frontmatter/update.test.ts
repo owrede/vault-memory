@@ -45,8 +45,7 @@ async function writeNote(
 ): Promise<{ hash: string; absPath: string }> {
   const absPath = join(ctx.vaultRoot, relPath);
   await fs.mkdir(join(absPath, ".."), { recursive: true });
-  const text =
-    frontmatter === null ? body : matter.stringify(body, frontmatter);
+  const text = frontmatter === null ? body : matter.stringify(body, frontmatter);
   await fs.writeFile(absPath, text, "utf8");
 
   // Round-trip through matter so the hash matches what update sees.
@@ -110,9 +109,7 @@ describe("updateFrontmatter", () => {
     });
     expect(res.ok).toBe(true);
     if (res.ok) {
-      expect(res.diff).toEqual([
-        { key: "class", op: "set", before: "Person", after: "Org" },
-      ]);
+      expect(res.diff).toEqual([{ key: "class", op: "set", before: "Person", after: "Org" }]);
     }
     const { data } = await readFm(absPath);
     expect(data.class).toBe("Org");
@@ -165,12 +162,7 @@ describe("updateFrontmatter", () => {
 
   it("$pull removes element from array", async () => {
     ctx = await makeCtx();
-    const { absPath } = await writeNote(
-      ctx,
-      "n.md",
-      { tags: ["a", "b", "c"] },
-      "Body\n",
-    );
+    const { absPath } = await writeNote(ctx, "n.md", { tags: ["a", "b", "c"] }, "Body\n");
     const res = await updateFrontmatter({
       vault: ctx.vault,
       relativePath: "n.md",
@@ -183,12 +175,7 @@ describe("updateFrontmatter", () => {
 
   it("shallow nested merge keeps unrelated keys", async () => {
     ctx = await makeCtx();
-    const { absPath } = await writeNote(
-      ctx,
-      "n.md",
-      { meta: { foo: 1 } },
-      "Body\n",
-    );
+    const { absPath } = await writeNote(ctx, "n.md", { meta: { foo: 1 } }, "Body\n");
     const res = await updateFrontmatter({
       vault: ctx.vault,
       relativePath: "n.md",
@@ -261,12 +248,7 @@ describe("updateFrontmatter", () => {
 
   it("empty merge is a no-op (no audit, no file change)", async () => {
     ctx = await makeCtx();
-    const { absPath } = await writeNote(
-      ctx,
-      "n.md",
-      { class: "Person" },
-      "Body\n",
-    );
+    const { absPath } = await writeNote(ctx, "n.md", { class: "Person" }, "Body\n");
     const before = await fs.readFile(absPath, "utf8");
     const beforeMtime = (await fs.stat(absPath)).mtimeMs;
 

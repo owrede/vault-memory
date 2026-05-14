@@ -208,9 +208,7 @@ function basenameNoMd(relativePath: string): string {
   return base.endsWith(".md") ? base.slice(0, -3) : base;
 }
 
-export async function updateFrontmatter(
-  input: UpdateFrontmatterInput,
-): Promise<UpdateResult> {
+export async function updateFrontmatter(input: UpdateFrontmatterInput): Promise<UpdateResult> {
   const { vault, relativePath, merge, expectedHash, clientId } = input;
 
   if (vault.config.write_enabled !== true) {
@@ -282,8 +280,7 @@ export async function updateFrontmatter(
 
   // Build the new file. gray-matter.stringify writes frontmatter even when
   // empty — we explicitly handle the all-deleted case by emitting just body.
-  const fullText =
-    Object.keys(next).length === 0 ? content : matter.stringify(content, next);
+  const fullText = Object.keys(next).length === 0 ? content : matter.stringify(content, next);
 
   input.onBeforeFsWrite?.();
   await atomicWriteFile(absPath, fullText);

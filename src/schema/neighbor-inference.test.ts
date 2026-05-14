@@ -13,11 +13,7 @@ function makeVault(): Vault {
   };
 }
 
-function seedNote(
-  vault: Vault,
-  path: string,
-  frontmatter: Record<string, unknown> | null,
-): number {
+function seedNote(vault: Vault, path: string, frontmatter: Record<string, unknown> | null): number {
   const r = vault.db.notes.upsertByPath({
     path,
     content: "body",
@@ -31,12 +27,7 @@ function seedNote(
   return r.id;
 }
 
-function linkAtoB(
-  vault: Vault,
-  sourceId: number,
-  targetId: number,
-  targetPath: string,
-): void {
+function linkAtoB(vault: Vault, sourceId: number, targetId: number, targetPath: string): void {
   vault.db.wikilinks.insertBatch(sourceId, [
     {
       targetPath,
@@ -123,10 +114,7 @@ describe("inferFromNeighbors", () => {
     seedNote(vault, "Person/Alice.md", { class: "Person", type: "person" });
     seedNote(vault, "Person/Bob.md", { class: "Person", type: "person" });
 
-    const r = inferFromNeighbors(vault, "draft.md", [
-      "Person/Alice",
-      "Person/Bob",
-    ]);
+    const r = inferFromNeighbors(vault, "draft.md", ["Person/Alice", "Person/Bob"]);
     expect(r.totalNeighbors).toBe(2);
     const classEntry = r.entries.find((e) => e.key === "class")!;
     expect(classEntry.dominantValue).toBe("Person");

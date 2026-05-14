@@ -55,10 +55,7 @@ export class DebouncedQueue {
       options.onError ??
       ((event, err) => {
         // eslint-disable-next-line no-console
-        console.error(
-          `[DebouncedQueue] onFlush failed for ${event.path} (${event.kind}):`,
-          err,
-        );
+        console.error(`[DebouncedQueue] onFlush failed for ${event.path} (${event.kind}):`, err);
       });
   }
 

@@ -114,9 +114,7 @@ export function rrfMerge<T>(
         existing.rrf += contribution;
         existing.ranks[listIdx] = rank;
       } else {
-        const ranks: (number | undefined)[] = new Array(rankings.length).fill(
-          undefined,
-        );
+        const ranks: (number | undefined)[] = new Array(rankings.length).fill(undefined);
         ranks[listIdx] = rank;
         scores.set(item, { rrf: contribution, ranks });
       }
@@ -152,9 +150,7 @@ interface PerVaultHit {
   rerankScore?: number;
 }
 
-export async function hybridSearch(
-  opts: HybridSearchOptions,
-): Promise<SearchHit[]> {
+export async function hybridSearch(opts: HybridSearchOptions): Promise<SearchHit[]> {
   const topK = opts.topK ?? DEFAULT_TOP_K;
   const rrfK = opts.rrfK ?? DEFAULT_RRF_K;
   const includeBreakdown = opts.includeBreakdown ?? true;
@@ -190,14 +186,7 @@ export async function hybridSearch(
 
   const perVault = await Promise.all(
     opts.vaults.map((vault) =>
-      searchOneVault(
-        vault,
-        query,
-        opts.embeddingModel,
-        rrfK,
-        perVaultTopN,
-        getQueryVector,
-      ),
+      searchOneVault(vault, query, opts.embeddingModel, rrfK, perVaultTopN, getQueryVector),
     ),
   );
 
@@ -233,32 +222,31 @@ export async function hybridSearch(
       // All pool candidates were filtered as too-short — fall back to RRF
       // order across `flat` rather than calling the reranker on nothing.
       winners = flat.slice(0, topK);
-    } else try {
-      const scores = await opts.reranker.score(query, texts);
-      if (scores.length !== indexed.length) {
-        throw new Error(
-          `reranker returned ${scores.length} scores for ${indexed.length} chunks`,
-        );
+    } else
+      try {
+        const scores = await opts.reranker.score(query, texts);
+        if (scores.length !== indexed.length) {
+          throw new Error(`reranker returned ${scores.length} scores for ${indexed.length} chunks`);
+        }
+        for (let i = 0; i < indexed.length; i++) {
+          const entry = indexed[i]!;
+          const s = scores[i]!;
+          entry.hit.rerankScore = s;
+        }
+        const reranked = indexed.map((e) => e.hit);
+        reranked.sort((a, b) => {
+          const ra = a.rerankScore ?? Number.NEGATIVE_INFINITY;
+          const rb = b.rerankScore ?? Number.NEGATIVE_INFINITY;
+          if (rb !== ra) return rb - ra;
+          return b.rrf - a.rrf;
+        });
+        winners = reranked.slice(0, topK);
+      } catch {
+        // Reranker failed — fall back to RRF order. Clear any partial
+        // rerankScore so the breakdown does not misrepresent the result.
+        for (const h of pool) delete h.rerankScore;
+        winners = flat.slice(0, topK);
       }
-      for (let i = 0; i < indexed.length; i++) {
-        const entry = indexed[i]!;
-        const s = scores[i]!;
-        entry.hit.rerankScore = s;
-      }
-      const reranked = indexed.map((e) => e.hit);
-      reranked.sort((a, b) => {
-        const ra = a.rerankScore ?? Number.NEGATIVE_INFINITY;
-        const rb = b.rerankScore ?? Number.NEGATIVE_INFINITY;
-        if (rb !== ra) return rb - ra;
-        return b.rrf - a.rrf;
-      });
-      winners = reranked.slice(0, topK);
-    } catch {
-      // Reranker failed — fall back to RRF order. Clear any partial
-      // rerankScore so the breakdown does not misrepresent the result.
-      for (const h of pool) delete h.rerankScore;
-      winners = flat.slice(0, topK);
-    }
   } else {
     winners = flat.slice(0, topK);
   }
@@ -334,11 +322,7 @@ async function searchOneVault(
     ? (async () => {
         const vec = await getQueryVector(queryModelName);
         if (!vec) return null;
-        const hits = vault.db.embeddings.searchSemantic(
-          activeModel.id,
-          vec,
-          fanK,
-        );
+        const hits = vault.db.embeddings.searchSemantic(activeModel.id, vec, fanK);
         const distances = new Map<number, number>();
         const chunkIds: number[] = [];
         for (const h of hits) {

@@ -310,9 +310,10 @@ function runMigration005(db: BetterSqlite3Database): void {
   //   3) For each model_id with rows, CREATE `embeddings_m<modelId>_d<dim>`
   //      and copy that model's rows back.
   const rows = db
-    .prepare<[], { name: string }>(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'embeddings\\_%' ESCAPE '\\'",
-    )
+    .prepare<
+      [],
+      { name: string }
+    >("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'embeddings\\_%' ESCAPE '\\'")
     .all();
   const legacyTables: { name: string; dim: number }[] = [];
   for (const r of rows) {
@@ -324,9 +325,10 @@ function runMigration005(db: BetterSqlite3Database): void {
 
   for (const { name, dim } of legacyTables) {
     const rows = db
-      .prepare<[], { chunk_id: number; model_id: number; vector: Buffer }>(
-        `SELECT chunk_id, model_id, vector FROM ${name}`,
-      )
+      .prepare<
+        [],
+        { chunk_id: number; model_id: number; vector: Buffer }
+      >(`SELECT chunk_id, model_id, vector FROM ${name}`)
       .all();
 
     db.exec(`DROP TABLE ${name}`);
@@ -350,9 +352,7 @@ function runMigration005(db: BetterSqlite3Database): void {
            vector   FLOAT[${dim}]
          )`,
       );
-      const insert = db.prepare(
-        `INSERT INTO ${newName} (chunk_id, vector) VALUES (?, ?)`,
-      );
+      const insert = db.prepare(`INSERT INTO ${newName} (chunk_id, vector) VALUES (?, ?)`);
       for (const row of bucket) {
         insert.run(BigInt(row.chunk_id), row.vector);
       }
@@ -408,8 +408,7 @@ export const MIGRATIONS: readonly Migration[] = [
   },
   {
     version: 5,
-    description:
-      "add partition key on model_id (two models per dim can coexist)",
+    description: "add partition key on model_id (two models per dim can coexist)",
     run: runMigration005,
   },
   {

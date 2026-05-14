@@ -15,22 +15,13 @@
  */
 
 export { inferFromFolder, folderOf } from "./folder-conventions.js";
-export type {
-  FolderConventionEntry,
-  FolderConventionResult,
-} from "./folder-conventions.js";
+export type { FolderConventionEntry, FolderConventionResult } from "./folder-conventions.js";
 
 export { inferFromNeighbors } from "./neighbor-inference.js";
-export type {
-  NeighborInferenceEntry,
-  NeighborInferenceResult,
-} from "./neighbor-inference.js";
+export type { NeighborInferenceEntry, NeighborInferenceResult } from "./neighbor-inference.js";
 
 export { inferFromContent } from "./content-heuristics.js";
-export type {
-  ContentHeuristicEntry,
-  ContentHeuristicResult,
-} from "./content-heuristics.js";
+export type { ContentHeuristicEntry, ContentHeuristicResult } from "./content-heuristics.js";
 
 export { suggestFrontmatter, combineSuggestions } from "./combiner.js";
 export type {

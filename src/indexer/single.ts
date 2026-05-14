@@ -13,10 +13,7 @@ import type { Vault } from "../vault/index.js";
 import type { OllamaClient } from "../ollama/index.js";
 import { parseNote } from "../reader/index.js";
 import { chunkNote } from "../chunker/index.js";
-import {
-  extractAliases,
-  resolveWikilinkTarget,
-} from "./indexer.js";
+import { extractAliases, resolveWikilinkTarget } from "./indexer.js";
 import type { ParsedWikilink } from "../types.js";
 
 export interface IndexNoteOptions {
@@ -56,9 +53,7 @@ export interface IndexNoteResult {
  *   - Otherwise → full re-index of this note: parse, chunk, embed, persist,
  *     update aliases, persist wikilinks
  */
-export async function indexNote(
-  options: IndexNoteOptions,
-): Promise<IndexNoteResult> {
+export async function indexNote(options: IndexNoteOptions): Promise<IndexNoteResult> {
   const { vault, absolutePath, embeddingModel, ollama } = options;
   const secondaryName = options.secondaryEmbeddingModel;
 
@@ -86,10 +81,7 @@ export async function indexNote(
 
   // 4. Fast path: hash unchanged → still re-apply aliases idempotently.
   if (existing && existing.hash === parsed.hash) {
-    vault.db.aliases.setForNote(
-      existing.id,
-      extractAliases(parsed.frontmatter),
-    );
+    vault.db.aliases.setForNote(existing.id, extractAliases(parsed.frontmatter));
     return {
       status: "unchanged",
       notePath: parsed.relativePath,
@@ -115,19 +107,14 @@ export async function indexNote(
     const upsert = vault.db.notes.upsertByPath({
       path: parsed.relativePath,
       content: parsed.content,
-      frontmatter: parsed.frontmatter
-        ? JSON.stringify(parsed.frontmatter)
-        : null,
+      frontmatter: parsed.frontmatter ? JSON.stringify(parsed.frontmatter) : null,
       title: parsed.title,
       hash: parsed.hash,
       bodyHash: parsed.bodyHash,
       mtime: parsed.mtime,
       wordCount: parsed.wordCount,
     });
-    vault.db.aliases.setForNote(
-      upsert.id,
-      extractAliases(parsed.frontmatter),
-    );
+    vault.db.aliases.setForNote(upsert.id, extractAliases(parsed.frontmatter));
     vault.db.wikilinks.deleteByNote(upsert.id);
     insertWikilinks(vault, upsert.id, parsed.wikilinks);
     return {
@@ -160,19 +147,14 @@ export async function indexNote(
   const upsert = vault.db.notes.upsertByPath({
     path: parsed.relativePath,
     content: parsed.content,
-    frontmatter: parsed.frontmatter
-      ? JSON.stringify(parsed.frontmatter)
-      : null,
+    frontmatter: parsed.frontmatter ? JSON.stringify(parsed.frontmatter) : null,
     title: parsed.title,
     hash: parsed.hash,
     bodyHash: parsed.bodyHash,
     mtime: parsed.mtime,
     wordCount: parsed.wordCount,
   });
-  vault.db.aliases.setForNote(
-    upsert.id,
-    extractAliases(parsed.frontmatter),
-  );
+  vault.db.aliases.setForNote(upsert.id, extractAliases(parsed.frontmatter));
 
   // 7. Wipe derived layer for this note.
   vault.db.chunks.deleteByNote(upsert.id);
@@ -287,9 +269,7 @@ export function removeNote(
 // helpers
 // ───────────────────────────────────────────────────────────────────────────
 
-function emptyResult(
-  status: "outside_vault" | "missing" | "parse_error",
-): IndexNoteResult {
+function emptyResult(status: "outside_vault" | "missing" | "parse_error"): IndexNoteResult {
   return {
     status,
     notePath: null,
@@ -329,11 +309,7 @@ function isENOENT(err: unknown): boolean {
  * that module's public API. Single-indexer skips the second-pass resolution,
  * so unresolved targets remain broken until a full index runs.
  */
-function insertWikilinks(
-  vault: Vault,
-  sourceNoteId: number,
-  wikilinks: ParsedWikilink[],
-): void {
+function insertWikilinks(vault: Vault, sourceNoteId: number, wikilinks: ParsedWikilink[]): void {
   if (wikilinks.length === 0) return;
 
   const inputs = wikilinks.map((wl) => {

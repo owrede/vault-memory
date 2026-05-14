@@ -435,9 +435,7 @@ describe("hybridSearch (integration)", () => {
         tokenCount: 1,
       },
     ]);
-    tinyDb.embeddings.insertBatch([
-      { chunkId: ids[0]!, modelId: model.id, vector: targetVec },
-    ]);
+    tinyDb.embeddings.insertBatch([{ chunkId: ids[0]!, modelId: model.id, vector: targetVec }]);
     const v: Vault = {
       config: { name: "all-tiny", path: "/dev/null" },
       db: tinyDb,

@@ -26,10 +26,7 @@ export class OutsideVaultError extends Error {
  * The tmp file lives in the SAME directory as the target so the final rename
  * stays on the same filesystem (and therefore atomic).
  */
-export async function atomicWriteFile(
-  absPath: string,
-  content: string,
-): Promise<void> {
+export async function atomicWriteFile(absPath: string, content: string): Promise<void> {
   if (!isAbsolute(absPath)) {
     throw new Error(`atomicWriteFile requires an absolute path: ${absPath}`);
   }
@@ -108,10 +105,7 @@ export async function safeJoinInsideVault(
 
   const realTarget = await resolveExistingAncestor(target);
   const realRootWithSep = realRoot.endsWith(sep) ? realRoot : realRoot + sep;
-  if (
-    realTarget !== realRoot &&
-    !realTarget.startsWith(realRootWithSep)
-  ) {
+  if (realTarget !== realRoot && !realTarget.startsWith(realRootWithSep)) {
     throw new OutsideVaultError(relativePath, vaultRoot);
   }
 
@@ -131,9 +125,7 @@ async function resolveExistingAncestor(absPath: string): Promise<string> {
   while (true) {
     try {
       const real = await fs.realpath(current);
-      return trailing.length === 0
-        ? real
-        : resolve(real, ...trailing.reverse());
+      return trailing.length === 0 ? real : resolve(real, ...trailing.reverse());
     } catch (err: unknown) {
       const code = (err as NodeJS.ErrnoException)?.code;
       if (code !== "ENOENT" && code !== "ENOTDIR") {

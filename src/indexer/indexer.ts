@@ -42,10 +42,7 @@ export interface IndexRunResult {
   error?: string;
 }
 
-export async function indexVault(
-  vault: Vault,
-  options: IndexerOptions,
-): Promise<IndexRunResult> {
+export async function indexVault(vault: Vault, options: IndexerOptions): Promise<IndexRunResult> {
   const startedAt = Date.now();
   const runId = randomUUID();
   const mode = options.mode ?? "incremental";
@@ -187,8 +184,7 @@ export async function indexVault(
       // need "isModified". Workaround: check chunks count — if a note has no chunks,
       // it needs (re-)indexing.
       const chunkCount = vault.db.chunks.getByNote(upsert.id).length;
-      const needsReindex =
-        mode === "full" || upsert.isNew || chunkCount === 0;
+      const needsReindex = mode === "full" || upsert.isNew || chunkCount === 0;
 
       if (upsert.isNew) notesIndexed++;
       else if (needsReindex) notesUpdated++;
@@ -234,9 +230,7 @@ export async function indexVault(
         texts: chunks.map((c) => c.text),
       });
       if (embedResult.dim !== dim) {
-        throw new Error(
-          `Embedding dimension mismatch: expected ${dim}, got ${embedResult.dim}`,
-        );
+        throw new Error(`Embedding dimension mismatch: expected ${dim}, got ${embedResult.dim}`);
       }
 
       const embeddingInputs = chunkIds.map((chunkId, i) => ({

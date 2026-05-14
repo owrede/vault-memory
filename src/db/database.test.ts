@@ -163,15 +163,18 @@ describe("Database roundtrips", () => {
   it("embeddings deleteByChunk and deleteByModel", () => {
     const model = db.models.upsert({ name: "m2", provider: "t", dim: 1024 });
     const { id: noteId } = db.notes.upsertByPath({
-      path: "v2.md", content: "x", frontmatter: null, title: "v",
-      hash: "h", mtime: 1, wordCount: 1,
+      path: "v2.md",
+      content: "x",
+      frontmatter: null,
+      title: "v",
+      hash: "h",
+      mtime: 1,
+      wordCount: 1,
     });
     const [c0] = db.chunks.insertBatch(noteId, [
       { idx: 0, text: "a", headingPath: null, startOffset: 0, endOffset: 1, tokenCount: 1 },
     ]);
-    db.embeddings.insertBatch([
-      { chunkId: c0!, modelId: model.id, vector: unitAxis(0, 1024) },
-    ]);
+    db.embeddings.insertBatch([{ chunkId: c0!, modelId: model.id, vector: unitAxis(0, 1024) }]);
     db.embeddings.deleteByChunk(c0!);
     expect(db.embeddings.searchSemantic(model.id, unitAxis(0, 1024), 5)).toEqual([]);
   });
@@ -179,12 +182,22 @@ describe("Database roundtrips", () => {
   // ── Wikilinks ─────────────────────────────────────────────────────────
   it("wikilinks insert + backlinks + forwardLinks + brokenLinks", () => {
     const a = db.notes.upsertByPath({
-      path: "A.md", content: "x", frontmatter: null, title: "A",
-      hash: "ha", mtime: 1, wordCount: 1,
+      path: "A.md",
+      content: "x",
+      frontmatter: null,
+      title: "A",
+      hash: "ha",
+      mtime: 1,
+      wordCount: 1,
     });
     const b = db.notes.upsertByPath({
-      path: "B.md", content: "x", frontmatter: null, title: "B",
-      hash: "hb", mtime: 1, wordCount: 1,
+      path: "B.md",
+      content: "x",
+      frontmatter: null,
+      title: "B",
+      hash: "hb",
+      mtime: 1,
+      wordCount: 1,
     });
 
     db.wikilinks.insertBatch(a.id, [
@@ -193,9 +206,7 @@ describe("Database roundtrips", () => {
     ]);
 
     const back = db.wikilinks.getBacklinks(b.id);
-    expect(back).toEqual([
-      { sourceNoteId: a.id, lineNumber: 3, linkText: null },
-    ]);
+    expect(back).toEqual([{ sourceNoteId: a.id, lineNumber: 3, linkText: null }]);
 
     const fwd = db.wikilinks.getForwardLinks(a.id);
     expect(fwd.length).toBe(2);
@@ -260,8 +271,13 @@ describe("Database roundtrips", () => {
 
   it("audit recordWrite + listWrites filter", () => {
     const n = db.notes.upsertByPath({
-      path: "w.md", content: "x", frontmatter: null, title: "w",
-      hash: "h", mtime: 1, wordCount: 1,
+      path: "w.md",
+      content: "x",
+      frontmatter: null,
+      title: "w",
+      hash: "h",
+      mtime: 1,
+      wordCount: 1,
     });
     db.audit.recordWrite({
       noteId: n.id,
@@ -305,8 +321,13 @@ describe("Database roundtrips", () => {
   it("transaction commits and rolls back", () => {
     db.transaction(() => {
       db.notes.upsertByPath({
-        path: "t1.md", content: "x", frontmatter: null, title: "t",
-        hash: "h", mtime: 1, wordCount: 1,
+        path: "t1.md",
+        content: "x",
+        frontmatter: null,
+        title: "t",
+        hash: "h",
+        mtime: 1,
+        wordCount: 1,
       });
     });
     expect(db.notes.countAll()).toBe(1);
@@ -314,8 +335,13 @@ describe("Database roundtrips", () => {
     expect(() =>
       db.transaction(() => {
         db.notes.upsertByPath({
-          path: "t2.md", content: "x", frontmatter: null, title: "t",
-          hash: "h", mtime: 1, wordCount: 1,
+          path: "t2.md",
+          content: "x",
+          frontmatter: null,
+          title: "t",
+          hash: "h",
+          mtime: 1,
+          wordCount: 1,
         });
         throw new Error("rollback");
       }),

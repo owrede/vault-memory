@@ -91,46 +91,42 @@ interface SiblingRow {
  * Count sibling notes (any path starting with `folder`, excluding the
  * input note itself when applicable). Empty folder string means vault root.
  */
-function countSiblings(
-  vault: Vault,
-  folder: string,
-  excludePath: string | null,
-): number {
+function countSiblings(vault: Vault, folder: string, excludePath: string | null): number {
   const handle = vault.db.handle;
   if (folder === "") {
     // Vault root: notes with no `/` in path. The simplest reliable filter.
     const row = handle
-      .prepare<[string | null], { c: number }>(
-        "SELECT COUNT(*) AS c FROM notes WHERE instr(path, '/') = 0 AND path != COALESCE(?, '')",
-      )
+      .prepare<
+        [string | null],
+        { c: number }
+      >("SELECT COUNT(*) AS c FROM notes WHERE instr(path, '/') = 0 AND path != COALESCE(?, '')")
       .get(excludePath);
     return row?.c ?? 0;
   }
   const row = handle
-    .prepare<[string, string | null], { c: number }>(
-      "SELECT COUNT(*) AS c FROM notes WHERE path LIKE ? || '%' AND path != COALESCE(?, '')",
-    )
+    .prepare<
+      [string, string | null],
+      { c: number }
+    >("SELECT COUNT(*) AS c FROM notes WHERE path LIKE ? || '%' AND path != COALESCE(?, '')")
     .get(folder, excludePath);
   return row?.c ?? 0;
 }
 
-function fetchSiblings(
-  vault: Vault,
-  folder: string,
-  excludePath: string | null,
-): SiblingRow[] {
+function fetchSiblings(vault: Vault, folder: string, excludePath: string | null): SiblingRow[] {
   const handle = vault.db.handle;
   if (folder === "") {
     return handle
-      .prepare<[string | null], SiblingRow>(
-        "SELECT path, frontmatter FROM notes WHERE instr(path, '/') = 0 AND path != COALESCE(?, '')",
-      )
+      .prepare<
+        [string | null],
+        SiblingRow
+      >("SELECT path, frontmatter FROM notes WHERE instr(path, '/') = 0 AND path != COALESCE(?, '')")
       .all(excludePath);
   }
   return handle
-    .prepare<[string, string | null], SiblingRow>(
-      "SELECT path, frontmatter FROM notes WHERE path LIKE ? || '%' AND path != COALESCE(?, '')",
-    )
+    .prepare<
+      [string, string | null],
+      SiblingRow
+    >("SELECT path, frontmatter FROM notes WHERE path LIKE ? || '%' AND path != COALESCE(?, '')")
     .all(folder, excludePath);
 }
 
@@ -167,9 +163,7 @@ export function resolveInferenceFolder(
  * We tolerate dirty frontmatter (parse failures, primitives, nulls) without
  * crashing — same defensive posture as the v0.9.0 vault_stats aggregates.
  */
-function aggregateEntries(
-  siblings: SiblingRow[],
-): FolderConventionEntry[] {
+function aggregateEntries(siblings: SiblingRow[]): FolderConventionEntry[] {
   const total = siblings.length;
   if (total === 0) return [];
 
@@ -204,8 +198,7 @@ function aggregateEntries(
   for (const [key, presenceCount] of keyPresence) {
     const valueBucket = keyValues.get(key)!;
     const [domValStr, domCount] = pickDominant(valueBucket);
-    const dominantValue =
-      domCount / presenceCount > 0.5 ? safeParse(domValStr) : null;
+    const dominantValue = domCount / presenceCount > 0.5 ? safeParse(domValStr) : null;
     entries.push({
       key,
       presenceCount,
@@ -238,7 +231,7 @@ function pickDominant(bucket: Map<string, number>): [string, number] {
 
 function stableStringify(v: unknown): string {
   if (v === undefined) return "null";
-  return JSON.stringify(v, Object.keys(v as object ?? {}).sort());
+  return JSON.stringify(v, Object.keys((v as object) ?? {}).sort());
 }
 
 function safeParse(s: string): unknown {

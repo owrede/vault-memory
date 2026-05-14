@@ -128,9 +128,7 @@ describe("FtsQueries", () => {
   });
 
   it("sanitize keeps balanced parens and prefix star", () => {
-    expect(FtsQueries.sanitize("(Bildung OR Förder*)")).toBe(
-      "(Bildung OR Förder*)",
-    );
+    expect(FtsQueries.sanitize("(Bildung OR Förder*)")).toBe("(Bildung OR Förder*)");
   });
 
   it("empty sanitized query returns no hits (and no throw)", () => {
@@ -165,22 +163,16 @@ describe("FtsQueries", () => {
   });
 
   it("sanitize phrase-wraps tokens with question marks (was: 'syntax error near ?')", () => {
-    expect(FtsQueries.sanitize("Wer ist Holger Hoos?")).toBe(
-      'Wer ist Holger "Hoos?"',
-    );
+    expect(FtsQueries.sanitize("Wer ist Holger Hoos?")).toBe('Wer ist Holger "Hoos?"');
   });
 
   it("sanitize leaves prefix-star tokens intact", () => {
     expect(FtsQueries.sanitize("Förder*")).toBe("Förder*");
-    expect(FtsQueries.sanitize("(Bildung OR Förder*)")).toBe(
-      "(Bildung OR Förder*)",
-    );
+    expect(FtsQueries.sanitize("(Bildung OR Förder*)")).toBe("(Bildung OR Förder*)");
   });
 
   it("sanitize leaves bare operator tokens intact", () => {
-    expect(FtsQueries.sanitize("Bildung AND Förder")).toBe(
-      "Bildung AND Förder",
-    );
+    expect(FtsQueries.sanitize("Bildung AND Förder")).toBe("Bildung AND Förder");
     expect(FtsQueries.sanitize("a NEAR b")).toBe("a NEAR b");
   });
 

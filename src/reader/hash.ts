@@ -35,9 +35,7 @@ export function canonicalJsonStringify(value: unknown): string {
   if (typeof value === "object") {
     const obj = value as Record<string, unknown>;
     const keys = Object.keys(obj).sort();
-    const parts = keys.map(
-      (k) => JSON.stringify(k) + ":" + canonicalJsonStringify(obj[k]),
-    );
+    const parts = keys.map((k) => JSON.stringify(k) + ":" + canonicalJsonStringify(obj[k]));
     return "{" + parts.join(",") + "}";
   }
   // Primitives (string, number, boolean). NaN/Infinity → "null" via JSON.stringify.

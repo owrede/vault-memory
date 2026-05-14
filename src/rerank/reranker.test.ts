@@ -4,9 +4,7 @@ import type { OllamaClient } from "../ollama/index.js";
 
 describe("formatPair", () => {
   it("uses the documented Query/Document/Relevance template", () => {
-    expect(formatPair("hi", "doc")).toBe(
-      "Query: hi\n\nDocument: doc\n\nRelevance:",
-    );
+    expect(formatPair("hi", "doc")).toBe("Query: hi\n\nDocument: doc\n\nRelevance:");
   });
 });
 

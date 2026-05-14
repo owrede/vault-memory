@@ -102,9 +102,7 @@ describe("graph", () => {
     });
 
     it("throws for unknown path", () => {
-      expect(() => listBacklinks(vault, "ghost.md")).toThrow(
-        /Note not found: ghost\.md/,
-      );
+      expect(() => listBacklinks(vault, "ghost.md")).toThrow(/Note not found: ghost\.md/);
     });
   });
 
@@ -130,9 +128,7 @@ describe("graph", () => {
     });
 
     it("throws for unknown path", () => {
-      expect(() => listForwardLinks(vault, "ghost.md")).toThrow(
-        /Note not found/,
-      );
+      expect(() => listForwardLinks(vault, "ghost.md")).toThrow(/Note not found/);
     });
   });
 

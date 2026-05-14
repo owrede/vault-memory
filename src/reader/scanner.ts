@@ -14,10 +14,7 @@ const DEFAULT_EXCLUDES = [".obsidian/**", ".trash/**", "node_modules/**"];
  * Excludes are matched against the *relative* posix path of each file/dir.
  * A directory is pruned if its relative path matches any exclude glob.
  */
-export async function scanVault(
-  rootPath: string,
-  options?: ScanOptions,
-): Promise<string[]> {
+export async function scanVault(rootPath: string, options?: ScanOptions): Promise<string[]> {
   const root = path.resolve(rootPath);
   const excludes = options?.excludeGlobs ?? DEFAULT_EXCLUDES;
   const matchers = excludes.map(compileGlob);
@@ -28,12 +25,7 @@ export async function scanVault(
   return results;
 }
 
-async function walk(
-  root: string,
-  dir: string,
-  matchers: RegExp[],
-  out: string[],
-): Promise<void> {
+async function walk(root: string, dir: string, matchers: RegExp[], out: string[]): Promise<void> {
   let entries: import("node:fs").Dirent[];
   try {
     entries = await fs.readdir(dir, { withFileTypes: true });

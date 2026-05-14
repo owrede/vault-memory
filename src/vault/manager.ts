@@ -60,9 +60,7 @@ export class VaultManager {
     const v = this.vaults.get(name);
     if (!v) {
       const known = [...this.vaults.keys()].join(", ") || "(none)";
-      throw new Error(
-        `Unknown vault: "${name}". Configured vaults: ${known}`,
-      );
+      throw new Error(`Unknown vault: "${name}". Configured vaults: ${known}`);
     }
     return v;
   }

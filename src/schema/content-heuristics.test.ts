@@ -24,14 +24,12 @@ describe("content-heuristics: emailRule", () => {
   });
 
   it("matches Re:/Fwd: title prefixes", () => {
-    expect(
-      inferFromContent({ title: "Re: project update", body: "body" })
-        .matchedRules,
-    ).toContain("email-title-or-header");
-    expect(
-      inferFromContent({ title: "AW: Sondierung", body: "body" })
-        .matchedRules,
-    ).toContain("email-title-or-header");
+    expect(inferFromContent({ title: "Re: project update", body: "body" }).matchedRules).toContain(
+      "email-title-or-header",
+    );
+    expect(inferFromContent({ title: "AW: Sondierung", body: "body" }).matchedRules).toContain(
+      "email-title-or-header",
+    );
   });
 
   it("does not match plain titles", () => {
@@ -110,16 +108,12 @@ describe("content-heuristics: personRule", () => {
       title: "notes from today",
       body: "alice@example.com",
     });
-    expect(r.matchedRules).not.toContain(
-      "person-name-title-with-corroboration",
-    );
+    expect(r.matchedRules).not.toContain("person-name-title-with-corroboration");
   });
 
   it("rejects name without corroboration", () => {
     const r = inferFromContent({ title: "Alice Schmidt", body: "no signals" });
-    expect(r.matchedRules).not.toContain(
-      "person-name-title-with-corroboration",
-    );
+    expect(r.matchedRules).not.toContain("person-name-title-with-corroboration");
   });
 });
 

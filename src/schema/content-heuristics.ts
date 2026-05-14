@@ -56,11 +56,8 @@ const emailRule: HeuristicRule = {
   name: "email-title-or-header",
   match: ({ title, bodyHead }) => {
     const titleMatch =
-      /^(E-?Mail|Email|Mail)\s+(von|from)\s+\S+/i.test(title) ||
-      /^(Re|Fwd|AW|WG):\s/i.test(title);
-    const headerMatch =
-      /^(From|Von):\s+\S+/im.test(bodyHead) &&
-      /^(To|An):\s+\S+/im.test(bodyHead);
+      /^(E-?Mail|Email|Mail)\s+(von|from)\s+\S+/i.test(title) || /^(Re|Fwd|AW|WG):\s/i.test(title);
+    const headerMatch = /^(From|Von):\s+\S+/im.test(bodyHead) && /^(To|An):\s+\S+/im.test(bodyHead);
     if (!titleMatch && !headerMatch) return [];
     return [
       { key: "class", value: "Email", confidence: STRONG_CONFIDENCE },
@@ -85,8 +82,7 @@ const meetingRule: HeuristicRule = {
     if (!isMeeting) return [];
     // Many meeting notes have an "Attendees:" / "Teilnehmer:" line — bump
     // confidence when we see one.
-    const attendeesPresent =
-      /^(Attendees|Teilnehmer|Participants):/im.test(bodyHead);
+    const attendeesPresent = /^(Attendees|Teilnehmer|Participants):/im.test(bodyHead);
     const conf = attendeesPresent ? STRONG_CONFIDENCE : DEFAULT_CONFIDENCE;
     return [
       { key: "class", value: "Meeting", confidence: conf },
@@ -106,8 +102,7 @@ const meetingRule: HeuristicRule = {
 const personRule: HeuristicRule = {
   name: "person-name-title-with-corroboration",
   match: ({ title, bodyHead }) => {
-    const nameLike =
-      /^[A-ZÄÖÜ][a-zäöüß'\-]+( [A-ZÄÖÜ][a-zäöüß'\-]+){0,3}$/.test(title.trim());
+    const nameLike = /^[A-ZÄÖÜ][a-zäöüß'\-]+( [A-ZÄÖÜ][a-zäöüß'\-]+){0,3}$/.test(title.trim());
     if (!nameLike) return [];
     const corroborating =
       /linkedin\.com\/in\//i.test(bodyHead) ||
@@ -155,9 +150,7 @@ const factRule: HeuristicRule = {
     if (trimmed.length === 0 || trimmed.length > 150) return [];
     // Reject if it contains multiple paragraphs (likely fragment, not fact).
     if (/\n\s*\n/.test(trimmed)) return [];
-    return [
-      { key: "class", value: "Fact", confidence: WEAK_CONFIDENCE },
-    ];
+    return [{ key: "class", value: "Fact", confidence: WEAK_CONFIDENCE }];
   },
 };
 
@@ -171,9 +164,7 @@ const dateInTitleRule: HeuristicRule = {
     const m = title.match(/^(\d{4})-(\d{2})-(\d{2})/);
     if (!m) return [];
     const iso = `${m[1]}-${m[2]}-${m[3]}`;
-    return [
-      { key: "created", value: iso, confidence: STRONG_CONFIDENCE },
-    ];
+    return [{ key: "created", value: iso, confidence: STRONG_CONFIDENCE }];
   },
 };
 
@@ -192,10 +183,7 @@ const RULES: readonly HeuristicRule[] = [
  * `meetingRule`). The combiner handles cross-rule conflicts upstream;
  * here we just emit every match.
  */
-export function inferFromContent(input: {
-  title: string;
-  body: string;
-}): ContentHeuristicResult {
+export function inferFromContent(input: { title: string; body: string }): ContentHeuristicResult {
   const heuristicInput: HeuristicInput = {
     title: input.title,
     bodyHead: input.body.slice(0, 2000),

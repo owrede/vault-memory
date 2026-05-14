@@ -52,9 +52,7 @@ describe("obsidianUrl", () => {
   });
 
   it("handles plain ascii unchanged except for slashes/spaces", () => {
-    expect(obsidianUrl("inim", "notes/x.md")).toBe(
-      "obsidian://open?vault=inim&file=notes%2Fx.md",
-    );
+    expect(obsidianUrl("inim", "notes/x.md")).toBe("obsidian://open?vault=inim&file=notes%2Fx.md");
   });
 });
 
@@ -136,12 +134,7 @@ describe("SQL aggregates", () => {
 
       const tags = aggregateTopTags(db.handle, 10);
       // Only well-formed text entries from arrays count.
-      expect(tags.map((t) => t.tag).sort()).toEqual([
-        "another",
-        "bar",
-        "foo",
-        "valid",
-      ]);
+      expect(tags.map((t) => t.tag).sort()).toEqual(["another", "bar", "foo", "valid"]);
     });
   });
 
@@ -159,7 +152,12 @@ describe("SQL aggregates", () => {
       const keys = aggregateTopFrontmatterKeys(db.handle, 10);
       // tags=3, status=1, type=1 — order: count DESC, then key ASC
       expect(keys[0]).toEqual({ key: "tags", count: 3 });
-      expect(keys.slice(1).map((k) => k.key).sort()).toEqual(["status", "type"]);
+      expect(
+        keys
+          .slice(1)
+          .map((k) => k.key)
+          .sort(),
+      ).toEqual(["status", "type"]);
     });
 
     it("tolerates frontmatter that is not a JSON object", () => {

@@ -146,11 +146,7 @@ function maskFencedCodeBlocks(content: string): string {
       }
     } else {
       const m = /^(`{3,}|~{3,})\s*$/.exec(trimmed);
-      if (
-        m !== null &&
-        m[1] !== undefined &&
-        m[1][0] === fenceMarker
-      ) {
+      if (m !== null && m[1] !== undefined && m[1][0] === fenceMarker) {
         inFence = false;
       } else {
         // Mask this content line: replace every char with space.

@@ -118,11 +118,7 @@ export function chunkNote(content: string, options?: ChunkOptions): Chunk[] {
  *
  * Headings deeper than level 3 do not break sections (they live inside).
  */
-function splitAtHeadings(
-  content: string,
-  headings: HeadingRef[],
-  _maxChars: number,
-): Span[] {
+function splitAtHeadings(content: string, headings: HeadingRef[], _maxChars: number): Span[] {
   const boundaries: number[] = [0];
   for (const h of headings) {
     if (h.level <= 3 && h.startOffset > 0) {
@@ -149,11 +145,7 @@ function splitAtHeadings(
  * paragraphs greedily up to `maxChars`. Falls back to sentence-splitting for
  * any paragraph that is itself too long.
  */
-function splitParagraphs(
-  content: string,
-  span: Span,
-  maxChars: number,
-): Span[] {
+function splitParagraphs(content: string, span: Span, maxChars: number): Span[] {
   const text = content.slice(span.start, span.end);
   const paragraphs: Span[] = [];
   const re = /\n{2,}/g;
@@ -210,11 +202,7 @@ function splitParagraphs(
  * Packs sentences greedily up to `maxChars`. Falls back to hard cut for any
  * sentence that is itself too long.
  */
-function splitSentences(
-  content: string,
-  span: Span,
-  maxChars: number,
-): Span[] {
+function splitSentences(content: string, span: Span, maxChars: number): Span[] {
   const text = content.slice(span.start, span.end);
   const boundaries: number[] = [];
   const re = /[.!?]\s+(?=[A-ZÄÖÜ])/g;

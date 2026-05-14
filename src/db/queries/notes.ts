@@ -24,12 +24,8 @@ export class NotesQueries {
   private readonly _count: BetterSqlite3.Statement<[], { c: number }>;
 
   constructor(private readonly db: BetterSqlite3.Database) {
-    this._selectByPath = db.prepare<[string], NoteRow>(
-      "SELECT * FROM notes WHERE path = ?",
-    );
-    this._selectById = db.prepare<[number], NoteRow>(
-      "SELECT * FROM notes WHERE id = ?",
-    );
+    this._selectByPath = db.prepare<[string], NoteRow>("SELECT * FROM notes WHERE path = ?");
+    this._selectById = db.prepare<[number], NoteRow>("SELECT * FROM notes WHERE id = ?");
     this._insert = db.prepare(`
       INSERT INTO notes (path, content, frontmatter, title, hash, body_hash, mtime, word_count, created_at, updated_at)
       VALUES (@path, @content, @frontmatter, @title, @hash, @body_hash, @mtime, @word_count, @now, @now)
@@ -50,9 +46,7 @@ export class NotesQueries {
     this._listAll = db.prepare<[number, number], NoteRow>(
       "SELECT * FROM notes ORDER BY id LIMIT ? OFFSET ?",
     );
-    this._count = db.prepare<[], { c: number }>(
-      "SELECT COUNT(*) AS c FROM notes",
-    );
+    this._count = db.prepare<[], { c: number }>("SELECT COUNT(*) AS c FROM notes");
   }
 
   upsertByPath(input: UpsertNoteInput): { id: number; isNew: boolean } {

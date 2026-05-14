@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  canonicalJsonStringify,
-  computeBodyHash,
-  computeNoteHash,
-  sha256,
-} from "./hash.js";
+import { canonicalJsonStringify, computeBodyHash, computeNoteHash, sha256 } from "./hash.js";
 
 describe("sha256", () => {
   it("produces stable hex digest", () => {
@@ -21,25 +16,19 @@ describe("canonicalJsonStringify", () => {
   });
 
   it("yields identical output regardless of insertion order", () => {
-    expect(canonicalJsonStringify({ a: 1, b: 2 })).toBe(
-      canonicalJsonStringify({ b: 2, a: 1 }),
-    );
+    expect(canonicalJsonStringify({ a: 1, b: 2 })).toBe(canonicalJsonStringify({ b: 2, a: 1 }));
   });
 
   it("recursively canonicalizes nested objects", () => {
     const a = { outer: { z: 1, a: 2 }, alpha: { y: 3, x: 4 } };
     const b = { alpha: { x: 4, y: 3 }, outer: { a: 2, z: 1 } };
     expect(canonicalJsonStringify(a)).toBe(canonicalJsonStringify(b));
-    expect(canonicalJsonStringify(a)).toBe(
-      '{"alpha":{"x":4,"y":3},"outer":{"a":2,"z":1}}',
-    );
+    expect(canonicalJsonStringify(a)).toBe('{"alpha":{"x":4,"y":3},"outer":{"a":2,"z":1}}');
   });
 
   it("preserves array order (order is semantic)", () => {
     expect(canonicalJsonStringify([3, 1, 2])).toBe("[3,1,2]");
-    expect(canonicalJsonStringify([3, 1, 2])).not.toBe(
-      canonicalJsonStringify([1, 2, 3]),
-    );
+    expect(canonicalJsonStringify([3, 1, 2])).not.toBe(canonicalJsonStringify([1, 2, 3]));
   });
 
   it("canonicalizes objects inside arrays", () => {
@@ -49,9 +38,7 @@ describe("canonicalJsonStringify", () => {
   it("serializes null and undefined as 'null'", () => {
     expect(canonicalJsonStringify(null)).toBe("null");
     expect(canonicalJsonStringify(undefined)).toBe("null");
-    expect(canonicalJsonStringify({ a: null, b: undefined })).toBe(
-      '{"a":null,"b":null}',
-    );
+    expect(canonicalJsonStringify({ a: null, b: undefined })).toBe('{"a":null,"b":null}');
   });
 
   it("serializes primitives via JSON.stringify", () => {
@@ -99,15 +86,11 @@ describe("computeNoteHash", () => {
   });
 
   it("changes when content changes", () => {
-    expect(computeNoteHash("a", { x: 1 })).not.toBe(
-      computeNoteHash("b", { x: 1 }),
-    );
+    expect(computeNoteHash("a", { x: 1 })).not.toBe(computeNoteHash("b", { x: 1 }));
   });
 
   it("changes when frontmatter values change", () => {
-    expect(computeNoteHash("a", { x: 1 })).not.toBe(
-      computeNoteHash("a", { x: 2 }),
-    );
+    expect(computeNoteHash("a", { x: 1 })).not.toBe(computeNoteHash("a", { x: 2 }));
   });
 });
 
@@ -120,9 +103,7 @@ describe("computeBodyHash", () => {
   });
 
   it("changes when body changes by even one byte", () => {
-    expect(computeBodyHash("body version 1")).not.toBe(
-      computeBodyHash("body version 2"),
-    );
+    expect(computeBodyHash("body version 1")).not.toBe(computeBodyHash("body version 2"));
   });
 
   it("is a stable sha256 hex digest (64 chars)", () => {

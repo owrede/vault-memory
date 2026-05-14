@@ -14,10 +14,7 @@
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-} from "@modelcontextprotocol/sdk/types.js";
+import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import type BetterSqlite3 from "better-sqlite3";
 import { z } from "zod";
 import { loadConfig } from "./config/index.js";
@@ -29,11 +26,7 @@ import { OllamaReranker, OnnxReranker } from "./rerank/index.js";
 import type { Reranker } from "./rerank/index.js";
 import { homedir } from "node:os";
 import { join as joinPath } from "node:path";
-import {
-  listBacklinks,
-  listForwardLinks,
-  findBrokenLinks,
-} from "./graph/index.js";
+import { listBacklinks, listForwardLinks, findBrokenLinks } from "./graph/index.js";
 import { queryFrontmatter, updateFrontmatter } from "./frontmatter/index.js";
 import { suggestFrontmatter } from "./schema/index.js";
 import { writeNote, deleteNote } from "./write/index.js";
@@ -225,8 +218,7 @@ export async function serve(): Promise<void> {
     endpoint: config.server.ollama_endpoint,
   });
 
-  const defaultModel =
-    config.server.default_embedding_model ?? "qwen3-embedding:0.6b";
+  const defaultModel = config.server.default_embedding_model ?? "qwen3-embedding:0.6b";
 
   // Default search scope. When VAULT_MEMORY_ACTIVE_VAULT is set, search_*
   // tools default to that single vault unless the caller passes an explicit
@@ -243,8 +235,7 @@ export async function serve(): Promise<void> {
   // recommended path; the Ollama L2-norm proxy is retained for
   // backward-compat only.
   const rerankerBackend =
-    config.server.reranker_backend ??
-    (config.server.reranker_model ? "onnx" : undefined);
+    config.server.reranker_backend ?? (config.server.reranker_model ? "onnx" : undefined);
   const reranker: Reranker | undefined = config.server.reranker_model
     ? rerankerBackend === "ollama"
       ? new OllamaReranker({ ollama, model: config.server.reranker_model })
@@ -504,8 +495,7 @@ export async function serve(): Promise<void> {
             model: parsed.model,
             ollama,
             batchSize: parsed.batch_size,
-            log: (m) =>
-              process.stderr.write(`[shadow:${vault.config.name}] ${m}\n`),
+            log: (m) => process.stderr.write(`[shadow:${vault.config.name}] ${m}\n`),
           });
           return ok(result);
         }
@@ -558,14 +548,7 @@ export async function serve(): Promise<void> {
 
         case "recent_notes": {
           const parsed = RecentNotesArgs.parse(args ?? {});
-          return ok(
-            handleRecentNotes(
-              manager,
-              parsed.vault,
-              parsed.limit,
-              parsed.since,
-            ),
-          );
+          return ok(handleRecentNotes(manager, parsed.vault, parsed.limit, parsed.since));
         }
 
         case "suggest_frontmatter": {
@@ -621,11 +604,7 @@ function handleListVaults(manager: VaultManager): object {
   return { vaults, count: vaults.length };
 }
 
-function handleReadNote(
-  manager: VaultManager,
-  vaultName: string,
-  path: string,
-): object {
+function handleReadNote(manager: VaultManager, vaultName: string, path: string): object {
   const vault = manager.require(vaultName);
   const note = vault.db.notes.getByPath(path);
   if (!note) {
@@ -729,11 +708,7 @@ async function handleSearchSemantic(
       embedCache.set(modelName, queryVec);
     }
 
-    const semanticHits = vault.db.embeddings.searchSemantic(
-      model.id,
-      queryVec,
-      fanK,
-    );
+    const semanticHits = vault.db.embeddings.searchSemantic(model.id, queryVec, fanK);
 
     for (const hit of semanticHits) {
       const chunk = vault.db.chunks.getById(hit.chunkId);
@@ -901,9 +876,7 @@ export function encodeNoteId(vault: string, path: string): string {
 export function decodeNoteId(id: string): { vault: string; path: string } {
   const idx = id.indexOf(":");
   if (idx <= 0 || idx === id.length - 1) {
-    throw new Error(
-      `Invalid id: ${id}. Expected format <vault>:<vault-relative-path>.`,
-    );
+    throw new Error(`Invalid id: ${id}. Expected format <vault>:<vault-relative-path>.`);
   }
   return { vault: id.slice(0, idx), path: id.slice(idx + 1) };
 }
@@ -1031,20 +1004,13 @@ interface VaultStatsRow {
   top_frontmatter_keys: Array<{ key: string; count: number }>;
 }
 
-function handleVaultStats(
-  manager: VaultManager,
-  vaultFilter: string | undefined,
-): object {
-  const targets = vaultFilter
-    ? [manager.require(vaultFilter)]
-    : manager.list();
+function handleVaultStats(manager: VaultManager, vaultFilter: string | undefined): object {
+  const targets = vaultFilter ? [manager.require(vaultFilter)] : manager.list();
 
   const stats: VaultStatsRow[] = targets.map((v) => {
     const total_notes = v.db.notes.countAll();
     const wordRow = v.db.handle
-      .prepare<[], { total: number | null }>(
-        "SELECT SUM(word_count) AS total FROM notes",
-      )
+      .prepare<[], { total: number | null }>("SELECT SUM(word_count) AS total FROM notes")
       .get();
     const lastRun = v.db.audit.listRuns(1)[0];
     const activeModel = v.db.models.getActive();
@@ -1155,29 +1121,40 @@ function handleRecentNotes(
   limit: number,
   since: number | undefined,
 ): object {
-  const targets = vaultFilter
-    ? [manager.require(vaultFilter)]
-    : manager.list();
+  const targets = vaultFilter ? [manager.require(vaultFilter)] : manager.list();
 
   const all: RecentNoteRow[] = [];
   for (const v of targets) {
-    const rows = since !== undefined
-      ? v.db.handle
-          .prepare<
-            [number, number],
-            { path: string; title: string | null; mtime: number; word_count: number | null; frontmatter: string | null }
-          >(
-            "SELECT path, title, mtime, word_count, frontmatter FROM notes WHERE mtime > ? ORDER BY mtime DESC LIMIT ?",
-          )
-          .all(since, limit)
-      : v.db.handle
-          .prepare<
-            [number],
-            { path: string; title: string | null; mtime: number; word_count: number | null; frontmatter: string | null }
-          >(
-            "SELECT path, title, mtime, word_count, frontmatter FROM notes ORDER BY mtime DESC LIMIT ?",
-          )
-          .all(limit);
+    const rows =
+      since !== undefined
+        ? v.db.handle
+            .prepare<
+              [number, number],
+              {
+                path: string;
+                title: string | null;
+                mtime: number;
+                word_count: number | null;
+                frontmatter: string | null;
+              }
+            >(
+              "SELECT path, title, mtime, word_count, frontmatter FROM notes WHERE mtime > ? ORDER BY mtime DESC LIMIT ?",
+            )
+            .all(since, limit)
+        : v.db.handle
+            .prepare<
+              [number],
+              {
+                path: string;
+                title: string | null;
+                mtime: number;
+                word_count: number | null;
+                frontmatter: string | null;
+              }
+            >(
+              "SELECT path, title, mtime, word_count, frontmatter FROM notes ORDER BY mtime DESC LIMIT ?",
+            )
+            .all(limit);
 
     for (const r of rows) {
       let tags: string[] | null = null;
@@ -1277,8 +1254,7 @@ function handleSuggestFrontmatter(
   return {
     mode: "draft",
     folder_hint: folderHint,
-    note:
-      "Draft mode: no backlinks contributed. Provide `path` (and index the note first) for richer neighbor-inference.",
+    note: "Draft mode: no backlinks contributed. Provide `path` (and index the note first) for richer neighbor-inference.",
     ...result,
   };
 }

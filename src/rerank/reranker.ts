@@ -72,9 +72,7 @@ export class OllamaReranker implements Reranker {
     const inputs = chunks.map((c) => formatPair(query, c));
     const res = await this.ollama.embed({ model: this.model, texts: inputs });
     if (res.vectors.length !== chunks.length) {
-      throw new Error(
-        `Reranker: expected ${chunks.length} vectors, got ${res.vectors.length}`,
-      );
+      throw new Error(`Reranker: expected ${chunks.length} vectors, got ${res.vectors.length}`);
     }
     // For bge-reranker: lower L2 magnitude ⇒ more relevant. Negate so
     // "higher score = more relevant" matches the Reranker contract.

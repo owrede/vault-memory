@@ -25,9 +25,7 @@ describe("withRetry", () => {
     const fn = vi.fn(async () => {
       throw new Error("nope");
     });
-    await expect(
-      withRetry(fn, { retries: 2, baseDelayMs: 1 }),
-    ).rejects.toThrow("nope");
+    await expect(withRetry(fn, { retries: 2, baseDelayMs: 1 })).rejects.toThrow("nope");
     // initial + 2 retries = 3 calls
     expect(fn).toHaveBeenCalledTimes(3);
   });

@@ -52,9 +52,7 @@ interface PendingChunkRow {
  * Does NOT switch the active model. Use `switch_active_model` once the
  * caller has independently verified the shadow index is complete.
  */
-export async function startShadowIndex(
-  options: ShadowIndexOptions,
-): Promise<ShadowIndexResult> {
+export async function startShadowIndex(options: ShadowIndexOptions): Promise<ShadowIndexResult> {
   const { vault, model, ollama } = options;
   const log = options.log ?? (() => {});
   const batchSize = options.batchSize ?? 16;
@@ -63,10 +61,7 @@ export async function startShadowIndex(
 
   // 1. Probe Ollama for dim + existence. Fail fast if the model isn't pulled.
   if (!(await ollama.modelExists(model))) {
-    throw new Error(
-      `Shadow model "${model}" not found in Ollama. ` +
-        `Run: ollama pull ${model}`,
-    );
+    throw new Error(`Shadow model "${model}" not found in Ollama. ` + `Run: ollama pull ${model}`);
   }
   const probe = await ollama.embed({ model, texts: ["probe"] });
   const dim = probe.dim;
@@ -104,12 +99,8 @@ export async function startShadowIndex(
   `;
   const totalSql = `SELECT COUNT(*) AS c FROM chunks`;
 
-  const pending = vault.db.handle
-    .prepare<[], PendingChunkRow>(pendingSql)
-    .all();
-  const totalRow = vault.db.handle
-    .prepare<[], { c: number }>(totalSql)
-    .get();
+  const pending = vault.db.handle.prepare<[], PendingChunkRow>(pendingSql).all();
+  const totalRow = vault.db.handle.prepare<[], { c: number }>(totalSql).get();
   const chunksTotal = totalRow?.c ?? 0;
   const chunksSkipped = chunksTotal - pending.length;
 
@@ -196,9 +187,7 @@ export function listModels(vault: Vault): ModelInventoryEntry[] {
     try {
       vault.db.embeddings.ensureTableForModel(m.id, m.dim);
       const row = vault.db.handle
-        .prepare<[], { c: number }>(
-          `SELECT COUNT(*) AS c FROM embeddings_m${m.id}_d${m.dim}`,
-        )
+        .prepare<[], { c: number }>(`SELECT COUNT(*) AS c FROM embeddings_m${m.id}_d${m.dim}`)
         .get();
       count = row?.c ?? 0;
     } catch {
@@ -231,10 +220,7 @@ export interface SwitchResult {
  * model — partial switches would leave the new active model unable to
  * answer queries for those chunks.
  */
-export function switchActiveModel(
-  vault: Vault,
-  targetModelName: string,
-): SwitchResult {
+export function switchActiveModel(vault: Vault, targetModelName: string): SwitchResult {
   const target = vault.db.models.getByName(targetModelName);
   if (!target) {
     return { ok: false, reason: "unknown_model" };

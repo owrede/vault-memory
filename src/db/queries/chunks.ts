@@ -25,9 +25,7 @@ export class ChunksQueries {
     this._getByNote = db.prepare<[number], ChunkRow>(
       "SELECT * FROM chunks WHERE note_id = ? ORDER BY idx",
     );
-    this._getById = db.prepare<[number], ChunkRow>(
-      "SELECT * FROM chunks WHERE id = ?",
-    );
+    this._getById = db.prepare<[number], ChunkRow>("SELECT * FROM chunks WHERE id = ?");
   }
 
   insertBatch(noteId: number, chunks: ChunkInput[]): number[] {

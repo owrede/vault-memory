@@ -24,9 +24,7 @@ export class AliasesQueries {
       `INSERT OR IGNORE INTO note_aliases (note_id, alias, alias_norm)
        VALUES (?, ?, ?)`,
     );
-    this.deleteStmt = db.prepare(
-      `DELETE FROM note_aliases WHERE note_id = ?`,
-    );
+    this.deleteStmt = db.prepare(`DELETE FROM note_aliases WHERE note_id = ?`);
     this.listForNoteStmt = db.prepare(
       `SELECT alias FROM note_aliases WHERE note_id = ? ORDER BY id ASC`,
     );

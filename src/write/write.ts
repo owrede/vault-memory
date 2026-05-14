@@ -87,10 +87,7 @@ function permissionDenied(vaultName: string): WriteConflict {
  * Compute the canonical content-hash the way the reader does. Delegates to
  * `computeNoteHash` from reader/hash.ts (canonical, key-sorted JSON).
  */
-function computeHash(
-  content: string,
-  frontmatter: Record<string, unknown> | null,
-): string {
+function computeHash(content: string, frontmatter: Record<string, unknown> | null): string {
   return computeNoteHash(content, frontmatter);
 }
 
@@ -107,9 +104,12 @@ function countWords(content: string): number {
   return content.split(/\s+/).filter((s) => s.length > 0).length;
 }
 
-async function readExistingFile(
-  absPath: string,
-): Promise<{ raw: string; content: string; frontmatter: Record<string, unknown> | null; hash: string } | null> {
+async function readExistingFile(absPath: string): Promise<{
+  raw: string;
+  content: string;
+  frontmatter: Record<string, unknown> | null;
+  hash: string;
+} | null> {
   let raw: string;
   try {
     raw = await fs.readFile(absPath, "utf-8");
@@ -188,9 +188,7 @@ export async function writeNote(input: WriteNoteInput): Promise<WriteResult> {
   const written = await readExistingFile(absPath);
   if (written === null) {
     // Should never happen — we just wrote it.
-    throw new Error(
-      `Internal error: file disappeared after write: ${relativePath}`,
-    );
+    throw new Error(`Internal error: file disappeared after write: ${relativePath}`);
   }
   const stat = await fs.stat(absPath);
 

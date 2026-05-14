@@ -96,8 +96,7 @@ function gatherNeighbors(
   // via path lookup. These are unresolved-link strings from parser
   // (e.g. "Personen/Jörg" — no .md).
   for (const target of additionalForwardTargets) {
-    const candidate = vault.db.notes.getByPath(`${target}.md`)
-      ?? vault.db.notes.getByPath(target);
+    const candidate = vault.db.notes.getByPath(`${target}.md`) ?? vault.db.notes.getByPath(target);
     if (!candidate) continue;
     if (seenIds.has(candidate.id)) continue;
     seenIds.add(candidate.id);
@@ -107,9 +106,7 @@ function gatherNeighbors(
   return out;
 }
 
-function aggregateEntries(
-  neighbors: NeighborRow[],
-): NeighborInferenceEntry[] {
+function aggregateEntries(neighbors: NeighborRow[]): NeighborInferenceEntry[] {
   const total = neighbors.length;
   if (total === 0) return [];
 
@@ -129,7 +126,7 @@ function aggregateEntries(
     const obj = fm as Record<string, unknown>;
     for (const [key, value] of Object.entries(obj)) {
       keyPresence.set(key, (keyPresence.get(key) ?? 0) + 1);
-      const valKey = JSON.stringify(value, Object.keys(value as object ?? {}).sort());
+      const valKey = JSON.stringify(value, Object.keys((value as object) ?? {}).sort());
       if (!keyValues.has(key)) keyValues.set(key, new Map());
       const bucket = keyValues.get(key)!;
       bucket.set(valKey, (bucket.get(valKey) ?? 0) + 1);
@@ -147,8 +144,7 @@ function aggregateEntries(
         bestCount = c;
       }
     }
-    const dominantValue =
-      bestCount / presenceCount > 0.5 ? safeParse(bestKey) : null;
+    const dominantValue = bestCount / presenceCount > 0.5 ? safeParse(bestKey) : null;
     entries.push({
       key,
       neighborCount: presenceCount,
@@ -188,11 +184,7 @@ export function inferFromNeighbors(
   notePath: string,
   additionalForwardTargets: string[] = [],
 ): NeighborInferenceResult {
-  const neighbors = gatherNeighbors(
-    vault,
-    notePath,
-    additionalForwardTargets,
-  );
+  const neighbors = gatherNeighbors(vault, notePath, additionalForwardTargets);
 
   // Approximate forward/backward split — not strictly needed for the
   // aggregate, but useful in the tool response so the agent can see

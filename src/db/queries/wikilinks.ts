@@ -53,9 +53,7 @@ export class WikilinksQueries {
         (source_note, target_path, target_note, link_text, anchor, line_number)
       VALUES (@source_note, @target_path, @target_note, @link_text, @anchor, @line_number)
     `);
-    this._deleteByNote = db.prepare(
-      "DELETE FROM wikilinks WHERE source_note = ?",
-    );
+    this._deleteByNote = db.prepare("DELETE FROM wikilinks WHERE source_note = ?");
     this._backlinks = db.prepare(
       `SELECT source_note, line_number, link_text
        FROM wikilinks

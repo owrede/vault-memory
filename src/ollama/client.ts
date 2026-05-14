@@ -10,11 +10,7 @@
  */
 
 import { z } from "zod";
-import type {
-  EmbedRequest,
-  EmbedResponse,
-  OllamaClientOptions,
-} from "../types.js";
+import type { EmbedRequest, EmbedResponse, OllamaClientOptions } from "../types.js";
 import { withRetry } from "./retry.js";
 
 const DEFAULT_ENDPOINT = "http://localhost:11434";
@@ -93,9 +89,7 @@ export class OllamaClient {
       batches.push(texts.slice(i, i + this.batchSize));
     }
 
-    const results = await Promise.all(
-      batches.map((batch) => this.embedBatch(model, batch)),
-    );
+    const results = await Promise.all(batches.map((batch) => this.embedBatch(model, batch)));
 
     const vectors: number[][] = [];
     let confirmedModel = model;
@@ -121,14 +115,11 @@ export class OllamaClient {
     return withRetry(
       async () => {
         const body = JSON.stringify({ model, input: texts });
-        const response = await this.fetchWithTimeout(
-          `${this.endpoint}/api/embed`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body,
-          },
-        );
+        const response = await this.fetchWithTimeout(`${this.endpoint}/api/embed`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+        });
 
         if (!response.ok) {
           const text = await response.text().catch(() => "");
@@ -151,10 +142,7 @@ export class OllamaClient {
    */
   async healthCheck(): Promise<{ ok: boolean; models?: string[]; error?: string }> {
     try {
-      const response = await this.fetchWithTimeout(
-        `${this.endpoint}/api/tags`,
-        { method: "GET" },
-      );
+      const response = await this.fetchWithTimeout(`${this.endpoint}/api/tags`, { method: "GET" });
       if (!response.ok) {
         return {
           ok: false,
@@ -188,10 +176,7 @@ export class OllamaClient {
     return false;
   }
 
-  private async fetchWithTimeout(
-    url: string,
-    init: RequestInit,
-  ): Promise<Response> {
+  private async fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {

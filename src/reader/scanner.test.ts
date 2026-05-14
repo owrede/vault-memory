@@ -19,14 +19,8 @@ describe("scanVault", () => {
     await fs.writeFile(path.join(root, "e.md"), "# E");
     // .obsidian directory (should be excluded by default)
     await fs.mkdir(path.join(root, ".obsidian"));
-    await fs.writeFile(
-      path.join(root, ".obsidian", "workspace.json"),
-      "{}",
-    );
-    await fs.writeFile(
-      path.join(root, ".obsidian", "notes.md"),
-      "# hidden",
-    );
+    await fs.writeFile(path.join(root, ".obsidian", "workspace.json"), "{}");
+    await fs.writeFile(path.join(root, ".obsidian", "notes.md"), "# hidden");
     // a non-md file
     await fs.writeFile(path.join(root, "ignore.txt"), "nope");
   });

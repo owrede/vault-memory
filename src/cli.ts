@@ -66,15 +66,11 @@ async function runIndex(rest: string[]): Promise<void> {
     endpoint: config.server.ollama_endpoint,
   });
 
-  const targets = vaultName
-    ? [manager.require(vaultName)]
-    : manager.list();
+  const targets = vaultName ? [manager.require(vaultName)] : manager.list();
 
   for (const vault of targets) {
     const model =
-      vault.config.embedding_model ??
-      config.server.default_embedding_model ??
-      "qwen3-embedding";
+      vault.config.embedding_model ?? config.server.default_embedding_model ?? "qwen3-embedding";
 
     console.error(`\n→ Indexing "${vault.config.name}" (${mode}) with ${model}`);
     const result = await indexVault(vault, {
@@ -85,8 +81,7 @@ async function runIndex(rest: string[]): Promise<void> {
     });
 
     if (result.status === "completed") {
-      const skipSuffix =
-        result.notesSkipped > 0 ? `, ${result.notesSkipped} skipped` : "";
+      const skipSuffix = result.notesSkipped > 0 ? `, ${result.notesSkipped} skipped` : "";
       console.error(
         `✓ ${vault.config.name}: ${result.notesIndexed} new, ` +
           `${result.notesUpdated} updated, ${result.notesDeleted} deleted${skipSuffix}, ` +
@@ -141,9 +136,7 @@ into the vault root, and runs an initial index. Idempotent.`);
   }
 
   if (path === null) {
-    console.error(
-      "Usage: vault-memory add-vault <path> [--name <name>] [--write] [--no-index]",
-    );
+    console.error("Usage: vault-memory add-vault <path> [--name <name>] [--write] [--no-index]");
     process.exit(2);
   }
 

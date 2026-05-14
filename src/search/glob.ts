@@ -47,10 +47,7 @@ function compile(pattern: string): RegExp {
  * True iff `path` matches any of the given glob patterns. Empty pattern
  * list returns false (no exclusion).
  */
-export function matchesAnyGlob(
-  path: string,
-  patterns: readonly string[],
-): boolean {
+export function matchesAnyGlob(path: string, patterns: readonly string[]): boolean {
   for (const p of patterns) {
     if (compile(p).test(path)) return true;
   }

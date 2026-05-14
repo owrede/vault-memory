@@ -134,10 +134,7 @@ describe("extractFrontmatterWikilinks", () => {
       members: ["[[Jörg Herbers]]", "[[Oliver Wrede]]"],
     });
     expect(out).toHaveLength(2);
-    expect(out.map((w) => w.normalizedTarget)).toEqual([
-      "Jörg Herbers",
-      "Oliver Wrede",
-    ]);
+    expect(out.map((w) => w.normalizedTarget)).toEqual(["Jörg Herbers", "Oliver Wrede"]);
   });
 
   it("extracts multiple wikilinks from a single string value", () => {
@@ -213,11 +210,7 @@ describe("extractFrontmatterWikilinks", () => {
     const out = extractFrontmatterWikilinks({
       class: "Person",
       organisation: "[[INFORM GmbH]]",
-      affiliated_with: [
-        "[[INFORM GmbH]]",
-        "[[Intelligence Impact]]",
-        "[[RWTH Aachen]]",
-      ],
+      affiliated_with: ["[[INFORM GmbH]]", "[[Intelligence Impact]]", "[[RWTH Aachen]]"],
       cofounder_of: ["[[Intelligence Impact]]"],
       past_roles: ["[[RWTH Aachen]]"],
       participation: ["[[LAG-EPIX]]"],

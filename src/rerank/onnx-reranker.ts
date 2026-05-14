@@ -100,8 +100,7 @@ export class OnnxReranker implements Reranker {
     const out = await session.run(feeds);
     // The model exports its output as `logits`. Fall back to first key
     // for robustness against minor export variants.
-    const logitsTensor =
-      out.logits ?? out[Object.keys(out)[0] as keyof typeof out];
+    const logitsTensor = out.logits ?? out[Object.keys(out)[0] as keyof typeof out];
     const data = logitsTensor.data as Float32Array;
     // logits shape: [batch, 1] — one score per pair. Sigmoid → [0, 1].
     const scores: number[] = new Array(batch);
