@@ -98,14 +98,26 @@ export class ObsidianFsDelivery implements DeliveryAdapter {
   /**
    * @param vault The Vault unit-of-access (config + db handle).
    * @param clientId Default audit-log attribution. Per D-02, captured from
-   *  MCP InitializeRequest.params.clientInfo at server bootstrap. Falls back
-   *  to "unknown" at the call site if no value is supplied at any level.
+   *  MCP InitializeRequest.params.clientInfo (via the SDK's
+   *  `Server.getClientVersion()?.name`) at server bootstrap. May be a static
+   *  string OR a lazy getter — the getter form lets the server construct
+   *  deliveries BEFORE the initialize handshake completes and have the
+   *  handshake value flow through automatically on the first write.
+   *  Falls back to "unknown" at the call site if no value is supplied at
+   *  any level (per RESEARCH Pitfall 4: clientInfo is OPTIONAL in the MCP
+   *  spec, so older or non-conformant clients may not send it).
    */
   constructor(
     private readonly vault: Vault,
-    private readonly clientId: string,
+    private readonly clientIdSource: string | (() => string),
   ) {
     this.handle = parseSourceHandle(`${SCHEME}://${vault.config.name}`);
+  }
+
+  private get clientId(): string {
+    return typeof this.clientIdSource === "function"
+      ? this.clientIdSource()
+      : this.clientIdSource;
   }
 
   async write(id: DocId, doc: Partial<Document>, opts?: WriteOptions): Promise<V2WriteResult> {
