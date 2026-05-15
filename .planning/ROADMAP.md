@@ -11,7 +11,7 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
 - Decimal phases (2.1, 2.2): Reserved for urgent insertions (INSERTED)
 
 - [ ] **Phase 0: Foundation & decisions** - Lock ADRs, architecture docs, eval fixtures, regression baselines, CI lints
-- [ ] **Phase 1: Adapter extraction & tech-debt-up** - Install adapter seams, bump MCP SDK 1.29 + Zod 4, conformance suite
+- [x] **Phase 1: Adapter extraction & tech-debt-up** - Install adapter seams, bump MCP SDK 1.29 + Zod 4, conformance suite
 - [ ] **Phase 2: Memory namespace & provenance contract** - Foundational safety invariant; labeled agent write-back via MemorySink
 - [ ] **Phase 3: Bundles + authority/staleness** - Document-tree retrieval, citation packets, recency/authority weights (folded brief Phase 3+4)
 - [ ] **Phase 4: Graph-as-retrieval** - Typed-edge expansion and community clustering

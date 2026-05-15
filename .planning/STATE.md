@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: release
-status: verifying
-stopped_at: All 6 waves complete; Phase 1 implementation done; ready for /gsd-verify-work
-last_updated: "2026-05-15T12:25:00.000Z"
+status: complete
+stopped_at: Phase 1 COMPLETE — verifier PASS-with-caveats (5/5 success criteria + 15/15 ADP requirements). Ready for Phase 2 (Memory namespace & provenance contract).
+last_updated: "2026-05-15T13:00:00.000Z"
 last_activity: "2026-05-15 -- Wave 6 (01-06) executed in worktree, merged to main (a76cb50): final polish + CI gates. 8 task commits + SUMMARY: scripts/lint-adapters.sh (8 invariants: I-1..I-6 + I-5b + C-1, POSIX, Alpine-portable); scripts/smoketest-non-claude.mjs (Inspector SDK Client harness identifying as 'non-claude-smoketest', 4 assertions: 23 tools / non-empty descriptions / list_vaults call OK / bogus call surfaces error A6); docs/v2/AGENT_AGNOSTIC_AUDIT.md (22 rows cross-referenced to CONCERNS.md, every leak fixed-v2 or deferred-v3 with resolving-commit refs); README rewritten with 'any MCP-aware agent' framing twice in first 12 lines; CHANGELOG [Unreleased] v2.0.0 entries (Added/Changed/Migration); src/cli.ts C-1 sweep + escape markers for legitimate ecosystem refs; .github/workflows/ci.yml wired with lint-adapters + baseline-eval + build + smoketest steps. W6 human-verify checkpoint APPROVED with empirical evidence (snapshot zero-diff, audit completeness, README tone). FINAL PHASE-GATE: all 6 commands green on main — lint:check (8 invariants + tsc + prettier) ✓, 578 tests ✓, eval:baseline (29 tests) ✓, lint-adapters.sh ✓, build (dist/cli.js 233.96 KB) ✓, smoketest (4 assertions) ✓. Three Task-01 deviations auto-fixed (grep -a UTF-8 flag, // vault-memory:claude-ok escape mechanism, I-3 allow-list extension to server.ts + indexer/single.ts). Phase 1 implementation COMPLETE; awaiting gsd-verifier for goal-backward verification."
 progress:
   total_phases: 10
-  completed_phases: 1
+  completed_phases: 2
   total_plans: 21
   completed_plans: 21
   percent: 100
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-05-14)
 
 ## Current Position
 
-Phase: 01 (adapter-extraction-tech-debt-up) — IMPLEMENTATION COMPLETE, awaiting verifier
-Plan: 6 of 6 complete (all SUMMARYs committed)
-Status: Wave 6 merged (a76cb50). 01-06 SUMMARY committed (1b7fcb4). Worktree pruned. All 6 final phase-gate commands green on main: lint:check ✓ · 578 tests ✓ · eval:baseline (29) ✓ · lint-adapters.sh (8 invariants) ✓ · build (dist/cli.js 233.96 KB) ✓ · smoketest (4 assertions: 23 tools / non-empty descriptions / list_vaults / A6 error surfacing) ✓. All 5 ROADMAP success criteria materially met; v1-baseline tools-list.snapshot.json byte-for-byte preserved across the entire phase (zero drift under SDK 1.29 + Zod 4); 23 v1 tool surface unchanged. Resume with /gsd-verify-work for goal-backward verification (does the implementation deliver what the phase promised?).
-Last activity: 2026-05-15 -- Wave 6 merged; Phase 1 implementation complete (lint-adapters + smoketest + agent-agnostic audit + README + CHANGELOG + CI). All phase-gate commands green.
+Phase: 01 (adapter-extraction-tech-debt-up) — COMPLETE + VERIFIED
+Plan: 6 of 6 complete (all SUMMARYs committed); verifier PASS-with-caveats
+Status: gsd-verifier returned PASS-with-caveats. Score: 5/5 ROADMAP success criteria + 15/15 ADP requirements. VERIFICATION.md committed at .planning/phases/01-adapter-extraction-tech-debt-up/01-VERIFICATION.md. One non-blocking caveat: chokidar timing flake in change-feed.test.ts / watcher.test.ts (intermittent under full-suite load, isolated reruns clean) — recommended fix is a Phase 2 wave-0 micro-task adding test.retry(1) or bumping awaitWriteFinish stabilityThreshold to 400ms. v1-baseline snapshot byte-for-byte preserved end-to-end. Ready for /gsd-plan-phase 2 (Memory namespace & provenance contract).
+Last activity: 2026-05-15 -- Phase 1 complete + verified. ROADMAP top-level Phase 1 checkbox flipped to [x].
 
 Progress: [██████████] 100%
 
@@ -96,6 +96,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-15T12:25:00.000Z
-Stopped at: All 6 waves complete; Phase 1 implementation done; ready for /gsd-verify-work
-Resume file: (none — phase done) — run `/gsd-verify-work` to verify the implementation delivers Phase 1's 5 success criteria + 15 ADP requirements end-to-end
+Last session: 2026-05-15T13:00:00.000Z
+Stopped at: Phase 1 COMPLETE + VERIFIED (PASS-with-caveats). Ready for Phase 2.
+Resume file: (none — phase done) — run `/gsd-plan-phase 2` to start Phase 2 (Memory namespace & provenance contract — the foundational safety invariant for agent write-back via labeled MemorySink)
