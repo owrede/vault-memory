@@ -35,3 +35,7 @@ export {
   MemoryContractNotFoundError,
 } from "./contract/index.js";
 export type { MemoryContract } from "./contract/index.js";
+
+// Plan 02-05 — citation packet shape (D-01); shared with Phase 3 ASM-05.
+export { displayUrlFor, toCitationPacket } from "./citation-packet.js";
+export type { CitationPacket } from "./citation-packet.js";
