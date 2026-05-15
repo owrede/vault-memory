@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: release
 status: executing
-stopped_at: Wave 3 (plan 01-03) complete; ready for /gsd-execute-phase 1 --wave 4
-last_updated: "2026-05-15T09:00:00.000Z"
-last_activity: "2026-05-15 -- Wave 3 (01-03) executed in worktree, merged to main (1095c19): Source adapter extraction. git mv src/reader/{scanner,parser,hash,wikilinks}{,.test}.ts → src/adapters/source/obsidian-fs/ (all 8 files renamed at 98–100% similarity; blame preserved). ObsidianFsSource facade implements SourceConnector (205 lines, 15 co-located tests). StubSource in-memory adapter (68 lines, 8 tests). 25-case parameterized conformance suite (12 invariants × 2 adapters + 1 D-05 adapter-specific). read_note MCP handler routed through source.readDocument; AdapterRegistry bootstrap added to src/server.ts. 9 task commits + SUMMARY. 495 tests pass (+48 over 447), lint:check + eval:baseline green; v1-baseline tools-list.snapshot.json byte-for-byte preserved. Notable scope-minimal Rule-3 deviation: indexer keeps existing parseNote() imports (now from adapter dir) rather than routing through source.readDocument — avoids polluting Document with obsidian-fs-specific fields (bodyHash/wordCount/relativePath); architectural seam is in place at the import boundary; user-facing MCP seam (read_note) IS rewired."
+stopped_at: Wave 4 (plan 01-04) complete; ready for /gsd-execute-phase 1 --wave 5
+last_updated: "2026-05-15T09:30:00.000Z"
+last_activity: "2026-05-15 -- Wave 4 (01-04) executed in worktree, merged to main (d662759 + 770ffa2 prettier fix): Delivery adapter extraction + D-01 formatDisplayUrl rewire + D-02 client_info handshake. git mv src/write/{write,fs}{,.test}.ts → src/adapters/delivery/obsidian-fs/ (4 renames at 90–100% similarity; blame preserved). ObsidianFsDelivery facade + StubDelivery (shared-Map with StubSource per W2 caveat). 22-case parameterized conformance suite (10 cases × 2 adapters + 2 obsidian-fs-specific). src/frontmatter/update.ts refactored — no longer imports gray-matter or node:fs; routes via Source (read) and Delivery (write). W4 caveat resolved: pre-read confirmed v1 obsidianUrl + ObsidianFsSource.formatDisplayUrl produce byte-identical output — no adjustment needed (strategy a). DEFAULT_CLIENT_ID = 'claude-code' removed from production code; lazy-getter closure threads MCP getClientVersion()?.name through writes with 'unknown' fallback. obsidianUrl helper deleted from server.ts; both call sites (search/fetch) routed through source.formatDisplayUrl. 8 task commits + SUMMARY + 1 prettier-drift fix on main. 540 tests pass (+45 over 495), lint:check + eval:baseline green; v1-baseline snapshot byte-for-byte preserved."
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 21
-  completed_plans: 18
-  percent: 86
+  completed_plans: 19
+  percent: 90
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-14)
 ## Current Position
 
 Phase: 01 (adapter-extraction-tech-debt-up) — EXECUTING
-Plan: 3 of 6 complete; 3 remaining (01-04..06)
-Status: Wave 3 merged (1095c19). 01-03 SUMMARY committed. Worktree pruned. lint:check + 495 tests (+48 new) + eval:baseline all green. v1-baseline snapshot byte-for-byte preserved. First vertical seam slice (Source) landed; src/reader/ empty; gray-matter / chokidar leaks now confined to plans 01-04's (write/, frontmatter/) and 01-05's (watcher/) territory. Resume with /gsd-execute-phase 1 --wave 4 (Delivery adapter — second vertical seam slice).
-Last activity: 2026-05-15 -- Wave 3 merged; Source adapter extraction + obsidian-fs source impl + StubSource + 25-case conformance suite land on main
+Plan: 4 of 6 complete; 2 remaining (01-05..06)
+Status: Wave 4 merged (d662759 + 770ffa2). 01-04 SUMMARY committed. Worktree pruned. lint:check + 540 tests (+45 new) + eval:baseline all green. v1-baseline snapshot byte-for-byte preserved. Second vertical seam slice (Delivery) landed; src/write/ empty; gray-matter leak fully isolated to test fixtures (acceptable per scripts/lint-adapters.sh design — 01-06's deliverable will formalize the exclusion). Only remaining seam-leak surface is chokidar in src/watcher/, which is plan 01-05's territory. D-01 + D-02 both resolved. Resume with /gsd-execute-phase 1 --wave 5 (Change-feed adapter + MCP SDK 1.29 + Zod 4 + registerTool x23 — the densest plan; Pitfalls #1143 + #1643 + snapshot-regen + chokidar config byte-preservation all in play).
+Last activity: 2026-05-15 -- Wave 4 merged; Delivery adapter + D-01 formatDisplayUrl rewire + D-02 client_info handshake land on main
 
-Progress: [█████████░] 86%
+Progress: [█████████░] 90%
 
 ## Performance Metrics
 
@@ -94,6 +94,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-15T09:00:00.000Z
-Stopped at: Wave 3 (plan 01-03) complete; ready for /gsd-execute-phase 1 --wave 4
-Resume file: .planning/phases/01-adapter-extraction-tech-debt-up/01-04-PLAN.md (wave 4 — Delivery adapter + D-01 formatDisplayUrl rewire + D-02 client_info)
+Last session: 2026-05-15T09:30:00.000Z
+Stopped at: Wave 4 (plan 01-04) complete; ready for /gsd-execute-phase 1 --wave 5
+Resume file: .planning/phases/01-adapter-extraction-tech-debt-up/01-05-PLAN.md (wave 5 — Change-feed adapter + MCP SDK 1.29 + Zod 4 + registerTool x23)
