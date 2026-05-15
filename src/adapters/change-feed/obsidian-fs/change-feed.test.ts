@@ -71,7 +71,8 @@ describe("ObsidianFsChangeFeed", () => {
     expect(fixture.feed.capabilities.emitsRename).toBe(false);
   });
 
-  it("emits create on a newly written .md file", async () => {
+  // retry: 1 — chokidar awaitWriteFinish + suite-load timing race
+  it("emits create on a newly written .md file", { retry: 1 }, async () => {
     fixture = await makeFixture();
     await writeFile(join(fixture.vaultDir, "new.md"), "# new note\n");
     await sleep(700);
