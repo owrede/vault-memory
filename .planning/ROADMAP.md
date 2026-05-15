@@ -85,7 +85,7 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
   5. ADR-004 amendment (folder-default vs separate-vault) committed before implementation; eval fixture includes a 20-document `_memory/` subset with diverse provenance labels
 **Plans**: 9 plans (after revision: 02-03 was split into 02-03 + 02-03b to keep validator chokepoint focused and isolate v1-entry-point guards / bootstrap wiring)
 - [x] 02-01-PLAN.md — ADR-004 amendment + MEMORY_CONTRACT alignment (MEM-12, doc-only) — wave 0
-- [ ] 02-02-PLAN.md — MemorySink runtime substrate (handle parser, registry, contract loader, sentinel, `decomposeDocId`, `pathInSink`/`joinVaultPath` helpers) (MEM-01, MEM-05, MEM-06) — wave 0
+- [x] 02-02-PLAN.md — MemorySink runtime substrate (handle parser, registry, contract loader, sentinel, `decomposeDocId`, `pathInSink`/`joinVaultPath` helpers) (MEM-01, MEM-05, MEM-06) — wave 0
 - [ ] 02-03-PLAN.md — Centralized provenance validator at the delivery seam + conformance cases 11–18 / sentinel cases 19–21 (MEM-05, MEM-06) — wave 1
 - [ ] 02-03b-PLAN.md — v1 entry-point Guards on `write_note`/`update_frontmatter`/`delete_note` + server bootstrap wiring (MemorySinkRegistry instantiation, ordering before catchup) + MEM-11 targeted MCP integration test (MEM-07, MEM-11) — wave 1
 - [ ] 02-04-PLAN.md — record_observation + supersede MCP tools (MEM-02, MEM-04) — wave 2
@@ -203,7 +203,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 →
 |-------|----------------|--------|-----------|
 | 0. Foundation & decisions | 0/TBD | Not started | - |
 | 1. Adapter extraction & tech-debt-up | 0/TBD | Not started | - |
-| 2. Memory namespace & provenance contract | 1/9 | In Progress|  |
+| 2. Memory namespace & provenance contract | 2/9 | In Progress|  |
 | 3. Bundles + authority/staleness | 0/TBD | Not started | - |
 | 4. Graph-as-retrieval | 0/TBD | Not started | - |
 | 5. Compiled brief layer | 0/TBD | Not started | - |
