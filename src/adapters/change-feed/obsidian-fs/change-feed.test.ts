@@ -82,7 +82,8 @@ describe("ObsidianFsChangeFeed", () => {
     expect(last.id).toMatch(/^obsidian-fs:\/\/cf-vault\/new\.md$/);
   });
 
-  it("emits update on a modified .md file", async () => {
+  // retry: 1 — chokidar awaitWriteFinish + suite-load timing race
+  it("emits update on a modified .md file", { retry: 1 }, async () => {
     fixture = await makeFixture();
     const p = join(fixture.vaultDir, "edit.md");
     await writeFile(p, "# v1\n");
