@@ -15,3 +15,5 @@ export { DebouncedQueue } from "./queue.js";
 export type { QueueEvent, DebouncedQueueOptions } from "./queue.js";
 export { SuppressionSet } from "./suppression.js";
 export type { SuppressionOptions } from "./suppression.js";
+export { ObsidianFsChangeFeed } from "./change-feed.js";
+export type { ObsidianFsChangeFeedOptions } from "./change-feed.js";

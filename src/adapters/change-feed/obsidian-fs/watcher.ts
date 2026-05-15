@@ -14,13 +14,13 @@
 
 import chokidar from "chokidar";
 import type { FSWatcher } from "chokidar";
-import { posix } from "node:path";
 import { sep as nativeSep } from "node:path";
 import type { Vault } from "../../../vault/index.js";
 import type { OllamaClient } from "../../../ollama/index.js";
 import { indexNote, removeNote } from "../../../indexer/index.js";
 import { DebouncedQueue, type QueueEvent } from "./queue.js";
 import type { SuppressionSet } from "./suppression.js";
+import { buildChokidarOptions } from "./chokidar-config.js";
 
 export interface VaultWatcherOptions {
   vault: Vault;
@@ -76,24 +76,7 @@ export class VaultWatcher {
     const vaultPath = this.opts.vault.config.path;
     const excludes = this.opts.vault.config.exclude_globs ?? [];
 
-    this.fsWatcher = chokidar.watch(vaultPath, {
-      persistent: true,
-      ignoreInitial: true, // we expect initial state via indexVault
-      ignored: [
-        // chokidar handles glob-like patterns. Provide both raw and absolute.
-        ...excludes.map((g) => posix.join(vaultPath, g)),
-        /(^|[\\/])\../, // hidden files at any level
-        "**/*.tmp.*", // our atomic-write artifacts
-      ],
-      // Only watch markdown files — saves event volume.
-      // chokidar's `ignored` runs against absolute paths, so we filter via
-      // an after-the-fact event check (cheaper than a glob).
-      awaitWriteFinish: {
-        stabilityThreshold: 200,
-        pollInterval: 50,
-      },
-      followSymlinks: false,
-    });
+    this.fsWatcher = chokidar.watch(vaultPath, buildChokidarOptions(vaultPath, excludes));
 
     this.fsWatcher.on("add", (path) => this.onFsEvent(path, "change"));
     this.fsWatcher.on("change", (path) => this.onFsEvent(path, "change"));

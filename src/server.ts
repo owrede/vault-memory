@@ -32,7 +32,11 @@ import { queryFrontmatter, updateFrontmatter } from "./frontmatter/index.js";
 import { suggestFrontmatter } from "./schema/index.js";
 import { ObsidianFsDelivery } from "./adapters/delivery/obsidian-fs/index.js";
 import { getAuditLog, getIndexRuns } from "./audit/index.js";
-import { SuppressionSet, VaultWatcher } from "./adapters/change-feed/obsidian-fs/index.js";
+import {
+  ObsidianFsChangeFeed,
+  SuppressionSet,
+  VaultWatcher,
+} from "./adapters/change-feed/obsidian-fs/index.js";
 import {
   catchupVault,
   listModels,
@@ -236,12 +240,33 @@ export async function serve(): Promise<void> {
   // delivery can see the post-init clientInfo without a re-registration.
   let serverRef: Server | undefined;
   const getClientId = (): string => serverRef?.getClientVersion()?.name ?? "unknown";
+  // One SuppressionSet shared by all watchers + the per-vault change-feed.
+  // Paths are vault-relative; the chance of a collision across vaults is
+  // negligible and a false positive just means one event is dropped —
+  // harmless. (Pitfall 6 cross-adapter contract: ObsidianFsDelivery marks
+  // a path on this set BEFORE atomicWriteFile; the change-feed +
+  // VaultWatcher consume it on the corresponding chokidar event.)
+  const suppression = new SuppressionSet({ ttlMs: 2000 });
+  const changeFeeds = new Map<string, ObsidianFsChangeFeed>();
   for (const vault of manager.list()) {
     const source = new ObsidianFsSource(vault.config);
     adapterRegistry.registerSource(source.handle, source);
 
     const delivery = new ObsidianFsDelivery(vault, getClientId);
     adapterRegistry.registerDelivery(delivery.handle, delivery);
+
+    // Plan 01-05 task 02: register a ChangeFeed per vault. Coexists with
+    // the v1 VaultWatcher (driven from `startCatchupAndWatchers` below)
+    // so existing live-indexing behavior is unchanged; a future plan will
+    // retire VaultWatcher in favor of an indexer subscribing through this
+    // ChangeFeed seam.
+    const changeFeed = new ObsidianFsChangeFeed({
+      vault,
+      suppression,
+      log: (m) => process.stderr.write(`[change-feed:${vault.config.name}] ${m}\n`),
+    });
+    adapterRegistry.registerChangeFeed(changeFeed.handle, changeFeed);
+    changeFeeds.set(vault.config.name, changeFeed);
   }
 
   const ollama = new OllamaClient({
@@ -278,10 +303,9 @@ export async function serve(): Promise<void> {
 
   // ─── File watchers (Phase 4) ──────────────────────────────────────────────
   //
-  // One SuppressionSet shared by all vaults (paths are vault-relative; the
-  // chance of a collision across vaults is negligible and a false positive
-  // just means one event is dropped — harmless).
-  const suppression = new SuppressionSet({ ttlMs: 2000 });
+  // The shared `suppression` set (hoisted above with the adapter-registry
+  // construction so the per-vault ChangeFeed can share it with the v1
+  // VaultWatcher) is also wired into each VaultWatcher below.
   const watchers = new Map<string, VaultWatcher>();
 
   // Codex MEDIUM-3: catch-up reconciliation can take seconds on large vaults
@@ -330,6 +354,9 @@ export async function serve(): Promise<void> {
     for (const w of watchers.values()) {
       await w.drain();
       await w.stop();
+    }
+    for (const cf of changeFeeds.values()) {
+      await cf.close();
     }
   };
   process.on("SIGINT", () => {
