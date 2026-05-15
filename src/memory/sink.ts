@@ -50,16 +50,73 @@ import type { MemorySinkHandle } from "../types.js";
 export const MEMORY_SINK_HANDLE_PATTERN =
   /^obsidian-fs:\/\/[a-z0-9][a-z0-9-]*\/[^\s]+\/$/;
 
+/**
+ * Allowed characters inside a single path segment of the resource portion
+ * of a `MemorySinkHandle`. ASCII alphanumeric plus the three filename-safe
+ * punctuation characters (`.`, `_`, `-`). Critically, the literal `.` is
+ * permitted INSIDE a segment (so file extensions and dotfiles are fine),
+ * but the per-segment whitelist used in `parseMemorySinkHandle` rejects
+ * the bare-dot (`.`) and bare-dot-dot (`..`) segments that `path.normalize`
+ * / `path.join` would otherwise collapse and let a sink escape its vault.
+ *
+ * The character class is intentionally narrower than the top-level
+ * `MEMORY_SINK_HANDLE_PATTERN` (which only refuses whitespace) so that
+ * the parser refuses anything `path.join` could reshape: backslashes,
+ * leading-slash empties, control characters, and Unicode lookalikes.
+ *
+ * Per CR-01 (Plan 02-09): this is the substrate the memory-namespace
+ * safety invariant rests on. Downstream `pathInSink` is safe-by-construction
+ * precisely because the parser refuses any traversal-shaped input here.
+ */
+const SEGMENT_PATTERN = /^[A-Za-z0-9._\-]+$/;
+
 const { parseMemorySinkHandle } = (() => {
   // `mint` is the unsafe brand cast; closed inside this IIFE so it
   // cannot escape. We export only the validating `parse`.
   const mint = (s: string): MemorySinkHandle => s as MemorySinkHandle;
-  const parse = (s: string): MemorySinkHandle => {
+  const parse = (rawInput: string): MemorySinkHandle => {
+    // Normalize to NFC BEFORE the regex test. This forecloses Unicode
+    // tricks where decomposed-vs-precomposed equivalents differ
+    // byte-for-byte: an attacker cannot smuggle a `..` past the parser
+    // by spelling it with a combining sequence that re-composes inside
+    // the per-segment check. For ASCII inputs NFC is a fixed point, so
+    // this is a no-op on the positive controls.
+    const s = typeof rawInput === "string" ? rawInput.normalize("NFC") : rawInput;
     if (!MEMORY_SINK_HANDLE_PATTERN.test(s)) {
       throw new Error(
         `Invalid MemorySinkHandle: ${JSON.stringify(s)}. ` +
           `Expected obsidian-fs://<vault>/<path>/ (trailing slash required).`,
       );
+    }
+    // Extract the resource portion: everything after the authority's
+    // trailing slash and before the handle's trailing slash. The regex
+    // above guarantees the shape, so the slice math is safe.
+    //
+    //   obsidian-fs://<authority>/<resource>/
+    //                  ^         ^         ^
+    //                  authStart authEnd   trailing
+    //
+    // `authStart` is fixed at the length of "obsidian-fs://". `authEnd`
+    // is the first `/` AT OR AFTER `authStart` (the regex guarantees
+    // one exists). The resource is `[authEnd+1, length-1)` so the
+    // trailing slash is excluded.
+    const authStart = "obsidian-fs://".length;
+    const authEnd = s.indexOf("/", authStart);
+    const resource = s.slice(authEnd + 1, s.length - 1);
+    for (const segment of resource.split("/")) {
+      if (
+        segment.length === 0 ||
+        segment === "." ||
+        segment === ".." ||
+        !SEGMENT_PATTERN.test(segment)
+      ) {
+        throw new Error(
+          `Invalid MemorySinkHandle: ${JSON.stringify(s)}. ` +
+            `Resource path segment ${JSON.stringify(segment)} is not allowed: ` +
+            `only [A-Za-z0-9._-]+ segments are permitted ` +
+            `(no "..", no ".", no empty segments, no backslashes, no control characters).`,
+        );
+      }
     }
     return mint(s);
   };
