@@ -559,7 +559,8 @@ describe("Plan 02-04: MEM-02 (record_observation) + MEM-04 (supersede) end-to-en
     const names = TOOLS.map((t) => t.name);
     expect(names).toContain("record_observation");
     expect(names).toContain("supersede");
-    expect(TOOLS).toHaveLength(25);
+    // Plan 02-05 grows the snapshot to 26 (adds `recall`).
+    expect(TOOLS).toHaveLength(26);
 
     const ro = TOOLS.find((t) => t.name === "record_observation");
     const sup = TOOLS.find((t) => t.name === "supersede");
@@ -870,5 +871,371 @@ describe("Plan 02-04: MEM-02 (record_observation) + MEM-04 (supersede) end-to-en
       type: "observation",
     });
     expect(r.success).toBe(false);
+  });
+});
+
+// ─── Plan 02-05 — MEM-03 recall end-to-end ──────────────────────────────────
+
+describe("Plan 02-05: MEM-03 recall end-to-end", () => {
+  /**
+   * Drives `handleRecall` through the same wiring `serve()` builds in
+   * production — `setupMemorySinks`, `AdapterRegistry`-wired
+   * `ObsidianFsSource`, and the per-vault closures. The inner
+   * `searchHybrid` is stubbed so the integration does not require
+   * Ollama / an embedding model at test time; the stub returns the
+   * actual fixture-vault notePaths the test wants to exercise, and the
+   * source connector + filter pipeline run against the real
+   * frontmatter on disk.
+   *
+   * Plan 02-04 ships the existing 15-memory-doc v2 fixture. Plan 02-07
+   * will extend it with an A→B→C Spire-budget supersede chain; this
+   * plan's tests therefore exercise behaviors that work against the
+   * 15-doc fixture today.
+   */
+
+  it("tools/list includes recall plus the 25 prior entries → 26 total", async () => {
+    const { TOOLS } = await import("./tool-registry.js");
+    const names = TOOLS.map((t) => t.name);
+    expect(names).toContain("record_observation");
+    expect(names).toContain("supersede");
+    expect(names).toContain("recall");
+    expect(TOOLS).toHaveLength(26);
+  });
+
+  it("recall against the v2 fixture: 'Atlas pilot' returns the live 2026-04-16 doc; the 2026-04-20 superseded doc is hidden", async () => {
+    const { setupMemorySinks } = await import("./server.js");
+    const { Database } = await import("./db/database.js");
+    const { VaultManager } = await import("./vault/index.js");
+    const { ObsidianFsSource } = await import("./adapters/source/obsidian-fs/index.js");
+    const { AdapterRegistry, parseSourceHandle } = await import("./adapters/registry.js");
+    const { handleRecall } = await import("./memory/tools/index.js");
+    const { join } = await import("node:path");
+
+    const vaultDir = join(process.cwd(), "evals/fixtures/v2-test-vault");
+    const db = new Database(":memory:", "v2-test-vault");
+    db.migrate();
+    const vault = {
+      config: { name: "v2-test-vault", path: vaultDir, write_enabled: false },
+      db,
+      dbPath: ":memory:",
+    };
+    try {
+      const manager = new VaultManager();
+      (manager as unknown as { vaults: Map<string, typeof vault> }).vaults.set(
+        vault.config.name,
+        vault,
+      );
+
+      const memorySinkRegistry = await setupMemorySinks(
+        { memory_sinks: [] },
+        manager as unknown as InstanceType<typeof VaultManager>,
+      );
+      const adapterRegistry = new AdapterRegistry();
+      const source = new ObsidianFsSource(vault.config);
+      adapterRegistry.registerSource(source.handle, source);
+
+      // Stub searchHybrid returns the two atlas-pilot candidates from
+      // the fixture — both LIVE and SUPERSEDED — so the controller's
+      // post-filter on status:superseded is exercised end-to-end.
+      const stubSearch = async (): Promise<
+        Array<{
+          vault: string;
+          notePath: string;
+          noteTitle: string;
+          chunkText: string;
+          chunkIdx: number;
+          headingPath: string | null;
+          score: number;
+        }>
+      > => [
+        {
+          vault: "v2-test-vault",
+          notePath: "_memory/observations/2026-04-16-atlas-1-pilot-count-reduced.md",
+          noteTitle: "Atlas-1 pilot count reduced from 12 to 8",
+          chunkText: "",
+          chunkIdx: 0,
+          headingPath: null,
+          score: 1.0,
+        },
+        {
+          vault: "v2-test-vault",
+          notePath: "_memory/observations/2026-04-20-atlas-1-pilot-target-was-12.md",
+          noteTitle: "Atlas-1 pilot target was 12 (pre-pivot)",
+          chunkText: "",
+          chunkIdx: 0,
+          headingPath: null,
+          score: 0.9,
+        },
+      ];
+
+      const deps = {
+        memorySinkRegistry,
+        manager: manager as unknown as InstanceType<typeof VaultManager>,
+        sourceConnectorFor: (vaultName: string) =>
+          adapterRegistry.resolveSource(
+            parseSourceHandle(`obsidian-fs://${vaultName}`),
+          ),
+        searchHybrid: stubSearch,
+      };
+
+      const packets = await handleRecall(deps, { query: "Atlas pilot" });
+      // Only the LIVE doc surfaces — the 2026-04-20 doc has status:superseded.
+      expect(packets).toHaveLength(1);
+      const p = packets[0]!;
+      expect(p.title).toContain("12 to 8");
+      expect(p.properties.status).toBe("active");
+
+      // 8 D-01 fields per packet, display_url starts with obsidian://,
+      // hash is non-empty.
+      const keys = Object.keys(p).sort();
+      expect(keys).toEqual(
+        [
+          "display_url",
+          "doc_id",
+          "hash",
+          "heading_path",
+          "mtime",
+          "properties",
+          "source_handle",
+          "title",
+        ].sort(),
+      );
+      expect(p.display_url.startsWith("obsidian://")).toBe(true);
+      expect(typeof p.hash).toBe("string");
+      expect(p.hash.length).toBeGreaterThan(0);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("recall with types: ['brief'] returns only brief-typed docs", async () => {
+    const { setupMemorySinks } = await import("./server.js");
+    const { Database } = await import("./db/database.js");
+    const { VaultManager } = await import("./vault/index.js");
+    const { ObsidianFsSource } = await import("./adapters/source/obsidian-fs/index.js");
+    const { AdapterRegistry, parseSourceHandle } = await import("./adapters/registry.js");
+    const { handleRecall } = await import("./memory/tools/index.js");
+    const { join } = await import("node:path");
+
+    const vaultDir = join(process.cwd(), "evals/fixtures/v2-test-vault");
+    const db = new Database(":memory:", "v2-test-vault");
+    db.migrate();
+    const vault = {
+      config: { name: "v2-test-vault", path: vaultDir, write_enabled: false },
+      db,
+      dbPath: ":memory:",
+    };
+    try {
+      const manager = new VaultManager();
+      (manager as unknown as { vaults: Map<string, typeof vault> }).vaults.set(
+        vault.config.name,
+        vault,
+      );
+
+      const memorySinkRegistry = await setupMemorySinks(
+        { memory_sinks: [] },
+        manager as unknown as InstanceType<typeof VaultManager>,
+      );
+      const adapterRegistry = new AdapterRegistry();
+      const source = new ObsidianFsSource(vault.config);
+      adapterRegistry.registerSource(source.handle, source);
+
+      // Mix a brief + an observation in the candidates; types: ["brief"]
+      // should drop the observation.
+      const stubSearch = async () => [
+        {
+          vault: "v2-test-vault",
+          notePath: "_memory/_briefs/2026-04-22-alice-working-style-brief.md",
+          noteTitle: "Working with Alice — communication preferences brief",
+          chunkText: "",
+          chunkIdx: 0,
+          headingPath: null,
+          score: 1.0,
+        },
+        {
+          vault: "v2-test-vault",
+          notePath: "_memory/observations/2026-04-16-alice-prefers-async-standups.md",
+          noteTitle: "Alice prefers async standups",
+          chunkText: "",
+          chunkIdx: 0,
+          headingPath: null,
+          score: 0.9,
+        },
+      ];
+
+      const deps = {
+        memorySinkRegistry,
+        manager: manager as unknown as InstanceType<typeof VaultManager>,
+        sourceConnectorFor: (vaultName: string) =>
+          adapterRegistry.resolveSource(
+            parseSourceHandle(`obsidian-fs://${vaultName}`),
+          ),
+        searchHybrid: stubSearch,
+      };
+
+      const packets = await handleRecall(deps, {
+        query: "Alice working style",
+        types: ["brief"],
+      });
+      expect(packets).toHaveLength(1);
+      expect(packets[0]!.properties.type).toBe("brief");
+      expect(packets[0]!.title).toContain("Alice");
+    } finally {
+      db.close();
+    }
+  });
+
+  it("recall on the v2 fixture with no filters: returns observed_at-sorted packets across all sinks", async () => {
+    const { setupMemorySinks } = await import("./server.js");
+    const { Database } = await import("./db/database.js");
+    const { VaultManager } = await import("./vault/index.js");
+    const { ObsidianFsSource } = await import("./adapters/source/obsidian-fs/index.js");
+    const { AdapterRegistry, parseSourceHandle } = await import("./adapters/registry.js");
+    const { handleRecall } = await import("./memory/tools/index.js");
+    const { join } = await import("node:path");
+
+    const vaultDir = join(process.cwd(), "evals/fixtures/v2-test-vault");
+    const db = new Database(":memory:", "v2-test-vault");
+    db.migrate();
+    const vault = {
+      config: { name: "v2-test-vault", path: vaultDir, write_enabled: false },
+      db,
+      dbPath: ":memory:",
+    };
+    try {
+      const manager = new VaultManager();
+      (manager as unknown as { vaults: Map<string, typeof vault> }).vaults.set(
+        vault.config.name,
+        vault,
+      );
+
+      const memorySinkRegistry = await setupMemorySinks(
+        { memory_sinks: [] },
+        manager as unknown as InstanceType<typeof VaultManager>,
+      );
+      const adapterRegistry = new AdapterRegistry();
+      const source = new ObsidianFsSource(vault.config);
+      adapterRegistry.registerSource(source.handle, source);
+
+      // Three live docs spanning April; observed_at: 2026-04-22 (brief),
+      // 2026-04-21 (status-update), 2026-04-16 (beacon-paused observation).
+      const stubSearch = async () => [
+        {
+          vault: "v2-test-vault",
+          notePath: "_memory/observations/2026-04-16-beacon-paused-q2.md",
+          noteTitle: "Beacon paused",
+          chunkText: "",
+          chunkIdx: 0,
+          headingPath: null,
+          score: 0.7,
+        },
+        {
+          vault: "v2-test-vault",
+          notePath: "_memory/_briefs/2026-04-22-alice-working-style-brief.md",
+          noteTitle: "Alice brief",
+          chunkText: "",
+          chunkIdx: 0,
+          headingPath: null,
+          score: 0.95,
+        },
+        {
+          vault: "v2-test-vault",
+          notePath: "_memory/status-updates/2026-04-21-beacon-engineers-reassigned.md",
+          noteTitle: "Beacon engineers reassigned",
+          chunkText: "",
+          chunkIdx: 0,
+          headingPath: null,
+          score: 0.8,
+        },
+      ];
+
+      const deps = {
+        memorySinkRegistry,
+        manager: manager as unknown as InstanceType<typeof VaultManager>,
+        sourceConnectorFor: (vaultName: string) =>
+          adapterRegistry.resolveSource(
+            parseSourceHandle(`obsidian-fs://${vaultName}`),
+          ),
+        searchHybrid: stubSearch,
+      };
+
+      const packets = await handleRecall(deps, {
+        query: "*",
+        limit: 3,
+        max_age_days: 3650, // 10-year window — clock-drift-stable
+      });
+      expect(packets).toHaveLength(3);
+      // observed_at DESC sort: brief (04-22) → status-update (04-21) → beacon (04-16).
+      // YAML may surface ISO timestamps as Date objects OR strings; the
+      // controller normalizes both for sort. We coerce here for the
+      // assertion the same way the controller does internally.
+      const toIso = (v: unknown): string =>
+        v instanceof Date ? v.toISOString() : String(v);
+      const observedAts = packets.map((p) => toIso(p.properties.observed_at));
+      expect(observedAts[0]).toMatch(/^2026-04-22/);
+      expect(observedAts[1]).toMatch(/^2026-04-21/);
+      expect(observedAts[2]).toMatch(/^2026-04-16/);
+      // every packet has the required 8 fields + display_url starts with obsidian://
+      for (const p of packets) {
+        expect(p.display_url.startsWith("obsidian://")).toBe(true);
+        expect(p.hash.length).toBeGreaterThan(0);
+      }
+    } finally {
+      db.close();
+    }
+  });
+
+  it("recall with sink: 'nonexistent' throws (caught by server.ts try/catch in production)", async () => {
+    const { setupMemorySinks } = await import("./server.js");
+    const { Database } = await import("./db/database.js");
+    const { VaultManager } = await import("./vault/index.js");
+    const { ObsidianFsSource } = await import("./adapters/source/obsidian-fs/index.js");
+    const { AdapterRegistry, parseSourceHandle } = await import("./adapters/registry.js");
+    const { handleRecall } = await import("./memory/tools/index.js");
+    const { join } = await import("node:path");
+
+    const vaultDir = join(process.cwd(), "evals/fixtures/v2-test-vault");
+    const db = new Database(":memory:", "v2-test-vault");
+    db.migrate();
+    const vault = {
+      config: { name: "v2-test-vault", path: vaultDir, write_enabled: false },
+      db,
+      dbPath: ":memory:",
+    };
+    try {
+      const manager = new VaultManager();
+      (manager as unknown as { vaults: Map<string, typeof vault> }).vaults.set(
+        vault.config.name,
+        vault,
+      );
+      const memorySinkRegistry = await setupMemorySinks(
+        { memory_sinks: [] },
+        manager as unknown as InstanceType<typeof VaultManager>,
+      );
+      const adapterRegistry = new AdapterRegistry();
+      const source = new ObsidianFsSource(vault.config);
+      adapterRegistry.registerSource(source.handle, source);
+
+      const deps = {
+        memorySinkRegistry,
+        manager: manager as unknown as InstanceType<typeof VaultManager>,
+        sourceConnectorFor: (vaultName: string) =>
+          adapterRegistry.resolveSource(
+            parseSourceHandle(`obsidian-fs://${vaultName}`),
+          ),
+        searchHybrid: async () => [],
+      };
+      await expect(
+        handleRecall(deps, { query: "anything", sink: "nonexistent" }),
+      ).rejects.toThrow(/Unknown memory sink/);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("Zod-rejection: recall with empty query is refused at the schema boundary", async () => {
+    const { buildToolSchema } = await import("./tool-registry.js");
+    const schema = buildToolSchema("recall");
+    expect(schema.safeParse({ query: "" }).success).toBe(false);
   });
 });

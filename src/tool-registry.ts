@@ -524,6 +524,60 @@ export const TOOLS = [
       },
     },
   },
+  // ── Phase 2 memory tools (Plan 02-05) ────────────────────────────────────
+  {
+    name: "recall",
+    description:
+      "Retrieve memory documents from one or more labeled MemorySinks, filtered by " +
+      "provenance (min_confidence, types, max_age_days) and ranked by recency (observed_at " +
+      "DESC). Returns citation packets (doc_id, source_handle, title, heading_path, mtime, " +
+      "hash, display_url, properties) — the same 8-field shape Phase 3 assembly tools use. " +
+      "Superseded documents are hidden by default.",
+    inputSchema: {
+      type: "object",
+      required: ["query"],
+      properties: {
+        query: {
+          type: "string",
+          description:
+            "Natural-language query; routes through hybrid (semantic + BM25) search.",
+        },
+        min_confidence: {
+          type: "string",
+          enum: ["direct", "inferred", "uncertain"],
+          description:
+            "Exclude docs whose confidence ordinal is lower than this (direct=3, inferred=2, uncertain=1).",
+        },
+        types: {
+          type: "array",
+          items: { type: "string" },
+          description: "Restrict to docs whose `type` property is in this set.",
+        },
+        max_age_days: {
+          type: "integer",
+          minimum: 1,
+          description: "Exclude docs whose `observed_at` is older than this many days.",
+        },
+        sink: {
+          type: "string",
+          description:
+            "Memory sink name OR full obsidian-fs://… handle. Defaults to all configured sinks.",
+        },
+        limit: {
+          type: "integer",
+          minimum: 1,
+          maximum: 200,
+          default: 20,
+          description: "Max results AFTER filter+sort.",
+        },
+        vaults: {
+          type: "array",
+          items: { type: "string" },
+          description: "Restrict to these vault names; defaults to all configured.",
+        },
+      },
+    },
+  },
 ] as const;
 
 export type ToolName = (typeof TOOLS)[number]["name"];
@@ -752,6 +806,48 @@ export const TOOL_SCHEMAS = {
       .string()
       .min(1)
       .describe("Why the old document is being retired; written to superseded_reason"),
+  },
+
+  // ── Phase 2 memory tools (Plan 02-05) ───────────────────────────────────
+  recall: {
+    query: z
+      .string()
+      .min(1)
+      .describe("Natural-language query; routes through hybrid (semantic + BM25) search"),
+    min_confidence: z
+      .enum(["direct", "inferred", "uncertain"])
+      .optional()
+      .describe(
+        "Exclude docs whose confidence ordinal is lower than this (direct=3, inferred=2, uncertain=1)",
+      ),
+    types: z
+      .array(z.string().min(1))
+      .optional()
+      .describe("Restrict to docs whose `type` property is in this set"),
+    max_age_days: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .describe("Exclude docs whose `observed_at` is older than this many days"),
+    sink: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "Memory sink name OR full obsidian-fs://… handle. Defaults to all configured sinks.",
+      ),
+    limit: z
+      .number()
+      .int()
+      .positive()
+      .max(200)
+      .optional()
+      .describe("Maximum results AFTER filter+sort; default 20"),
+    vaults: z
+      .array(z.string().min(1))
+      .optional()
+      .describe("Restrict to these vault names; defaults to all configured"),
   },
 } as const satisfies Record<string, ZodRawShape>;
 
