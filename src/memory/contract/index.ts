@@ -19,7 +19,6 @@
 import { DEFAULT_MEMORY_V1 } from "./default-v1.js";
 import {
   __cacheContract,
-  __clearContractCache as __clearLoaderCache,
   __getCachedContract,
   loadContractFromDisk,
   MemoryContractInvalidError,
@@ -64,15 +63,11 @@ function otherCachedNames(excluding: string): string {
   return names.length > 0 ? `, ${names.join(", ")}` : "";
 }
 
-/**
- * Test-only: drop the cache and re-seed the baseline. Used by
- * `loader.test.ts` `beforeEach` blocks so a fresh test run starts
- * with a known cache state.
- */
-export function __clearContractCache(): void {
-  __clearLoaderCache();
-  __cacheContract("default-memory-v1", DEFAULT_MEMORY_V1);
-}
+// IN-02 closure: `__clearContractCache` is intentionally NOT exported from
+// this public barrel. The test-only symbol lives at
+// `./__testing__.ts` and is imported via the deep path from test files only.
+// Production callers that import from this barrel cannot accidentally clear
+// the cache at runtime — the import path itself is the access marker.
 
 export {
   DEFAULT_MEMORY_V1,

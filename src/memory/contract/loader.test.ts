@@ -28,8 +28,8 @@ import {
   DEFAULT_MEMORY_V1,
   MemoryContractInvalidError,
   MemoryContractNotFoundError,
-  __clearContractCache,
 } from "./index.js";
+import { __clearContractCache } from "./__testing__.js";
 import { __clearContractCache as __clearLoaderCacheNoReseed } from "./loader.js";
 
 describe("getContract", () => {
