@@ -6,7 +6,7 @@ evidence:
   - meetings/2026-04-15-q2-okr-review.md
   - projects/atlas-1.md
 status: active
-observed_at: 2026-04-16T08:02:00Z
+observed_at: "2026-04-16T08:02:00Z"
 superseded_by: null
 type: observation
 ---

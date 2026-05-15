@@ -5,12 +5,12 @@ confidence: direct
 evidence:
   - people/alice-chen.md
 status: active
-observed_at: 2026-04-22T08:00:00Z
+observed_at: "2026-04-22T08:00:00Z"
 superseded_by: null
 type: brief
 compiled_from:
   - people/alice-chen.md
-compiled_at: 2026-04-22T08:00:00Z
+compiled_at: "2026-04-22T08:00:00Z"
 ---
 
 # Working with Alice — communication preferences brief

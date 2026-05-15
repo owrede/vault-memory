@@ -8,7 +8,7 @@ evidence:
   - meetings/2026-04-15-q2-okr-review.md
   - references/atlas-1-component-spec.md
 status: active
-observed_at: 2026-04-20T09:00:00Z
+observed_at: "2026-04-20T09:00:00Z"
 superseded_by: null
 type: brief
 compiled_from:
@@ -16,7 +16,7 @@ compiled_from:
   - decisions/2026-03-12-pivot-to-warehouse.md
   - meetings/2026-04-15-q2-okr-review.md
   - references/atlas-1-component-spec.md
-compiled_at: 2026-04-20T09:00:00Z
+compiled_at: "2026-04-20T09:00:00Z"
 ---
 
 # Atlas-1 — state of the project (compiled 2026-04-20)

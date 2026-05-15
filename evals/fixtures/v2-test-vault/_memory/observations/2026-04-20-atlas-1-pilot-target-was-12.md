@@ -5,8 +5,9 @@ confidence: direct
 evidence:
   - projects/atlas-1.md
 status: superseded
-observed_at: 2026-03-01T10:00:00Z
-superseded_by: _memory/observations/2026-04-16-atlas-1-pilot-count-reduced.md
+observed_at: "2026-03-01T10:00:00Z"
+superseded_by: obsidian-fs://atlas-fixture/_memory/observations/2026-04-16-atlas-1-pilot-count-reduced.md
+superseded_reason: "Earlier count was based on stale ops report; corrected to 8 pilots after the 2026-04-16 OKR rewrite locked the warehouse-only scope."
 type: observation
 ---
 

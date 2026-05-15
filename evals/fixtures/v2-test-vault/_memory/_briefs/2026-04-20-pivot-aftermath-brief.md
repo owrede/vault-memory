@@ -6,14 +6,14 @@ evidence:
   - decisions/2026-03-12-pivot-to-warehouse.md
   - meetings/2026-04-15-q2-okr-review.md
 status: active
-observed_at: 2026-04-20T09:15:00Z
+observed_at: "2026-04-20T09:15:00Z"
 superseded_by: null
 type: brief
 compiled_from:
   - decisions/2026-03-12-pivot-to-warehouse.md
   - meetings/2026-04-15-q2-okr-review.md
   - projects/atlas-1.md
-compiled_at: 2026-04-20T09:15:00Z
+compiled_at: "2026-04-20T09:15:00Z"
 ---
 
 # Pivot aftermath — what changed across the org
