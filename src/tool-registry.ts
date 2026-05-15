@@ -450,6 +450,80 @@ export const TOOLS = [
       },
     },
   },
+  // ── Phase 2 memory tools (Plan 02-04 + 02-05) ─────────────────────────────
+  {
+    name: "record_observation",
+    description:
+      "Record a new memory observation under the labeled MemorySink for a vault. " +
+      "Required provenance properties (source, confidence, evidence, status, observed_at, type, superseded_by) " +
+      "are auto-filled from arguments; `properties` is an escape hatch for contract-allowed extras " +
+      "and overrides any sugar default (D-02 — caller-last merge). " +
+      "Writes route through DeliveryAdapter.write() and pass through the centralized provenance validator.",
+    inputSchema: {
+      type: "object",
+      required: ["vault", "claim", "evidence", "confidence", "type"],
+      properties: {
+        vault: { type: "string", description: "Vault name (registered in [vaults] config)" },
+        claim: {
+          type: "string",
+          description:
+            "Short natural-language statement of the observation (becomes title + body).",
+        },
+        evidence: {
+          type: "array",
+          items: { type: "string" },
+          description: "DocIds or quoted source spans supporting the claim; empty array allowed.",
+        },
+        confidence: {
+          type: "string",
+          enum: ["direct", "inferred", "uncertain"],
+          description: "How the agent arrived at this claim.",
+        },
+        type: {
+          type: "string",
+          description:
+            "Observation type per the sink contract (e.g. 'observation', 'hypothesis', 'decision').",
+        },
+        sink: {
+          type: "string",
+          description:
+            "Memory sink name OR full obsidian-fs://… handle. Defaults to the vault's default sink.",
+        },
+        properties: {
+          type: "object",
+          additionalProperties: true,
+          description:
+            "Escape-hatch: contract-allowed extra properties; merged AFTER sugar args (caller wins).",
+        },
+      },
+    },
+  },
+  {
+    name: "supersede",
+    description:
+      "Mark an existing memory document as superseded by a replacement document. " +
+      "Forward-only — the replacement doc is NOT touched; back-links are derived by the Phase 4 " +
+      "graph layer at query time. Atomic single OCC update on the OLD doc; sets status=\"superseded\", " +
+      "superseded_by, and superseded_reason.",
+    inputSchema: {
+      type: "object",
+      required: ["doc_id", "replacement_doc_id", "reason"],
+      properties: {
+        doc_id: {
+          type: "string",
+          description: "DocId of the document being superseded.",
+        },
+        replacement_doc_id: {
+          type: "string",
+          description: "DocId of the replacement document.",
+        },
+        reason: {
+          type: "string",
+          description: "Why the old document is being retired; written to superseded_reason.",
+        },
+      },
+    },
+  },
 ] as const;
 
 export type ToolName = (typeof TOOLS)[number]["name"];
@@ -459,6 +533,23 @@ export type ToolName = (typeof TOOLS)[number]["name"];
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { z, type ZodRawShape } from "zod";
+
+/**
+ * Canonical DocId pattern (mirrors `DOC_ID_PATTERN` in
+ * `src/adapters/registry.ts`). Inlined here so the snapshot generator
+ * (`evals/v1-baseline/dump-tools.mjs`) — which is a plain Node ESM
+ * script that imports `.ts` via Node's native type-stripping — does not
+ * need to traverse into `./adapters/`; Node cannot resolve the `.js`
+ * extension of a sibling `.ts` file at runtime when only one of the
+ * pair exists.
+ *
+ * Single-source-of-truth invariant: any change to the canonical regex
+ * in `src/adapters/registry.ts` MUST be mirrored here (and vice
+ * versa). The `tool-registry.test.ts > supersede schema` cases pin the
+ * expected reject/accept behavior and will fail if the two patterns
+ * drift.
+ */
+const DOC_ID_PATTERN = /^[a-z][a-z0-9-]*:\/\/[^/]+\/.+$/;
 
 /** Reusable predicate shape for `query_frontmatter.where` values. */
 const PredicateSchema: z.ZodType<unknown> = z.union([
@@ -612,6 +703,55 @@ export const TOOL_SCHEMAS = {
     content: z.string().optional(),
     title: z.string().optional(),
     folder_hint: z.string().optional(),
+  },
+
+  // ── Phase 2 memory tools (Plan 02-04) ───────────────────────────────────
+  record_observation: {
+    vault: z.string().min(1).describe("Vault name (registered in [vaults] config block)"),
+    claim: z
+      .string()
+      .min(1)
+      .describe("Short natural-language statement of the observation (becomes title + body)"),
+    evidence: z
+      .array(z.string())
+      .describe("DocIds or quoted source spans supporting the claim; empty array allowed"),
+    confidence: z
+      .enum(["direct", "inferred", "uncertain"])
+      .describe("How the agent arrived at this claim"),
+    type: z
+      .string()
+      .min(1)
+      .describe(
+        "Observation type per the sink contract (e.g. 'observation', 'hypothesis', 'decision')",
+      ),
+    sink: z
+      .string()
+      .min(1)
+      .optional()
+      .describe(
+        "Memory sink name OR full obsidian-fs://… handle. Defaults to the vault's default sink.",
+      ),
+    properties: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe(
+        "Escape-hatch: contract-allowed extra properties; merged AFTER sugar args (caller wins)",
+      ),
+  },
+
+  supersede: {
+    doc_id: z
+      .string()
+      .regex(DOC_ID_PATTERN)
+      .describe("DocId of the document being superseded"),
+    replacement_doc_id: z
+      .string()
+      .regex(DOC_ID_PATTERN)
+      .describe("DocId of the replacement document"),
+    reason: z
+      .string()
+      .min(1)
+      .describe("Why the old document is being retired; written to superseded_reason"),
   },
 } as const satisfies Record<string, ZodRawShape>;
 

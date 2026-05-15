@@ -64,7 +64,7 @@ import type { ChangeFeed } from "./change-feed/types.js";
  *                     `obsidian://` (empty authority + resource),
  *                     `obsidian-fs:/foo` (missing slash).
  */
-const DOC_ID_PATTERN = /^[a-z][a-z0-9-]*:\/\/[^/]+\/.+$/;
+export const DOC_ID_PATTERN = /^[a-z][a-z0-9-]*:\/\/[^/]+\/.+$/;
 
 /**
  * Bare `<scheme>://<authority>` — no resource path, no trailing slash.

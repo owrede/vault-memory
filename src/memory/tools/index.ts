@@ -14,4 +14,5 @@ export type {
   RecordObservationDeps,
 } from "./record-observation.js";
 
-// Plan 02-04 Task 2 adds the supersede exports below.
+export { handleSupersede } from "./supersede.js";
+export type { SupersedeArgs, SupersedeDeps } from "./supersede.js";

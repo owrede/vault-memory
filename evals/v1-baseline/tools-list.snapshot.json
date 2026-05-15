@@ -557,6 +557,85 @@
           }
         }
       }
+    },
+    {
+      "name": "record_observation",
+      "description": "Record a new memory observation under the labeled MemorySink for a vault. Required provenance properties (source, confidence, evidence, status, observed_at, type, superseded_by) are auto-filled from arguments; `properties` is an escape hatch for contract-allowed extras and overrides any sugar default (D-02 — caller-last merge). Writes route through DeliveryAdapter.write() and pass through the centralized provenance validator.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "vault",
+          "claim",
+          "evidence",
+          "confidence",
+          "type"
+        ],
+        "properties": {
+          "vault": {
+            "type": "string",
+            "description": "Vault name (registered in [vaults] config)"
+          },
+          "claim": {
+            "type": "string",
+            "description": "Short natural-language statement of the observation (becomes title + body)."
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "DocIds or quoted source spans supporting the claim; empty array allowed."
+          },
+          "confidence": {
+            "type": "string",
+            "enum": [
+              "direct",
+              "inferred",
+              "uncertain"
+            ],
+            "description": "How the agent arrived at this claim."
+          },
+          "type": {
+            "type": "string",
+            "description": "Observation type per the sink contract (e.g. 'observation', 'hypothesis', 'decision')."
+          },
+          "sink": {
+            "type": "string",
+            "description": "Memory sink name OR full obsidian-fs://… handle. Defaults to the vault's default sink."
+          },
+          "properties": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "Escape-hatch: contract-allowed extra properties; merged AFTER sugar args (caller wins)."
+          }
+        }
+      }
+    },
+    {
+      "name": "supersede",
+      "description": "Mark an existing memory document as superseded by a replacement document. Forward-only — the replacement doc is NOT touched; back-links are derived by the Phase 4 graph layer at query time. Atomic single OCC update on the OLD doc; sets status=\"superseded\", superseded_by, and superseded_reason.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "doc_id",
+          "replacement_doc_id",
+          "reason"
+        ],
+        "properties": {
+          "doc_id": {
+            "type": "string",
+            "description": "DocId of the document being superseded."
+          },
+          "replacement_doc_id": {
+            "type": "string",
+            "description": "DocId of the replacement document."
+          },
+          "reason": {
+            "type": "string",
+            "description": "Why the old document is being retired; written to superseded_reason."
+          }
+        }
+      }
     }
   ]
 }
