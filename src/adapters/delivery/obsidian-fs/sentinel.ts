@@ -9,13 +9,16 @@
  * I-3 confine `node:fs` and `node:path` to
  * `src/adapters/delivery/obsidian-fs/`).
  *
- * Provisioning policy (ADR-004 §"Provisioning"):
+ * Provisioning policy (ADR-004 §"Provisioning"; tightened by Plan 02-10
+ * to close CR-02):
  *   - Empty folder OR folder with only sink-expected content
- *     (observations/, _briefs/, status-updates/, .memory-sink, *.md):
- *     write the sentinel.
- *   - Folder with unrelated user content: throw
- *     `SinkProvisioningError`. The user must either move the foreign
- *     content out or change the configured sink handle.
+ *     (observations/, _briefs/, status-updates/, .memory-sink): write
+ *     the sentinel. Plain `.md` files at the sink root are NOT in the
+ *     allow-list — they almost certainly are user notes and the sink
+ *     must refuse to absorb them.
+ *   - Folder with unrelated content (any plain `.md`, `.txt`, etc.):
+ *     throw `SinkProvisioningError`. The user must either move the
+ *     foreign content out or change the configured sink handle.
  *   - Sentinel already exists: no-op (idempotent).
  *   - Folder does not exist: create with `recursive: true`, then
  *     write the sentinel.
@@ -56,18 +59,21 @@ export class SinkProvisioningError extends Error {
 
 /**
  * Heuristic: returns true if an entry name "looks like" expected
- * memory-sink content. The Phase 2 list matches the Atlas fixture
- * structure (observations/, _briefs/, status-updates/) plus the
- * sentinel and any plain markdown file at the sink root. This is
- * intentionally narrow — anything else (txt, json, png, README, etc.)
- * trips the SinkProvisioningError so misconfiguration fails loudly.
+ * memory-sink content. The allowed list is intentionally narrow:
+ *   - the `.memory-sink` sentinel itself,
+ *   - the three known sink subfolders (`observations`, `_briefs`,
+ *     `status-updates`).
+ *
+ * Plain `.md` files at the sink root are NOT expected — they are
+ * almost certainly user notes. Forcing a SinkProvisioningError here
+ * surfaces the misconfiguration loudly instead of silently absorbing
+ * the folder (CR-02 — gap-closure Plan 02-10).
  */
 function isExpectedSinkContent(entry: string): boolean {
   if (entry === SENTINEL_FILENAME) return true;
   if (entry === "observations" || entry === "_briefs" || entry === "status-updates") {
     return true;
   }
-  if (entry.endsWith(".md")) return true;
   return false;
 }
 
@@ -147,9 +153,37 @@ export async function provisionSink(
 }
 
 /**
+ * Sentinel-check failure for non-ENOENT errno codes. Distinct from the
+ * "sentinel missing" case so the caller (preflight in
+ * `ObsidianFsDelivery`) can surface the underlying errno (EACCES, EIO,
+ * ENAMETOOLONG, EPERM, …) instead of the misleading "restart the
+ * server" suggestion attached to `sentinel_missing` (WR-06 — gap-closure
+ * Plan 02-10). Consumed via `WriteConflict.reason = "sentinel_check_failed"`
+ * (literal declared by Plan 02-13 in wave 9 in `../types.ts`).
+ */
+export class SinkSentinelCheckError extends Error {
+  override readonly name = "SinkSentinelCheckError";
+  readonly code = "SINK_SENTINEL_CHECK_FAILED";
+  constructor(
+    public readonly sinkName: string,
+    public readonly underlyingCode: string,
+    message: string,
+  ) {
+    super(message);
+  }
+}
+
+/**
  * Return true iff the sentinel exists under the resolved sink folder.
  * Cheap (one `fs.access`) — safe to call on every write per ADR-004
  * §"Runtime check on every write".
+ *
+ * Errno discipline (WR-06 closure):
+ *   - ENOENT → return `false` (sentinel literally absent).
+ *   - Anything else (EACCES, EIO, ENAMETOOLONG, EPERM, …) → throw a
+ *     `SinkSentinelCheckError` carrying the original errno code, so
+ *     the caller can report it accurately rather than collapsing to
+ *     "sentinel missing — restart the server".
  */
 export async function assertSentinelExists(
   sink: MemorySink,
@@ -159,8 +193,14 @@ export async function assertSentinelExists(
   try {
     await fs.access(sentinelPath);
     return true;
-  } catch {
-    return false;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code === "ENOENT") return false;
+    throw new SinkSentinelCheckError(
+      sink.name,
+      code ?? "UNKNOWN",
+      `Sentinel check for MemorySink "${sink.name}" at ${sentinelPath} failed: ${(err as Error).message}`,
+    );
   }
 }
 
