@@ -312,3 +312,99 @@ describe("updateFrontmatter", () => {
     expect(audits[0]?.client_id).toBe("client-7");
   });
 });
+
+// ── Plan 02-03b: entry-point Guard on updateFrontmatter ────────────────────
+//
+// Defense-in-depth. Mirrors the writeNote / deleteNote Guards in
+// `src/adapters/delivery/obsidian-fs/write.ts`. When the optional
+// `memorySinkRegistry` is passed AND the target lands inside a registered
+// sink, the update is refused BEFORE any DB / FS read.
+describe("updateFrontmatter — MEM-07 entry-point Guard (Plan 02-03b)", () => {
+  let ctx: TestCtx;
+  afterEach(async () => {
+    await ctx.cleanup();
+  });
+
+  it("refuses sink-resolved target with sink_write_blocked", async () => {
+    ctx = await makeCtx();
+    // Rename the vault so the sink handle (obsidian-fs://guard-vault/...)
+    // matches what `formatDocId` will produce. This avoids the need to
+    // register a sink under a name that differs from `vault.config.name`.
+    ctx.vault.config.name = "guard-vault";
+
+    const { MemorySinkRegistry, parseMemorySinkHandle } = await import(
+      "../memory/index.js"
+    );
+    const { provisionSink } = await import(
+      "../adapters/delivery/obsidian-fs/sentinel.js"
+    );
+    const registry = new MemorySinkRegistry();
+    const sinkHandle = parseMemorySinkHandle(
+      "obsidian-fs://guard-vault/_memory/",
+    );
+    await registry.registerMemorySinks(
+      [
+        { name: "default", handle: sinkHandle, contract: "default-memory-v1" },
+      ],
+      {
+        resolveVaultAbsolutePath: () => ctx.vaultRoot,
+        provisioner: async (sink, vaultAbs) => {
+          await provisionSink(sink, vaultAbs, { version: "test" });
+        },
+      },
+    );
+
+    // Pre-seed a note inside _memory/ via the raw FS helper so the DB row
+    // and on-disk file exist (the guard fires BEFORE the DB read, so this
+    // step exists only to demonstrate that the refusal happens even when
+    // the target legitimately exists).
+    await writeNote(ctx, "_memory/observations/test.md", { class: "x" }, "Body\n");
+
+    const res = await updateFrontmatter({
+      vault: ctx.vault,
+      relativePath: "_memory/observations/test.md",
+      merge: { status: "active" },
+      memorySinkRegistry: registry,
+    });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.reason).toBe("sink_write_blocked");
+    expect(res.sinkName).toBe("default");
+    expect(res.suggestion).toMatch(/record_observation/);
+  });
+
+  it("guard does NOT fire on non-sink paths (Phase 1 back-compat)", async () => {
+    ctx = await makeCtx();
+    ctx.vault.config.name = "guard-vault";
+    const { MemorySinkRegistry, parseMemorySinkHandle } = await import(
+      "../memory/index.js"
+    );
+    const { provisionSink } = await import(
+      "../adapters/delivery/obsidian-fs/sentinel.js"
+    );
+    const registry = new MemorySinkRegistry();
+    const sinkHandle = parseMemorySinkHandle(
+      "obsidian-fs://guard-vault/_memory/",
+    );
+    await registry.registerMemorySinks(
+      [
+        { name: "default", handle: sinkHandle, contract: "default-memory-v1" },
+      ],
+      {
+        resolveVaultAbsolutePath: () => ctx.vaultRoot,
+        provisioner: async (sink, vaultAbs) => {
+          await provisionSink(sink, vaultAbs, { version: "test" });
+        },
+      },
+    );
+
+    await writeNote(ctx, "regular-note.md", { class: "Person" }, "Body\n");
+    const res = await updateFrontmatter({
+      vault: ctx.vault,
+      relativePath: "regular-note.md",
+      merge: { status: "active" },
+      memorySinkRegistry: registry,
+    });
+    expect(res.ok).toBe(true);
+  });
+});
