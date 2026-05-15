@@ -132,20 +132,28 @@ deliverable):
 name: default-memory-v1
 required_properties:
   source: { type: string, allowed: [agent, user, imported] }
-  confidence: { type: string, allowed: [observed, inferred, user-confirmed] }
+  confidence: { type: string, allowed: [direct, inferred, uncertain] }
   status: { type: string, allowed: [active, superseded, rejected], default: active }
-  observed-at: { type: date }
+  observed_at: { type: date }
   evidence:
     type: array
     items: { type: reference }
     min_length: 0
 optional_properties:
-  superseded-by: { type: reference }
-  expires-at: { type: date }
+  superseded_by: { type: reference }
+  superseded_reason: { type: string }
+  expires_at: { type: date }
 naming:
   strategy: date-slug
-  pattern: "{observed-at:YYYY-MM-DD}-{slug}.md"
+  pattern: "{observed_at:YYYY-MM-DD}-{slug}.md"
 ```
+
+**Cross-field rule — `superseded_reason`.** When `status` is set to
+`superseded`, `superseded_reason` MUST be present and non-empty. Guard A
+enforces this cross-field invariant under the `supersede_mismatch` reason
+code (paired with the `superseded_by` rule in MEMORY_CONTRACT.md — both keys
+are required when the status flips, so a supersession always carries both a
+forward link and a human-readable reason).
 
 The `DeliveryAdapter.write()` for a memory sink applies the contract before
 persisting. Violations are rejected with a structured error. Phase 2's
@@ -159,7 +167,7 @@ naming:
   strategy: caller-provided                  # caller passes the path/title
   # OR
   strategy: date-slug
-  pattern: "{observed-at:YYYY-MM-DD}-{slug}.md"
+  pattern: "{observed_at:YYYY-MM-DD}-{slug}.md"
   # OR
   strategy: adapter-assigned                 # delivery adapter picks an ID (notion)
 ```
@@ -233,6 +241,8 @@ properties:
   evidence:
     - notion-api://acme/page/abc-123       # cross-source link works
     - obsidian-fs://my-vault/people/Alice.md
+  observed_at: 2026-05-14
+  superseded_by: null
 ```
 
 The graph table stores these edges with full URIs. Phase 5 (`expand`,
@@ -545,9 +555,9 @@ await sink.adapter.write({
     id: "obsidian-fs://my-vault/_memory/observations/2026-05-14-alice.md",
     properties: {
       source: "agent",
-      confidence: "observed",
+      confidence: "direct",
       status: "active",
-      "observed-at": "2026-05-14",
+      observed_at: "2026-05-14",
       evidence: ["obsidian-fs://my-vault/people/Alice.md"],
     },
     blocks: [
@@ -566,9 +576,9 @@ await sink.adapter.write({
 ```yaml
 ---
 source: agent
-confidence: observed
+confidence: direct
 status: active
-observed-at: 2026-05-14
+observed_at: 2026-05-14
 evidence:
   - obsidian-fs://my-vault/people/Alice.md
 ---
@@ -627,9 +637,9 @@ await sink.adapter.write({
     id: "notion-api://acme/page/<assigned-on-create>",
     properties: {
       source: "agent",
-      confidence: "observed",
+      confidence: "direct",
       status: "active",
-      "observed-at": "2026-05-14",
+      observed_at: "2026-05-14",
       evidence: ["obsidian-fs://my-vault/people/Alice.md"],
     },
     blocks: [
@@ -653,3 +663,14 @@ registration. It required **zero** changes to: the handle parser, the
 write-guard logic, or the `Document` shape. This is the property M-2
 enshrines — and is the reason ADR-004 commits the folder-vs-separate-vault
 distinction to config.
+
+---
+
+**Amended: 2026-05-15 — Phase 2 plan 02-01** (underscored keys, confidence enum, `superseded_reason`).
+The §MemoryContract example YAML and all worked examples now use underscored
+PropertyBag keys consistent with `docs/v2/MEMORY_CONTRACT.md`. The `confidence`
+enum is aligned to `[direct, inferred, uncertain]`. A new optional property
+`superseded_reason: string` is documented with the cross-field rule "required
+(non-empty) when `status === \"superseded\"`" — Guard A enforces this under
+the `supersede_mismatch` reason code. Doc-only ratification per MEM-12;
+adoption was already Accepted in the original ADR.
