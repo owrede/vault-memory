@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: release
 status: executing
-stopped_at: Wave 4 (plan 01-04) complete; ready for /gsd-execute-phase 1 --wave 5
-last_updated: "2026-05-15T09:30:00.000Z"
-last_activity: "2026-05-15 -- Wave 4 (01-04) executed in worktree, merged to main (d662759 + 770ffa2 prettier fix): Delivery adapter extraction + D-01 formatDisplayUrl rewire + D-02 client_info handshake. git mv src/write/{write,fs}{,.test}.ts → src/adapters/delivery/obsidian-fs/ (4 renames at 90–100% similarity; blame preserved). ObsidianFsDelivery facade + StubDelivery (shared-Map with StubSource per W2 caveat). 22-case parameterized conformance suite (10 cases × 2 adapters + 2 obsidian-fs-specific). src/frontmatter/update.ts refactored — no longer imports gray-matter or node:fs; routes via Source (read) and Delivery (write). W4 caveat resolved: pre-read confirmed v1 obsidianUrl + ObsidianFsSource.formatDisplayUrl produce byte-identical output — no adjustment needed (strategy a). DEFAULT_CLIENT_ID = 'claude-code' removed from production code; lazy-getter closure threads MCP getClientVersion()?.name through writes with 'unknown' fallback. obsidianUrl helper deleted from server.ts; both call sites (search/fetch) routed through source.formatDisplayUrl. 8 task commits + SUMMARY + 1 prettier-drift fix on main. 540 tests pass (+45 over 495), lint:check + eval:baseline green; v1-baseline snapshot byte-for-byte preserved."
+stopped_at: Wave 5 (plan 01-05) complete; ready for /gsd-execute-phase 1 --wave 6
+last_updated: "2026-05-15T10:30:00.000Z"
+last_activity: "2026-05-15 -- Wave 5 (01-05) executed in worktree, merged to main (14ec89f). Third vertical seam slice (ChangeFeed) + the major dep bump. git mv src/watcher/{watcher,queue,suppression}{,.test}.ts → src/adapters/change-feed/obsidian-fs/ (6 renames at 86–100% similarity; blame preserved via git log --follow). ObsidianFsChangeFeed facade + StubChangeFeed (EventEmitter-backed). 13-case parameterized conformance suite incl. Pitfall #6 suppression-set integration test. Chokidar config extracted into shared buildChokidarOptions helper (verified byte-for-byte identical to v1 inline — 4 critical fields preserved). MCP SDK ^1.29.0 + Zod ^4.4.3 LIVE (npm install on main was needed post-merge to align node_modules with the lockfile — npm had silently dedupped to Zod 3.25 from the SDK's transitive until the explicit install ran). registerTool × 23 migration: tool-registry.ts split into TOOLS (JSON Schema literals, snapshot-stable) + TOOL_SCHEMAS (Zod 4 raw shapes for SDK consumption). Critical empirical finding: SDK#1143 description-drop (Pitfall #2) is MOOT in SDK 1.29 — toJsonSchemaCompat propagates BOTH top-level description AND per-field .describe() chains end-to-end. The plan's documented workaround (raw JSON Schema to registerTool) doesn't work because SDK 1.29's registerTool throws on non-Zod inputSchema. Zod 4 + SDK 1.29 snapshot regen: ZERO DIFF on evals/v1-baseline/tools-list.snapshot.json. 7 task commits + SUMMARY. 578 tests pass (+38 over 540), lint:check + eval:baseline + build all green. Known: one chokidar timing flake in change-feed.test.ts:91 (700ms awaitWriteFinish race under suite load); 3/4 full-suite runs green, same flake pattern existed pre-wave in watcher.test.ts."
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 21
-  completed_plans: 19
-  percent: 90
+  completed_plans: 20
+  percent: 95
 ---
 
 # Project State
@@ -26,11 +26,11 @@ See: .planning/PROJECT.md (updated 2026-05-14)
 ## Current Position
 
 Phase: 01 (adapter-extraction-tech-debt-up) — EXECUTING
-Plan: 4 of 6 complete; 2 remaining (01-05..06)
-Status: Wave 4 merged (d662759 + 770ffa2). 01-04 SUMMARY committed. Worktree pruned. lint:check + 540 tests (+45 new) + eval:baseline all green. v1-baseline snapshot byte-for-byte preserved. Second vertical seam slice (Delivery) landed; src/write/ empty; gray-matter leak fully isolated to test fixtures (acceptable per scripts/lint-adapters.sh design — 01-06's deliverable will formalize the exclusion). Only remaining seam-leak surface is chokidar in src/watcher/, which is plan 01-05's territory. D-01 + D-02 both resolved. Resume with /gsd-execute-phase 1 --wave 5 (Change-feed adapter + MCP SDK 1.29 + Zod 4 + registerTool x23 — the densest plan; Pitfalls #1143 + #1643 + snapshot-regen + chokidar config byte-preservation all in play).
-Last activity: 2026-05-15 -- Wave 4 merged; Delivery adapter + D-01 formatDisplayUrl rewire + D-02 client_info handshake land on main
+Plan: 5 of 6 complete; 1 remaining (01-06)
+Status: Wave 5 merged (14ec89f). 01-05 SUMMARY committed. Worktree pruned. npm install run on main to align node_modules with lockfile (Zod 4.4.3 now LIVE; SDK 1.29.0 LIVE). lint:check + 578 tests + eval:baseline + build + snapshot regen (zero diff) all green. All three vertical seam slices (Source/Delivery/ChangeFeed) landed; src/{reader,write,watcher}/ all empty; chokidar/gray-matter/fs leaks all confined to adapter directories. Critical empirical finding: SDK#1143 (Pitfall #2) is MOOT in SDK 1.29 — descriptions propagate end-to-end via toJsonSchemaCompat. Known flake: change-feed.test.ts:91 (700ms chokidar awaitWriteFinish race; 1/4 full-suite runs failed but the individual file run is stable; same pattern exists pre-wave in watcher.test.ts). Resume with /gsd-execute-phase 1 --wave 6 (final polish — lint-adapters.sh + Inspector smoketest + AGENT_AGNOSTIC_AUDIT.md + README rewrite + CI wiring + W6 human-verify checkpoint for the manual snapshot description-diff against Phase-0 baseline).
+Last activity: 2026-05-15 -- Wave 5 merged; ChangeFeed adapter + MCP SDK 1.29 + Zod 4 + registerTool x23 land on main
 
-Progress: [█████████░] 90%
+Progress: [██████████] 95%
 
 ## Performance Metrics
 
@@ -81,6 +81,8 @@ None yet.
 - Phase 5: ADR on LLM strategy (MCP Sampling → Ollama → caller-text ladder) must land before implementation
 - Phase 7: Spike outcome (file-watcher vs full Obsidian plugin) decides scope; descope path to "Canvas as view, YAML as authoring" if spike fails
 - Phase 0 follow-up: Alpine docker bake-test for CI lint scripts (00-12) — static review + telemetry red-test + suppression test passed locally; Alpine container POSIX run deferred (Docker daemon was unavailable). Re-verify before Phase 1.
+- Phase 1 wave-5 known flake: `src/adapters/change-feed/obsidian-fs/change-feed.test.ts:91` ("emits update on a modified .md file") occasionally fails under full-suite load due to a 700ms chokidar `awaitWriteFinish` race. Individual file run is stable (3/3); full-suite run was 3/4 green locally. Same flake pattern exists pre-wave in `watcher.test.ts`. Plan 01-06 verifier should add a retry-once or bump the stabilityThreshold for these two test files if the flake recurs in CI.
+- Phase 1 wave-5 environment lesson: after merging the SDK/Zod bump worktree, `npm install` MUST be run on main — npm initially dedupped to the SDK's transitive Zod 3.25 hoist, leaving the project running v3 with a v4 package.json declaration. After explicit `npm install`, Zod 4.4.3 is live and the snapshot regen produces zero diff. The verifier (or 01-06) should re-confirm `node -e "require('zod/package.json').version"` reads `4.x` post-CI install.
 
 ## Deferred Items
 
@@ -94,6 +96,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-15T09:30:00.000Z
-Stopped at: Wave 4 (plan 01-04) complete; ready for /gsd-execute-phase 1 --wave 5
-Resume file: .planning/phases/01-adapter-extraction-tech-debt-up/01-05-PLAN.md (wave 5 — Change-feed adapter + MCP SDK 1.29 + Zod 4 + registerTool x23)
+Last session: 2026-05-15T10:30:00.000Z
+Stopped at: Wave 5 (plan 01-05) complete; ready for /gsd-execute-phase 1 --wave 6
+Resume file: .planning/phases/01-adapter-extraction-tech-debt-up/01-06-PLAN.md (wave 6 — final polish: lint-adapters.sh + Inspector smoketest + AGENT_AGNOSTIC_AUDIT.md + README + CI wiring + W6 human-verify checkpoint)
