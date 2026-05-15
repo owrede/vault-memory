@@ -118,6 +118,16 @@ export function formatDocId(scheme: string, authority: string, resource: string)
  * Used by Phase 2's `MemorySinkRegistry.findSinkContaining(docId)` and
  * by any downstream tool that needs the scheme/authority/resource parts
  * without re-validating the DocId from scratch.
+ *
+ * @internal Perf note (IN-01): the defensive `parseDocId(docId)` call
+ * regex-tests the input on every invocation. The DocId is branded and
+ * valid by construction at every call site under typecheck, so the
+ * regex test is purely defense against `as DocId` smuggling in test
+ * code. `MemorySinkRegistry.findSinkContaining` calls this per
+ * registered sink per validator call — a measurable cost emerges only
+ * if (a) the sink count grows past tens, OR (b) validator calls hit a
+ * tight loop. Neither is true in v2.0.0. If it becomes true, memoize
+ * here rather than dropping the defense.
  */
 export function decomposeDocId(docId: DocId): {
   scheme: string;
