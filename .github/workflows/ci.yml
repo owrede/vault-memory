@@ -31,8 +31,23 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint (shell + tsc + prettier)
+      - name: Lint (shell + adapter-seam invariants + tsc + prettier)
+        # lint:check chains: fixture-privacy → no-telemetry → lint-adapters (I-1..I-6 + C-1 + I-5b) → tsc --noEmit → prettier --check.
         run: npm run lint:check
 
       - name: Test (vitest — includes evals/v1-baseline)
         run: npm test
+
+      - name: Baseline eval (v1 tools-list snapshot + per-tool floors)
+        run: npm run eval:baseline
+
+      - name: Build CLI (dist/cli.js for smoketest)
+        run: npm run build
+
+      - name: Smoketest (non-Claude MCP SDK Client against dist/cli.js)
+        # Proves the "any MCP-aware agent" framing mechanically:
+        # connects as `non-claude-smoketest`, asserts all 23 v1 tools
+        # listed with non-empty descriptions, calls list_vaults, and
+        # confirms unknown-tool errors surface as isError (A6).
+        run: node scripts/smoketest-non-claude.mjs
+        timeout-minutes: 5
