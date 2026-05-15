@@ -85,7 +85,7 @@ describe("ObsidianFsChangeFeed", () => {
     fixture = await makeFixture();
     const p = join(fixture.vaultDir, "edit.md");
     await writeFile(p, "# v1\n");
-    await sleep(600); // settle v1 create event (500ms stabilityThreshold + 100ms margin)
+    await sleep(500);
     fixture.events.length = 0;
     await writeFile(p, "# v2\n");
     await sleep(700);
@@ -97,10 +97,10 @@ describe("ObsidianFsChangeFeed", () => {
     fixture = await makeFixture();
     const p = join(fixture.vaultDir, "rm.md");
     await writeFile(p, "# bye\n");
-    await sleep(600); // settle create event before clearing (500ms threshold + 100ms margin)
+    await sleep(500);
     fixture.events.length = 0;
     await unlink(p);
-    await sleep(600); // let chokidar deliver the unlink (500ms threshold + 100ms margin)
+    await sleep(500);
     const deletes = fixture.events.filter((e) => e.kind === "delete");
     expect(deletes.length).toBeGreaterThanOrEqual(1);
   });
@@ -127,7 +127,7 @@ describe("ObsidianFsChangeFeed", () => {
     const oldP = join(fixture.vaultDir, "old.md");
     const newP = join(fixture.vaultDir, "renamed.md");
     await writeFile(oldP, "# x\n");
-    await sleep(600); // settle create event before clearing (500ms threshold + 100ms margin)
+    await sleep(500);
     fixture.events.length = 0;
     await rename(oldP, newP);
     await sleep(700);
@@ -156,7 +156,7 @@ describe("ObsidianFsChangeFeed", () => {
       ours.push(e);
     });
     await writeFile(join(fixture.vaultDir, "d1.md"), "# one\n");
-    await sleep(600); // let the d1 event arrive before dispose (500ms threshold + 100ms margin)
+    await sleep(500);
     sub[Symbol.dispose]();
     ours.length = 0;
     await writeFile(join(fixture.vaultDir, "d2.md"), "# two\n");
