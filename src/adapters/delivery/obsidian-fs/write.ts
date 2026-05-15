@@ -11,9 +11,9 @@
 import { promises as fs } from "node:fs";
 import { basename } from "node:path";
 import matter from "gray-matter";
-import type { Vault } from "../vault/index.js";
-import { computeNoteHash, computeBodyHash } from "../adapters/source/obsidian-fs/hash.js";
-import { extractAliases } from "../indexer/index.js";
+import type { Vault } from "../../../vault/index.js";
+import { computeNoteHash, computeBodyHash } from "../../source/obsidian-fs/hash.js";
+import { extractAliases } from "../../../indexer/index.js";
 import { atomicWriteFile, safeJoinInsideVault } from "./fs.js";
 
 export interface WriteSuccess {
@@ -49,7 +49,16 @@ export interface WriteNoteInput {
    * return a conflict.
    */
   expectedHash?: string;
-  /** For audit_log entry. Defaults to "claude-code". */
+  /**
+   * Audit-log attribution. Per D-02, this is captured by the
+   * ObsidianFsDelivery facade from the MCP InitializeRequest.params.clientInfo
+   * at server bootstrap (falling back to "unknown"). Per-call overrides via
+   * the opts.clientId path beat the constructor default.
+   *
+   * Note: the v1 hardcoded `DEFAULT_CLIENT_ID = "claude-code"` was removed
+   * (the C-1 Claude-leak). Internal writeNote/deleteNote now require the
+   * caller to supply the value explicitly via the facade.
+   */
   clientId?: string;
   /**
    * Called exactly once, immediately before the filesystem write. Used by
@@ -73,7 +82,14 @@ export interface DeleteNoteInput {
   onBeforeFsWrite?: () => void;
 }
 
-const DEFAULT_CLIENT_ID = "claude-code";
+/**
+ * Neutral fallback when no client_id is supplied at any level. Per D-02
+ * + RESEARCH Pitfall 4: MCP InitializeRequest.params.clientInfo is
+ * OPTIONAL in the spec, so older or non-conformant clients may not send
+ * a name. This fallback is observably truthful (the previous hardcode
+ * `"claude-code"` lied for any non-Claude client).
+ */
+const UNKNOWN_CLIENT_ID = "unknown";
 
 function permissionDenied(vaultName: string): WriteConflict {
   return {
@@ -134,7 +150,7 @@ async function readExistingFile(absPath: string): Promise<{
 export async function writeNote(input: WriteNoteInput): Promise<WriteResult> {
   const { vault, relativePath, content } = input;
   const frontmatter = input.frontmatter ?? null;
-  const clientId = input.clientId ?? DEFAULT_CLIENT_ID;
+  const clientId = input.clientId ?? UNKNOWN_CLIENT_ID;
 
   if (vault.config.write_enabled !== true) {
     return permissionDenied(vault.config.name);
@@ -253,7 +269,7 @@ export async function writeNote(input: WriteNoteInput): Promise<WriteResult> {
 
 export async function deleteNote(input: DeleteNoteInput): Promise<WriteResult> {
   const { vault, relativePath, expectedHash } = input;
-  const clientId = input.clientId ?? DEFAULT_CLIENT_ID;
+  const clientId = input.clientId ?? UNKNOWN_CLIENT_ID;
 
   if (vault.config.write_enabled !== true) {
     return permissionDenied(vault.config.name);

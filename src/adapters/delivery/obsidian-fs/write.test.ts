@@ -3,8 +3,8 @@ import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { mkdtemp, rm } from "node:fs/promises";
-import { Database } from "../db/index.js";
-import type { Vault } from "../vault/index.js";
+import { Database } from "../../../db/index.js";
+import type { Vault } from "../../../vault/index.js";
 import { writeNote, deleteNote } from "./write.js";
 import { OutsideVaultError } from "./fs.js";
 

@@ -23,6 +23,9 @@ import type { Document, DocId, SourceHandle } from "../../types.js";
 import { parseSourceHandle } from "../registry.js";
 
 export class StubSource implements SourceConnector {
+  /** Internal store. Exposed via `inner()` so a sibling `StubDelivery`
+   *  can share the same Map for round-trip read-after-write tests
+   *  (per plan 01-04 task 03 — plan-checker W2 shared-Map pattern). */
   private readonly docs: Map<DocId, Document>;
 
   readonly handle: SourceHandle = parseSourceHandle("stub://memory");
@@ -38,8 +41,21 @@ export class StubSource implements SourceConnector {
     watch: "push",
   };
 
-  constructor(initial: Document[] = []) {
-    this.docs = new Map(initial.map((d) => [d.id, d]));
+  /**
+   * Accepts either:
+   *   - An array of Documents (legacy, seed-then-query).
+   *   - An existing `Map<DocId, Document>` (Phase 1: shared with
+   *     StubDelivery so writes are observable via Source reads).
+   */
+  constructor(initial: Document[] | Map<DocId, Document> = []) {
+    this.docs = initial instanceof Map ? initial : new Map(initial.map((d) => [d.id, d]));
+  }
+
+  /** Escape hatch: the underlying store. Test-only — exposed so a
+   *  sibling StubDelivery can mutate the same Map. Not part of the
+   *  SourceConnector contract. */
+  inner(): Map<DocId, Document> {
+    return this.docs;
   }
 
   async *listDocuments(_opts?: ListOptions): AsyncIterable<DocumentRef> {

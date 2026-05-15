@@ -19,6 +19,7 @@ import type BetterSqlite3 from "better-sqlite3";
 import { z } from "zod";
 import { loadConfig } from "./config/index.js";
 import { VaultManager } from "./vault/index.js";
+import type { Vault } from "./vault/index.js";
 import { OllamaClient } from "./ollama/index.js";
 import { FtsQueries } from "./db/index.js";
 import { hybridSearch, matchesAnyGlob } from "./search/index.js";
@@ -29,7 +30,7 @@ import { join as joinPath } from "node:path";
 import { listBacklinks, listForwardLinks, findBrokenLinks } from "./graph/index.js";
 import { queryFrontmatter, updateFrontmatter } from "./frontmatter/index.js";
 import { suggestFrontmatter } from "./schema/index.js";
-import { writeNote, deleteNote } from "./write/index.js";
+import { ObsidianFsDelivery } from "./adapters/delivery/obsidian-fs/index.js";
 import { getAuditLog, getIndexRuns } from "./audit/index.js";
 import { SuppressionSet, VaultWatcher } from "./watcher/index.js";
 import {
@@ -216,16 +217,31 @@ export async function serve(): Promise<void> {
   const manager = new VaultManager();
   await manager.loadAll(config.vaults);
 
-  // ─── Adapter registry (Phase 1, plan 01-03) ───────────────────────────────
+  // ─── Adapter registry (Phase 1, plans 01-03 + 01-04) ──────────────────────
   //
-  // One ObsidianFsSource per vault; registered under the canonical handle
-  // `obsidian-fs://<vault-name>`. The read_note handler resolves the source
-  // by handle on each call. Plan 01-04 will register an ObsidianFsDelivery
-  // against the same handles for the write seam.
+  // One ObsidianFsSource + one ObsidianFsDelivery per vault; registered under
+  // the canonical handle `obsidian-fs://<vault-name>`. The read_note handler
+  // resolves the source; the write_note / update_frontmatter / delete_note
+  // handlers resolve the delivery (plan 01-04 task 06).
+  //
+  // D-02 (client_info capture): the delivery takes a LAZY clientId getter
+  // closure that reads `server.getClientVersion()?.name` on every call. This
+  // lets us construct the registry BEFORE `server.connect()` while still
+  // surfacing the post-handshake client_info into the audit log.
+  // Pre-handshake (or if the client never sent clientInfo per the optional
+  // spec field), the fallback is "unknown" — explicitly NOT "claude-code"
+  // (the C-1 Claude-leak removed in task 02). RESEARCH Pitfall 4.
   const adapterRegistry = new AdapterRegistry();
+  // `serverRef` is assigned below; the closure captures the variable so the
+  // delivery can see the post-init clientInfo without a re-registration.
+  let serverRef: Server | undefined;
+  const getClientId = (): string => serverRef?.getClientVersion()?.name ?? "unknown";
   for (const vault of manager.list()) {
     const source = new ObsidianFsSource(vault.config);
     adapterRegistry.registerSource(source.handle, source);
+
+    const delivery = new ObsidianFsDelivery(vault, getClientId);
+    adapterRegistry.registerDelivery(delivery.handle, delivery);
   }
 
   const ollama = new OllamaClient({
@@ -327,6 +343,11 @@ export async function serve(): Promise<void> {
     { name: "vault-memory", version: VERSION },
     { capabilities: { tools: {} } },
   );
+  // Make the server visible to the lazy clientId closure (see bootstrap).
+  // After `server.connect(transport)` and the MCP initialize handshake,
+  // `server.getClientVersion()` returns the client's `Implementation`
+  // object — the `name` field is what we use for audit-log attribution.
+  serverRef = server;
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
     tools: TOOLS as unknown as Array<{
@@ -439,18 +460,12 @@ export async function serve(): Promise<void> {
           const parsed = WriteNoteArgs.parse(args ?? {});
           const vault = manager.require(parsed.vault);
           // Suppress the watcher event triggered by our own atomic rename.
-          // The hook fires inside writeNote() ONLY if the write actually
-          // happens (no permission/hash conflict), so a failed write never
-          // accidentally masks a real external edit shortly after.
-          const result = await writeNote({
-            vault,
-            relativePath: parsed.path,
-            content: parsed.content,
-            frontmatter: parsed.frontmatter ?? null,
-            expectedHash: parsed.expected_hash,
-            clientId: parsed.client_id,
-            onBeforeFsWrite: () => suppression.add(parsed.path),
-          });
+          // We call suppression BEFORE delivery.write() so the event is
+          // pre-filtered. Worst case (permission_denied / hash_mismatch):
+          // we suppress an event that never fires — harmless beyond the
+          // ~2s TTL.
+          suppression.add(parsed.path);
+          const result = await handleWriteNote(adapterRegistry, vault, parsed);
           return ok(result);
         }
 
@@ -459,10 +474,11 @@ export async function serve(): Promise<void> {
           const vault = manager.require(parsed.vault);
           const result = await updateFrontmatter({
             vault,
+            registry: adapterRegistry,
             relativePath: parsed.path,
             merge: parsed.merge,
-            expectedHash: parsed.expected_hash,
-            clientId: parsed.client_id,
+            ...(parsed.expected_hash !== undefined ? { expectedHash: parsed.expected_hash } : {}),
+            ...(parsed.client_id !== undefined ? { clientId: parsed.client_id } : {}),
             onBeforeFsWrite: () => suppression.add(parsed.path),
           });
           return ok(result);
@@ -471,13 +487,8 @@ export async function serve(): Promise<void> {
         case "delete_note": {
           const parsed = DeleteNoteArgs.parse(args ?? {});
           const vault = manager.require(parsed.vault);
-          const result = await deleteNote({
-            vault,
-            relativePath: parsed.path,
-            expectedHash: parsed.expected_hash,
-            clientId: parsed.client_id,
-            onBeforeFsWrite: () => suppression.add(parsed.path),
-          });
+          suppression.add(parsed.path);
+          const result = await handleDeleteNote(adapterRegistry, vault, parsed);
           return ok(result);
         }
 
@@ -540,6 +551,7 @@ export async function serve(): Promise<void> {
           return ok(
             await handleSearchCompat(
               manager,
+              adapterRegistry,
               ollama,
               defaultModel,
               activeVault,
@@ -552,7 +564,7 @@ export async function serve(): Promise<void> {
 
         case "fetch": {
           const parsed = FetchCompatArgs.parse(args ?? {});
-          return ok(handleFetchCompat(manager, parsed.id));
+          return ok(handleFetchCompat(manager, adapterRegistry, parsed.id));
         }
 
         case "vault_stats": {
@@ -675,6 +687,113 @@ async function handleReadNote(
     hash: doc.hash,
     mtime: doc.mtime,
     word_count: countWords(content),
+  };
+}
+
+/**
+ * write_note handler. Routes through `registry.resolveDelivery(handle).write`
+ * (plan 01-04 task 06) while preserving the v1 wire shape: caller sees
+ * `{ok, noteId, newHash, created, reason?, ...}`. The DocId mapping happens
+ * at the seam — v2 returns doc_id: DocId; we derive v1 noteId from the DB
+ * row after a successful write.
+ *
+ * The v1 `client_id` arg, when supplied, overrides the constructor-injected
+ * default per D-02. When omitted, the delivery's lazy clientId getter reads
+ * `server.getClientVersion()?.name` at call time.
+ */
+async function handleWriteNote(
+  registry: AdapterRegistry,
+  vault: Vault,
+  parsed: {
+    vault: string;
+    path: string;
+    content: string;
+    frontmatter?: Record<string, unknown> | null;
+    expected_hash?: string;
+    client_id?: string;
+  },
+): Promise<object> {
+  const handle = parseSourceHandle(`obsidian-fs://${parsed.vault}`);
+  const delivery = registry.resolveDelivery(handle);
+  const docId = formatDocId("obsidian-fs", parsed.vault, parsed.path);
+
+  const partial: Partial<Document> = {
+    blocks: [{ kind: "paragraph", text: parsed.content }],
+    properties: parsed.frontmatter ?? {},
+  };
+  const opts: { expectedHash?: string; clientId?: string } = {};
+  if (parsed.expected_hash !== undefined) opts.expectedHash = parsed.expected_hash;
+  if (parsed.client_id !== undefined) opts.clientId = parsed.client_id;
+
+  const res = await delivery.write(docId, partial, opts);
+  if (!res.ok) {
+    // Preserve v1 conflict shape — handlers used to forward writeNote's
+    // v1 WriteConflict directly; reshape to match.
+    const out: Record<string, unknown> = {
+      ok: false,
+      reason: res.reason === "not_found" ? "hash_mismatch" : res.reason,
+    };
+    if (res.currentHash !== undefined) out.currentHash = res.currentHash;
+    if (res.message !== undefined) out.message = res.message;
+    return out;
+  }
+
+  // Derive v1 noteId from the DB. The write went through writeNote
+  // internally which upserts the note; getByPath returns the row.
+  const noteRow = vault.db.notes.getByPath(parsed.path);
+  return {
+    ok: true,
+    newHash: res.newHash,
+    noteId: noteRow?.id ?? 0,
+    created: res.created,
+  };
+}
+
+/**
+ * delete_note handler. Routes through `registry.resolveDelivery(handle).delete`
+ * (plan 01-04 task 06). Preserves the v1 wire shape `{ok, newHash, noteId,
+ * created}` (created=false for delete; newHash echoes the now-gone file's
+ * pre-delete hash, matching v1 deleteNote semantics).
+ */
+async function handleDeleteNote(
+  registry: AdapterRegistry,
+  vault: Vault,
+  parsed: {
+    vault: string;
+    path: string;
+    expected_hash: string;
+    client_id?: string;
+  },
+): Promise<object> {
+  // Capture the v1 noteId + existing hash BEFORE we ask the delivery to
+  // delete (after success, getByPath returns null).
+  const noteRow = vault.db.notes.getByPath(parsed.path);
+  const preDeleteHash = noteRow?.hash ?? parsed.expected_hash;
+
+  const handle = parseSourceHandle(`obsidian-fs://${parsed.vault}`);
+  const delivery = registry.resolveDelivery(handle);
+  const docId = formatDocId("obsidian-fs", parsed.vault, parsed.path);
+
+  const opts: { expectedHash?: string; clientId?: string } = {
+    expectedHash: parsed.expected_hash,
+  };
+  if (parsed.client_id !== undefined) opts.clientId = parsed.client_id;
+
+  const res = await delivery.delete(docId, opts);
+  if (!res.ok) {
+    const out: Record<string, unknown> = {
+      ok: false,
+      reason: res.reason === "not_found" ? "hash_mismatch" : res.reason,
+    };
+    if (res.currentHash !== undefined) out.currentHash = res.currentHash;
+    if (res.message !== undefined) out.message = res.message;
+    return out;
+  }
+  return {
+    ok: true,
+    newHash: preDeleteHash,
+    noteId: noteRow?.id ?? 0,
+    created: false,
   };
 }
 
@@ -949,17 +1068,28 @@ export function decodeNoteId(id: string): { vault: string; path: string } {
 }
 
 /**
- * Build an `obsidian://` URL pointing at a note in the vault. Mirrors the
- * pattern documented in our Linear-backlink convention (memory:
- * feedback_linear_obsidian_backlinks): clickable from any connector UI,
- * opens the actual note locally.
+ * D-01 (plan 01-04 task 06): the v1 `obsidianUrl(vault, path)` helper was
+ * deleted. Display URLs now flow through `SourceConnector.formatDisplayUrl`
+ * — the obsidian-fs source mints the same `obsidian://open?vault=X&file=Y`
+ * URL string byte-for-byte (verified: same `encodeURIComponent`-per-segment
+ * encoding scheme; documented in `.planning/phases/01-…/01-04-SUMMARY.md`
+ * §"URL encoding parity"). Future adapters (notion-api etc.) can publish
+ * their own display URLs without changing core code.
+ *
+ * The internal helper `displayUrl(registry, vault, path)` below is the
+ * routing shim; it resolves the source and delegates.
  */
-export function obsidianUrl(vaultName: string, notePath: string): string {
-  return `obsidian://open?vault=${encodeURIComponent(vaultName)}&file=${encodeURIComponent(notePath)}`;
+function displayUrl(registry: AdapterRegistry, vaultName: string, notePath: string): string {
+  const source = registry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`));
+  const docId = formatDocId("obsidian-fs", vaultName, notePath);
+  // `formatDisplayUrl` is optional on the SourceConnector interface; for
+  // future adapters that don't expose one, fall back to the raw doc_uri.
+  return source.formatDisplayUrl?.(docId) ?? `obsidian-fs://${vaultName}/${notePath}`;
 }
 
 async function handleSearchCompat(
   manager: VaultManager,
+  registry: AdapterRegistry,
   ollama: OllamaClient,
   defaultModel: string,
   activeVault: string | undefined,
@@ -1010,7 +1140,7 @@ async function handleSearchCompat(
     results.push({
       id: encodeNoteId(h.vault, h.notePath),
       title: h.noteTitle ?? h.notePath,
-      url: obsidianUrl(h.vault, h.notePath),
+      url: displayUrl(registry, h.vault, h.notePath),
       snippet: truncateSnippet(h.chunkText, 280),
     });
     if (results.length >= limit) break;
@@ -1029,7 +1159,11 @@ export function truncateSnippet(text: string, max: number): string {
   return collapsed.slice(0, max - 1).trimEnd() + "…";
 }
 
-function handleFetchCompat(manager: VaultManager, id: string): object {
+function handleFetchCompat(
+  manager: VaultManager,
+  registry: AdapterRegistry,
+  id: string,
+): object {
   const { vault: vaultName, path } = decodeNoteId(id);
   const vault = manager.require(vaultName);
   const note = vault.db.notes.getByPath(path);
@@ -1055,7 +1189,7 @@ function handleFetchCompat(manager: VaultManager, id: string): object {
     id,
     title: note.title ?? note.path,
     text: note.content,
-    url: obsidianUrl(vaultName, note.path),
+    url: displayUrl(registry, vaultName, note.path),
     metadata,
   };
 }

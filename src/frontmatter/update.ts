@@ -18,14 +18,19 @@
  * NOTE: gray-matter's stringify preserves the existing serialization
  * style for fields it knows about, but YAML key order for *new* keys is
  * insertion order. We do not guarantee a stable global key order.
+ *
+ * Plan 01-04 task 05: this module no longer imports `gray-matter` or
+ * `node:fs` directly. The READ path goes through the v2 SourceConnector
+ * (`registry.resolveSource(handle).readDocument(id)`) and the WRITE
+ * path goes through the v2 DeliveryAdapter (`registry.resolveDelivery
+ * (handle).write(id, partial, opts)`). The merge-DSL semantics + diff
+ * emission are UNCHANGED.
  */
 
-import { promises as fs } from "node:fs";
-import matter from "gray-matter";
 import type { Vault } from "../vault/index.js";
-import { computeNoteHash, computeBodyHash } from "../adapters/source/obsidian-fs/hash.js";
-import { extractAliases } from "../indexer/indexer.js";
-import { atomicWriteFile, safeJoinInsideVault } from "../write/fs.js";
+import type { Document, DocId, SourceHandle, WikilinkRef } from "../types.js";
+import type { AdapterRegistry } from "../adapters/registry.js";
+import { formatDocId, parseSourceHandle } from "../adapters/registry.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public API
@@ -33,6 +38,13 @@ import { atomicWriteFile, safeJoinInsideVault } from "../write/fs.js";
 
 export interface UpdateFrontmatterInput {
   vault: Vault;
+  /**
+   * Adapter registry — Source for read, Delivery for write. Optional for
+   * backwards-compatibility with v1 callers that haven't been migrated;
+   * when omitted, the function falls back to constructing per-call
+   * adapters from `vault` (delegated by the server handler in Phase 1).
+   */
+  registry?: AdapterRegistry;
   relativePath: string;
   merge: Record<string, unknown>;
   expectedHash?: string;
@@ -183,33 +195,35 @@ function applyMerge(
   return { next, diff };
 }
 
-function computeHash(content: string, data: Record<string, unknown>): string {
-  // Mirror reader/parser: empty frontmatter → canonicalJson({}). Delegates to
-  // computeNoteHash so canonical (key-sorted) JSON is used everywhere.
-  const fmForHash = Object.keys(data).length > 0 ? data : {};
-  return computeNoteHash(content, fmForHash);
+/**
+ * Strip the adapter-injected `wikilinks: WikilinkRef[]` property that
+ * `ObsidianFsSource.readDocument` puts on `Document.properties` (D-05).
+ * The user's frontmatter never contained this key — we must NOT carry
+ * it through the merge or re-write.
+ */
+function stripWikilinks(props: Record<string, unknown>): Record<string, unknown> {
+  const { wikilinks: _w, ...rest } = props as { wikilinks?: WikilinkRef[] } & Record<
+    string,
+    unknown
+  >;
+  return rest;
 }
 
-function countWords(content: string): number {
-  if (content.length === 0) return 0;
-  return content.split(/\s+/).filter((s) => s.length > 0).length;
-}
-
-function extractTitle(content: string, fallback: string): string {
-  for (const line of content.split("\n")) {
-    const m = /^#\s+(.+?)\s*$/.exec(line);
-    if (m !== null && m[1] !== undefined) return m[1].trim();
-  }
-  return fallback;
-}
-
-function basenameNoMd(relativePath: string): string {
-  const base = relativePath.split("/").pop() ?? relativePath;
-  return base.endsWith(".md") ? base.slice(0, -3) : base;
+/**
+ * Extract the flat-text body string from `Document.blocks`. Phase 1 only
+ * emits single-paragraph blocks (BodyShape="flat-text") so this is
+ * trivially the first block's text. Matches the inverse of
+ * `extractBodyAndFrontmatter` in ObsidianFsDelivery.
+ */
+function blocksToBody(doc: Document): string {
+  return doc.blocks
+    .map((b) => (b.kind === "paragraph" ? b.text : ""))
+    .filter((s) => s.length > 0)
+    .join("\n\n");
 }
 
 export async function updateFrontmatter(input: UpdateFrontmatterInput): Promise<UpdateResult> {
-  const { vault, relativePath, merge, expectedHash, clientId } = input;
+  const { vault, relativePath, merge, expectedHash, clientId, registry, onBeforeFsWrite } = input;
 
   if (vault.config.write_enabled !== true) {
     return {
@@ -228,25 +242,35 @@ export async function updateFrontmatter(input: UpdateFrontmatterInput): Promise<
     };
   }
 
-  const absPath = await safeJoinInsideVault(vault.config.path, relativePath);
+  // Resolve the adapter triple. Phase 1 fallback (no registry supplied):
+  // construct one inline from `vault` so existing callers (handlers that
+  // haven't been migrated to registry-based dispatch yet) keep working.
+  const { source, delivery } = await resolveAdapters(vault, registry);
+  const handle = parseSourceHandle(`obsidian-fs://${vault.config.name}`);
+  void handle;
+  const docId: DocId = formatDocId("obsidian-fs", vault.config.name, relativePath);
 
-  let raw: string;
+  // ── READ via Source ────────────────────────────────────────────────────────
+  let doc: Document;
   try {
-    raw = await fs.readFile(absPath, "utf8");
+    doc = await source.readDocument(docId);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return {
       ok: false,
       reason: "note_not_found",
-      message: `Failed to read file: ${msg}`,
+      message: `Failed to read document: ${msg}`,
     };
   }
 
-  const parsed = matter(raw);
-  const content = parsed.content;
-  const data = (parsed.data ?? {}) as Record<string, unknown>;
+  const body = blocksToBody(doc);
+  const existingFm = stripWikilinks(doc.properties as Record<string, unknown>);
+  // The current hash on disk is exactly `doc.hash` (ObsidianFsSource uses
+  // `computeNoteHash(body, fm)`). The wikilinks injection happens AFTER
+  // hash computation in the parser, so doc.hash matches the gray-matter
+  // round-trip the v1 code computed.
+  const currentHash = doc.hash;
 
-  const currentHash = computeHash(content, data);
   if (expectedHash !== undefined && expectedHash !== currentHash) {
     return {
       ok: false,
@@ -266,7 +290,7 @@ export async function updateFrontmatter(input: UpdateFrontmatterInput): Promise<
     };
   }
 
-  const { next, diff } = applyMerge(data, merge);
+  const { next, diff } = applyMerge(existingFm, merge);
 
   if (diff.length === 0) {
     // Nothing actually changed (e.g. $pull on absent value)
@@ -278,63 +302,97 @@ export async function updateFrontmatter(input: UpdateFrontmatterInput): Promise<
     };
   }
 
-  // Build the new file. gray-matter.stringify writes frontmatter even when
-  // empty — we explicitly handle the all-deleted case by emitting just body.
-  const fullText = Object.keys(next).length === 0 ? content : matter.stringify(content, next);
+  // ── WRITE via Delivery ─────────────────────────────────────────────────────
+  // Pass the suppression hook through opts? — DeliveryAdapter does not
+  // expose it on the v2 surface. Instead, call it directly before
+  // dispatching; this matches the v1 ordering (hook fires immediately
+  // before the fs write).
+  onBeforeFsWrite?.();
 
-  input.onBeforeFsWrite?.();
-  await atomicWriteFile(absPath, fullText);
+  const partial: Partial<Document> = {
+    blocks: [{ kind: "paragraph", text: body }],
+    properties: Object.keys(next).length > 0 ? next : {},
+  };
+  const writeOpts: {
+    expectedHash: string;
+    clientId?: string;
+  } = {
+    expectedHash: currentHash,
+  };
+  if (clientId !== undefined) writeOpts.clientId = clientId;
 
-  const stat = await fs.stat(absPath);
-  const newHash = computeHash(content, next);
-  const title = extractTitle(content, basenameNoMd(relativePath));
-  const wordCount = countWords(content);
-  const fmJson = Object.keys(next).length > 0 ? JSON.stringify(next) : null;
-  const aliasKeyTouched = "aliases" in merge || "alias" in merge;
-
-  // Codex MEDIUM-1: atomic DB updates + FS rollback on failure. The note
-  // already exists on disk (we read `raw` above), so rollback restores it.
-  let upsertId: number;
-  try {
-    upsertId = vault.db.transaction(() => {
-      const up = vault.db.notes.upsertByPath({
-        path: relativePath,
-        content,
-        frontmatter: fmJson,
-        title,
-        hash: newHash,
-        bodyHash: computeBodyHash(content),
-        mtime: Math.floor(stat.mtimeMs),
-        wordCount,
-      });
-      if (aliasKeyTouched) {
-        vault.db.aliases.setForNote(up.id, extractAliases(next));
-      }
-      vault.db.audit.recordWrite({
-        noteId: up.id,
-        op: "update",
-        previousHash: currentHash,
-        newHash,
-        expectedHash: expectedHash ?? null,
-        clientId: clientId ?? null,
-        diffSummary: JSON.stringify(diff),
-      });
-      return up.id;
-    });
-  } catch (dbErr) {
-    input.onBeforeFsWrite?.();
-    try {
-      await atomicWriteFile(absPath, raw);
-    } catch {
-      // Rollback failed — re-throw original; catch-up will reconcile.
+  const writeRes = await delivery.write(docId, partial, writeOpts);
+  if (!writeRes.ok) {
+    // Shape-map Delivery v2 conflict reasons back to v1 update result.
+    if (writeRes.reason === "permission_denied") {
+      return {
+        ok: false,
+        reason: "permission_denied",
+        message: writeRes.message ?? "Write rejected by delivery adapter.",
+      };
     }
-    throw dbErr;
+    return {
+      ok: false,
+      reason: "hash_mismatch",
+      ...(writeRes.currentHash !== undefined ? { currentHash: writeRes.currentHash } : {}),
+      message: writeRes.message ?? "Write conflict.",
+    };
   }
 
   return {
     ok: true,
-    newHash,
-    noteId: upsertId,
+    newHash: writeRes.newHash,
+    noteId: noteRow.id,
     diff,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 1 adapter resolution
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Phase 1: when callers don't supply an AdapterRegistry, construct an
+ * inline source + delivery for the vault. The eventual end-state (after
+ * task 06's server.ts wiring) is that every caller supplies the
+ * registry; this fallback is for the legacy `updateFrontmatter({vault,
+ * ...})` shape during the migration window.
+ *
+ * The dynamic imports avoid pulling the obsidian-fs adapter into the
+ * module-load graph for callers that never reach this branch — there
+ * are no current consumers besides src/server.ts which WILL pass a
+ * registry post-task-06.
+ */
+async function resolveAdapters(
+  vault: Vault,
+  registry: AdapterRegistry | undefined,
+): Promise<{
+  source: { readDocument: (id: DocId) => Promise<Document> };
+  delivery: {
+    write: (
+      id: DocId,
+      doc: Partial<Document>,
+      opts?: { expectedHash?: string; clientId?: string },
+    ) => Promise<
+      | { ok: true; newHash: string; doc_id: DocId; created: boolean }
+      | { ok: false; reason: string; currentHash?: string; message?: string }
+    >;
+  };
+}> {
+  const handle: SourceHandle = parseSourceHandle(`obsidian-fs://${vault.config.name}`);
+  if (registry !== undefined) {
+    return {
+      source: registry.resolveSource(handle),
+      delivery: registry.resolveDelivery(handle),
+    };
+  }
+  // Fallback path — instantiate inline. clientId="unknown" because the
+  // server bootstrap has not threaded an actual MCP client_info value
+  // through to this call; the caller's `clientId` arg wins in writeOpts.
+  const { ObsidianFsSource } = await import("../adapters/source/obsidian-fs/index.js");
+  const { ObsidianFsDelivery } = await import("../adapters/delivery/obsidian-fs/index.js");
+  return {
+    source: new ObsidianFsSource(vault.config),
+    delivery: new ObsidianFsDelivery(vault, "unknown"),
   };
 }
