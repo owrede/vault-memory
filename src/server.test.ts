@@ -537,3 +537,338 @@ describe("Plan 02-03b: bootstrap phase ordering", () => {
     expect(phases).toHaveLength(5);
   });
 });
+
+// ─── Plan 02-04 — MEM-02 + MEM-04 end-to-end ────────────────────────────────
+
+describe("Plan 02-04: MEM-02 (record_observation) + MEM-04 (supersede) end-to-end", () => {
+  /**
+   * Mirrors Plan 02-03b's MEM-11 approach: rather than spin up an MCP
+   * stdio transport (which `serve()` blocks on), we drive the
+   * controllers through the same wiring `serve()` does in production —
+   * `setupMemorySinks`, `ObsidianFsDelivery` + `ObsidianFsSource`
+   * registered into an `AdapterRegistry`, and `handleRecordObservation`
+   * / `handleSupersede` invoked with `deliveryAdapterFor` /
+   * `sourceConnectorFor` closures that resolve from the registry.
+   * Anything that ships in `serve()`'s `record_observation` /
+   * `supersede` dispatch is exercised; only the MCP wrapper (the
+   * Zod parse + ok/errorResponse shaping) is omitted.
+   */
+
+  it("tools/list snapshot includes record_observation + supersede AND the 23 v1 entries are byte-identical", async () => {
+    const { TOOLS } = await import("./tool-registry.js");
+    const names = TOOLS.map((t) => t.name);
+    expect(names).toContain("record_observation");
+    expect(names).toContain("supersede");
+    expect(TOOLS).toHaveLength(25);
+
+    const ro = TOOLS.find((t) => t.name === "record_observation");
+    const sup = TOOLS.find((t) => t.name === "supersede");
+    expect((ro?.description ?? "").length).toBeGreaterThan(0);
+    expect((sup?.description ?? "").length).toBeGreaterThan(0);
+  });
+
+  it("end-to-end: record_observation writes a fully-formed memory doc; properties escape hatch survives", async () => {
+    const { setupMemorySinks } = await import("./server.js");
+    const { Database } = await import("./db/database.js");
+    const { VaultManager } = await import("./vault/index.js");
+    const { ObsidianFsDelivery } = await import("./adapters/delivery/obsidian-fs/index.js");
+    const { ObsidianFsSource } = await import("./adapters/source/obsidian-fs/index.js");
+    const { AdapterRegistry, parseSourceHandle } = await import("./adapters/registry.js");
+    const { handleRecordObservation } = await import("./memory/tools/index.js");
+    const matter = (await import("gray-matter")).default;
+    const { promises: fs } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+
+    const vaultDir = await fs.mkdtemp(join(tmpdir(), "vm-mem02-"));
+    try {
+      await fs.mkdir(join(vaultDir, "_memory"), { recursive: true });
+      await fs.writeFile(
+        join(vaultDir, "_memory", ".memory-sink"),
+        "fixture",
+        "utf-8",
+      );
+
+      const manager = new VaultManager();
+      const db = new Database(":memory:", "v2-test-vault");
+      db.migrate();
+      const vault = {
+        config: { name: "v2-test-vault", path: vaultDir, write_enabled: true },
+        db,
+        dbPath: ":memory:",
+      };
+      (manager as unknown as { vaults: Map<string, typeof vault> }).vaults.set(
+        vault.config.name,
+        vault,
+      );
+
+      const memorySinkRegistry = await setupMemorySinks(
+        { memory_sinks: [] },
+        manager as unknown as InstanceType<typeof VaultManager>,
+      );
+
+      const adapterRegistry = new AdapterRegistry();
+      const delivery = new ObsidianFsDelivery(
+        vault,
+        () => "test-client",
+        memorySinkRegistry,
+      );
+      const source = new ObsidianFsSource(vault.config);
+      adapterRegistry.registerDelivery(delivery.handle, delivery);
+      adapterRegistry.registerSource(source.handle, source);
+
+      const deps = {
+        memorySinkRegistry,
+        manager: manager as unknown as InstanceType<typeof VaultManager>,
+        deliveryAdapterFor: (vaultName: string) =>
+          adapterRegistry.resolveDelivery(
+            parseSourceHandle(`obsidian-fs://${vaultName}`),
+          ),
+        sourceConnectorFor: (vaultName: string) =>
+          adapterRegistry.resolveSource(
+            parseSourceHandle(`obsidian-fs://${vaultName}`),
+          ),
+      };
+
+      // ── happy path ─────────────────────────────────────────────────────
+      const res = await handleRecordObservation(deps, {
+        vault: "v2-test-vault",
+        claim: "Acme migration to Postgres",
+        evidence: ["call-2026-05-15"],
+        confidence: "direct",
+        type: "observation",
+      });
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      expect(typeof res.newHash).toBe("string");
+      // Phase 1 WriteSuccess uses `newHash`, NOT `hash`.
+      expect((res as Record<string, unknown>).hash).toBeUndefined();
+
+      const resource = res.doc_id.replace("obsidian-fs://v2-test-vault/", "");
+      const onDisk = await fs.readFile(join(vaultDir, resource), "utf-8");
+      const parsed = matter(onDisk);
+      const fm = parsed.data as Record<string, unknown>;
+      // All 7 required keys present + non-null observed_at.
+      expect(fm.source).toBe("agent");
+      expect(fm.confidence).toBe("direct");
+      expect(fm.evidence).toEqual(["call-2026-05-15"]);
+      expect(fm.status).toBe("active");
+      expect(typeof fm.observed_at).toBe("string");
+      expect(fm.observed_at).not.toBeNull();
+      expect(fm.superseded_by).toBeNull();
+      expect(fm.type).toBe("observation");
+
+      // ── escape hatch ───────────────────────────────────────────────────
+      const res2 = await handleRecordObservation(deps, {
+        vault: "v2-test-vault",
+        claim: "Renewal scheduled",
+        evidence: [],
+        confidence: "direct",
+        type: "observation",
+        properties: { expires_at: "2026-12-31T00:00:00Z" },
+      });
+      expect(res2.ok).toBe(true);
+      if (!res2.ok) return;
+      const fm2Path = res2.doc_id.replace("obsidian-fs://v2-test-vault/", "");
+      const fm2 = matter(await fs.readFile(join(vaultDir, fm2Path), "utf-8")).data as Record<string, unknown>;
+      expect(fm2.expires_at).toBe("2026-12-31T00:00:00Z");
+
+      // ── caller-supplied source:'user' rejected (no file created) ───────
+      const res3 = await handleRecordObservation(deps, {
+        vault: "v2-test-vault",
+        claim: "User authored",
+        evidence: [],
+        confidence: "direct",
+        type: "observation",
+        properties: { source: "user" },
+      });
+      expect(res3.ok).toBe(false);
+      if (res3.ok) return;
+      expect(res3.reason).toBe("non_agent_write_inside_sink");
+      expect(res3.sinkName).toBe("default");
+
+      db.close();
+    } finally {
+      await fs.rm(vaultDir, { recursive: true, force: true });
+    }
+  }, 10_000);
+
+  it("end-to-end: supersede on a freshly-recorded observation; OLD reflects supersede, REPLACEMENT untouched", async () => {
+    const { setupMemorySinks } = await import("./server.js");
+    const { Database } = await import("./db/database.js");
+    const { VaultManager } = await import("./vault/index.js");
+    const { ObsidianFsDelivery } = await import("./adapters/delivery/obsidian-fs/index.js");
+    const { ObsidianFsSource } = await import("./adapters/source/obsidian-fs/index.js");
+    const { AdapterRegistry, parseSourceHandle } = await import("./adapters/registry.js");
+    const {
+      handleRecordObservation,
+      handleSupersede,
+    } = await import("./memory/tools/index.js");
+    const matter = (await import("gray-matter")).default;
+    const { promises: fs } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+
+    const vaultDir = await fs.mkdtemp(join(tmpdir(), "vm-mem04-"));
+    try {
+      await fs.mkdir(join(vaultDir, "_memory"), { recursive: true });
+      await fs.writeFile(
+        join(vaultDir, "_memory", ".memory-sink"),
+        "fixture",
+        "utf-8",
+      );
+
+      const manager = new VaultManager();
+      const db = new Database(":memory:", "v2-test-vault");
+      db.migrate();
+      const vault = {
+        config: { name: "v2-test-vault", path: vaultDir, write_enabled: true },
+        db,
+        dbPath: ":memory:",
+      };
+      (manager as unknown as { vaults: Map<string, typeof vault> }).vaults.set(
+        vault.config.name,
+        vault,
+      );
+
+      const memorySinkRegistry = await setupMemorySinks(
+        { memory_sinks: [] },
+        manager as unknown as InstanceType<typeof VaultManager>,
+      );
+
+      const adapterRegistry = new AdapterRegistry();
+      const delivery = new ObsidianFsDelivery(
+        vault,
+        () => "test-client",
+        memorySinkRegistry,
+      );
+      const source = new ObsidianFsSource(vault.config);
+      adapterRegistry.registerDelivery(delivery.handle, delivery);
+      adapterRegistry.registerSource(source.handle, source);
+
+      const deps = {
+        memorySinkRegistry,
+        manager: manager as unknown as InstanceType<typeof VaultManager>,
+        deliveryAdapterFor: (vaultName: string) =>
+          adapterRegistry.resolveDelivery(
+            parseSourceHandle(`obsidian-fs://${vaultName}`),
+          ),
+        sourceConnectorFor: (vaultName: string) =>
+          adapterRegistry.resolveSource(
+            parseSourceHandle(`obsidian-fs://${vaultName}`),
+          ),
+      };
+
+      // Record two observations.
+      const oldRes = await handleRecordObservation(deps, {
+        vault: "v2-test-vault",
+        claim: "Old claim",
+        evidence: [],
+        confidence: "direct",
+        type: "observation",
+        properties: { observed_at: "2026-01-01T00:00:00Z" },
+      });
+      expect(oldRes.ok).toBe(true);
+      if (!oldRes.ok) return;
+      const replRes = await handleRecordObservation(deps, {
+        vault: "v2-test-vault",
+        claim: "Replacement claim",
+        evidence: [],
+        confidence: "direct",
+        type: "observation",
+        properties: { observed_at: "2026-01-02T00:00:00Z" },
+      });
+      expect(replRes.ok).toBe(true);
+      if (!replRes.ok) return;
+
+      const replResource = replRes.doc_id.replace(
+        "obsidian-fs://v2-test-vault/",
+        "",
+      );
+      const replMtimeBefore = (
+        await fs.stat(join(vaultDir, replResource))
+      ).mtimeMs;
+      const replContentBefore = await fs.readFile(
+        join(vaultDir, replResource),
+        "utf-8",
+      );
+
+      // Supersede the OLD by the REPLACEMENT.
+      const sup = await handleSupersede(deps, {
+        doc_id: oldRes.doc_id,
+        replacement_doc_id: replRes.doc_id,
+        reason: "new evidence supersedes",
+      });
+      expect(sup.ok).toBe(true);
+      if (!sup.ok) return;
+      expect(typeof sup.newHash).toBe("string");
+      expect((sup as Record<string, unknown>).hash).toBeUndefined();
+
+      // OLD doc reflects the supersede triple.
+      const oldResource = oldRes.doc_id.replace(
+        "obsidian-fs://v2-test-vault/",
+        "",
+      );
+      const oldFm = matter(
+        await fs.readFile(join(vaultDir, oldResource), "utf-8"),
+      ).data as Record<string, unknown>;
+      expect(oldFm.status).toBe("superseded");
+      expect(oldFm.superseded_by).toBe(replRes.doc_id);
+      expect(oldFm.superseded_reason).toBe("new evidence supersedes");
+
+      // REPLACEMENT doc is byte-identical to before.
+      const replContentAfter = await fs.readFile(
+        join(vaultDir, replResource),
+        "utf-8",
+      );
+      expect(replContentAfter).toBe(replContentBefore);
+      const replFmAfter = matter(replContentAfter).data as Record<string, unknown>;
+      expect(replFmAfter.status).toBe("active");
+      expect(replFmAfter.superseded_by).toBeNull();
+      expect(replFmAfter.superseded_reason).toBeUndefined();
+      const replMtimeAfter = (
+        await fs.stat(join(vaultDir, replResource))
+      ).mtimeMs;
+      expect(replMtimeAfter).toBe(replMtimeBefore);
+
+      // Audit log records the writes + the update on this vault.
+      const { getAuditLog } = await import("./audit/index.js");
+      const entries = getAuditLog({
+        vault,
+        limit: 100,
+      });
+      expect(entries.length).toBeGreaterThanOrEqual(3);
+      const ops = entries.map((e) => e.op);
+      expect(ops.filter((o) => o === "create").length).toBeGreaterThanOrEqual(2);
+      expect(ops.filter((o) => o === "update").length).toBeGreaterThanOrEqual(1);
+
+      db.close();
+    } finally {
+      await fs.rm(vaultDir, { recursive: true, force: true });
+    }
+  }, 10_000);
+
+  it("Zod-rejection at the tool boundary: supersede with reason:'' is refused by buildToolSchema", async () => {
+    const { buildToolSchema } = await import("./tool-registry.js");
+    const schema = buildToolSchema("supersede");
+    const r = schema.safeParse({
+      doc_id: "obsidian-fs://v/_memory/a.md",
+      replacement_doc_id: "obsidian-fs://v/_memory/b.md",
+      reason: "",
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("Zod-rejection at the tool boundary: record_observation rejects unknown confidence values", async () => {
+    const { buildToolSchema } = await import("./tool-registry.js");
+    const schema = buildToolSchema("record_observation");
+    const r = schema.safeParse({
+      vault: "v",
+      claim: "c",
+      evidence: [],
+      confidence: "high",
+      type: "observation",
+    });
+    expect(r.success).toBe(false);
+  });
+});

@@ -37,6 +37,10 @@ import {
   MemorySinkRegistry,
   type MemorySinkConfig,
 } from "./memory/index.js";
+import {
+  handleRecordObservation,
+  handleSupersede,
+} from "./memory/tools/index.js";
 import { getAuditLog, getIndexRuns } from "./audit/index.js";
 import {
   ObsidianFsChangeFeed,
@@ -541,6 +545,75 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
         folder_hint?: string;
       };
       return handleSuggestFrontmatter(manager, p);
+    },
+
+    // ── Phase 2 memory tools (Plan 02-04) ──────────────────────────────────
+    record_observation: async (a) => {
+      const p = a as {
+        vault: string;
+        claim: string;
+        evidence: string[];
+        confidence: "direct" | "inferred" | "uncertain";
+        type: string;
+        sink?: string;
+        properties?: Record<string, unknown>;
+      };
+      // Suppress the watcher event for the soon-to-be-written file.
+      // We don't know the exact filename yet (controller mints it), so
+      // suppress the observations/ folder path prefix; the watcher's
+      // suppression set tolerates fuzzy matches via the TTL.
+      const result = await handleRecordObservation(
+        {
+          memorySinkRegistry,
+          manager,
+          deliveryAdapterFor: (vaultName) =>
+            adapterRegistry.resolveDelivery(
+              parseSourceHandle(`obsidian-fs://${vaultName}`),
+            ),
+          sourceConnectorFor: (vaultName) =>
+            adapterRegistry.resolveSource(
+              parseSourceHandle(`obsidian-fs://${vaultName}`),
+            ),
+        },
+        p,
+      );
+      // After the write, suppress the watcher event using the minted
+      // DocId so live-indexing doesn't re-fire on our own write.
+      if (result.ok) {
+        const resource = result.doc_id.replace(
+          `obsidian-fs://${p.vault}/`,
+          "",
+        );
+        suppression.add(resource);
+      }
+      return result;
+    },
+    supersede: async (a) => {
+      const p = a as {
+        doc_id: string;
+        replacement_doc_id: string;
+        reason: string;
+      };
+      const result = await handleSupersede(
+        {
+          memorySinkRegistry,
+          manager,
+          deliveryAdapterFor: (vaultName) =>
+            adapterRegistry.resolveDelivery(
+              parseSourceHandle(`obsidian-fs://${vaultName}`),
+            ),
+          sourceConnectorFor: (vaultName) =>
+            adapterRegistry.resolveSource(
+              parseSourceHandle(`obsidian-fs://${vaultName}`),
+            ),
+        },
+        p,
+      );
+      if (result.ok) {
+        const resource = result.doc_id.replace(/^obsidian-fs:\/\/[^/]+\//, "");
+        suppression.add(resource);
+      }
+      return result;
     },
   };
 

@@ -39,8 +39,38 @@ describe("v1 tools/list surface (FND-10)", () => {
     expect(actual).toEqual(pinned);
   });
 
-  it("has exactly 23 tools", () => {
-    expect(TOOLS).toHaveLength(23);
+  it("has exactly 25 tools (23 v1 baseline + Plan 02-04 record_observation + supersede)", () => {
+    expect(TOOLS).toHaveLength(25);
+  });
+
+  it("preserves the 23 v1 baseline tool names byte-identical (Plan 02-04 truth)", () => {
+    const expectedV1Names = [
+      "list_vaults",
+      "read_note",
+      "search_semantic",
+      "search_text",
+      "search_hybrid",
+      "list_backlinks",
+      "list_forward_links",
+      "find_broken_links",
+      "query_frontmatter",
+      "write_note",
+      "update_frontmatter",
+      "delete_note",
+      "audit_log",
+      "list_models",
+      "start_shadow_index",
+      "switch_active_model",
+      "vacuum_embeddings",
+      "index_runs",
+      "search",
+      "fetch",
+      "vault_stats",
+      "recent_notes",
+      "suggest_frontmatter",
+    ];
+    const v1Slice = TOOLS.slice(0, 23).map((t) => t.name);
+    expect(v1Slice).toEqual(expectedV1Names);
   });
 });
 
