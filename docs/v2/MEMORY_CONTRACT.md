@@ -200,6 +200,36 @@ adapter registry. The validator does not resolve the target at write time;
 broken forward links are a runtime concern (Phase 4 graph navigation
 returns them as `unresolved`).
 
+### superseded_reason
+
+- **Type:** string
+- **Optional:** present only when `status === "superseded"`
+- **Cross-field constraint:** required (non-empty string) **iff**
+  `status === "superseded"`. When `status` is `active` or `archived`,
+  `superseded_reason` MUST be absent or `null`; the validator rejects a
+  non-empty value paired with a non-`superseded` status.
+- **Validator behavior on missing while `status === "superseded"`:**
+  reject with
+  `{ok: false, reason: "supersede_mismatch", key: "superseded_reason", status: "superseded"}`
+- **Validator behavior on invalid:** reject with
+  `{ok: false, reason: "invalid_provenance", key: "superseded_reason", value: <observed>}`
+  when the value is not a string, or is an empty string while
+  `status === "superseded"`
+- **Worked example (superseded document):**
+  ```json
+  "superseded_reason": {
+    "type": "string",
+    "value": "Alice clarified in 2026-05-01 sync that she actually prefers sync standups for cross-team work."
+  }
+  ```
+
+`superseded_reason` is the human-readable explanation that accompanies a
+`superseded_by` forward link. Guard A enforces this cross-field invariant
+under the `supersede_mismatch` reason code (paired with the `superseded_by`
+rule above — a supersession always carries both a forward link and a
+reason, so the audit log can answer "why was this replaced?" without
+loading the replacement document).
+
 ### type
 
 - **Type:** free-form short string tag

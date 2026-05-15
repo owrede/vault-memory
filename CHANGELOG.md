@@ -45,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Relocate ADRs 001–004 from `docs/dev/` (gitignored) to public `docs/v2/adr/`; amend each with Invariants + Examples sections covering both `obsidian-fs://` and `notion-api://` worked examples (FND-01, FND-04).
 - ADR-003 amended with explicit hash-semantics pseudocode (RFC 8785 JCS, NFC normalisation, LF line endings, IEEE-754 number canonicalization) + chunk-level `source_hashes` schema (FND-02).
 - ADR-004 amended: folder-default `MemorySink` is the only code path; separate-vault is config-only via `[memory] sink = "@…"` (FND-03). `.memory-sink` sentinel mandated.
+- ADR-004 amended: underscored PropertyBag keys, confidence enum aligned to [direct, inferred, uncertain], superseded_reason field added (Phase 2 plan 02-01).
 - Publish `docs/v2/ARCHITECTURE.md` (L0–L4 layer model + responsibility map), `docs/v2/MEMORY_CONTRACT.md` (provenance property contract on `Document.properties`), `docs/v2/AGENT_AGNOSTIC.md` (MCP-canonical client stance) (FND-05/06/07).
 - Eval fixture vault `evals/fixtures/v2-test-vault/` — "Atlas Robotics" narrative; 56 notes across `projects/`, `meetings/`, `people/`, `decisions/`, `references/`; 15-document `_memory/` subset; 7 hand-labeled `_queries/*.yaml` (FND-08).
 - v1-baseline regression suite `evals/v1-baseline/` — `tools-list.snapshot.json` pin for `tools/list` (23 tools), 11 per-tool semantic-floor YAMLs, `baseline.test.ts` vitest runner with `.todo` placeholders for Phase 1 precision/recall (FND-09/10).
