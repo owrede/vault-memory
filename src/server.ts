@@ -35,6 +35,10 @@ import {
 } from "./adapters/delivery/obsidian-fs/sentinel.js";
 import {
   MemorySinkRegistry,
+  readListSinks,
+  readMemoryStats,
+  RESOURCE_URI_LIST_SINKS,
+  RESOURCE_URI_MEMORY_STATS,
   type MemorySinkConfig,
 } from "./memory/index.js";
 import {
@@ -309,7 +313,10 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
 
   const server = new McpServer(
     { name: "vault-memory", version: VERSION },
-    { capabilities: { tools: {} } },
+    // Plan 02-06 (MEM-09): advertise `resources` capability so MCP clients
+    // call `resources/list` + `resources/read` on bootstrap. Polled-only —
+    // no `subscribe` / `listChanged` flags asserted.
+    { capabilities: { tools: {}, resources: {} } },
   );
   // Make the McpServer visible to the lazy clientId closure (see bootstrap).
   // After `server.connect(transport)` and the MCP initialize handshake,
@@ -692,6 +699,54 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
       },
     );
   }
+
+  // ─── MCP Resources (Plan 02-06 / MEM-09) ─────────────────────────────────
+  //
+  // Polled-only — no `notifyResourceUpdated` integration in v2.0.0
+  // (CONTEXT D-Q4). URIs are FLAT per RESEARCH §Q4: one resource per
+  // capability, not per sink. The registry is already populated above
+  // (via `setupMemorySinks(...)`); the read callbacks just project from
+  // it (list_sinks) or query the per-vault SQLite DB (memory_stats).
+  server.registerResource(
+    "memory-sinks",
+    RESOURCE_URI_LIST_SINKS,
+    {
+      title: "Memory sinks",
+      description:
+        "Configured + auto-discovered MemorySinks (name, handle, vault, contract, default). " +
+        "Read to discover where memory documents (record_observation, supersede) land.",
+      mimeType: "application/json",
+    },
+    async (uri) => ({
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: "application/json",
+          text: JSON.stringify(readListSinks(memorySinkRegistry), null, 2),
+        },
+      ],
+    }),
+  );
+  server.registerResource(
+    "memory-stats",
+    RESOURCE_URI_MEMORY_STATS,
+    {
+      title: "Memory sink stats",
+      description:
+        "Per-sink document counts, by_type / by_status breakdowns, and last memory-write timestamp. " +
+        "Polled — re-read to refresh.",
+      mimeType: "application/json",
+    },
+    async (uri) => ({
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: "application/json",
+          text: JSON.stringify(readMemoryStats(memorySinkRegistry, manager), null, 2),
+        },
+      ],
+    }),
+  );
 
   onPhase("connect_transport");
   const transport = new StdioServerTransport();

@@ -1239,3 +1239,277 @@ describe("Plan 02-05: MEM-03 recall end-to-end", () => {
     expect(schema.safeParse({ query: "" }).success).toBe(false);
   });
 });
+
+// ─── Plan 02-06 (MEM-09): MCP Resources surface ────────────────────────────
+//
+// We construct a real `McpServer`, register the two memory Resources the
+// way `serve()` does, and exercise them through an in-memory client. This
+// pins the wire contract (URIs + JSON payload shape + mimeType) without
+// spinning up stdio.
+describe("Plan 02-06: MCP Resources (MEM-09)", () => {
+  async function makeServerWithResources() {
+    const { McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js");
+    const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+    const { InMemoryTransport } = await import(
+      "@modelcontextprotocol/sdk/inMemory.js"
+    );
+    const { MemorySinkRegistry } = await import("./memory/registry.js");
+    const {
+      readListSinks,
+      readMemoryStats,
+      RESOURCE_URI_LIST_SINKS,
+      RESOURCE_URI_MEMORY_STATS,
+    } = await import("./memory/resources/index.js");
+    const { Database } = await import("./db/database.js");
+    const { promises: fs } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { VaultManager } = await import("./vault/index.js");
+    const { vi } = await import("vitest");
+
+    const vaultDir = await fs.mkdtemp(join(tmpdir(), "vm-mem09-"));
+    await fs.mkdir(join(vaultDir, "_memory"), { recursive: true });
+
+    const db = new Database(":memory:", "v2-test-vault");
+    db.migrate();
+    const vault = {
+      config: { name: "v2-test-vault", path: vaultDir, write_enabled: true },
+      db,
+      dbPath: ":memory:",
+    };
+    const manager = new VaultManager();
+    (manager as unknown as { vaults: Map<string, typeof vault> }).vaults.set(
+      vault.config.name,
+      vault,
+    );
+
+    const registry = new MemorySinkRegistry();
+    await registry.registerMemorySinks(
+      [
+        {
+          name: "default",
+          handle: "obsidian-fs://v2-test-vault/_memory/",
+          contract: "default-memory-v1",
+        },
+      ],
+      {
+        resolveVaultAbsolutePath: () => vaultDir,
+        provisioner: vi.fn().mockResolvedValue(undefined),
+      },
+    );
+
+    // Seed one memory document for non-trivial stats.
+    db.notes.upsertByPath({
+      path: "_memory/obs-1.md",
+      content: "x",
+      frontmatter: JSON.stringify({ type: "fact", status: "active" }),
+      title: "obs-1",
+      hash: "h-obs-1",
+      bodyHash: "b-obs-1",
+      mtime: 1,
+      wordCount: 1,
+    });
+
+    const server = new McpServer(
+      { name: "vault-memory-test", version: "test" },
+      { capabilities: { resources: {}, tools: {} } },
+    );
+    server.registerResource(
+      "memory-sinks",
+      RESOURCE_URI_LIST_SINKS,
+      { title: "Memory sinks", mimeType: "application/json" },
+      async (uri) => ({
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify(readListSinks(registry), null, 2),
+          },
+        ],
+      }),
+    );
+    server.registerResource(
+      "memory-stats",
+      RESOURCE_URI_MEMORY_STATS,
+      { title: "Memory sink stats", mimeType: "application/json" },
+      async (uri) => ({
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify(readMemoryStats(registry, manager), null, 2),
+          },
+        ],
+      }),
+    );
+
+    const client = new Client(
+      { name: "test-client", version: "test" },
+      { capabilities: { resources: {} } },
+    );
+    const [clientTransport, serverTransport] =
+      InMemoryTransport.createLinkedPair();
+    await Promise.all([
+      server.connect(serverTransport),
+      client.connect(clientTransport),
+    ]);
+
+    const cleanup = async () => {
+      await client.close();
+      await server.close();
+      db.close();
+      await fs.rm(vaultDir, { recursive: true, force: true });
+    };
+    return { client, cleanup };
+  }
+
+  it("resources/list exposes both memory Resource URIs", async () => {
+    const { client, cleanup } = await makeServerWithResources();
+    try {
+      const list = await client.listResources();
+      const uris = list.resources.map((r) => r.uri).sort();
+      expect(uris).toEqual([
+        "vault-memory://memory/sinks",
+        "vault-memory://memory/stats",
+      ]);
+      for (const r of list.resources) {
+        expect(r.mimeType).toBe("application/json");
+      }
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("resources/read on /sinks returns the ListSinks JSON payload", async () => {
+    const { client, cleanup } = await makeServerWithResources();
+    try {
+      const res = await client.readResource({
+        uri: "vault-memory://memory/sinks",
+      });
+      expect(res.contents).toHaveLength(1);
+      const blob = res.contents[0]!;
+      expect(blob.mimeType).toBe("application/json");
+      expect(typeof blob.text).toBe("string");
+      const parsed = JSON.parse(blob.text as string);
+      expect(parsed.total).toBe(1);
+      expect(parsed.sinks).toHaveLength(1);
+      expect(parsed.sinks[0]).toMatchObject({
+        name: "default",
+        handle: "obsidian-fs://v2-test-vault/_memory/",
+        vault: "v2-test-vault",
+        contract: "default-memory-v1",
+        default: true,
+        resolves_to: "_memory/",
+      });
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("resources/read on /stats returns the MemoryStats JSON payload", async () => {
+    const { client, cleanup } = await makeServerWithResources();
+    try {
+      const res = await client.readResource({
+        uri: "vault-memory://memory/stats",
+      });
+      const parsed = JSON.parse(res.contents[0]!.text as string);
+      expect(parsed.total_docs).toBeGreaterThanOrEqual(1);
+      expect(parsed.sinks).toHaveLength(1);
+      const entry = parsed.sinks[0];
+      expect(entry.name).toBe("default");
+      expect(entry.handle).toBe("obsidian-fs://v2-test-vault/_memory/");
+      expect(entry.doc_count).toBeGreaterThanOrEqual(1);
+      // by_type / by_status are objects (possibly empty for rows without
+      // frontmatter); the seeded fixture has type=fact, status=active.
+      expect(entry.by_type).toEqual({ fact: 1 });
+      expect(entry.by_status).toEqual({ active: 1 });
+      // last_write_at is null because no audit row was inserted; the
+      // doc was upserted via NotesQueries directly.
+      expect(entry.last_write_at).toBeNull();
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("tools/list count is still 26 (Resources do NOT add tool entries)", async () => {
+    const { TOOLS } = await import("./tool-registry.js");
+    expect(TOOLS).toHaveLength(26);
+    // Spot-check: no memory_stats or list_sinks tool exists.
+    const names = TOOLS.map((t) => t.name);
+    expect(names).not.toContain("memory_stats");
+    expect(names).not.toContain("list_sinks");
+  });
+});
+
+// ─── Plan 02-06 (MEM-08): audit_log filter end-to-end ──────────────────────
+describe("Plan 02-06: audit_log filters memory-sink writes (MEM-08)", () => {
+  it("getAuditLog({is_memory_sink_write: true|false}) selects the right rows", async () => {
+    const { Database } = await import("./db/database.js");
+    const { getAuditLog } = await import("./audit/audit.js");
+
+    const db = new Database(":memory:", "audit-vault");
+    try {
+      const userId = db.notes.upsertByPath({
+        path: "user.md",
+        content: "x",
+        frontmatter: null,
+        title: "u",
+        hash: "h-u",
+        bodyHash: "b-u",
+        mtime: 1,
+        wordCount: 1,
+      }).id;
+      const memId = db.notes.upsertByPath({
+        path: "_memory/obs.md",
+        content: "x",
+        frontmatter: null,
+        title: "o",
+        hash: "h-o",
+        bodyHash: "b-o",
+        mtime: 1,
+        wordCount: 1,
+      }).id;
+      db.audit.recordWrite({
+        noteId: userId,
+        op: "create",
+        previousHash: null,
+        newHash: "h-u",
+        expectedHash: null,
+        clientId: "user",
+        diffSummary: null,
+        isMemorySinkWrite: false,
+      });
+      db.audit.recordWrite({
+        noteId: memId,
+        op: "create",
+        previousHash: null,
+        newHash: "h-o",
+        expectedHash: null,
+        clientId: "agent",
+        diffSummary: null,
+        isMemorySinkWrite: true,
+      });
+      const vault = {
+        config: { name: "audit-vault", path: "/tmp/x", write_enabled: false },
+        db,
+        dbPath: ":memory:",
+      };
+      const all = getAuditLog({ vault });
+      expect(all).toHaveLength(2);
+      // Every entry has the new field.
+      for (const e of all) expect(typeof e.is_memory_sink_write).toBe("boolean");
+
+      const memOnly = getAuditLog({ vault, is_memory_sink_write: true });
+      expect(memOnly).toHaveLength(1);
+      expect(memOnly[0]!.is_memory_sink_write).toBe(true);
+      expect(memOnly[0]!.notePath).toBe("_memory/obs.md");
+
+      const userOnly = getAuditLog({ vault, is_memory_sink_write: false });
+      expect(userOnly).toHaveLength(1);
+      expect(userOnly[0]!.is_memory_sink_write).toBe(false);
+      expect(userOnly[0]!.notePath).toBe("user.md");
+    } finally {
+      db.close();
+    }
+  });
+});

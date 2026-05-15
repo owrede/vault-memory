@@ -160,4 +160,34 @@ export class AuditQueries {
     params.push(limit);
     return this.db.prepare<typeof params, WriteAuditRow>(sql).all(...params);
   }
+
+  /**
+   * Plan 02-06 (MEM-09): epoch-ms timestamp of the most recent memory-sink
+   * write to a note whose path begins with `pathPrefix`, or `null` if no
+   * such row exists. Backed by the `idx_write_audit_memory` partial index
+   * (migration 009).
+   *
+   * Looks up via the `notes.path` value joined to `write_audit.note_id`.
+   * Returns null when the note row was hard-deleted (FK SET NULL) or
+   * when no audit row matches.
+   */
+  lastMemoryWriteAtForPathPrefix(pathPrefix: string): number | null {
+    const row = this.db
+      .prepare<[string], { at: number }>(
+        `SELECT wa.at AS at
+           FROM write_audit AS wa
+           JOIN notes AS n ON n.id = wa.note_id
+          WHERE wa.is_memory_sink_write = 1
+            AND n.path LIKE ? ESCAPE '\\'
+          ORDER BY wa.at DESC
+          LIMIT 1`,
+      )
+      .get(escapeAuditLikePrefix(pathPrefix) + "%");
+    return row?.at ?? null;
+  }
+}
+
+/** Mirror of notes.ts `escapeLikePrefix` — local copy to avoid a cross-file dep. */
+function escapeAuditLikePrefix(prefix: string): string {
+  return prefix.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
 }
