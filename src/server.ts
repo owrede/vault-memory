@@ -85,9 +85,22 @@ export interface ServeOptions {
 }
 
 /**
+ * Convention: when no `[[memory_sinks]]` is configured AND a vault root
+ * contains `<this-folder>/.memory-sink`, `discoverMemorySinks` synthesizes
+ * a default sink named `default` bound to the `default-memory-v1` contract.
+ *
+ * IN-05 closure: surfaced as an exported constant so the magic isn't
+ * buried in a string literal. Users who want a different folder name
+ * configure `[[memory_sinks]]` explicitly (which short-circuits auto-
+ * discovery — see `discoverMemorySinks` body line 1).
+ */
+export const MEMORY_AUTO_DISCOVERY_FOLDER = "_memory";
+
+/**
  * Auto-discover memory sinks per Plan 02-03b. When `config.memory_sinks` is
- * empty AND a vault contains `_memory/.memory-sink`, synthesize a default
- * sink config `{name: "default", handle: "obsidian-fs://<vault>/_memory/",
+ * empty AND a vault contains `<MEMORY_AUTO_DISCOVERY_FOLDER>/.memory-sink`,
+ * synthesize a default sink config
+ * `{name: "default", handle: "obsidian-fs://<vault>/<MEMORY_AUTO_DISCOVERY_FOLDER>/",
  * contract: "default-memory-v1"}`. This preserves the v2 fixture's existing
  * memory docs as a "default sink" without requiring config edits.
  *
@@ -102,10 +115,10 @@ export async function discoverMemorySinks(
   }
   const discovered: MemorySinkConfig[] = [];
   for (const v of vaults) {
-    if (await sentinelExistsAt(v.path, "_memory")) {
+    if (await sentinelExistsAt(v.path, MEMORY_AUTO_DISCOVERY_FOLDER)) {
       discovered.push({
         name: "default",
-        handle: `obsidian-fs://${v.name}/_memory/`,
+        handle: `obsidian-fs://${v.name}/${MEMORY_AUTO_DISCOVERY_FOLDER}/`,
         contract: "default-memory-v1",
       });
     }
