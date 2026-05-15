@@ -396,18 +396,44 @@ export type ChangeEvent =
   | { kind: "rename"; old_id: DocId; new_id: DocId; at: number };
 
 /**
- * Minimal Phase 1 MemorySink shape per ADR-004.
+ * `MemorySink` — runtime record for a configured agent memory sink per
+ * ADR-004. Phase 2 (MEM-01..12) widens this from the Phase 1 stub to
+ * the full surface consumed by `MemorySinkRegistry`, the validator,
+ * and the obsidian-fs delivery seam:
  *
- * Phase 2 (MEM-01..12) populates the full sink surface — provenance
- * guards (Guard A: provenance required; Guard B: source:agent outside
- * configured sink rejected), `.memory-sink` sentinel resolution,
- * sink-prefix → DocId mapping. Phase 1 declares the type so the
- * delivery adapter (`DeliveryAdapter.write`) compiles against the
- * shape; runtime guards land in Phase 2.
+ *   - `name` — short user-chosen name (e.g. "default", "observations").
+ *     Used as the lookup key in `resolveMemorySink(name)`.
+ *   - `handle` — full `obsidian-fs://<vault>/<path>/` URI; the
+ *     canonical identity of the sink. Minted by `parseMemorySinkHandle`
+ *     in `src/memory/sink.ts`.
+ *   - `vault` — owning vault name (resolved from the handle authority).
+ *   - `resolveToRelativePath` — vault-relative path with trailing slash
+ *     (e.g. "_memory/"). The SOLE legitimate path-prefix used for
+ *     `findSinkContaining(docId)` and sentinel-file resolution.
+ *   - `contractName` — name of the `MemoryContract` validating writes
+ *     to this sink (default `"default-memory-v1"`).
+ *   - `isDefault` — `true` iff this is the vault's default sink (the
+ *     target of `record_observation` when no `sink:` arg is provided).
+ *
+ * Backwards-compat note: the Phase 1 stub had `handle` and `resolveTo:
+ * DocId`. Phase 2 replaces `resolveTo` with the explicit
+ * `resolveToRelativePath` because the sink resolves to a *folder*
+ * (vault-relative), not to a single document — and the vault-absolute
+ * path is supplied at call time by `VaultManager`, not stored on the
+ * sink record. No Phase 1 consumer reads `resolveTo` at runtime
+ * (Phase 1 plan 01 declared the field as a type-only stub).
  */
 export interface MemorySink {
-  /** Opaque sink handle (`mem-sink://<authority>/<name>` or equivalent). */
+  /** Short user-chosen name; resolution key in `resolveMemorySink(name)`. */
+  name: string;
+  /** Full `obsidian-fs://<vault>/<path>/` handle minted by parseMemorySinkHandle. */
   handle: MemorySinkHandle;
-  /** DocId resolution target — where `write()` calls under this sink land. */
-  resolveTo: DocId;
+  /** Owning vault name (resolved from the handle authority). */
+  vault: string;
+  /** Vault-relative folder path with trailing slash, e.g. "_memory/". */
+  resolveToRelativePath: string;
+  /** Name of the `MemoryContract` validating writes to this sink. */
+  contractName: string;
+  /** True iff this is the vault's default sink. */
+  isDefault: boolean;
 }
