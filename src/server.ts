@@ -38,6 +38,7 @@ import {
   type MemorySinkConfig,
 } from "./memory/index.js";
 import {
+  handleRecall,
   handleRecordObservation,
   handleSupersede,
 } from "./memory/tools/index.js";
@@ -614,6 +615,41 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
         suppression.add(resource);
       }
       return result;
+    },
+
+    // ── Phase 2 memory tools (Plan 02-05) ──────────────────────────────────
+    recall: async (a) => {
+      const p = a as {
+        query: string;
+        min_confidence?: "direct" | "inferred" | "uncertain";
+        types?: string[];
+        max_age_days?: number;
+        sink?: string;
+        limit?: number;
+        vaults?: string[];
+      };
+      const packets = await handleRecall(
+        {
+          memorySinkRegistry,
+          manager,
+          sourceConnectorFor: (vaultName) =>
+            adapterRegistry.resolveSource(
+              parseSourceHandle(`obsidian-fs://${vaultName}`),
+            ),
+          searchHybrid: async (input) =>
+            hybridSearch({
+              query: input.query,
+              embeddingModel: defaultModel,
+              ollama,
+              vaults: input.vaults,
+              topK: input.topK,
+              rrfK: 60,
+              includeBreakdown: false,
+            }),
+        },
+        p,
+      );
+      return { packets, count: packets.length };
     },
   };
 

@@ -8,18 +8,21 @@ import { describe, expect, it } from "vitest";
 import { TOOLS, TOOL_SCHEMAS, buildToolSchema, type ToolName } from "./tool-registry.js";
 
 describe("TOOLS array", () => {
-  it("has exactly 25 entries (23 v1 tools + Plan 02-04 record_observation + supersede)", () => {
-    expect(TOOLS).toHaveLength(25);
+  it("has exactly 26 entries (23 v1 + Plan 02-04 record_observation + supersede + Plan 02-05 recall)", () => {
+    expect(TOOLS).toHaveLength(26);
   });
 
-  it("includes record_observation and supersede with non-empty descriptions", () => {
+  it("includes record_observation, supersede, and recall with non-empty descriptions", () => {
     const byName = new Map(TOOLS.map((t) => [t.name, t]));
     const ro = byName.get("record_observation");
     const sup = byName.get("supersede");
+    const rc = byName.get("recall");
     expect(ro).toBeDefined();
     expect(sup).toBeDefined();
+    expect(rc).toBeDefined();
     expect((ro?.description ?? "").length).toBeGreaterThan(0);
     expect((sup?.description ?? "").length).toBeGreaterThan(0);
+    expect((rc?.description ?? "").length).toBeGreaterThan(0);
   });
 
   it("each entry has {name, description, inputSchema}", () => {
@@ -147,6 +150,52 @@ describe("TOOL_SCHEMAS", () => {
         replacement_doc_id: "obsidian-fs://v/_memory/b.md",
         reason: "",
       });
+      expect(r.success).toBe(false);
+    });
+  });
+
+  describe("recall schema (Plan 02-05)", () => {
+    it("accepts a minimal valid payload (only query)", () => {
+      const schema = buildToolSchema("recall");
+      const r = schema.safeParse({ query: "foo" });
+      expect(r.success).toBe(true);
+    });
+
+    it("rejects empty query (min 1 char)", () => {
+      const schema = buildToolSchema("recall");
+      const r = schema.safeParse({ query: "" });
+      expect(r.success).toBe(false);
+    });
+
+    it("rejects unknown min_confidence enum values", () => {
+      const schema = buildToolSchema("recall");
+      const r = schema.safeParse({ query: "foo", min_confidence: "unknown-level" });
+      expect(r.success).toBe(false);
+    });
+
+    it("rejects non-positive max_age_days", () => {
+      const schema = buildToolSchema("recall");
+      const r = schema.safeParse({ query: "foo", max_age_days: -5 });
+      expect(r.success).toBe(false);
+    });
+
+    it("accepts a fully-specified valid payload", () => {
+      const schema = buildToolSchema("recall");
+      const r = schema.safeParse({
+        query: "Spire budget",
+        min_confidence: "inferred",
+        types: ["observation", "hypothesis"],
+        max_age_days: 30,
+        sink: "default",
+        limit: 5,
+        vaults: ["atlas"],
+      });
+      expect(r.success).toBe(true);
+    });
+
+    it("rejects limit > 200", () => {
+      const schema = buildToolSchema("recall");
+      const r = schema.safeParse({ query: "foo", limit: 1000 });
       expect(r.success).toBe(false);
     });
   });

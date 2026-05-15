@@ -98,47 +98,27 @@ describe("CitationPacket — D-01 shape", () => {
   });
 });
 
-describe("displayUrlFor — obsidian-fs scheme", () => {
-  it("constructs obsidian://open?vault=…&file=… for an obsidian-fs DocId", () => {
-    const id = formatDocId(
-      "obsidian-fs",
-      "atlas",
-      "_memory/observations/foo.md",
-    );
-    expect(displayUrlFor(id)).toBe(
-      "obsidian://open?vault=atlas&file=_memory%2Fobservations%2Ffoo.md",
-    );
+describe("displayUrlFor — adapter seam delegation", () => {
+  it("delegates to the source's formatDisplayUrl when available", () => {
+    const id = formatDocId("obsidian-fs", "atlas", "_memory/observations/foo.md");
+    const fakeSource = {
+      formatDisplayUrl: (d: typeof id): string =>
+        `fake://${d}#test`,
+    };
+    expect(displayUrlFor(id, fakeSource)).toBe(`fake://${id}#test`);
   });
 
-  it("URL-encodes spaces as %20 in both vault name and resource", () => {
-    const id = formatDocId(
-      "obsidian-fs",
-      "my vault",
-      "Daily Notes/2026-05-15 Friday.md",
-    );
-    expect(displayUrlFor(id)).toBe(
-      "obsidian://open?vault=my%20vault&file=Daily%20Notes%2F2026-05-15%20Friday.md",
-    );
-  });
-
-  it("URL-encodes Unicode characters in the resource path", () => {
-    const id = formatDocId(
-      "obsidian-fs",
-      "atlas",
-      "Personen/Müller.md",
-    );
-    const url = displayUrlFor(id);
-    expect(url).toContain("obsidian://open?vault=atlas&file=");
-    // Müller encoded as M%C3%BCller (UTF-8 percent-encoded).
-    expect(url).toContain("M%C3%BCller");
-  });
-});
-
-describe("displayUrlFor — non-obsidian-fs schemes return the DocId itself", () => {
-  it("returns the DocId verbatim for a notion-api DocId (future adapter)", () => {
-    // Using a brand-cast through formatDocId with a future scheme. The
-    // function is scheme-aware: only obsidian-fs gets the obsidian:// URL.
+  it("falls back to the DocId string when the adapter omits formatDisplayUrl", () => {
     const id = formatDocId("notion-api", "workspace-id", "page-id");
-    expect(displayUrlFor(id)).toBe(id);
+    const fakeSource = {}; // no formatDisplayUrl
+    expect(displayUrlFor(id, fakeSource)).toBe(id);
+  });
+
+  it("falls back to the DocId string when formatDisplayUrl returns null", () => {
+    const id = formatDocId("notion-api", "workspace-id", "page-id");
+    const fakeSource = {
+      formatDisplayUrl: (_d: typeof id): string | null => null,
+    };
+    expect(displayUrlFor(id, fakeSource)).toBe(id);
   });
 });

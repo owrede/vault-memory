@@ -36,7 +36,6 @@
  * the recall (Phase 2) and assembly (Phase 3) surfaces in lockstep.
  */
 
-import { decomposeDocId } from "../adapters/registry.js";
 import type { DocId, Document, SourceHandle } from "../types.js";
 
 /**
@@ -99,26 +98,23 @@ export function toCitationPacket(
 }
 
 /**
- * Construct an `obsidian://open?vault=…&file=…` display URL from a
- * DocId. For non-obsidian-fs schemes (future Notion / Slack adapters)
- * the function returns the DocId string itself — adapter-specific
- * deep-link logic ships with each adapter and recall does not encode
- * URL conventions inline.
+ * Compute a display URL for a `DocId` via the adapter's
+ * `formatDisplayUrl` seam (ADR-002 §SourceConnector).
  *
- * Encoding semantics:
- *   - Vault name (authority) and resource (vault-relative path) are
- *     both passed through `encodeURIComponent` so spaces become `%20`,
- *     Unicode is percent-encoded, and forward slashes in the resource
- *     are encoded too. This mirrors Obsidian's URI handler expectations
- *     and matches the v1 `obsidianUrl()` behavior (`displayUrl` chain
- *     in `src/server.ts`, deferred to `SourceConnector.formatDisplayUrl`).
+ * This thin wrapper preserves the seam: adapter-specific URL literals
+ * live in the source adapter (the single licensed site per the I-5b
+ * lint rule). A future Notion / Slack adapter publishes its own
+ * deep-link convention; recall does not encode any URL scheme inline.
+ *
+ * Contract: `formatDisplayUrl` is OPTIONAL on the `SourceConnector`
+ * interface (some adapters may not have deep links). When the adapter
+ * omits the method or returns `null`, this helper falls back to the
+ * DocId string itself so callers always get a non-null `display_url`
+ * on the citation packet.
  */
-export function displayUrlFor(docId: DocId): string {
-  const parts = decomposeDocId(docId);
-  if (parts.scheme === "obsidian-fs") {
-    const vaultParam = encodeURIComponent(parts.authority);
-    const fileParam = encodeURIComponent(parts.resource);
-    return `obsidian://open?vault=${vaultParam}&file=${fileParam}`;
-  }
-  return docId;
+export function displayUrlFor(
+  docId: DocId,
+  source: { formatDisplayUrl?: (id: DocId) => string | null },
+): string {
+  return source.formatDisplayUrl?.(docId) ?? docId;
 }
