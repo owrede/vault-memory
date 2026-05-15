@@ -84,8 +84,12 @@ describe("joinVaultPathPosix (comparison-bound, forward-slash)", () => {
     expect(joined).toBe("_memory/sub/foo.md");
   });
 
-  it("handles a single segment", () => {
-    expect(joinVaultPathPosix("_memory/")).toBe("_memory");
+  it("handles a single segment (path.posix.join preserves trailing slash)", () => {
+    // `path.posix.join('_memory/')` returns `'_memory/'` — single-segment
+    // join preserves the trailing slash (Node behavior; see
+    // https://nodejs.org/api/path.html#pathposixjoinpaths). The trailing
+    // slash matters for `findSinkContaining` prefix matching, so we keep it.
+    expect(joinVaultPathPosix("_memory/")).toBe("_memory/");
   });
 
   it("collapses repeated slashes", () => {
