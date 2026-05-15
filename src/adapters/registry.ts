@@ -102,6 +102,42 @@ export function formatDocId(scheme: string, authority: string, resource: string)
 }
 
 /**
+ * Split a canonical `DocId` into its three components. Pure split —
+ * defensively re-validates via `parseDocId` so a stale brand-cast cannot
+ * leak malformed input through. Re-uses the SAME `DOC_ID_PATTERN` as
+ * `parseDocId`; there is no second regex (single source of truth per
+ * ADR-001 §I-6 canonical-serialization).
+ *
+ * The split is intentionally a pure string operation (`indexOf("://")` +
+ * `indexOf("/")`) rather than a regex capture-group, because the
+ * resource portion can contain `/`-separated segments that a single
+ * capture group would have to greedy-match — the explicit split keeps
+ * the behavior obviously correct and avoids regex-engine surprises with
+ * unicode or extreme inputs.
+ *
+ * Used by Phase 2's `MemorySinkRegistry.findSinkContaining(docId)` and
+ * by any downstream tool that needs the scheme/authority/resource parts
+ * without re-validating the DocId from scratch.
+ */
+export function decomposeDocId(docId: DocId): {
+  scheme: string;
+  authority: string;
+  resource: string;
+} {
+  // Defensive: assert canonical shape via the existing parser. Cheap
+  // (one regex test) and means a stale brand-cast cannot smuggle a
+  // malformed value through this helper.
+  parseDocId(docId);
+  const schemeEnd = docId.indexOf("://");
+  const scheme = docId.slice(0, schemeEnd);
+  const rest = docId.slice(schemeEnd + 3);
+  const authoritySlash = rest.indexOf("/");
+  const authority = rest.slice(0, authoritySlash);
+  const resource = rest.slice(authoritySlash + 1);
+  return { scheme, authority, resource };
+}
+
+/**
  * Validate and brand a `SourceHandle` — bare `<scheme>://<authority>`,
  * no resource path. Throws on malformed input.
  */

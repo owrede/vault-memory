@@ -12,7 +12,14 @@
  */
 
 import { describe, it, expect } from "vitest";
-import { AdapterRegistry, formatDocId, parseDocId, parseSourceHandle } from "./registry.js";
+import {
+  AdapterRegistry,
+  decomposeDocId,
+  formatDocId,
+  parseDocId,
+  parseSourceHandle,
+} from "./registry.js";
+import type { DocId } from "../types.js";
 import type { SourceConnector } from "./source/types.js";
 import type { DeliveryAdapter } from "./delivery/types.js";
 import type { ChangeFeed } from "./change-feed/types.js";
@@ -207,6 +214,40 @@ describe("AdapterRegistry — change feeds", () => {
     const reg = new AdapterRegistry();
     const h = parseSourceHandle("obsidian-fs://unknown");
     expect(() => reg.resolveChangeFeed(h)).toThrow(/obsidian-fs:\/\/unknown/);
+  });
+});
+
+describe("decomposeDocId", () => {
+  it("round-trips with formatDocId — split returns the original parts", () => {
+    const id = formatDocId("obsidian-fs", "atlas", "a/b/c.md");
+    expect(decomposeDocId(id)).toEqual({
+      scheme: "obsidian-fs",
+      authority: "atlas",
+      resource: "a/b/c.md",
+    });
+  });
+
+  it("preserves resource slashes verbatim (multi-segment resource)", () => {
+    const id = parseDocId("obsidian-fs://atlas-fixture/_memory/observations/foo.md");
+    expect(decomposeDocId(id)).toEqual({
+      scheme: "obsidian-fs",
+      authority: "atlas-fixture",
+      resource: "_memory/observations/foo.md",
+    });
+  });
+
+  it("captures authority up to the first / only", () => {
+    const id = parseDocId("notion-api://workspace-abc/page-123/subpage");
+    expect(decomposeDocId(id)).toEqual({
+      scheme: "notion-api",
+      authority: "workspace-abc",
+      resource: "page-123/subpage",
+    });
+  });
+
+  it("rejects a string cast to DocId that does not match the regex", () => {
+    const bogus = "garbage" as unknown as DocId;
+    expect(() => decomposeDocId(bogus)).toThrow(/Invalid DocId/);
   });
 });
 

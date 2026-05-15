@@ -31,9 +31,29 @@ const VaultConfigSchema = z.object({
   exclude_globs: z.array(z.string()).optional(),
 });
 
+// Phase 2: optional [memory] and [[memory_sinks]] blocks.
+//
+// The handle string is intentionally NOT validated against
+// MEMORY_SINK_HANDLE_PATTERN here — the brand-cast (and resulting
+// throw on malformed input) happens in `MemorySinkRegistry`. Keeping
+// the config loader free of `src/memory/*` imports preserves the
+// ADR-002 layering (config is infrastructure; memory is a domain
+// module that depends on config, not the other way around).
+const MemorySinkConfigSchema = z.object({
+  name: z.string().min(1),
+  handle: z.string().min(1),
+  contract: z.string().min(1).default("default-memory-v1"),
+});
+
+const MemoryConfigSchema = z.object({
+  default_sink: z.string().min(1).optional(),
+});
+
 const AppConfigSchema = z.object({
   server: ServerConfigSchema.optional().default({}),
   vaults: z.array(VaultConfigSchema).optional().default([]),
+  memory: MemoryConfigSchema.optional(),
+  memory_sinks: z.array(MemorySinkConfigSchema).optional().default([]),
 });
 
 const DEFAULT_CONFIG: AppConfig = {
@@ -43,6 +63,7 @@ const DEFAULT_CONFIG: AppConfig = {
     default_embedding_model: "qwen3-embedding",
   },
   vaults: [],
+  memory_sinks: [],
 };
 
 export function configPath(): string {
@@ -76,5 +97,7 @@ export async function loadConfig(path: string = configPath()): Promise<AppConfig
       ...validated.server,
     },
     vaults: validated.vaults,
+    memory: validated.memory,
+    memory_sinks: validated.memory_sinks,
   };
 }
