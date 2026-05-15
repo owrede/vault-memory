@@ -39,8 +39,10 @@ import {
   switchActiveModel,
   vacuumEmbeddings,
 } from "./indexer/index.js";
-import type { SearchHit } from "./types.js";
+import type { Document, SearchHit, WikilinkRef } from "./types.js";
 import { TOOLS } from "./tool-registry.js";
+import { AdapterRegistry, formatDocId, parseSourceHandle } from "./adapters/registry.js";
+import { ObsidianFsSource } from "./adapters/source/obsidian-fs/index.js";
 
 const VERSION = "1.0.0";
 
@@ -214,6 +216,18 @@ export async function serve(): Promise<void> {
   const manager = new VaultManager();
   await manager.loadAll(config.vaults);
 
+  // ─── Adapter registry (Phase 1, plan 01-03) ───────────────────────────────
+  //
+  // One ObsidianFsSource per vault; registered under the canonical handle
+  // `obsidian-fs://<vault-name>`. The read_note handler resolves the source
+  // by handle on each call. Plan 01-04 will register an ObsidianFsDelivery
+  // against the same handles for the write seam.
+  const adapterRegistry = new AdapterRegistry();
+  for (const vault of manager.list()) {
+    const source = new ObsidianFsSource(vault.config);
+    adapterRegistry.registerSource(source.handle, source);
+  }
+
   const ollama = new OllamaClient({
     endpoint: config.server.ollama_endpoint,
   });
@@ -332,7 +346,7 @@ export async function serve(): Promise<void> {
 
         case "read_note": {
           const parsed = ReadNoteArgs.parse(args ?? {});
-          return ok(handleReadNote(manager, parsed.vault, parsed.path));
+          return ok(await handleReadNote(adapterRegistry, parsed.vault, parsed.path));
         }
 
         case "search_semantic": {
@@ -604,21 +618,74 @@ function handleListVaults(manager: VaultManager): object {
   return { vaults, count: vaults.length };
 }
 
-function handleReadNote(manager: VaultManager, vaultName: string, path: string): object {
-  const vault = manager.require(vaultName);
-  const note = vault.db.notes.getByPath(path);
-  if (!note) {
+/**
+ * Read a note via the v2 SourceConnector seam (Plan 01-03 Task 06).
+ *
+ * The v1 wire shape `{path, title, content, frontmatter, hash, mtime,
+ * word_count}` is preserved byte-for-byte; only the INTERNAL data path
+ * changed: the handler now resolves the source by handle, mints a DocId,
+ * and reads a Document via `source.readDocument(id)`. The mapping back
+ * to the v1 shape happens at this boundary.
+ *
+ * Side effect: reads the file fresh from disk on every call (where v1
+ * served the DB-cached row). In a normally-running server the catch-up
+ * scan + watcher keep DB ≈ disk, so behavior is observationally
+ * identical; the path goes through the seam either way.
+ */
+async function handleReadNote(
+  registry: AdapterRegistry,
+  vaultName: string,
+  path: string,
+): Promise<object> {
+  const handle = parseSourceHandle(`obsidian-fs://${vaultName}`);
+  let source;
+  try {
+    source = registry.resolveSource(handle);
+  } catch {
+    // Preserve the v1 error message shape for unknown-vault cases.
     throw new Error(`Note not found: ${vaultName}/${path}`);
   }
-  return {
-    path: note.path,
-    title: note.title,
-    content: note.content,
-    frontmatter: note.frontmatter ? JSON.parse(note.frontmatter) : null,
-    hash: note.hash,
-    mtime: note.mtime,
-    word_count: note.word_count,
+  const id = formatDocId("obsidian-fs", vaultName, path);
+  let doc: Document;
+  try {
+    doc = await source.readDocument(id);
+  } catch {
+    throw new Error(`Note not found: ${vaultName}/${path}`);
+  }
+
+  // Map Document → v1 read_note response shape.
+  // - `frontmatter` is `doc.properties` minus the adapter-injected
+  //   `wikilinks: WikilinkRef[]` (D-05). The v1 shape never carried the
+  //   wikilinks key; preserve that.
+  const { wikilinks: _wikilinks, ...frontmatterOnly } = doc.properties as Record<
+    string,
+    unknown
+  > & {
+    wikilinks?: WikilinkRef[];
   };
+  const hasFrontmatter = Object.keys(frontmatterOnly).length > 0;
+  // Single-paragraph BodyShape="flat-text" — body lives in blocks[0].text.
+  const content = doc.blocks[0]?.kind === "paragraph" ? doc.blocks[0].text : "";
+
+  return {
+    path,
+    title: doc.title,
+    content,
+    frontmatter: hasFrontmatter ? frontmatterOnly : null,
+    hash: doc.hash,
+    mtime: doc.mtime,
+    word_count: countWords(content),
+  };
+}
+
+/**
+ * Mirror of the parser's countWords helper (currently
+ * src/adapters/source/obsidian-fs/parser.ts) — duplicated here as a
+ * single-call inline helper rather than widening that module's public API.
+ */
+function countWords(content: string): number {
+  if (content.length === 0) return 0;
+  return content.split(/\s+/).filter((s) => s.length > 0).length;
 }
 
 /**

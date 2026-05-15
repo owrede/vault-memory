@@ -6,7 +6,7 @@ import matter from "gray-matter";
 import { Database } from "../db/index.js";
 import type { Vault } from "../vault/index.js";
 import { updateFrontmatter } from "./update.js";
-import { sha256 } from "../reader/hash.js";
+import { sha256 } from "../adapters/source/obsidian-fs/hash.js";
 
 interface TestCtx {
   vault: Vault;

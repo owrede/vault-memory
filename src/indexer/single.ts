@@ -11,7 +11,7 @@
 import * as path from "node:path";
 import type { Vault } from "../vault/index.js";
 import type { OllamaClient } from "../ollama/index.js";
-import { parseNote } from "../reader/index.js";
+import { parseNote } from "../adapters/source/obsidian-fs/parser.js";
 import { chunkNote } from "../chunker/index.js";
 import { extractAliases, resolveWikilinkTarget } from "./indexer.js";
 import type { ParsedWikilink } from "../types.js";

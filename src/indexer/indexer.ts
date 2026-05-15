@@ -9,7 +9,8 @@
  */
 
 import { randomUUID } from "node:crypto";
-import { scanVault, parseNote } from "../reader/index.js";
+import { scanVault } from "../adapters/source/obsidian-fs/scanner.js";
+import { parseNote } from "../adapters/source/obsidian-fs/parser.js";
 import { chunkNote } from "../chunker/index.js";
 import { OllamaClient } from "../ollama/index.js";
 import type { Vault } from "../vault/index.js";

@@ -1,4 +1,4 @@
-import type { ParsedWikilink } from "../types.js";
+import type { ParsedWikilink } from "../../../types.js";
 
 /**
  * Wikilink extraction.

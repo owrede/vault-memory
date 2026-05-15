@@ -13,7 +13,8 @@
  * Embeddings are only generated for the notes that actually changed.
  */
 
-import { scanVault, parseNote } from "../reader/index.js";
+import { scanVault } from "../adapters/source/obsidian-fs/scanner.js";
+import { parseNote } from "../adapters/source/obsidian-fs/parser.js";
 import { indexNote, removeNote } from "./single.js";
 import type { Vault } from "../vault/index.js";
 import type { OllamaClient } from "../ollama/index.js";

@@ -12,7 +12,7 @@ import { promises as fs } from "node:fs";
 import { basename } from "node:path";
 import matter from "gray-matter";
 import type { Vault } from "../vault/index.js";
-import { computeNoteHash, computeBodyHash } from "../reader/index.js";
+import { computeNoteHash, computeBodyHash } from "../adapters/source/obsidian-fs/hash.js";
 import { extractAliases } from "../indexer/index.js";
 import { atomicWriteFile, safeJoinInsideVault } from "./fs.js";
 
