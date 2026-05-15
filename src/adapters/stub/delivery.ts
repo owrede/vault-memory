@@ -24,8 +24,11 @@ import type {
   UpdateResult,
   DeleteResult,
 } from "../delivery/types.js";
-import type { Document, DocId, SourceHandle } from "../../types.js";
+import type { Document, DocId, MemorySink, SourceHandle } from "../../types.js";
 import { parseSourceHandle } from "../registry.js";
+import { validateAgentWrite } from "../../memory/validator.js";
+import { getContract } from "../../memory/contract/index.js";
+import type { MemorySinkRegistry } from "../../memory/registry.js";
 
 function fnv1a(s: string): string {
   // Tiny deterministic hash so write/update results carry a stable
@@ -57,9 +60,52 @@ export class StubDelivery implements DeliveryAdapter {
     naming: "caller-provided",
   };
 
-  constructor(private readonly docs: Map<DocId, Document>) {}
+  /**
+   * @param docs Shared `Map<DocId, Document>` backing this delivery.
+   * @param memorySinkRegistry Optional Phase 2 sink registry. When supplied,
+   *  the adapter runs Guards A/B at the entry of `write` / `update` /
+   *  `delete` for conformance parity with `ObsidianFsDelivery`. Sentinel
+   *  checks are filesystem-specific and omitted here by design.
+   *  When omitted (Phase 1 fixture tests + back-compat), the validator
+   *  is silently skipped.
+   */
+  constructor(
+    private readonly docs: Map<DocId, Document>,
+    private readonly memorySinkRegistry?: MemorySinkRegistry,
+  ) {}
 
-  async write(id: DocId, doc: Partial<Document>, _opts?: WriteOptions): Promise<WriteResult> {
+  /** Resolve `opts.sink` (if any) or path-based enclosure; null on miss. */
+  private resolveTargetSink(id: DocId, opts?: WriteOptions): MemorySink | null {
+    const registry = this.memorySinkRegistry;
+    if (!registry) return null;
+    if (opts?.sink !== undefined) {
+      try {
+        return registry.resolveMemorySink(opts.sink);
+      } catch {
+        // Fall through to path-based lookup.
+      }
+    }
+    return registry.findSinkContaining(id);
+  }
+
+  /**
+   * Run Guards A/B for a write or update. Returns the conflict to
+   * short-circuit on, or `null` to proceed. No sentinel check (no FS).
+   */
+  private preflight(
+    id: DocId,
+    doc: Partial<Document>,
+    opts?: WriteOptions,
+  ): WriteResult | null {
+    if (!this.memorySinkRegistry) return null;
+    const sink = this.resolveTargetSink(id, opts);
+    const contract = sink ? getContract(sink.contractName) : null;
+    return validateAgentWrite(id, doc, sink, contract);
+  }
+
+  async write(id: DocId, doc: Partial<Document>, opts?: WriteOptions): Promise<WriteResult> {
+    const guard = this.preflight(id, doc, opts);
+    if (guard) return guard;
     // hashProtected="none" ⇒ expectedHash is ignored by contract. The
     // conformance test gates this assertion on the capability descriptor.
     const created = !this.docs.has(id);
@@ -78,7 +124,9 @@ export class StubDelivery implements DeliveryAdapter {
     return { ok: true, doc_id: id, newHash: merged.hash, created };
   }
 
-  async update(id: DocId, patch: Partial<Document>, _opts?: WriteOptions): Promise<UpdateResult> {
+  async update(id: DocId, patch: Partial<Document>, opts?: WriteOptions): Promise<UpdateResult> {
+    const guard = this.preflight(id, patch, opts);
+    if (guard) return guard;
     const existing = this.docs.get(id);
     if (!existing) {
       return { ok: false, reason: "not_found", message: `Document not found: ${id}` };
@@ -97,6 +145,23 @@ export class StubDelivery implements DeliveryAdapter {
   }
 
   async delete(id: DocId, _opts?: WriteOptions): Promise<DeleteResult> {
+    // Hard-deletion of memory documents is forbidden in v2.0.0
+    // (parity with ObsidianFsDelivery; see Plan 02-03 RESEARCH Pitfall 5).
+    if (this.memorySinkRegistry) {
+      const enclosing = this.memorySinkRegistry.findSinkContaining(id);
+      if (enclosing !== null) {
+        return {
+          ok: false,
+          reason: "sink_write_blocked",
+          sinkName: enclosing.name,
+          message:
+            `Hard deletion of MemorySink "${enclosing.name}" documents is ` +
+            `not permitted in v2.0.0.`,
+          suggestion:
+            "Use supersede to retire memory documents. Hard deletion is not yet supported in v2.0.0.",
+        };
+      }
+    }
     const existed = this.docs.delete(id);
     if (!existed) {
       return { ok: false, reason: "not_found", message: `Document not found: ${id}` };
