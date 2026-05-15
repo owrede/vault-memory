@@ -189,3 +189,209 @@ describe("yaml@2.9.x and zod@4.x runtime availability", () => {
     expect(typeof zod.z).toBe("object");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Gap-closure tests for WR-01 (items.type), WR-02 (allowed-with-non-string-type),
+// and WR-03 (unsupported when-expressions). See 02-12-PLAN.md.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("WR-01 / WR-02 / WR-03 — loader fail-closed semantics", () => {
+  let tmpVault: string;
+
+  beforeEach(async () => {
+    tmpVault = await mkdtemp(join(tmpdir(), "vm-contract-wr-"));
+    __clearContractCache();
+  });
+
+  async function seedContract(filename: string, body: string): Promise<string> {
+    const dir = join(tmpVault, "_contracts", "memory");
+    await mkdir(dir, { recursive: true });
+    const path = join(dir, filename);
+    await writeFile(path, body, "utf-8");
+    return path;
+  }
+
+  // ───── WR-01 ─────
+
+  it("WR-01: items.type:string array accepts string arrays (positive control)", async () => {
+    await seedContract(
+      "wr01-string.yaml",
+      [
+        "name: wr01-string",
+        "required_properties:",
+        "  tags: { type: array, items: { type: string } }",
+        "naming:",
+        "  strategy: caller-provided",
+      ].join("\n"),
+    );
+    const c = await loadContractFromDisk("wr01-string", tmpVault);
+    expect(c.propertiesSchema.safeParse({ tags: ["a", "b"] }).success).toBe(true);
+  });
+
+  it("WR-01: items.type:number array accepts number arrays and rejects string arrays", async () => {
+    await seedContract(
+      "wr01-number.yaml",
+      [
+        "name: wr01-number",
+        "required_properties:",
+        "  scores: { type: array, items: { type: number } }",
+        "naming:",
+        "  strategy: caller-provided",
+      ].join("\n"),
+    );
+    const c = await loadContractFromDisk("wr01-number", tmpVault);
+    expect(c.propertiesSchema.safeParse({ scores: [1, 2, 3] }).success).toBe(true);
+    expect(c.propertiesSchema.safeParse({ scores: ["a", "b"] }).success).toBe(false);
+  });
+
+  it("WR-01: array with no items declared defaults to string arrays (current behavior preserved)", async () => {
+    await seedContract(
+      "wr01-default.yaml",
+      [
+        "name: wr01-default",
+        "required_properties:",
+        "  tags: { type: array }",
+        "naming:",
+        "  strategy: caller-provided",
+      ].join("\n"),
+    );
+    const c = await loadContractFromDisk("wr01-default", tmpVault);
+    expect(c.propertiesSchema.safeParse({ tags: ["a", "b"] }).success).toBe(true);
+    expect(c.propertiesSchema.safeParse({ tags: [1, 2] }).success).toBe(false);
+  });
+
+  it("WR-01: items.type:date is rejected at load with MemoryContractInvalidError", async () => {
+    await seedContract(
+      "wr01-bad.yaml",
+      [
+        "name: wr01-bad",
+        "required_properties:",
+        "  dates: { type: array, items: { type: date } }",
+        "naming:",
+        "  strategy: caller-provided",
+      ].join("\n"),
+    );
+    await expect(loadContractFromDisk("wr01-bad", tmpVault)).rejects.toBeInstanceOf(
+      MemoryContractInvalidError,
+    );
+    await expect(loadContractFromDisk("wr01-bad", tmpVault)).rejects.toThrow(/dates/);
+    await expect(loadContractFromDisk("wr01-bad", tmpVault)).rejects.toThrow(/date/);
+  });
+
+  // ───── WR-02 ─────
+
+  it("WR-02: type:string + allowed continues to produce a string enum (positive control)", async () => {
+    await seedContract(
+      "wr02-string.yaml",
+      [
+        "name: wr02-string",
+        "required_properties:",
+        "  mode: { type: string, allowed: [a, b] }",
+        "naming:",
+        "  strategy: caller-provided",
+      ].join("\n"),
+    );
+    const c = await loadContractFromDisk("wr02-string", tmpVault);
+    expect(c.propertiesSchema.safeParse({ mode: "a" }).success).toBe(true);
+    expect(c.propertiesSchema.safeParse({ mode: "c" }).success).toBe(false);
+  });
+
+  it("WR-02: type:number + allowed is rejected at load with MemoryContractInvalidError naming the field", async () => {
+    await seedContract(
+      "wr02-bad.yaml",
+      [
+        "name: wr02-bad",
+        "required_properties:",
+        "  amount: { type: number, allowed: ['1', '2'] }",
+        "naming:",
+        "  strategy: caller-provided",
+      ].join("\n"),
+    );
+    await expect(loadContractFromDisk("wr02-bad", tmpVault)).rejects.toBeInstanceOf(
+      MemoryContractInvalidError,
+    );
+    await expect(loadContractFromDisk("wr02-bad", tmpVault)).rejects.toThrow(/amount/);
+    await expect(loadContractFromDisk("wr02-bad", tmpVault)).rejects.toThrow(/number/);
+    await expect(loadContractFromDisk("wr02-bad", tmpVault)).rejects.toThrow(/string-only/);
+  });
+
+  // ───── WR-03 ─────
+
+  it("WR-03: when: \"status == 'superseded'\" continues to parse (positive control)", async () => {
+    await seedContract(
+      "wr03-good.yaml",
+      [
+        "name: wr03-good",
+        "required_properties:",
+        "  status: { type: string }",
+        "  superseded_by: { type: string, nullable: true }",
+        "naming:",
+        "  strategy: caller-provided",
+        "cross_field_rules:",
+        "  - when: \"status == 'superseded'\"",
+        "    require: \"superseded_by\"",
+      ].join("\n"),
+    );
+    await expect(loadContractFromDisk("wr03-good", tmpVault)).resolves.toBeDefined();
+  });
+
+  it("WR-03: when with single '=' operator is rejected at load", async () => {
+    await seedContract(
+      "wr03-single-eq.yaml",
+      [
+        "name: wr03-single-eq",
+        "required_properties:",
+        "  status: { type: string }",
+        "naming:",
+        "  strategy: caller-provided",
+        "cross_field_rules:",
+        "  - when: \"status = 'superseded'\"",
+        "    require: \"status\"",
+      ].join("\n"),
+    );
+    await expect(loadContractFromDisk("wr03-single-eq", tmpVault)).rejects.toBeInstanceOf(
+      MemoryContractInvalidError,
+    );
+    await expect(loadContractFromDisk("wr03-single-eq", tmpVault)).rejects.toThrow(
+      /when/,
+    );
+  });
+
+  it("WR-03: when with '!=' operator is rejected at load", async () => {
+    await seedContract(
+      "wr03-neq.yaml",
+      [
+        "name: wr03-neq",
+        "required_properties:",
+        "  status: { type: string }",
+        "naming:",
+        "  strategy: caller-provided",
+        "cross_field_rules:",
+        "  - when: \"status != 'active'\"",
+        "    require: \"status\"",
+      ].join("\n"),
+    );
+    await expect(loadContractFromDisk("wr03-neq", tmpVault)).rejects.toBeInstanceOf(
+      MemoryContractInvalidError,
+    );
+  });
+
+  it("WR-03: when with double-quoted value is rejected at load", async () => {
+    await seedContract(
+      "wr03-dq.yaml",
+      [
+        "name: wr03-dq",
+        "required_properties:",
+        "  status: { type: string }",
+        "naming:",
+        "  strategy: caller-provided",
+        "cross_field_rules:",
+        '  - when: "status == \\"superseded\\""',
+        "    require: \"status\"",
+      ].join("\n"),
+    );
+    await expect(loadContractFromDisk("wr03-dq", tmpVault)).rejects.toBeInstanceOf(
+      MemoryContractInvalidError,
+    );
+  });
+});
