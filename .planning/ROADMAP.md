@@ -83,7 +83,16 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
   3. `MemorySink` handle parser (`obsidian-fs://_memory/`) is the only resolver of sink-as-path; `.memory-sink` sentinel file prevents resolving against folders that lack it
   4. List-style memory operations (`memory_stats`, `list_sinks`) promoted to MCP Resources, cutting the v2.0.0 tool surface count; `audit_log` distinctly flags memory-sink writes
   5. ADR-004 amendment (folder-default vs separate-vault) committed before implementation; eval fixture includes a 20-document `_memory/` subset with diverse provenance labels
-**Plans**: TBD
+**Plans**: 9 plans (after revision: 02-03 was split into 02-03 + 02-03b to keep validator chokepoint focused and isolate v1-entry-point guards / bootstrap wiring)
+- [ ] 02-01-PLAN.md — ADR-004 amendment + MEMORY_CONTRACT alignment (MEM-12, doc-only) — wave 0
+- [ ] 02-02-PLAN.md — MemorySink runtime substrate (handle parser, registry, contract loader, sentinel, `decomposeDocId`, `pathInSink`/`joinVaultPath` helpers) (MEM-01, MEM-05, MEM-06) — wave 0
+- [ ] 02-03-PLAN.md — Centralized provenance validator at the delivery seam + conformance cases 11–18 / sentinel cases 19–21 (MEM-05, MEM-06) — wave 1
+- [ ] 02-03b-PLAN.md — v1 entry-point Guards on `write_note`/`update_frontmatter`/`delete_note` + server bootstrap wiring (MemorySinkRegistry instantiation, ordering before catchup) + MEM-11 targeted MCP integration test (MEM-07, MEM-11) — wave 1
+- [ ] 02-04-PLAN.md — record_observation + supersede MCP tools (MEM-02, MEM-04) — wave 2
+- [ ] 02-05-PLAN.md — recall MCP tool + Phase-3-shaped citation packet (MEM-03) — wave 3
+- [ ] 02-06-PLAN.md — audit_log memory-sink discriminator + memory_stats/list_sinks Resources (MEM-08, MEM-09) — wave 4
+- [ ] 02-07-PLAN.md — 20-doc fixture extension + malformed-memory tree + smoke test (MEM-10) — wave 5
+- [ ] 02-08-PLAN.md — Phase 2 gate: full verification + traceability + CHANGELOG/STATE (final checkpoint) — wave 5
 
 ### Phase 3: Bundles + authority/staleness
 **Goal**: Deliver document-tree retrieval (bundles, outlines, sections, dossiers) with citation packets on every result, plus authority/staleness ranking signals — proven source-neutral against a stub adapter
@@ -194,7 +203,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 →
 |-------|----------------|--------|-----------|
 | 0. Foundation & decisions | 0/TBD | Not started | - |
 | 1. Adapter extraction & tech-debt-up | 0/TBD | Not started | - |
-| 2. Memory namespace & provenance contract | 0/TBD | Not started | - |
+| 2. Memory namespace & provenance contract | 0/9 | Not started | - |
 | 3. Bundles + authority/staleness | 0/TBD | Not started | - |
 | 4. Graph-as-retrieval | 0/TBD | Not started | - |
 | 5. Compiled brief layer | 0/TBD | Not started | - |
