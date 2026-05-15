@@ -12,11 +12,9 @@
  * Phase 3 will add: write_note, update_frontmatter, audit_log
  */
 
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { CallToolRequestSchema, ListToolsRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import type BetterSqlite3 from "better-sqlite3";
-import { z } from "zod";
 import { loadConfig } from "./config/index.js";
 import { VaultManager } from "./vault/index.js";
 import type { Vault } from "./vault/index.js";
@@ -32,7 +30,11 @@ import { queryFrontmatter, updateFrontmatter } from "./frontmatter/index.js";
 import { suggestFrontmatter } from "./schema/index.js";
 import { ObsidianFsDelivery } from "./adapters/delivery/obsidian-fs/index.js";
 import { getAuditLog, getIndexRuns } from "./audit/index.js";
-import { SuppressionSet, VaultWatcher } from "./watcher/index.js";
+import {
+  ObsidianFsChangeFeed,
+  SuppressionSet,
+  VaultWatcher,
+} from "./adapters/change-feed/obsidian-fs/index.js";
 import {
   catchupVault,
   listModels,
@@ -41,174 +43,11 @@ import {
   vacuumEmbeddings,
 } from "./indexer/index.js";
 import type { Document, SearchHit, WikilinkRef } from "./types.js";
-import { TOOLS } from "./tool-registry.js";
+import { TOOL_SCHEMAS, TOOLS, buildToolSchema, type ToolName } from "./tool-registry.js";
 import { AdapterRegistry, formatDocId, parseSourceHandle } from "./adapters/registry.js";
 import { ObsidianFsSource } from "./adapters/source/obsidian-fs/index.js";
 
 const VERSION = "1.0.0";
-
-// ─── Tool Input Schemas ──────────────────────────────────────────────────────
-
-const ReadNoteArgs = z.object({
-  vault: z.string(),
-  path: z.string(),
-});
-
-const SearchArgs = z.object({
-  query: z.string().min(1),
-  vaults: z.array(z.string()).optional(),
-  top_k: z.number().int().positive().max(100).optional().default(10),
-  /** Glob patterns of vault-relative paths to exclude from results. Useful
-   *  for filtering self-referential notes (e.g. an eval note that lists
-   *  the same keywords it's testing) or auxiliary indices. */
-  exclude_paths: z.array(z.string()).optional(),
-});
-
-const HybridSearchArgs = SearchArgs.extend({
-  rrf_k: z.number().int().positive().max(1000).optional().default(60),
-  /** When true AND a `reranker_model` is configured, runs a cross-encoder
-   *  rerank pass over the top candidates. Silently ignored otherwise. */
-  rerank: z.boolean().optional().default(false),
-});
-
-const VaultPathArgs = z.object({
-  vault: z.string(),
-  path: z.string(),
-});
-
-const ForwardLinksArgs = VaultPathArgs.extend({
-  include_broken: z.boolean().optional().default(true),
-});
-
-const FindBrokenLinksArgs = z.object({
-  vault: z.string(),
-});
-
-const PredicateSchema: z.ZodType<unknown> = z.union([
-  z.string(),
-  z.number(),
-  z.boolean(),
-  z.null(),
-  z.object({ $in: z.array(z.union([z.string(), z.number(), z.boolean(), z.null()])) }),
-  z.object({ $exists: z.boolean() }),
-  z.object({ $contains: z.union([z.string(), z.number(), z.boolean(), z.null()]) }),
-]);
-
-const QueryFrontmatterArgs = z.object({
-  vault: z.string(),
-  where: z.record(z.string(), PredicateSchema),
-  limit: z.number().int().positive().max(1000).optional().default(100),
-});
-
-// ─── Phase 3 input schemas ──────────────────────────────────────────────────
-
-const WriteNoteArgs = z.object({
-  vault: z.string(),
-  path: z.string(),
-  content: z.string(),
-  frontmatter: z.record(z.string(), z.unknown()).nullable().optional(),
-  expected_hash: z.string().optional(),
-  client_id: z.string().optional(),
-});
-
-const UpdateFrontmatterArgs = z.object({
-  vault: z.string(),
-  path: z.string(),
-  merge: z.record(z.string(), z.unknown()),
-  expected_hash: z.string().optional(),
-  client_id: z.string().optional(),
-});
-
-const DeleteNoteArgs = z.object({
-  vault: z.string(),
-  path: z.string(),
-  expected_hash: z.string(),
-  client_id: z.string().optional(),
-});
-
-const AuditLogArgs = z.object({
-  vault: z.string(),
-  note_path: z.string().optional(),
-  op: z.enum(["create", "update", "delete"]).optional(),
-  since: z.number().int().nonnegative().optional(),
-  limit: z.number().int().positive().max(1000).optional().default(50),
-});
-
-const IndexRunsArgs = z.object({
-  vault: z.string(),
-  limit: z.number().int().positive().max(200).optional().default(20),
-});
-
-// ─── Phase 7c — shadow-indexing / model switch ──────────────────────────────
-
-const ListModelsArgs = z.object({
-  vault: z.string(),
-});
-
-const StartShadowIndexArgs = z.object({
-  vault: z.string(),
-  model: z.string().min(1),
-  batch_size: z.number().int().positive().max(256).optional(),
-});
-
-const SwitchActiveModelArgs = z.object({
-  vault: z.string(),
-  model_name: z.string().min(1),
-});
-
-const VacuumEmbeddingsArgs = z.object({
-  vault: z.string(),
-});
-
-// ─── v0.9.0 — Agent-Compatibility & Self-Orientation ────────────────────────
-//
-// `search` / `fetch` follow the OB1 / ChatGPT-Connector / Claude.ai
-// Deep-Research tool spec: a flat shape with opaque `id`s. The `id` here
-// encodes `<vault>:<notePath>` so `fetch(id)` can deterministically resolve
-// back to the underlying note without round-tripping a separate vault arg.
-
-const SearchCompatArgs = z.object({
-  query: z.string().min(1),
-  limit: z.number().int().positive().max(50).optional().default(10),
-});
-
-const FetchCompatArgs = z.object({
-  id: z.string().min(1),
-});
-
-const VaultStatsArgs = z.object({
-  vault: z.string().optional(),
-});
-
-const RecentNotesArgs = z.object({
-  vault: z.string().optional(),
-  limit: z.number().int().positive().max(200).optional().default(20),
-  since: z.number().int().nonnegative().optional(),
-});
-
-// ─── v0.10.0 — suggest_frontmatter ───────────────────────────────────────────
-//
-// Two input modes:
-//   1. Existing note: {vault, path} — tool reads the note from DB, runs
-//      folder + neighbor + (optional) content inference.
-//   2. Draft note: {vault, content, folder_hint?} — tool uses folder_hint
-//      (or extracts from title) for folder-inference and the parsed
-//      content for heuristics. Useful for /import-person, /log-fact-style
-//      flows where the note isn't written yet.
-//
-// At least one of `path` or `content` must be present.
-
-const SuggestFrontmatterArgs = z
-  .object({
-    vault: z.string(),
-    path: z.string().optional(),
-    content: z.string().optional(),
-    title: z.string().optional(),
-    folder_hint: z.string().optional(),
-  })
-  .refine((v) => v.path !== undefined || v.content !== undefined, {
-    message: "suggest_frontmatter requires either `path` or `content`",
-  });
 
 // ─── Server bootstrap ────────────────────────────────────────────────────────
 
@@ -234,14 +73,37 @@ export async function serve(): Promise<void> {
   const adapterRegistry = new AdapterRegistry();
   // `serverRef` is assigned below; the closure captures the variable so the
   // delivery can see the post-init clientInfo without a re-registration.
-  let serverRef: Server | undefined;
-  const getClientId = (): string => serverRef?.getClientVersion()?.name ?? "unknown";
+  let serverRef: McpServer | undefined;
+  // McpServer wraps an internal low-level `Server`; `getClientVersion()` is
+  // on the inner instance.
+  const getClientId = (): string => serverRef?.server.getClientVersion()?.name ?? "unknown";
+  // One SuppressionSet shared by all watchers + the per-vault change-feed.
+  // Paths are vault-relative; the chance of a collision across vaults is
+  // negligible and a false positive just means one event is dropped —
+  // harmless. (Pitfall 6 cross-adapter contract: ObsidianFsDelivery marks
+  // a path on this set BEFORE atomicWriteFile; the change-feed +
+  // VaultWatcher consume it on the corresponding chokidar event.)
+  const suppression = new SuppressionSet({ ttlMs: 2000 });
+  const changeFeeds = new Map<string, ObsidianFsChangeFeed>();
   for (const vault of manager.list()) {
     const source = new ObsidianFsSource(vault.config);
     adapterRegistry.registerSource(source.handle, source);
 
     const delivery = new ObsidianFsDelivery(vault, getClientId);
     adapterRegistry.registerDelivery(delivery.handle, delivery);
+
+    // Plan 01-05 task 02: register a ChangeFeed per vault. Coexists with
+    // the v1 VaultWatcher (driven from `startCatchupAndWatchers` below)
+    // so existing live-indexing behavior is unchanged; a future plan will
+    // retire VaultWatcher in favor of an indexer subscribing through this
+    // ChangeFeed seam.
+    const changeFeed = new ObsidianFsChangeFeed({
+      vault,
+      suppression,
+      log: (m) => process.stderr.write(`[change-feed:${vault.config.name}] ${m}\n`),
+    });
+    adapterRegistry.registerChangeFeed(changeFeed.handle, changeFeed);
+    changeFeeds.set(vault.config.name, changeFeed);
   }
 
   const ollama = new OllamaClient({
@@ -278,10 +140,9 @@ export async function serve(): Promise<void> {
 
   // ─── File watchers (Phase 4) ──────────────────────────────────────────────
   //
-  // One SuppressionSet shared by all vaults (paths are vault-relative; the
-  // chance of a collision across vaults is negligible and a false positive
-  // just means one event is dropped — harmless).
-  const suppression = new SuppressionSet({ ttlMs: 2000 });
+  // The shared `suppression` set (hoisted above with the adapter-registry
+  // construction so the per-vault ChangeFeed can share it with the v1
+  // VaultWatcher) is also wired into each VaultWatcher below.
   const watchers = new Map<string, VaultWatcher>();
 
   // Codex MEDIUM-3: catch-up reconciliation can take seconds on large vaults
@@ -331,6 +192,9 @@ export async function serve(): Promise<void> {
       await w.drain();
       await w.stop();
     }
+    for (const cf of changeFeeds.values()) {
+      await cf.close();
+    }
   };
   process.on("SIGINT", () => {
     void shutdown().finally(() => process.exit(0));
@@ -339,257 +203,280 @@ export async function serve(): Promise<void> {
     void shutdown().finally(() => process.exit(0));
   });
 
-  const server = new Server(
+  const server = new McpServer(
     { name: "vault-memory", version: VERSION },
     { capabilities: { tools: {} } },
   );
-  // Make the server visible to the lazy clientId closure (see bootstrap).
+  // Make the McpServer visible to the lazy clientId closure (see bootstrap).
   // After `server.connect(transport)` and the MCP initialize handshake,
-  // `server.getClientVersion()` returns the client's `Implementation`
+  // `server.server.getClientVersion()` returns the client's `Implementation`
   // object — the `name` field is what we use for audit-log attribution.
   serverRef = server;
 
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: TOOLS as unknown as Array<{
-      name: string;
-      description: string;
-      inputSchema: Record<string, unknown>;
-    }>,
-  }));
+  // ─── registerTool × 23 (SDK 1.29, plan 01-05 task 07) ─────────────────────
+  //
+  // Each handler receives ALREADY-VALIDATED args (the SDK runs the Zod
+  // schema before invoking us). We layer a try/catch to convert thrown
+  // errors into MCP error responses, preserving the v1 error shape.
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name, arguments: args } = request.params;
+  type Handler = (args: unknown) => Promise<object>;
 
-    try {
-      switch (name) {
-        case "list_vaults":
-          return ok(handleListVaults(manager));
+  const handlers: Record<ToolName, Handler> = {
+    list_vaults: async () => handleListVaults(manager),
+    read_note: async (a) => {
+      const p = a as { vault: string; path: string };
+      return handleReadNote(adapterRegistry, p.vault, p.path);
+    },
+    search_semantic: async (a) => {
+      const p = a as {
+        query: string;
+        vaults?: string[];
+        top_k: number;
+        exclude_paths?: string[];
+      };
+      return handleSearchSemantic(
+        manager,
+        ollama,
+        defaultModel,
+        activeVault,
+        p.query,
+        p.vaults,
+        p.top_k,
+        p.exclude_paths,
+      );
+    },
+    search_text: async (a) => {
+      const p = a as {
+        query: string;
+        vaults?: string[];
+        top_k: number;
+        exclude_paths?: string[];
+      };
+      return handleSearchText(manager, activeVault, p.query, p.vaults, p.top_k, p.exclude_paths);
+    },
+    search_hybrid: async (a) => {
+      const p = a as {
+        query: string;
+        vaults?: string[];
+        top_k: number;
+        rrf_k: number;
+        exclude_paths?: string[];
+        rerank: boolean;
+      };
+      return handleSearchHybrid(
+        manager,
+        ollama,
+        defaultModel,
+        activeVault,
+        p.query,
+        p.vaults,
+        p.top_k,
+        p.rrf_k,
+        p.exclude_paths,
+        p.rerank ? reranker : undefined,
+      );
+    },
+    list_backlinks: async (a) => {
+      const p = a as { vault: string; path: string };
+      const vault = manager.require(p.vault);
+      return { backlinks: listBacklinks(vault, p.path) };
+    },
+    list_forward_links: async (a) => {
+      const p = a as { vault: string; path: string; include_broken: boolean };
+      const vault = manager.require(p.vault);
+      return { links: listForwardLinks(vault, p.path, p.include_broken) };
+    },
+    find_broken_links: async (a) => {
+      const p = a as { vault: string };
+      const vault = manager.require(p.vault);
+      return { broken: findBrokenLinks(vault) };
+    },
+    query_frontmatter: async (a) => {
+      const p = a as { vault: string; where: Record<string, unknown>; limit: number };
+      const vault = manager.require(p.vault);
+      const hits = queryFrontmatter(vault, {
+        where: p.where as Record<string, never>,
+        limit: p.limit,
+      });
+      return {
+        notes: hits.map((n) => ({
+          path: n.path,
+          title: n.title,
+          frontmatter: n.frontmatter ? JSON.parse(n.frontmatter) : null,
+          mtime: n.mtime,
+        })),
+        count: hits.length,
+      };
+    },
+    write_note: async (a) => {
+      const p = a as {
+        vault: string;
+        path: string;
+        content: string;
+        frontmatter?: Record<string, unknown> | null;
+        expected_hash?: string;
+        client_id?: string;
+      };
+      const vault = manager.require(p.vault);
+      // Suppress the watcher event triggered by our own atomic rename.
+      // We call suppression BEFORE delivery.write() so the event is
+      // pre-filtered. Worst case (permission_denied / hash_mismatch):
+      // we suppress an event that never fires — harmless beyond the
+      // ~2s TTL.
+      suppression.add(p.path);
+      return handleWriteNote(adapterRegistry, vault, p);
+    },
+    update_frontmatter: async (a) => {
+      const p = a as {
+        vault: string;
+        path: string;
+        merge: Record<string, unknown>;
+        expected_hash?: string;
+        client_id?: string;
+      };
+      const vault = manager.require(p.vault);
+      return updateFrontmatter({
+        vault,
+        registry: adapterRegistry,
+        relativePath: p.path,
+        merge: p.merge,
+        ...(p.expected_hash !== undefined ? { expectedHash: p.expected_hash } : {}),
+        ...(p.client_id !== undefined ? { clientId: p.client_id } : {}),
+        onBeforeFsWrite: () => suppression.add(p.path),
+      });
+    },
+    delete_note: async (a) => {
+      const p = a as {
+        vault: string;
+        path: string;
+        expected_hash: string;
+        client_id?: string;
+      };
+      const vault = manager.require(p.vault);
+      suppression.add(p.path);
+      return handleDeleteNote(adapterRegistry, vault, p);
+    },
+    audit_log: async (a) => {
+      const p = a as {
+        vault: string;
+        note_path?: string;
+        op?: "create" | "update" | "delete";
+        since?: number;
+        limit: number;
+      };
+      const vault = manager.require(p.vault);
+      const entries = getAuditLog({
+        vault,
+        notePath: p.note_path,
+        op: p.op,
+        since: p.since,
+        limit: p.limit,
+      });
+      return { entries, count: entries.length };
+    },
+    list_models: async (a) => {
+      const p = a as { vault: string };
+      const vault = manager.require(p.vault);
+      const models = listModels(vault);
+      return { models, count: models.length };
+    },
+    start_shadow_index: async (a) => {
+      const p = a as { vault: string; model: string; batch_size?: number };
+      const vault = manager.require(p.vault);
+      return startShadowIndex({
+        vault,
+        model: p.model,
+        ollama,
+        batchSize: p.batch_size,
+        log: (m) => process.stderr.write(`[shadow:${vault.config.name}] ${m}\n`),
+      });
+    },
+    switch_active_model: async (a) => {
+      const p = a as { vault: string; model_name: string };
+      const vault = manager.require(p.vault);
+      return switchActiveModel(vault, p.model_name);
+    },
+    vacuum_embeddings: async (a) => {
+      const p = a as { vault: string };
+      const vault = manager.require(p.vault);
+      return vacuumEmbeddings(vault);
+    },
+    index_runs: async (a) => {
+      const p = a as { vault: string; limit: number };
+      const vault = manager.require(p.vault);
+      const runs = getIndexRuns({ vault, limit: p.limit });
+      return { runs, count: runs.length };
+    },
+    search: async (a) => {
+      const p = a as { query: string; limit: number };
+      return handleSearchCompat(
+        manager,
+        adapterRegistry,
+        ollama,
+        defaultModel,
+        activeVault,
+        p.query,
+        p.limit,
+        reranker,
+      );
+    },
+    fetch: async (a) => {
+      const p = a as { id: string };
+      return handleFetchCompat(manager, adapterRegistry, p.id);
+    },
+    vault_stats: async (a) => {
+      const p = a as { vault?: string };
+      return handleVaultStats(manager, p.vault);
+    },
+    recent_notes: async (a) => {
+      const p = a as { vault?: string; limit: number; since?: number };
+      return handleRecentNotes(manager, p.vault, p.limit, p.since);
+    },
+    suggest_frontmatter: async (a) => {
+      const p = a as {
+        vault: string;
+        path?: string;
+        content?: string;
+        title?: string;
+        folder_hint?: string;
+      };
+      return handleSuggestFrontmatter(manager, p);
+    },
+  };
 
-        case "read_note": {
-          const parsed = ReadNoteArgs.parse(args ?? {});
-          return ok(await handleReadNote(adapterRegistry, parsed.vault, parsed.path));
+  // Wire each TOOLS entry through registerTool. The SDK runs the Zod
+  // schema (built via buildToolSchema from tool-registry.ts) against the
+  // incoming arguments BEFORE invoking our handler — so each handler
+  // receives args matching the declared shape. Thrown errors are caught
+  // and converted to MCP error responses (isError:true) per the v1
+  // error-wrapping contract.
+  for (const tool of TOOLS) {
+    const name = tool.name as ToolName;
+    const handler = handlers[name];
+    const schema = TOOL_SCHEMAS[name];
+    // suggest_frontmatter layers an extra refinement on top of its raw
+    // shape; the SDK only accepts a raw shape here, so we register the
+    // shape directly and let the handler re-validate with the refined
+    // schema (`buildToolSchema`) for the cross-field check.
+    const needsRefinementCheck = name === "suggest_frontmatter";
+    server.registerTool(
+      name,
+      { description: tool.description, inputSchema: schema },
+      async (args: unknown) => {
+        try {
+          let validated: unknown = args;
+          if (needsRefinementCheck) {
+            validated = buildToolSchema(name).parse(args);
+          }
+          const data = await handler(validated);
+          return ok(data);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return errorResponse(message);
         }
-
-        case "search_semantic": {
-          const parsed = SearchArgs.parse(args ?? {});
-          return ok(
-            await handleSearchSemantic(
-              manager,
-              ollama,
-              defaultModel,
-              activeVault,
-              parsed.query,
-              parsed.vaults,
-              parsed.top_k,
-              parsed.exclude_paths,
-            ),
-          );
-        }
-
-        case "search_text": {
-          const parsed = SearchArgs.parse(args ?? {});
-          return ok(
-            handleSearchText(
-              manager,
-              activeVault,
-              parsed.query,
-              parsed.vaults,
-              parsed.top_k,
-              parsed.exclude_paths,
-            ),
-          );
-        }
-
-        case "search_hybrid": {
-          const parsed = HybridSearchArgs.parse(args ?? {});
-          return ok(
-            await handleSearchHybrid(
-              manager,
-              ollama,
-              defaultModel,
-              activeVault,
-              parsed.query,
-              parsed.vaults,
-              parsed.top_k,
-              parsed.rrf_k,
-              parsed.exclude_paths,
-              parsed.rerank ? reranker : undefined,
-            ),
-          );
-        }
-
-        case "list_backlinks": {
-          const parsed = VaultPathArgs.parse(args ?? {});
-          const vault = manager.require(parsed.vault);
-          return ok({ backlinks: listBacklinks(vault, parsed.path) });
-        }
-
-        case "list_forward_links": {
-          const parsed = ForwardLinksArgs.parse(args ?? {});
-          const vault = manager.require(parsed.vault);
-          return ok({
-            links: listForwardLinks(vault, parsed.path, parsed.include_broken),
-          });
-        }
-
-        case "find_broken_links": {
-          const parsed = FindBrokenLinksArgs.parse(args ?? {});
-          const vault = manager.require(parsed.vault);
-          return ok({ broken: findBrokenLinks(vault) });
-        }
-
-        case "query_frontmatter": {
-          const parsed = QueryFrontmatterArgs.parse(args ?? {});
-          const vault = manager.require(parsed.vault);
-          const hits = queryFrontmatter(vault, {
-            where: parsed.where as Record<string, never>,
-            limit: parsed.limit,
-          });
-          return ok({
-            notes: hits.map((n) => ({
-              path: n.path,
-              title: n.title,
-              frontmatter: n.frontmatter ? JSON.parse(n.frontmatter) : null,
-              mtime: n.mtime,
-            })),
-            count: hits.length,
-          });
-        }
-
-        case "write_note": {
-          const parsed = WriteNoteArgs.parse(args ?? {});
-          const vault = manager.require(parsed.vault);
-          // Suppress the watcher event triggered by our own atomic rename.
-          // We call suppression BEFORE delivery.write() so the event is
-          // pre-filtered. Worst case (permission_denied / hash_mismatch):
-          // we suppress an event that never fires — harmless beyond the
-          // ~2s TTL.
-          suppression.add(parsed.path);
-          const result = await handleWriteNote(adapterRegistry, vault, parsed);
-          return ok(result);
-        }
-
-        case "update_frontmatter": {
-          const parsed = UpdateFrontmatterArgs.parse(args ?? {});
-          const vault = manager.require(parsed.vault);
-          const result = await updateFrontmatter({
-            vault,
-            registry: adapterRegistry,
-            relativePath: parsed.path,
-            merge: parsed.merge,
-            ...(parsed.expected_hash !== undefined ? { expectedHash: parsed.expected_hash } : {}),
-            ...(parsed.client_id !== undefined ? { clientId: parsed.client_id } : {}),
-            onBeforeFsWrite: () => suppression.add(parsed.path),
-          });
-          return ok(result);
-        }
-
-        case "delete_note": {
-          const parsed = DeleteNoteArgs.parse(args ?? {});
-          const vault = manager.require(parsed.vault);
-          suppression.add(parsed.path);
-          const result = await handleDeleteNote(adapterRegistry, vault, parsed);
-          return ok(result);
-        }
-
-        case "audit_log": {
-          const parsed = AuditLogArgs.parse(args ?? {});
-          const vault = manager.require(parsed.vault);
-          const entries = getAuditLog({
-            vault,
-            notePath: parsed.note_path,
-            op: parsed.op,
-            since: parsed.since,
-            limit: parsed.limit,
-          });
-          return ok({ entries, count: entries.length });
-        }
-
-        case "list_models": {
-          const parsed = ListModelsArgs.parse(args ?? {});
-          const vault = manager.require(parsed.vault);
-          const models = listModels(vault);
-          return ok({ models, count: models.length });
-        }
-
-        case "start_shadow_index": {
-          const parsed = StartShadowIndexArgs.parse(args ?? {});
-          const vault = manager.require(parsed.vault);
-          const result = await startShadowIndex({
-            vault,
-            model: parsed.model,
-            ollama,
-            batchSize: parsed.batch_size,
-            log: (m) => process.stderr.write(`[shadow:${vault.config.name}] ${m}\n`),
-          });
-          return ok(result);
-        }
-
-        case "switch_active_model": {
-          const parsed = SwitchActiveModelArgs.parse(args ?? {});
-          const vault = manager.require(parsed.vault);
-          const result = switchActiveModel(vault, parsed.model_name);
-          return ok(result);
-        }
-
-        case "vacuum_embeddings": {
-          const parsed = VacuumEmbeddingsArgs.parse(args ?? {});
-          const vault = manager.require(parsed.vault);
-          const result = vacuumEmbeddings(vault);
-          return ok(result);
-        }
-
-        case "index_runs": {
-          const parsed = IndexRunsArgs.parse(args ?? {});
-          const vault = manager.require(parsed.vault);
-          const runs = getIndexRuns({ vault, limit: parsed.limit });
-          return ok({ runs, count: runs.length });
-        }
-
-        case "search": {
-          const parsed = SearchCompatArgs.parse(args ?? {});
-          return ok(
-            await handleSearchCompat(
-              manager,
-              adapterRegistry,
-              ollama,
-              defaultModel,
-              activeVault,
-              parsed.query,
-              parsed.limit,
-              reranker,
-            ),
-          );
-        }
-
-        case "fetch": {
-          const parsed = FetchCompatArgs.parse(args ?? {});
-          return ok(handleFetchCompat(manager, adapterRegistry, parsed.id));
-        }
-
-        case "vault_stats": {
-          const parsed = VaultStatsArgs.parse(args ?? {});
-          return ok(handleVaultStats(manager, parsed.vault));
-        }
-
-        case "recent_notes": {
-          const parsed = RecentNotesArgs.parse(args ?? {});
-          return ok(handleRecentNotes(manager, parsed.vault, parsed.limit, parsed.since));
-        }
-
-        case "suggest_frontmatter": {
-          const parsed = SuggestFrontmatterArgs.parse(args ?? {});
-          return ok(handleSuggestFrontmatter(manager, parsed));
-        }
-
-        default:
-          return errorResponse(`Unknown tool: ${name}`);
-      }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      return errorResponse(message);
-    }
-  });
+      },
+    );
+  }
 
   const transport = new StdioServerTransport();
   await server.connect(transport);

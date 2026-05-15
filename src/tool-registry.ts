@@ -1,4 +1,42 @@
 // Single literal source of truth for v1 tools/list. Imported by src/server.ts (runtime) and evals/v1-baseline/dump-tools.mjs (snapshot generator).
+//
+// Two exports:
+//
+//   - `TOOLS`: ReadonlyArray of `{name, description, inputSchema}` — the
+//     JSON Schema literal source of truth. Drives `dump-tools.mjs` and the
+//     pinned `evals/v1-baseline/tools-list.snapshot.json`. MUST stay
+//     JSON-serializable / snapshot-stable. Do not add non-serializable
+//     fields here.
+//
+//   - `TOOL_SCHEMAS`: Record<ToolName, ZodRawShape> — the Zod 4 raw
+//     shapes paired with each tool. Passed to `McpServer.registerTool`
+//     (SDK 1.29) for type-safe argument parsing + auto-derived
+//     `tools/list` publication. The shapes carry per-field `.describe()`
+//     calls so the SDK-published JSON Schema retains rich descriptions.
+//
+// Plan 01-05 design note (deviation from plan literal): the plan asked
+// for a single `TOOLS` entry carrying both `inputSchema` and `zodSchema`,
+// and for `registerTool` to receive `inputSchema: tool.inputSchema` (raw
+// JSON Schema literal). Both proved blocking under SDK 1.29:
+//
+//   1. Adding a Zod schema field onto each `TOOLS` entry breaks the
+//      snapshot generator (Zod objects are not JSON-serializable; the
+//      pinned snapshot would change shape).
+//   2. SDK 1.29 `registerTool` validates that `inputSchema` is either a
+//      Zod schema instance or a Zod raw shape (see
+//      node_modules/@modelcontextprotocol/sdk/.../mcp.js:861-872 —
+//      `getZodSchemaObject` throws on plain JSON Schema). Passing the
+//      raw JSON Schema literal is not supported by the API.
+//
+// The two-export design preserves the plan's INTENT:
+//   - Snapshot stability (TOOLS literal unchanged).
+//   - Single source of truth for v1 tools/list shape (TOOLS).
+//   - Zod 4 at handler time + Zod-driven publication via the SDK's
+//     own `toJsonSchemaCompat` (TOOL_SCHEMAS).
+//   - End-to-end description propagation verified empirically — the
+//     Pitfall 2 / SDK#1143 workaround is moot in SDK 1.29 (descriptions
+//     pass through both the top-level `description` and per-field
+//     `.describe()` chains).
 
 export const TOOLS = [
   {
@@ -411,3 +449,191 @@ export const TOOLS = [
     },
   },
 ] as const;
+
+export type ToolName = (typeof TOOLS)[number]["name"];
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TOOL_SCHEMAS — Zod 4 raw shapes per tool (passed to McpServer.registerTool)
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { z, type ZodRawShape } from "zod";
+
+/** Reusable predicate shape for `query_frontmatter.where` values. */
+const PredicateSchema: z.ZodType<unknown> = z.union([
+  z.string(),
+  z.number(),
+  z.boolean(),
+  z.null(),
+  z.object({ $in: z.array(z.union([z.string(), z.number(), z.boolean(), z.null()])) }),
+  z.object({ $exists: z.boolean() }),
+  z.object({ $contains: z.union([z.string(), z.number(), z.boolean(), z.null()]) }),
+]);
+
+/**
+ * Per-tool Zod 4 raw shapes. Keys mirror TOOLS[].name; the shape is the
+ * argument-object schema passed to `z.object({...})` (and to
+ * `McpServer.registerTool({ inputSchema: shape })` per SDK 1.29).
+ *
+ * Tools with no input arguments declare `{}` (an empty raw shape — valid
+ * per the SDK's `isZodRawShapeCompat` check).
+ */
+export const TOOL_SCHEMAS = {
+  list_vaults: {},
+
+  read_note: {
+    vault: z.string(),
+    path: z.string(),
+  },
+
+  search_semantic: {
+    query: z.string().min(1),
+    vaults: z.array(z.string()).optional(),
+    top_k: z.number().int().positive().max(100).optional().default(10),
+    exclude_paths: z.array(z.string()).optional(),
+  },
+
+  search_text: {
+    query: z.string().min(1),
+    vaults: z.array(z.string()).optional(),
+    top_k: z.number().int().positive().max(100).optional().default(10),
+    exclude_paths: z.array(z.string()).optional(),
+  },
+
+  search_hybrid: {
+    query: z.string().min(1),
+    vaults: z.array(z.string()).optional(),
+    top_k: z.number().int().positive().max(100).optional().default(10),
+    rrf_k: z.number().int().positive().max(1000).optional().default(60),
+    exclude_paths: z.array(z.string()).optional(),
+    rerank: z.boolean().optional().default(false),
+  },
+
+  list_backlinks: {
+    vault: z.string(),
+    path: z.string(),
+  },
+
+  list_forward_links: {
+    vault: z.string(),
+    path: z.string(),
+    include_broken: z.boolean().optional().default(true),
+  },
+
+  find_broken_links: {
+    vault: z.string(),
+  },
+
+  query_frontmatter: {
+    vault: z.string(),
+    where: z.record(z.string(), PredicateSchema),
+    limit: z.number().int().positive().max(1000).optional().default(100),
+  },
+
+  write_note: {
+    vault: z.string(),
+    path: z.string(),
+    content: z.string(),
+    frontmatter: z.record(z.string(), z.unknown()).nullable().optional(),
+    expected_hash: z.string().optional(),
+    client_id: z.string().optional(),
+  },
+
+  update_frontmatter: {
+    vault: z.string(),
+    path: z.string(),
+    merge: z.record(z.string(), z.unknown()),
+    expected_hash: z.string().optional(),
+    client_id: z.string().optional(),
+  },
+
+  delete_note: {
+    vault: z.string(),
+    path: z.string(),
+    expected_hash: z.string(),
+    client_id: z.string().optional(),
+  },
+
+  audit_log: {
+    vault: z.string(),
+    note_path: z.string().optional(),
+    op: z.enum(["create", "update", "delete"]).optional(),
+    since: z.number().int().nonnegative().optional(),
+    limit: z.number().int().positive().max(1000).optional().default(50),
+  },
+
+  list_models: {
+    vault: z.string(),
+  },
+
+  start_shadow_index: {
+    vault: z.string(),
+    model: z.string().min(1),
+    batch_size: z.number().int().positive().max(256).optional(),
+  },
+
+  switch_active_model: {
+    vault: z.string(),
+    model_name: z.string().min(1),
+  },
+
+  vacuum_embeddings: {
+    vault: z.string(),
+  },
+
+  index_runs: {
+    vault: z.string(),
+    limit: z.number().int().positive().max(200).optional().default(20),
+  },
+
+  search: {
+    query: z.string().min(1),
+    limit: z.number().int().positive().max(50).optional().default(10),
+  },
+
+  fetch: {
+    id: z.string().min(1),
+  },
+
+  vault_stats: {
+    vault: z.string().optional(),
+  },
+
+  recent_notes: {
+    vault: z.string().optional(),
+    limit: z.number().int().positive().max(200).optional().default(20),
+    since: z.number().int().nonnegative().optional(),
+  },
+
+  suggest_frontmatter: {
+    vault: z.string(),
+    path: z.string().optional(),
+    content: z.string().optional(),
+    title: z.string().optional(),
+    folder_hint: z.string().optional(),
+  },
+} as const satisfies Record<string, ZodRawShape>;
+
+/**
+ * Build a `z.object({...})` from a tool's raw shape. The
+ * `suggest_frontmatter` tool layers an additional cross-field refinement
+ * (path OR content required) — handled by the schema-builder map below.
+ */
+const SCHEMA_BUILDERS: Partial<Record<ToolName, () => z.ZodTypeAny>> = {
+  suggest_frontmatter: () =>
+    z
+      .object(TOOL_SCHEMAS.suggest_frontmatter)
+      .refine((v) => v.path !== undefined || v.content !== undefined, {
+        message: "suggest_frontmatter requires either `path` or `content`",
+      }),
+};
+
+/**
+ * Materialize the full Zod schema for a tool — wraps the raw shape in
+ * `z.object({...})` and layers any tool-specific refinements. Called at
+ * handler time inside `server.registerTool` for input validation.
+ */
+export function buildToolSchema(name: ToolName): z.ZodTypeAny {
+  const builder = SCHEMA_BUILDERS[name];
+  if (builder) return builder();
+  return z.object(TOOL_SCHEMAS[name] as ZodRawShape);
+}
