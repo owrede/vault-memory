@@ -7,6 +7,14 @@ import { Database } from "../../../db/index.js";
 import type { Vault } from "../../../vault/index.js";
 import { writeNote, deleteNote } from "./write.js";
 import { OutsideVaultError } from "./fs.js";
+import { ObsidianFsDelivery } from "./index.js";
+import { provisionSink, SENTINEL_FILENAME } from "./sentinel.js";
+import {
+  MemorySinkRegistry,
+  parseMemorySinkHandle,
+} from "../../../memory/index.js";
+import { formatDocId } from "../../registry.js";
+import type { MemorySink } from "../../../types.js";
 
 function makeVault(path: string, writeEnabled = true): Vault {
   const db = new Database(":memory:", "test-vault");
@@ -241,5 +249,163 @@ describe("deleteNote", () => {
     expect(d.ok).toBe(false);
     if (d.ok) return;
     expect(d.reason).toBe("hash_mismatch");
+  });
+});
+
+// ── Phase 2 sentinel cases (19–21) ────────────────────────────────────────
+//
+// Adapter-specific (NOT part of the conformance suite — sentinel is
+// filesystem-specific). Cover:
+//   - 19: sink folder with a valid .memory-sink lets a write through.
+//   - 20: sink folder LACKING .memory-sink returns sentinel_missing.
+//   - 21: sink folder absent entirely returns sentinel_missing.
+describe("ObsidianFsDelivery — sentinel guard (cases 19–21)", () => {
+  const SINK_REL_PATH = "_memory/";
+
+  function fullyValidProps(
+    overrides: Record<string, unknown> = {},
+  ): Record<string, unknown> {
+    return {
+      source: "agent",
+      confidence: "direct",
+      evidence: ["call-2026-01-01"],
+      status: "active",
+      observed_at: "2026-01-01T10:00:00Z",
+      superseded_by: null,
+      type: "fact",
+      ...overrides,
+    };
+  }
+
+  /** Build an adapter + registry with a single "test" sink. */
+  async function makeFixture(opts: {
+    provisionSentinel: boolean;
+    createFolder: boolean;
+  }) {
+    const vaultDir = await mkdtemp(join(tmpdir(), "vm-sentinel-"));
+    const db = new Database(":memory:", "sentinel-vault");
+    const vault: Vault = {
+      config: { name: "sentinel-vault", path: vaultDir, write_enabled: true },
+      db,
+      dbPath: ":memory:",
+    };
+    const registry = new MemorySinkRegistry();
+    const sinkHandle = parseMemorySinkHandle(
+      `obsidian-fs://sentinel-vault/${SINK_REL_PATH}`,
+    );
+    await registry.registerMemorySinks(
+      [
+        { name: "test", handle: sinkHandle, contract: "default-memory-v1" },
+      ],
+      {
+        resolveVaultAbsolutePath: () => vaultDir,
+        provisioner: async (sink: MemorySink, vaultAbs: string) => {
+          if (opts.provisionSentinel) {
+            // Normal sentinel write.
+            await provisionSink(sink, vaultAbs, { version: "test" });
+          } else if (opts.createFolder) {
+            // Create folder but skip sentinel.
+            await fs.mkdir(join(vaultAbs, sink.resolveToRelativePath), {
+              recursive: true,
+            });
+          }
+          // else: leave folder absent.
+        },
+      },
+    );
+    const adapter = new ObsidianFsDelivery(vault, "test-client", registry);
+    return {
+      adapter,
+      sinkHandle,
+      vaultDir,
+      cleanup: async () => {
+        db.close();
+        await rm(vaultDir, { recursive: true, force: true });
+      },
+    };
+  }
+
+  it("19. sink with valid sentinel allows write to proceed (positive)", async () => {
+    const f = await makeFixture({ provisionSentinel: true, createFolder: true });
+    try {
+      const id = formatDocId(
+        "obsidian-fs",
+        "sentinel-vault",
+        `${SINK_REL_PATH}c19.md`,
+      );
+      const res = await f.adapter.write(
+        id,
+        {
+          properties: fullyValidProps(),
+          blocks: [{ kind: "paragraph", text: "ok" }],
+        },
+        { sink: f.sinkHandle },
+      );
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      expect(res.created).toBe(true);
+
+      // File actually exists on disk.
+      const onDisk = await fs.readFile(
+        join(f.vaultDir, SINK_REL_PATH, "c19.md"),
+        "utf-8",
+      );
+      expect(onDisk).toContain("ok");
+      // Sentinel still there.
+      await fs.access(join(f.vaultDir, SINK_REL_PATH, SENTINEL_FILENAME));
+    } finally {
+      await f.cleanup();
+    }
+  });
+
+  it("20. sink folder lacking .memory-sink returns sentinel_missing", async () => {
+    const f = await makeFixture({ provisionSentinel: false, createFolder: true });
+    try {
+      const id = formatDocId(
+        "obsidian-fs",
+        "sentinel-vault",
+        `${SINK_REL_PATH}c20.md`,
+      );
+      const res = await f.adapter.write(
+        id,
+        {
+          properties: fullyValidProps(),
+          blocks: [{ kind: "paragraph", text: "x" }],
+        },
+        { sink: f.sinkHandle },
+      );
+      expect(res.ok).toBe(false);
+      if (res.ok) return;
+      expect(res.reason).toBe("sentinel_missing");
+      expect(res.sinkName).toBe("test");
+      expect(res.message).toContain(".memory-sink");
+    } finally {
+      await f.cleanup();
+    }
+  });
+
+  it("21. sink folder absent entirely returns sentinel_missing", async () => {
+    const f = await makeFixture({ provisionSentinel: false, createFolder: false });
+    try {
+      const id = formatDocId(
+        "obsidian-fs",
+        "sentinel-vault",
+        `${SINK_REL_PATH}c21.md`,
+      );
+      const res = await f.adapter.write(
+        id,
+        {
+          properties: fullyValidProps(),
+          blocks: [{ kind: "paragraph", text: "x" }],
+        },
+        { sink: f.sinkHandle },
+      );
+      expect(res.ok).toBe(false);
+      if (res.ok) return;
+      expect(res.reason).toBe("sentinel_missing");
+      expect(res.sinkName).toBe("test");
+    } finally {
+      await f.cleanup();
+    }
   });
 });

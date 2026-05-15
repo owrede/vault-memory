@@ -30,7 +30,7 @@ import type {
   UpdateResult as V2UpdateResult,
   DeleteResult as V2DeleteResult,
 } from "../types.js";
-import type { Document, DocId, SourceHandle } from "../../../types.js";
+import type { Document, DocId, MemorySink, SourceHandle } from "../../../types.js";
 import type { Vault } from "../../../vault/index.js";
 import { parseSourceHandle } from "../../registry.js";
 import {
@@ -40,6 +40,10 @@ import {
 } from "./write.js";
 import { safeJoinInsideVault } from "./fs.js";
 import { computeNoteHash } from "../../source/obsidian-fs/hash.js";
+import { validateAgentWrite } from "../../../memory/validator.js";
+import { getContract } from "../../../memory/contract/index.js";
+import type { MemorySinkRegistry } from "../../../memory/registry.js";
+import { assertSentinelExists } from "./sentinel.js";
 
 // ─── Legacy re-exports (v1 callers + tests) ─────────────────────────────────
 //
@@ -106,10 +110,18 @@ export class ObsidianFsDelivery implements DeliveryAdapter {
    *  Falls back to "unknown" at the call site if no value is supplied at
    *  any level (per RESEARCH Pitfall 4: clientInfo is OPTIONAL in the MCP
    *  spec, so older or non-conformant clients may not send it).
+   * @param memorySinkRegistry Optional Phase 2 sink registry. When supplied,
+   *  the adapter runs Guards A/B + sentinel check at the entry of
+   *  `write` / `update` / `delete` per ADR-002 §DeliveryAdapter. When
+   *  omitted (Phase 1 fixture tests + back-compat), the validator is
+   *  silently skipped — production paths in Plan 02-03b's server
+   *  bootstrap always pass the registry, so production is always
+   *  guarded.
    */
   constructor(
     private readonly vault: Vault,
     private readonly clientIdSource: string | (() => string),
+    private readonly memorySinkRegistry?: MemorySinkRegistry,
   ) {
     this.handle = parseSourceHandle(`${SCHEME}://${vault.config.name}`);
   }
@@ -118,7 +130,88 @@ export class ObsidianFsDelivery implements DeliveryAdapter {
     return typeof this.clientIdSource === "function" ? this.clientIdSource() : this.clientIdSource;
   }
 
+  /**
+   * Resolve the sink that "owns" a write target.
+   *
+   * Resolution order (per ADR-004 §Resolution + Plan 02-03 <action>):
+   *   1. If `opts.sink` is supplied AND the registry knows it, use it.
+   *      The caller explicitly routed the write under that sink.
+   *   2. Else, ask the registry `findSinkContaining(id)` — for DocIds
+   *      whose vault-relative path lies inside a registered sink, this
+   *      returns the enclosing sink. Used for guarding writes that
+   *      target memory paths WITHOUT an explicit `opts.sink` (e.g. v1
+   *      `writeNote` against `_memory/...`).
+   *   3. Else, the target is outside every sink — return `null`.
+   *
+   * Returns `null` when no registry is configured (Phase 1 fixture
+   * tests + back-compat). The validator then silently passes.
+   */
+  private resolveTargetSink(id: DocId, opts?: WriteOptions): MemorySink | null {
+    const registry = this.memorySinkRegistry;
+    if (!registry) return null;
+    if (opts?.sink !== undefined) {
+      try {
+        return registry.resolveMemorySink(opts.sink);
+      } catch {
+        // Fall through to path-based lookup; surfaces as
+        // `agent_write_outside_sink` if the caller declared the wrong
+        // sink and the path also doesn't land in any registered sink.
+      }
+    }
+    return registry.findSinkContaining(id);
+  }
+
+  /**
+   * Run Guards A/B + sentinel for a write or update. Returns the
+   * conflict to short-circuit on, or `null` to proceed.
+   *
+   * Order: Guard B (cheap) → sentinel (fail-closed) → Guard A.
+   * The sentinel check is filesystem-specific and intentionally lives
+   * here, not in the validator.
+   */
+  private async preflight(
+    id: DocId,
+    doc: Partial<Document>,
+    opts?: WriteOptions,
+  ): Promise<V2WriteResult | null> {
+    if (!this.memorySinkRegistry) return null;
+    const sink = this.resolveTargetSink(id, opts);
+    const contract = sink ? getContract(sink.contractName) : null;
+
+    // Guard B (and partial Guard A for source mismatch) — runs first.
+    // Guard A short-circuits if source-check fails.
+    const sourceCheck = validateAgentWrite(id, doc, sink, null);
+    if (sourceCheck) return sourceCheck;
+
+    // Sentinel check (filesystem-specific) — only when target lands in a sink.
+    if (sink !== null) {
+      const ok = await assertSentinelExists(sink, this.vault.config.path);
+      if (!ok) {
+        return {
+          ok: false,
+          reason: "sentinel_missing",
+          sinkName: sink.name,
+          message:
+            `MemorySink "${sink.name}" refuses to resolve: ` +
+            `'.memory-sink' sentinel file is missing under ${this.vault.config.name}/${sink.resolveToRelativePath}.`,
+          suggestion:
+            "Restart the server (it re-provisions automatically) or restore .memory-sink manually.",
+        };
+      }
+    }
+
+    // Guard A (full Zod schema validation) — only when target lands in a sink
+    // and a contract is bound.
+    if (sink !== null && contract !== null) {
+      const guardA = validateAgentWrite(id, doc, sink, contract);
+      if (guardA) return guardA;
+    }
+    return null;
+  }
+
   async write(id: DocId, doc: Partial<Document>, opts?: WriteOptions): Promise<V2WriteResult> {
+    const guard = await this.preflight(id, doc, opts);
+    if (guard) return guard;
     const path = this.docIdToPath(id);
     const { body, frontmatter } = extractBodyAndFrontmatter(doc);
     const effectiveClientId = opts?.clientId ?? this.clientId;
@@ -148,6 +241,8 @@ export class ObsidianFsDelivery implements DeliveryAdapter {
    * callers (Phase 2+).
    */
   async update(id: DocId, patch: Partial<Document>, opts?: WriteOptions): Promise<V2UpdateResult> {
+    const guard = await this.preflight(id, patch, opts);
+    if (guard) return guard;
     const path = this.docIdToPath(id);
 
     // Resolve absolute path with safety check; on traversal this throws,
@@ -211,6 +306,26 @@ export class ObsidianFsDelivery implements DeliveryAdapter {
   }
 
   async delete(id: DocId, opts?: WriteOptions): Promise<V2DeleteResult> {
+    // Hard-deletion of memory documents is forbidden in v2.0.0
+    // (per Plan 02-03 truths + RESEARCH Pitfall 5). If the DocId
+    // resolves into ANY registered sink (regardless of opts.sink),
+    // refuse with sink_write_blocked. Use `supersede` instead.
+    if (this.memorySinkRegistry) {
+      const enclosing = this.memorySinkRegistry.findSinkContaining(id);
+      if (enclosing !== null) {
+        return {
+          ok: false,
+          reason: "sink_write_blocked",
+          sinkName: enclosing.name,
+          message:
+            `Hard deletion of MemorySink "${enclosing.name}" documents is ` +
+            `not permitted in v2.0.0.`,
+          suggestion:
+            "Use supersede to retire memory documents. Hard deletion is not yet supported in v2.0.0.",
+        };
+      }
+    }
+
     const path = this.docIdToPath(id);
 
     // The v1 deleteNote requires expectedHash. If the caller did not
