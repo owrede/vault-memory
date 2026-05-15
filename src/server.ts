@@ -1159,11 +1159,7 @@ export function truncateSnippet(text: string, max: number): string {
   return collapsed.slice(0, max - 1).trimEnd() + "…";
 }
 
-function handleFetchCompat(
-  manager: VaultManager,
-  registry: AdapterRegistry,
-  id: string,
-): object {
+function handleFetchCompat(manager: VaultManager, registry: AdapterRegistry, id: string): object {
   const { vault: vaultName, path } = decodeNoteId(id);
   const vault = manager.require(vaultName);
   const note = vault.db.notes.getByPath(path);

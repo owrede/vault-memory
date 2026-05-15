@@ -78,11 +78,7 @@ export class StubDelivery implements DeliveryAdapter {
     return { ok: true, doc_id: id, newHash: merged.hash, created };
   }
 
-  async update(
-    id: DocId,
-    patch: Partial<Document>,
-    _opts?: WriteOptions,
-  ): Promise<UpdateResult> {
+  async update(id: DocId, patch: Partial<Document>, _opts?: WriteOptions): Promise<UpdateResult> {
     const existing = this.docs.get(id);
     if (!existing) {
       return { ok: false, reason: "not_found", message: `Document not found: ${id}` };

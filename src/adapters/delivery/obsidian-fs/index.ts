@@ -115,9 +115,7 @@ export class ObsidianFsDelivery implements DeliveryAdapter {
   }
 
   private get clientId(): string {
-    return typeof this.clientIdSource === "function"
-      ? this.clientIdSource()
-      : this.clientIdSource;
+    return typeof this.clientIdSource === "function" ? this.clientIdSource() : this.clientIdSource;
   }
 
   async write(id: DocId, doc: Partial<Document>, opts?: WriteOptions): Promise<V2WriteResult> {
@@ -194,8 +192,10 @@ export class ObsidianFsDelivery implements DeliveryAdapter {
     // on-disk hash so the internal writeNote will accept the overwrite as
     // intentional. Callers can override by passing opts.expectedHash —
     // the OCC contract still surfaces a hash_mismatch for stale hashes.
-    const existingHash =
-      computeNoteHash(existingBody, Object.keys(existingFm).length > 0 ? existingFm : null);
+    const existingHash = computeNoteHash(
+      existingBody,
+      Object.keys(existingFm).length > 0 ? existingFm : null,
+    );
     const effectiveExpectedHash = opts?.expectedHash ?? existingHash;
 
     const effectiveClientId = opts?.clientId ?? this.clientId;
@@ -271,9 +271,7 @@ export class ObsidianFsDelivery implements DeliveryAdapter {
   private docIdToPath(id: DocId): string {
     const prefix = `${SCHEME}://`;
     if (!id.startsWith(prefix)) {
-      throw new Error(
-        `DocId scheme mismatch: expected "${SCHEME}://…", got ${JSON.stringify(id)}`,
-      );
+      throw new Error(`DocId scheme mismatch: expected "${SCHEME}://…", got ${JSON.stringify(id)}`);
     }
     const rest = id.slice(prefix.length);
     const slash = rest.indexOf("/");
