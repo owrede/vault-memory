@@ -522,6 +522,71 @@ describe("handleRecall — provenance filter + recency sort pipeline", () => {
   });
 });
 
+describe("handleRecall — observed_at YAML Date coercion (Rule 1 bug fix)", () => {
+  /**
+   * YAML frontmatter parsers (`gray-matter` → `js-yaml`) deserialize
+   * canonical ISO-8601 timestamps as JS `Date` objects via the YAML
+   * `tag:yaml.org,2002:timestamp` schema rule. Our `observed_at` is
+   * canonical ISO, so it surfaces as a `Date` — not a string. The
+   * controller must accept both shapes for the recency filter + sort
+   * to work against the real v2 fixture.
+   */
+  it("filters + sorts correctly when observed_at is a JS Date object (not a string)", async () => {
+    const docsSpec: FixtureDocSpec[] = [
+      {
+        notePath: "_memory/observations/2026-newer.md",
+        title: "Newer (Date object)",
+        hash: "h1",
+        mtime: NOW - 1 * 86_400_000,
+        properties: {
+          source: "agent",
+          confidence: "direct",
+          evidence: [],
+          status: "active",
+          // Real YAML→Date — what gray-matter actually surfaces.
+          observed_at: new Date(NOW - 1 * 86_400_000),
+          type: "observation",
+          superseded_by: null,
+        },
+      },
+      {
+        notePath: "_memory/observations/2026-older.md",
+        title: "Older (Date object)",
+        hash: "h2",
+        mtime: NOW - 5 * 86_400_000,
+        properties: {
+          source: "agent",
+          confidence: "direct",
+          evidence: [],
+          status: "active",
+          observed_at: new Date(NOW - 5 * 86_400_000),
+          type: "observation",
+          superseded_by: null,
+        },
+      },
+    ];
+    const fx = await buildFixture(docsSpec);
+    try {
+      // max_age_days: 30 must work against Date objects.
+      const packets = await handleRecall(
+        {
+          memorySinkRegistry: fx.registry,
+          manager: fx.manager,
+          sourceConnectorFor: fx.sourceConnectorFor,
+          searchHybrid: fx.searchHybrid,
+        },
+        { query: "anything", max_age_days: 30 },
+      );
+      expect(packets).toHaveLength(2);
+      // observed_at DESC: newer first
+      expect(packets[0]!.title).toBe("Newer (Date object)");
+      expect(packets[1]!.title).toBe("Older (Date object)");
+    } finally {
+      await fx.cleanup();
+    }
+  });
+});
+
 describe("handleRecall — sink scoping", () => {
   it("sink: 'default' constrains to that sink; archive-sink docs excluded", async () => {
     const archiveSpec: FixtureDocSpec = {

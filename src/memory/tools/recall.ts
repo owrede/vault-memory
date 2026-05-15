@@ -101,6 +101,31 @@ function confidenceRank(c?: string): number {
 }
 
 /**
+ * Coerce a property value into an `observed_at` ISO timestamp string
+ * suitable for both `Date.parse` (for age math) and string-comparison
+ * sort (lexicographic ISO ordering).
+ *
+ * YAML frontmatter can surface ISO-8601 timestamps as either:
+ *   - JS `Date` objects (when js-yaml / gray-matter parses canonical
+ *     ISO strings via the `tag:yaml.org,2002:timestamp` rule), or
+ *   - raw strings (when quoted or schema-coerced).
+ *
+ * Returns `null` when the value is missing or unparseable. Callers use
+ * `null` as the signal to drop the doc (a doc without a parseable
+ * `observed_at` cannot be ranked by recency).
+ */
+function observedAtIso(value: unknown): string | null {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+  if (typeof value === "string") {
+    const t = Date.parse(value);
+    return Number.isNaN(t) ? null : new Date(t).toISOString();
+  }
+  return null;
+}
+
+/**
  * Retrieve memory docs as citation packets. See the file header for
  * the full pipeline; this function is the public entry point.
  */
@@ -199,20 +224,17 @@ export async function handleRecall(
     }
     // 7d) max_age_days against observed_at.
     if (maxAgeMs !== null) {
-      const observedAt =
-        typeof props.observed_at === "string" ? Date.parse(props.observed_at) : Number.NaN;
-      if (Number.isNaN(observedAt)) return false;
-      if (now - observedAt > maxAgeMs) return false;
+      const iso = observedAtIso(props.observed_at);
+      if (iso === null) return false;
+      if (now - Date.parse(iso) > maxAgeMs) return false;
     }
     return true;
   });
 
   // 8) Sort: observed_at DESC, mtime DESC tiebreak.
   filtered.sort((a, b) => {
-    const ao =
-      typeof a.properties?.observed_at === "string" ? a.properties.observed_at : "";
-    const bo =
-      typeof b.properties?.observed_at === "string" ? b.properties.observed_at : "";
+    const ao = observedAtIso((a.properties as Record<string, unknown>)?.observed_at) ?? "";
+    const bo = observedAtIso((b.properties as Record<string, unknown>)?.observed_at) ?? "";
     if (ao !== bo) {
       // ISO-8601 strings sort lexicographically when both well-formed.
       return ao < bo ? 1 : -1;
