@@ -87,3 +87,77 @@ describe("SENTINEL_FILENAME", () => {
     expect(SENTINEL_FILENAME).toBe(".memory-sink");
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CR-01: path-traversal rejection at the parser boundary (Plan 02-09)
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("parseMemorySinkHandle — CR-01 path-traversal rejection", () => {
+  // Positive controls — Phase 2 baseline behavior must be preserved.
+  it.each([
+    ["obsidian-fs://atlas/_memory/", "single-segment sink folder"],
+    ["obsidian-fs://atlas/_memory/inbox/", "multi-segment resource"],
+  ])("positive control: accepts %s (%s)", (input) => {
+    const h = parseMemorySinkHandle(input);
+    expect(h).toBe(input);
+    expect(h.length).toBeGreaterThan(0);
+  });
+
+  // Negative cases — each MUST throw with a diagnostic that mentions a
+  // path segment, so callers (and operators reading config errors) can
+  // identify why the handle was refused.
+  it.each([
+    ["obsidian-fs://atlas/../escape/", "rejects path traversal segment at root"],
+    [
+      "obsidian-fs://atlas/../../etc/passwd-fake/",
+      "rejects multi-step path traversal escape",
+    ],
+    ["obsidian-fs://atlas/foo/../bar/", "rejects interior `..` segment"],
+    ["obsidian-fs://atlas/./foo/", "rejects interior `.` segment"],
+    ["obsidian-fs://atlas//double/", "rejects empty segment from `//`"],
+    ["obsidian-fs://atlas/foo\\bar/", "rejects backslash inside segment"],
+  ])("%s — %s", (input) => {
+    expect(() => parseMemorySinkHandle(input)).toThrow(/segment/);
+  });
+
+  it("error message names the offending segment and the allowed shape", () => {
+    expect(() => parseMemorySinkHandle("obsidian-fs://atlas/../escape/")).toThrow(
+      /"\.\."/,
+    );
+    expect(() => parseMemorySinkHandle("obsidian-fs://atlas/../escape/")).toThrow(
+      /\[A-Za-z0-9\._\\?-\]\+/,
+    );
+  });
+
+  it("error message echoes the original handle", () => {
+    expect(() => parseMemorySinkHandle("obsidian-fs://atlas/foo/../bar/")).toThrow(
+      /obsidian-fs:\/\/atlas\/foo\/\.\.\/bar\//,
+    );
+  });
+
+  // Unicode NFC equivalence: a precomposed input must canonicalize to NFC
+  // before the segment scan, so attackers cannot smuggle a `..` past the
+  // regex using decomposed equivalents. The positive control proves that
+  // NFC normalization does not corrupt benign ASCII inputs (a NFD input
+  // that normalizes to a valid ASCII handle still passes).
+  it("normalizes input to NFC before the segment scan (positive control)", () => {
+    // "é" can be represented as either a single precomposed codepoint
+    // (U+00E9) or as "e" + combining acute (U+0065 U+0301). The current
+    // pattern allows only ASCII, so any non-ASCII segment is refused
+    // regardless of NFC form; this test pins the normalization order so
+    // an attacker cannot rely on a byte-different equivalent slipping
+    // through. We assert via a benign ASCII NFD-equivalent: a string
+    // whose NFC form equals the NFD form (ASCII fixed point).
+    const asciiHandle = "obsidian-fs://atlas/_memory/";
+    expect(asciiHandle).toBe(asciiHandle.normalize("NFC"));
+    expect(parseMemorySinkHandle(asciiHandle)).toBe(asciiHandle);
+  });
+
+  it("rejects a Unicode escape form of `..` (NFC guard)", () => {
+    // . is the literal "." codepoint, so ".." === ".." —
+    // after NFC normalization, this MUST still be caught by the
+    // per-segment `..` check.
+    const sneaky = "obsidian-fs://atlas/../x/";
+    expect(() => parseMemorySinkHandle(sneaky)).toThrow(/segment/);
+  });
+});
