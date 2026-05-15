@@ -129,7 +129,7 @@ describe("VaultWatcher", () => {
     await writeFile(join(vaultDir, "drain.md"), "# d", "utf-8");
     // Don't sleep — call drain immediately. The chokidar event still has
     // to fire; drain awaits the queue.
-    await sleep(600); // let chokidar deliver (500ms stabilityThreshold + 100ms margin)
+    await sleep(500); // let chokidar deliver (400ms stabilityThreshold + 100ms margin)
     await watcher.drain();
     expect(vault.db.notes.getByPath("drain.md")).not.toBeNull();
   });
