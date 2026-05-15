@@ -14,6 +14,12 @@
  *   - naming:         caller-provided
  *
  * No filesystem, no gray-matter, no path joining — by design.
+ *
+ * Plan 02-06 note: the audit log is DB-backed (`AuditQueries.recordWrite`,
+ * see `src/db/queries/audit.ts`) and StubDelivery is in-memory only —
+ * it does not record audit rows, so the `is_memory_sink_write` flag
+ * (migration 009) has nothing to stamp here. The flag-derivation is
+ * tested through `ObsidianFsDelivery` end-to-end.
  */
 
 import type {

@@ -461,6 +461,45 @@ function runMigration008(db: BetterSqlite3Database, ctx: MigrationContext): void
   update.run({ prefix });
 }
 
+/**
+ * Migration 009 — audit discriminator for memory-sink writes (MEM-08, Plan 02-06).
+ *
+ * Adds an `is_memory_sink_write` column to `write_audit` so the audit log
+ * can distinguish writes routed under a MemorySink (agent observations,
+ * supersede records) from regular user writes. Existing v1.x rows migrate
+ * with the default value 0 — they pre-date the memory namespace.
+ *
+ * A partial index on `(is_memory_sink_write, at DESC) WHERE is_memory_sink_write = 1`
+ * keeps the common "show me only memory writes" filter fast without
+ * widening the index footprint for user writes. Per RESEARCH §Q8: partial
+ * indexes are the standard SQLite idiom for boolean discriminators where
+ * one branch dominates volume.
+ *
+ * Function-style (not pure SQL) so the column-add is IDEMPOTENT: a test
+ * fixture that rewinds `user_version` to replay earlier migrations against
+ * a DB whose write_audit already carries the v9 column (because the
+ * Database constructor migrated it to head on open) must not crash on a
+ * duplicate-column error. The behavior of a clean v8→v9 upgrade is
+ * identical to the pure-SQL form: ALTER ADD COLUMN with DEFAULT 0 +
+ * partial index creation.
+ */
+function runMigration009(db: BetterSqlite3Database, _ctx: MigrationContext): void {
+  const cols = db.prepare("PRAGMA table_info(write_audit)").all() as Array<{
+    name: string;
+  }>;
+  const hasColumn = cols.some((c) => c.name === "is_memory_sink_write");
+  if (!hasColumn) {
+    db.exec(
+      "ALTER TABLE write_audit ADD COLUMN is_memory_sink_write INTEGER NOT NULL DEFAULT 0",
+    );
+  }
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_write_audit_memory
+      ON write_audit(is_memory_sink_write, at DESC)
+      WHERE is_memory_sink_write = 1
+  `);
+}
+
 export const MIGRATIONS: readonly Migration[] = [
   {
     version: 1,
@@ -501,5 +540,11 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 8,
     description: "backfill doc_uri from <vault-name>/path",
     run: runMigration008,
+  },
+  {
+    version: 9,
+    description:
+      "audit discriminator — is_memory_sink_write column + partial index (MEM-08, Plan 02-06)",
+    run: runMigration009,
   },
 ];

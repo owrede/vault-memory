@@ -468,14 +468,20 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
         op?: "create" | "update" | "delete";
         since?: number;
         limit: number;
+        is_memory_sink_write?: boolean;
       };
       const vault = manager.require(p.vault);
+      // Plan 02-06 (MEM-08): the new optional filter is purely additive.
+      // Omitting it preserves Phase 1 behavior (include all rows).
       const entries = getAuditLog({
         vault,
         notePath: p.note_path,
         op: p.op,
         since: p.since,
         limit: p.limit,
+        ...(p.is_memory_sink_write !== undefined
+          ? { is_memory_sink_write: p.is_memory_sink_write }
+          : {}),
       });
       return { entries, count: entries.length };
     },

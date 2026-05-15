@@ -24,6 +24,14 @@ export interface RecordWriteInput {
   expectedHash: string | null;
   clientId: string | null;
   diffSummary: string | null;
+  /**
+   * Plan 02-06 (MEM-08): true iff this write was routed under a MemorySink
+   * (agent observation / supersede), false for regular user writes. Stored
+   * as INTEGER 1/0 via migration 009's `is_memory_sink_write` column.
+   * Defaults to false when omitted — preserves Phase 1 call sites that
+   * have not yet been threaded with the sink-derived flag.
+   */
+  isMemorySinkWrite?: boolean;
 }
 
 export interface ListWritesFilter {
@@ -31,6 +39,13 @@ export interface ListWritesFilter {
   op?: string;
   since?: number;
   limit?: number;
+  /**
+   * Plan 02-06 (MEM-08): filter to memory-sink writes only (`true`) or
+   * non-memory writes only (`false`). Omit to include all rows (default,
+   * preserves Phase 1 v1 audit_log behavior). Uses the partial index
+   * `idx_write_audit_memory` for the `true` branch.
+   */
+  isMemorySinkWrite?: boolean;
 }
 
 export class AuditQueries {
@@ -65,8 +80,8 @@ export class AuditQueries {
       "SELECT COUNT(*) AS c FROM index_runs WHERE finished_at IS NULL",
     );
     this._recordWrite = db.prepare(`
-      INSERT INTO write_audit (note_id, op, previous_hash, new_hash, expected_hash, client_id, diff_summary, at)
-      VALUES (@note_id, @op, @previous_hash, @new_hash, @expected_hash, @client_id, @diff_summary, @at)
+      INSERT INTO write_audit (note_id, op, previous_hash, new_hash, expected_hash, client_id, diff_summary, at, is_memory_sink_write)
+      VALUES (@note_id, @op, @previous_hash, @new_hash, @expected_hash, @client_id, @diff_summary, @at, @is_memory_sink_write)
     `);
   }
 
@@ -112,6 +127,11 @@ export class AuditQueries {
       client_id: input.clientId,
       diff_summary: input.diffSummary,
       at: Date.now(),
+      // Phase 1 call sites that have not been threaded with the flag default
+      // to 0 (non-memory write) — backwards-compatible with migration 009's
+      // ALTER default. Memory-routed writes (record_observation, supersede)
+      // pass `isMemorySinkWrite: true`.
+      is_memory_sink_write: input.isMemorySinkWrite ? 1 : 0,
     });
   }
 
@@ -129,6 +149,10 @@ export class AuditQueries {
     if (filter.since !== undefined) {
       where.push("at >= ?");
       params.push(filter.since);
+    }
+    if (filter.isMemorySinkWrite !== undefined) {
+      where.push("is_memory_sink_write = ?");
+      params.push(filter.isMemorySinkWrite ? 1 : 0);
     }
     const limit = filter.limit ?? 100;
     const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";

@@ -215,6 +215,10 @@ export class ObsidianFsDelivery implements DeliveryAdapter {
     const path = this.docIdToPath(id);
     const { body, frontmatter } = extractBodyAndFrontmatter(doc);
     const effectiveClientId = opts?.clientId ?? this.clientId;
+    // Plan 02-06 (MEM-08): the audit row's `is_memory_sink_write` flag is
+    // derived from `opts.sink !== undefined` — the shared Phase 1 routing
+    // signal. Sink-routed writes (record_observation, supersede) ALWAYS
+    // pass `opts.sink`; user/v1 writes never do.
     const v1 = await writeNoteInternal({
       vault: this.vault,
       relativePath: path,
@@ -222,6 +226,7 @@ export class ObsidianFsDelivery implements DeliveryAdapter {
       frontmatter,
       ...(opts?.expectedHash !== undefined ? { expectedHash: opts.expectedHash } : {}),
       clientId: effectiveClientId,
+      isMemorySinkWrite: opts?.sink !== undefined,
     });
     return v1ToV2WriteResult(id, v1);
   }
@@ -294,6 +299,10 @@ export class ObsidianFsDelivery implements DeliveryAdapter {
     const effectiveExpectedHash = opts?.expectedHash ?? existingHash;
 
     const effectiveClientId = opts?.clientId ?? this.clientId;
+    // Plan 02-06 (MEM-08): symmetric with write() — update() also derives
+    // the audit-row sink flag from `opts.sink !== undefined`. supersede
+    // routes through update() with `opts.sink` set, so the resulting
+    // audit row is correctly stamped as a memory-sink write.
     const v1 = await writeNoteInternal({
       vault: this.vault,
       relativePath: path,
@@ -301,6 +310,7 @@ export class ObsidianFsDelivery implements DeliveryAdapter {
       frontmatter: Object.keys(nextFm).length > 0 ? nextFm : null,
       expectedHash: effectiveExpectedHash,
       clientId: effectiveClientId,
+      isMemorySinkWrite: opts?.sink !== undefined,
     });
     return v1ToV2UpdateResult(id, v1);
   }
@@ -353,11 +363,16 @@ export class ObsidianFsDelivery implements DeliveryAdapter {
     }
 
     const effectiveClientId = opts?.clientId ?? this.clientId;
+    // Plan 02-06 (MEM-08): symmetric flag for delete. Sink-routed deletes
+    // are normally refused upstream (v2.0.0 forbids hard-delete of memory
+    // documents — callers use `supersede`). The flag is forwarded for
+    // symmetry only; this path generally records non-memory deletes.
     const v1 = await deleteNoteInternal({
       vault: this.vault,
       relativePath: path,
       expectedHash: opts.expectedHash,
       clientId: effectiveClientId,
+      isMemorySinkWrite: opts?.sink !== undefined,
     });
     if (!v1.ok) {
       // v1 returns hash_mismatch when the file is absent. Re-shape to

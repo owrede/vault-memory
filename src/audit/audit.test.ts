@@ -139,6 +139,43 @@ describe("audit module", () => {
     expect(empty).toHaveLength(0);
   });
 
+  // Plan 02-06 (MEM-08): all pre-existing audit rows surface with
+  // is_memory_sink_write=false (migration 009 ALTER default is 0; rows
+  // written through the un-flagged recordWrite path stay at 0).
+  it("legacy / non-memory rows surface is_memory_sink_write=false", () => {
+    const entries = getAuditLog({ vault });
+    for (const e of entries) {
+      expect(e.is_memory_sink_write).toBe(false);
+    }
+  });
+
+  it("filters by is_memory_sink_write=true returns only memory-routed rows", () => {
+    // Add one memory-sink write through the AuditQueries.recordWrite path.
+    db.audit.recordWrite({
+      noteId: note2Id,
+      op: "create",
+      previousHash: null,
+      newHash: "mem-1",
+      expectedHash: null,
+      clientId: "agent",
+      diffSummary: "memory observation",
+      isMemorySinkWrite: true,
+    });
+    const memOnly = getAuditLog({ vault, is_memory_sink_write: true });
+    expect(memOnly).toHaveLength(1);
+    expect(memOnly[0]!.is_memory_sink_write).toBe(true);
+    expect(memOnly[0]!.newHash).toBe("mem-1");
+
+    const nonMem = getAuditLog({ vault, is_memory_sink_write: false });
+    // All 5 seeded rows remain non-memory.
+    expect(nonMem).toHaveLength(5);
+    for (const e of nonMem) expect(e.is_memory_sink_write).toBe(false);
+
+    // Omitting the filter still returns everything.
+    const all = getAuditLog({ vault });
+    expect(all).toHaveLength(6);
+  });
+
   it("returns [] for unknown notePath", () => {
     const entries = getAuditLog({ vault, notePath: "DoesNotExist.md" });
     expect(entries).toEqual([]);
