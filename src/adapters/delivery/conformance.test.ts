@@ -272,7 +272,14 @@ describe.each(adapters)("DeliveryAdapter conformance (%s)", (_name, factory) => 
     const f = await factory();
     try {
       const id = f.mintId("c5-ghost.md");
-      const res = await f.adapter.update(id, { properties: { x: 1 } });
+      // WR-05 (Plan 02-14): hashProtected="strong" adapters refuse update
+      // without opts.expectedHash. Supply a placeholder so the not_found
+      // path is reachable. hashProtected="none" adapters ignore the field.
+      const opts =
+        f.adapter.capabilities.hashProtected === "strong"
+          ? { expectedHash: "0".repeat(64) }
+          : undefined;
+      const res = await f.adapter.update(id, { properties: { x: 1 } }, opts);
       expect(res.ok).toBe(false);
       if (res.ok) return;
       expect(res.reason).toBe("not_found");
@@ -583,12 +590,23 @@ describe("ObsidianFsDelivery — filesystem invariants (adapter-specific)", () =
     const f = await makeObsidianFsFixture();
     try {
       const id = f.mintId("invariant/written.md");
-      await f.adapter.write(id, { blocks: [{ kind: "paragraph", text: "z" }] });
+      const wrote = await f.adapter.write(id, {
+        blocks: [{ kind: "paragraph", text: "z" }],
+      });
+      expect(wrote.ok).toBe(true);
+      if (!wrote.ok) return;
       // The fs path inside conf-vault was mkdtemp'd; we know the layout
       // because makeObsidianFsFixture set vault.config.path.
       // Just verify SOMETHING was written by re-checking via the adapter
-      // facade's own update() not-found probe inverted.
-      const upd = await f.adapter.update(id, { properties: { x: 1 } });
+      // facade's own update() not-found probe inverted. WR-05 (Plan 02-14)
+      // requires expectedHash for update() on hashProtected="strong"
+      // adapters — supply the just-written newHash to exercise the success
+      // path (a not-found doc would return reason:"not_found" instead).
+      const upd = await f.adapter.update(
+        id,
+        { properties: { x: 1 } },
+        { expectedHash: wrote.newHash },
+      );
       expect(upd.ok).toBe(true);
     } finally {
       await f.cleanup();
