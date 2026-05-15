@@ -50,7 +50,7 @@ if (process.argv.includes("--help") || process.argv.includes("-h")) {
   process.exit(0);
 }
 
-const EXPECTED_TOOLS = [
+const EXPECTED_V1_TOOLS = [
   "list_vaults",
   "read_note",
   "search_semantic",
@@ -74,6 +74,17 @@ const EXPECTED_TOOLS = [
   "vault_stats",
   "recent_notes",
   "suggest_frontmatter",
+];
+
+// Phase 2 (plans 02-04 / 02-05): three net-new memory tools.
+const EXPECTED_V2_MEMORY_TOOLS = ["record_observation", "recall", "supersede"];
+
+const EXPECTED_TOOLS = [...EXPECTED_V1_TOOLS, ...EXPECTED_V2_MEMORY_TOOLS];
+
+// Phase 2 (plan 02-06): two MCP Resources promoted from tools.
+const EXPECTED_RESOURCES = [
+  "vault-memory://memory/sinks",
+  "vault-memory://memory/stats",
 ];
 
 const transport = new StdioClientTransport({
@@ -116,7 +127,9 @@ try {
   if (tools.length !== EXPECTED_TOOLS.length) {
     fail(`tool count: expected ${EXPECTED_TOOLS.length}, got ${tools.length}`);
   } else if (missing.length === 0 && extra.length === 0) {
-    pass(`tools/list returned all 23 v1 tools`);
+    pass(
+      `tools/list returned all ${EXPECTED_V1_TOOLS.length} v1 tools + ${EXPECTED_V2_MEMORY_TOOLS.length} Phase 2 memory tools`,
+    );
   }
 
   // ─── Assertion 2: every tool has a non-empty description ────────────
@@ -133,7 +146,7 @@ try {
         emptyDescs.map((t) => t.name).join(", "),
     );
   } else {
-    pass(`all 23 tools have non-empty description`);
+    pass(`all ${tools.length} tools have non-empty description`);
   }
 
   // ─── Assertion 3: tools/call list_vaults succeeds ───────────────────
@@ -152,7 +165,74 @@ try {
     pass(`tools/call list_vaults returned valid envelope`);
   }
 
-  // ─── Assertion 4: tools/call with a bogus tool name returns isError ──
+  // ─── Assertion 4: Phase 2 memory tools surface in tools/list ──────
+  // Plan 02-08 Task 4 — confirm record_observation / recall / supersede
+  // are discoverable from a non-Claude MCP client (agent-agnosticism
+  // preserved end-to-end through Phase 2).
+  const recordObs = tools.find((t) => t.name === "record_observation");
+  if (!recordObs) {
+    fail("record_observation tool missing from tools/list");
+  } else if (
+    typeof recordObs.description !== "string" ||
+    recordObs.description.length === 0
+  ) {
+    fail("record_observation has empty description");
+  } else {
+    pass(
+      `record_observation tool discoverable from non-Claude client (Phase 2 plan 02-04 / MEM-02)`,
+    );
+  }
+
+  // ─── Assertion 5: Phase 2 MCP Resources are listed + readable ────────
+  // Plan 02-08 Task 4 — confirm memory/sinks + memory/stats Resources
+  // are listed AND readable. Resources are the MEM-09 surface; Phase 2
+  // requires they work for non-Claude clients (AGENT_AGNOSTIC.md).
+  try {
+    const { resources } = await client.listResources();
+    const uris = (resources ?? []).map((r) => r.uri).sort();
+    const missingResources = EXPECTED_RESOURCES.filter(
+      (u) => !uris.includes(u),
+    );
+    if (missingResources.length > 0) {
+      fail(`missing resources: ${missingResources.join(", ")}`);
+    } else {
+      pass(
+        `resources/list returned the 2 Phase 2 memory Resources (Phase 2 plan 02-06 / MEM-09)`,
+      );
+    }
+
+    const statsResp = await client.readResource({
+      uri: "vault-memory://memory/stats",
+    });
+    if (!Array.isArray(statsResp.contents) || statsResp.contents.length === 0) {
+      fail(
+        `resources/read memory/stats missing contents[] — ${JSON.stringify(statsResp).slice(0, 200)}`,
+      );
+    } else {
+      // Parse the stats payload — it MUST be valid JSON with total_docs.
+      const firstText = statsResp.contents[0]?.text;
+      if (typeof firstText !== "string") {
+        fail(`memory/stats resource content is not text`);
+      } else {
+        const parsed = JSON.parse(firstText);
+        if (typeof parsed.total_docs !== "number") {
+          fail(
+            `memory/stats response missing total_docs — ${firstText.slice(0, 200)}`,
+          );
+        } else {
+          pass(
+            `resources/read memory/stats returned valid JSON with total_docs=${parsed.total_docs} (Phase 2 plan 02-06 / MEM-09)`,
+          );
+        }
+      }
+    }
+  } catch (err) {
+    fail(
+      `resources/list or resources/read threw: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+
+  // ─── Assertion 6: tools/call with a bogus tool name returns isError ──
   // Inline A6 check: if the SDK swallows the unknown-tool error and
   // returns a non-error envelope, this assertion catches it. The MCP
   // SDK Client wraps protocol errors as thrown exceptions (or
@@ -189,7 +269,9 @@ try {
 
 if (exitCode === 0) {
   console.log("");
-  console.log("✓ Non-Claude smoketest PASSED (all 4 assertions green).");
+  console.log(
+    "✓ Non-Claude smoketest PASSED (Phase 1 baseline + Phase 2 memory surface).",
+  );
 } else {
   console.error("");
   console.error("✗ Non-Claude smoketest FAILED — see assertions above.");
