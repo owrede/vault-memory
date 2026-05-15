@@ -20,24 +20,50 @@
  * `noteId: number` with `doc_id: DocId` per the new identity contract
  * (ADR-001).
  *
- * # Memory-sink guard (Phase 2 hook)
+ * # Memory-sink guard (Phase 2 — wired at write/update/delete entry)
  *
- * Phase 2 (MEM-01..12) inserts the MemorySink guard at the entry of
- * `write()`. Concretely, Phase 2 adds:
+ * Phase 2 (MEM-01..12) HAS wired the MemorySink guard chain at the
+ * entry of `write()`, `update()`, and `delete()`. The chain is
+ * implemented as a single chokepoint per ADR-002 §DeliveryAdapter and
+ * runs in this order on every call:
  *
- *   - Guard A: provenance required. Every agent-authored write MUST
- *     carry source / client_id / created_at properties; missing
- *     provenance → `{ ok: false, reason: "permission_denied" }`.
- *   - Guard B: source:agent outside sink rejected. If `source: "agent"`
- *     and the resolved path is NOT under a configured `MemorySink`,
- *     reject the write.
+ *   1. Guard B (cheap; runs first): inspect `properties.source` against
+ *      the target's sink-membership. `source: "agent"` outside any
+ *      configured sink → `{ ok:false, reason:"agent_write_outside_sink" }`.
+ *      `source: "user" | "imported"` INSIDE a configured sink →
+ *      `{ ok:false, reason:"non_agent_write_inside_sink" }`.
+ *   2. Sentinel check (obsidian-fs-only; not Stub): the sink-resolved
+ *      folder MUST contain a `.memory-sink` file. Absence →
+ *      `{ ok:false, reason:"sentinel_missing" }`. Fail-closed —
+ *      never auto-create.
+ *   3. Guard A (heavier): when the target lands inside a sink AND a
+ *      `MemoryContract` is bound, run the contract's Zod
+ *      `propertiesSchema.safeParse(doc.properties)`. Map the FIRST
+ *      issue to one of: `missing_provenance` (required key undefined),
+ *      `invalid_provenance` (enum/format/type mismatch),
+ *      `supersede_mismatch` (cross-field rule on
+ *      `superseded_by`/`superseded_reason`).
  *
- * Phase 1 implementations have ONLY the existing `write_enabled` flag +
- * `safeJoinInsideVault` path safety (per v1 `src/write/write.ts`). The
- * interface SHAPE deliberately permits Phase 2's guard insertion without
- * a signature change — the `Document` properties carry provenance, and
- * the adapter inspects `properties.source` / `properties.client_id`
- * inside `write()` before touching the backing store.
+ * The shared `WriteOptions.sink?: MemorySinkHandle` (declared in
+ * Phase 1) is the canonical signal of a sink-targeted write across
+ * `write` / `update` / `delete` — no separate options types needed for
+ * symmetric guard application. The same validator runs at all three
+ * entry points.
+ *
+ * `delete()` carries an ADDITIONAL refusal: any DocId whose path
+ * resolves inside ANY registered sink (regardless of
+ * `opts.sink`) returns `{ ok:false, reason:"sink_write_blocked" }` —
+ * hard-deletion of memory documents is forbidden in v2.0.0. Use
+ * `supersede` to retire memory documents.
+ *
+ * Implementation: `src/memory/validator.ts` exports
+ * `validateAgentWrite(id, doc, sink, contract)` — pure function
+ * returning a `GuardFailure | null`. Adapters call it at the very top
+ * of write/update/delete, before any FS read or DB tx. The
+ * `ObsidianFsDelivery` and `StubDelivery` adapters both wire the same
+ * call (proven by the parameterized conformance test suite); the
+ * sentinel check is filesystem-specific and stays inside the
+ * obsidian-fs adapter directory.
  *
  * # Failure semantics
  *
@@ -70,17 +96,48 @@ export interface WriteSuccess {
 }
 
 /**
- * Failed write. `reason` discriminates: hash mismatch (OCC), permission
- * denied (write_enabled / sink guard / remote auth), or not found
- * (update/delete against an unknown DocId).
+ * Failed write. `reason` discriminates:
+ *
+ *   - Phase 1 codes: hash mismatch (OCC), permission denied
+ *     (`write_enabled` / remote auth), or not found (update/delete
+ *     against an unknown DocId).
+ *   - Phase 2 codes (Guard A / B / sentinel / v1 entry-point refusals):
+ *     `missing_provenance`, `invalid_provenance`, `supersede_mismatch`,
+ *     `agent_write_outside_sink`, `non_agent_write_inside_sink`,
+ *     `sentinel_missing`, `sink_write_blocked`.
+ *
+ * The Phase 2 codes also populate up to four optional envelope fields:
+ * `sinkName`, `key`, `observedValue`, `suggestion` — all additive, all
+ * optional, all backwards-compatible with Phase 1 consumers that only
+ * branched on `reason`.
  */
 export interface WriteConflict {
   ok: false;
-  reason: "hash_mismatch" | "permission_denied" | "not_found";
+  reason:
+    | "hash_mismatch"
+    | "permission_denied"
+    | "not_found"
+    // Phase 2 — Guard A / B / sentinel / v1 entry-point refusals:
+    | "missing_provenance"
+    | "invalid_provenance"
+    | "supersede_mismatch"
+    | "agent_write_outside_sink"
+    | "non_agent_write_inside_sink"
+    | "sentinel_missing"
+    | "sink_write_blocked";
   /** Current on-store hash (when known); helps callers re-merge. */
   currentHash?: string;
   /** Human-readable diagnostic. */
   message?: string;
+  // Phase 2 envelope (all optional, all additive):
+  /** Name of the MemorySink involved in the refusal (Guard A/B/sentinel). */
+  sinkName?: string;
+  /** Property key that failed validation (Guard A). */
+  key?: string;
+  /** Observed value at `key` when known (Guard A invalid_provenance). */
+  observedValue?: unknown;
+  /** Actionable next-step hint for the caller. */
+  suggestion?: string;
 }
 
 /** Discriminated write result. Branch on `.ok` before destructuring. */
