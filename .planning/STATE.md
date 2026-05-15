@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: release
 status: executing
-stopped_at: Phase 2 complete (pending final human checkpoint); Phase 3 ready
-last_updated: "2026-05-15T23:30:00.000Z"
-last_activity: 2026-05-15 -- Phase 02 complete (9/9 plans + sign-off)
+stopped_at: Phase 2 plans 9/9 complete; HOLD for gap-closure — code review found 3 critical findings affecting the memory-namespace safety invariant (CR-01 sink handle path traversal, CR-02 user-folder absorption in provisionSink, CR-03 Windows path-separator divergence). Run /gsd-plan-phase 2 --gaps then /gsd-execute-phase 2 --gaps-only before Phase 3.
+last_updated: "2026-05-16T00:00:00.000Z"
+last_activity: 2026-05-16 -- Phase 02 9/9 plans + sign-off complete; code review surfaced 3 critical findings; user routed to gap-closure (verifier subagent + roadmap completion deferred until gaps land)
 progress:
   total_phases: 10
   completed_phases: 3
@@ -21,15 +21,19 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-14)
 
 **Core value:** Local-first, source-agnostic-ready, agentic knowledge layer over your Obsidian notes — with the memory namespace as a non-negotiable safety invariant.
-**Current focus:** Phase 03 — bundles + authority/staleness
+**Current focus:** Phase 02 — gap-closure for 3 critical code-review findings (then Phase 03)
 
 ## Current Position
 
-Phase: 03 (bundles-authority-staleness) — NOT STARTED
-Plan: 0 of TBD
-Plans: TBD (planner runs after maintainer sign-off on Phase 2)
-Status: Phase 03 planning gate
-Last activity: 2026-05-15 -- Phase 02 9/9 plans complete; awaiting final maintainer checkpoint approval
+Phase: 02 (memory-namespace-provenance-contract) — HOLD for gap-closure
+Plans: 9/9 implemented + signed off; verifier deferred. Code review (advisory but routed to fix by maintainer) found 3 critical findings touching the memory-namespace safety invariant:
+- CR-01: `MEMORY_SINK_HANDLE_PATTERN` (`src/memory/sink.ts:50-51`) accepts `..` segments; bypasses the namespace via `pathInSink` normalization.
+- CR-02: `provisionSink` (`src/adapters/delivery/obsidian-fs/sentinel.ts:65-72,137-146`) treats any `.md` file as sink content; can absorb user notes.
+- CR-03: `joinVaultPath`/`pathInSink` use `node:path.join` → backslashes on Windows; SQL prefix lookups + recall path comparisons assume forward-slash, diverging Guard vs audit/stats.
+Plus 8 warnings + 5 info findings — see `.planning/phases/02-memory-namespace-provenance-contract/02-REVIEW.md`.
+
+Next: `/gsd-plan-phase 2 --gaps` → `/gsd-execute-phase 2 --gaps-only` → re-run verifier.
+Last activity: 2026-05-16 -- code review routed to gap-closure per maintainer decision.
 
 Progress: [████████░░] 80%
 
