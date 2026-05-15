@@ -5,7 +5,7 @@ confidence: direct
 evidence:
   - decisions/2026-03-12-pivot-to-warehouse.md
 status: active
-observed_at: 2026-04-25T14:00:00Z
+observed_at: "2026-04-25T14:00:00Z"
 superseded_by: null
 type: observation
 ---

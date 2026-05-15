@@ -5,7 +5,7 @@ confidence: direct
 evidence:
   - people/alice-chen.md
 status: active
-observed_at: 2026-04-16T09:14:00Z
+observed_at: "2026-04-16T09:14:00Z"
 superseded_by: null
 type: observation
 ---
