@@ -30,7 +30,8 @@
     "lint:check": "sh scripts/check-fixture-privacy.sh && sh scripts/lint-no-telemetry.sh && sh scripts/lint-adapters.sh && tsc --noEmit && prettier --check \"src/**/*.ts\"",
     "format": "prettier --write \"src/**/*.ts\"",
     "eval:baseline": "vitest run evals/v1-baseline/baseline.test.ts",
-    "eval:snapshot": "node evals/v1-baseline/dump-tools.mjs > evals/v1-baseline/tools-list.snapshot.json"
+    "eval:snapshot": "node evals/v1-baseline/dump-tools.mjs > evals/v1-baseline/tools-list.snapshot.json",
+    "eval:smoketest": "npm run build && node scripts/smoketest-non-claude.mjs"
   },
   "dependencies": {
     "@huggingface/tokenizers": "^0.1.3",
