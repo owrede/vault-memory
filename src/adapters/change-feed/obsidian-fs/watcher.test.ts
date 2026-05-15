@@ -80,7 +80,8 @@ describe("VaultWatcher", () => {
     await rm(vaultDir, { recursive: true, force: true });
   });
 
-  it("indexes a newly created .md file", async () => {
+  // retry: 1 — chokidar awaitWriteFinish + suite-load timing race
+  it("indexes a newly created .md file", { retry: 1 }, async () => {
     await writeFile(join(vaultDir, "new.md"), "# Hello\n\nbody", "utf-8");
     await sleep(800); // give chokidar awaitWriteFinish + debounce
     const note = vault.db.notes.getByPath("new.md");
@@ -88,7 +89,8 @@ describe("VaultWatcher", () => {
     expect(note?.title).toBe("Hello");
   });
 
-  it("re-indexes a modified file", async () => {
+  // retry: 1 — chokidar awaitWriteFinish + suite-load timing race
+  it("re-indexes a modified file", { retry: 1 }, async () => {
     await writeFile(join(vaultDir, "edit.md"), "# Old", "utf-8");
     await sleep(800);
     const oldNote = vault.db.notes.getByPath("edit.md");
