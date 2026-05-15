@@ -39,6 +39,7 @@ import {
   type WriteResult as V1WriteResult,
 } from "./write.js";
 import { safeJoinInsideVault } from "./fs.js";
+import { computeNoteHash } from "../../source/obsidian-fs/hash.js";
 
 // ─── Legacy re-exports (v1 callers + tests) ─────────────────────────────────
 //
@@ -177,13 +178,21 @@ export class ObsidianFsDelivery implements DeliveryAdapter {
             .join("\n\n")
         : existingBody;
 
+    // When the caller did not supply an expectedHash, compute the current
+    // on-disk hash so the internal writeNote will accept the overwrite as
+    // intentional. Callers can override by passing opts.expectedHash —
+    // the OCC contract still surfaces a hash_mismatch for stale hashes.
+    const existingHash =
+      computeNoteHash(existingBody, Object.keys(existingFm).length > 0 ? existingFm : null);
+    const effectiveExpectedHash = opts?.expectedHash ?? existingHash;
+
     const effectiveClientId = opts?.clientId ?? this.clientId;
     const v1 = await writeNoteInternal({
       vault: this.vault,
       relativePath: path,
       content: nextBody,
       frontmatter: Object.keys(nextFm).length > 0 ? nextFm : null,
-      ...(opts?.expectedHash !== undefined ? { expectedHash: opts.expectedHash } : {}),
+      expectedHash: effectiveExpectedHash,
       clientId: effectiveClientId,
     });
     return v1ToV2UpdateResult(id, v1);
