@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: release
 status: complete
-stopped_at: Phase 1 COMPLETE — verifier PASS-with-caveats (5/5 success criteria + 15/15 ADP requirements). Ready for Phase 2 (Memory namespace & provenance contract).
-last_updated: "2026-05-15T13:00:00.000Z"
+stopped_at: Phase 1 COMPLETE + verified + carry-forward flake resolved. Ready for Phase 2 (Memory namespace & provenance contract).
+last_updated: "2026-05-15T13:35:00.000Z"
 last_activity: "2026-05-15 -- Wave 6 (01-06) executed in worktree, merged to main (a76cb50): final polish + CI gates. 8 task commits + SUMMARY: scripts/lint-adapters.sh (8 invariants: I-1..I-6 + I-5b + C-1, POSIX, Alpine-portable); scripts/smoketest-non-claude.mjs (Inspector SDK Client harness identifying as 'non-claude-smoketest', 4 assertions: 23 tools / non-empty descriptions / list_vaults call OK / bogus call surfaces error A6); docs/v2/AGENT_AGNOSTIC_AUDIT.md (22 rows cross-referenced to CONCERNS.md, every leak fixed-v2 or deferred-v3 with resolving-commit refs); README rewritten with 'any MCP-aware agent' framing twice in first 12 lines; CHANGELOG [Unreleased] v2.0.0 entries (Added/Changed/Migration); src/cli.ts C-1 sweep + escape markers for legitimate ecosystem refs; .github/workflows/ci.yml wired with lint-adapters + baseline-eval + build + smoketest steps. W6 human-verify checkpoint APPROVED with empirical evidence (snapshot zero-diff, audit completeness, README tone). FINAL PHASE-GATE: all 6 commands green on main — lint:check (8 invariants + tsc + prettier) ✓, 578 tests ✓, eval:baseline (29 tests) ✓, lint-adapters.sh ✓, build (dist/cli.js 233.96 KB) ✓, smoketest (4 assertions) ✓. Three Task-01 deviations auto-fixed (grep -a UTF-8 flag, // vault-memory:claude-ok escape mechanism, I-3 allow-list extension to server.ts + indexer/single.ts). Phase 1 implementation COMPLETE; awaiting gsd-verifier for goal-backward verification."
 progress:
   total_phases: 10
@@ -81,8 +81,14 @@ None yet.
 - Phase 5: ADR on LLM strategy (MCP Sampling → Ollama → caller-text ladder) must land before implementation
 - Phase 7: Spike outcome (file-watcher vs full Obsidian plugin) decides scope; descope path to "Canvas as view, YAML as authoring" if spike fails
 - Phase 0 follow-up: Alpine docker bake-test for CI lint scripts (00-12) — static review + telemetry red-test + suppression test passed locally; Alpine container POSIX run deferred (Docker daemon was unavailable). Re-verify before Phase 1.
-- Phase 1 wave-5 known flake: `src/adapters/change-feed/obsidian-fs/change-feed.test.ts:91` ("emits update on a modified .md file") occasionally fails under full-suite load due to a 700ms chokidar `awaitWriteFinish` race. Individual file run is stable (3/3); full-suite run was 3/4 green locally. Same flake pattern exists pre-wave in `watcher.test.ts`. Plan 01-06 verifier should add a retry-once or bump the stabilityThreshold for these two test files if the flake recurs in CI.
+- ~~Phase 1 wave-5 known flake: chokidar `awaitWriteFinish` timing race in `src/adapters/change-feed/obsidian-fs/{change-feed,watcher}.test.ts` under full-suite load~~ — resolved 2026-05-15 by quick task 260515-hkc (commits `678dde3` `9216944` `260da64` `ff635f3` plus 3 reverts of an over-eager threshold pursuit). Final mitigation: chokidar `stabilityThreshold` bumped 200ms→400ms + drain test sleep 400ms→500ms (root-cause; reduces incidence ~25%→~17%) + `test.retry(1)` on 4 ObsidianFsChangeFeed/VaultWatcher positive-assertion timing tests (insurance against residual ~17% race). 5/5 full-suite runs green on main at mean 8.3s wall-clock. Lessons learned: (i) threshold pursuit beyond 400ms regresses sibling sleep-based tests; (ii) any timing-sensitive test in this family needs retry-1 as belt-and-suspenders; (iii) executor's 5/5 in-worktree run was lucky — flake distribution shifts on main under different load (post-merge testing surfaced a 4th retry candidate beyond the 3 originally annotated).
 - Phase 1 wave-5 environment lesson: after merging the SDK/Zod bump worktree, `npm install` MUST be run on main — npm initially dedupped to the SDK's transitive Zod 3.25 hoist, leaving the project running v3 with a v4 package.json declaration. After explicit `npm install`, Zod 4.4.3 is live and the snapshot regen produces zero diff. The verifier (or 01-06) should re-confirm `node -e "require('zod/package.json').version"` reads `4.x` post-CI install.
+
+## Quick Tasks Completed
+
+| Date | Slug | Description | Outcome |
+|------|------|-------------|---------|
+| 2026-05-15 | [260515-hkc](.planning/quick/260515-hkc-fix-chokidar-timing-flake/SUMMARY.md) | Fix chokidar timing flake (Phase 1 carry-forward) | complete via option B fallback — 400ms `stabilityThreshold` + drain test 500ms sleep + `test.retry(1)` on 4 tests. 5/5 post-merge full-suite runs green (mean 8.3s wall-clock). 4 rounds, 9 commits + 3 reverts. |
 
 ## Deferred Items
 
@@ -96,6 +102,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-15T13:00:00.000Z
-Stopped at: Phase 1 COMPLETE + VERIFIED (PASS-with-caveats). Ready for Phase 2.
-Resume file: (none — phase done) — run `/gsd-plan-phase 2` to start Phase 2 (Memory namespace & provenance contract — the foundational safety invariant for agent write-back via labeled MemorySink)
+Last session: 2026-05-15T13:35:00.000Z
+Stopped at: Phase 1 COMPLETE + verified + carry-forward chokidar flake resolved via quick 260515-hkc. Ready for Phase 2.
+Resume file: (none — phase done + flake resolved) — run `/gsd-plan-phase 2` to start Phase 2 (Memory namespace & provenance contract — the foundational safety invariant for agent write-back via labeled MemorySink)
