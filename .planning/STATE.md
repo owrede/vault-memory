@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: release
 status: planning
-stopped_at: Phase 2 context gathered
-last_updated: "2026-05-15T13:28:12.765Z"
-last_activity: 2026-05-15 -- Phase 1 complete + verified. ROADMAP top-level Phase 1 checkbox flipped to [x].
+stopped_at: Phase 2 planned (9 plans, verified)
+last_updated: "2026-05-15T16:50:00.000Z"
+last_activity: 2026-05-15 -- Phase 2 plans drafted (9 plans across 6 waves) and verified PASSED by gsd-plan-checker after one revision pass. Ready for /gsd-execute-phase 2.
 progress:
   total_phases: 10
   completed_phases: 2
-  total_plans: 21
+  total_plans: 30
   completed_plans: 21
-  percent: 100
+  percent: 70
 ---
 
 # Project State
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-14)
 
 **Core value:** Local-first, source-agnostic-ready, agentic knowledge layer over your Obsidian notes — with the memory namespace as a non-negotiable safety invariant.
-**Current focus:** Phase 01 — adapter-extraction-tech-debt-up
+**Current focus:** Phase 02 — memory-namespace-provenance-contract (PLANNED, ready to execute)
 
 ## Current Position
 
-Phase: 01 (adapter-extraction-tech-debt-up) — COMPLETE + VERIFIED
-Plan: 6 of 6 complete (all SUMMARYs committed); verifier PASS-with-caveats
-Status: gsd-verifier returned PASS-with-caveats. Score: 5/5 ROADMAP success criteria + 15/15 ADP requirements. VERIFICATION.md committed at .planning/phases/01-adapter-extraction-tech-debt-up/01-VERIFICATION.md. One non-blocking caveat: chokidar timing flake in change-feed.test.ts / watcher.test.ts (intermittent under full-suite load, isolated reruns clean) — recommended fix is a Phase 2 wave-0 micro-task adding test.retry(1) or bumping awaitWriteFinish stabilityThreshold to 400ms. v1-baseline snapshot byte-for-byte preserved end-to-end. Ready for /gsd-plan-phase 2 (Memory namespace & provenance contract).
-Last activity: 2026-05-15 -- Phase 1 complete + verified. ROADMAP top-level Phase 1 checkbox flipped to [x].
+Phase: 02 (memory-namespace-provenance-contract) — PLANNED + VERIFIED
+Plans: 9 plans across 6 waves (02-01, 02-02, 02-03, 02-03b, 02-04, 02-05, 02-06, 02-07, 02-08). 0 of 9 executed.
+Status: gsd-plan-checker returned VERIFICATION PASSED after one revision pass (4 blockers + 5 warnings resolved). Coverage: 12/12 MEM requirements + 5/5 ROADMAP success criteria mapped to plans. DAG acyclic, wave-monotonic, zero same-wave file overlap. Ground-truth Phase 1 contracts verified (WriteSuccess.newHash, single shared WriteOptions, SourceAdapter.readDocument). RESEARCH.md + PATTERNS.md committed alongside plans. Two user decisions captured: (1) ADR-004 doc amendment lands as Phase 2 wave-0 micro-task (02-01); (2) include_paths fallback approved for recall if post-filter is too slow. Ready for /gsd-execute-phase 2.
+Last activity: 2026-05-15 -- Phase 2 plans drafted + verified PASSED.
 
-Progress: [██████████] 100%
+Progress: [███████░░░] 70%
 
 ## Performance Metrics
 
