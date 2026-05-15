@@ -29,7 +29,7 @@ import { join as joinPath } from "node:path";
 import { listBacklinks, listForwardLinks, findBrokenLinks } from "./graph/index.js";
 import { queryFrontmatter, updateFrontmatter } from "./frontmatter/index.js";
 import { suggestFrontmatter } from "./schema/index.js";
-import { writeNote, deleteNote } from "./write/index.js";
+import { writeNote, deleteNote } from "./adapters/delivery/obsidian-fs/index.js";
 import { getAuditLog, getIndexRuns } from "./audit/index.js";
 import { SuppressionSet, VaultWatcher } from "./watcher/index.js";
 import {

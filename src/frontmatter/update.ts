@@ -25,7 +25,7 @@ import matter from "gray-matter";
 import type { Vault } from "../vault/index.js";
 import { computeNoteHash, computeBodyHash } from "../adapters/source/obsidian-fs/hash.js";
 import { extractAliases } from "../indexer/indexer.js";
-import { atomicWriteFile, safeJoinInsideVault } from "../write/fs.js";
+import { atomicWriteFile, safeJoinInsideVault } from "../adapters/delivery/obsidian-fs/fs.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public API
