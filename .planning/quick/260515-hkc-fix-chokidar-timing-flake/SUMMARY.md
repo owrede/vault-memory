@@ -2,49 +2,83 @@
 slug: fix-chokidar-timing-flake
 quick_id: 260515-hkc
 date: 2026-05-15
-status: blocked-final
-flags: [needs-followup, retry-fallback-recommended]
+status: complete
+flags: []
 commits:
   - 678dde3: "fix(quick): bump chokidar stabilityThreshold 200->400ms"
   - 9216944: "fix(quick): bump drain() test sleep 400->500ms"
-  - 72a749f: "fix(quick): bump chokidar stabilityThreshold 400->500ms (second notch)"
-  - 57560ff: "fix(quick): bump drain() test sleep 500->600ms"
-  - f661b6e: "fix(quick): bump 5 sibling test sleeps 500->600 in change-feed.test.ts"
+  - f4ee4d9: "Revert: bump chokidar stabilityThreshold 400->500ms (second notch)"
+  - 19f8522: "Revert: bump drain() test sleep 500->600ms"
+  - d6917a9: "Revert: bump 5 sibling test sleeps 500->600 in change-feed.test.ts"
+  - 260da64: "fix(quick): add test.retry(1) to 3 chokidar-timing-sensitive tests"
 files-modified:
   - src/adapters/change-feed/obsidian-fs/chokidar-config.ts
   - src/adapters/change-feed/obsidian-fs/watcher.test.ts
   - src/adapters/change-feed/obsidian-fs/change-feed.test.ts
+runs-green: 5
+runs-green-of: 5
+mean-wall-clock-seconds: 8.32
+budget-seconds: 8.6
 ---
 
 # Fix chokidar timing flake — SUMMARY
 
-**Status: BLOCKED-FINAL (option B fallback recommended).** Option A
-(threshold 500ms + lock-step bump of all 5 positive-assertion sibling
-sleeps in change-feed.test.ts) fixed the deterministic regression but
-**did not eliminate the underlying flake**. Run 2 of Task 11 failed
-intermittently on the same flake class the plan originally targeted,
-now landing on a *different* set of tests (`change-feed.test.ts:74`
-and `watcher.test.ts:91`).
+**Status: COMPLETE via Option B fallback.** Resolved across four
+verification rounds; final state is the original 400ms threshold
+bump (`678dde3`) + drain test sleep adjustment (`9216944`) plus
+`test.retry(1)` insurance (`260da64`) on the three timing-sensitive
+tests. The second-notch threshold pursuit was reverted after it
+deterministically regressed sibling tests (`f4ee4d9`, `19f8522`,
+`d6917a9`).
 
-Diagnosis: **the bigger the threshold gets, the more tests reduce to
-"just barely enough margin" on a 700-800ms sleep, and at sufficient
-CPU load there is no margin large enough that doesn't bloat the suite
-unreasonably.** The flake is a property of the test-design pattern
-(sleep + assert event-fired), not a property of any specific threshold
-value. Per the user's pre-stated escalation, **fall back to Option B**:
-revert the second-notch bump and add `test.retry(1)` to the two
-originally-flaky tests.
+**Task 15 verification: 5/5 GREEN, 5 consecutive full-suite runs:**
+
+| Run | Result | Wall-clock | Tests                |
+|-----|--------|------------|----------------------|
+| 1   | PASS   | 8.34s      | 578 passed, 11 todo  |
+| 2   | PASS   | 8.36s      | 578 passed, 11 todo  |
+| 3   | PASS   | 8.29s      | 578 passed, 11 todo  |
+| 4   | PASS   | 8.30s      | 578 passed, 11 todo  |
+| 5   | PASS   | 8.32s      | 578 passed, 11 todo  |
+
+Mean 8.32s, range 8.29-8.36s. Tight variance (±0.07s peak-to-mean)
+indicates a stable suite. All 5 runs comfortably within the 8.6s
+wall-clock budget. No retries fired in any of the 5 runs (no
+"retried"/"flaky" markers) — the 400ms threshold alone sufficed
+for this 5-sample window; retry-1 is latent insurance for future
+load spikes.
 
 ## One-liner
 
-Option A landed clean (lint green, change-feed.test.ts:10/10 isolated,
-no deterministic failures); Run 1 of Task 11 was 578/0/11. Run 2 hit
-the same flake class on different tests. **Margin-pursuit isn't going
-to converge** — recommend Option B fallback (revert 72a749f, 57560ff,
-f661b6e; keep 400ms threshold from 678dde3 + drain-sleep-500 from
-9216944; add `test.retry(1)` on the two known-flaky tests).
+Chokidar `stabilityThreshold` bumped 200->400ms; drain() test
+sleep bumped 400->500ms in lock-step; three known-flaky-by-design
+tests annotated with `test.retry(1)` as insurance. 5/5 full-suite
+runs green, mean 8.32s (within budget). Flake mitigated (reduced
+incidence from ~25% verifier-observed to undetectable in this
+5-run sample) and made resilient (retry-1 catches the rare residual
+flake without manual intervention).
 
-## Tasks executed (full history)
+## Final state of modified files
+
+- `src/adapters/change-feed/obsidian-fs/chokidar-config.ts`
+  - Line 63 (runtime): `stabilityThreshold: 400`
+  - Header comment documents the 200->400ms choice and the
+    suppression-set re-verification.
+- `src/adapters/change-feed/obsidian-fs/watcher.test.ts`
+  - Line 84 (`indexes a newly created .md file`): annotated with
+    `{ retry: 1 }`
+  - Line 93 (`re-indexes a modified file`): annotated with
+    `{ retry: 1 }`
+  - Line 132 (`drain() forces pending events to flush`):
+    `await sleep(500); // let chokidar deliver (400ms stabilityThreshold + 100ms margin)`
+- `src/adapters/change-feed/obsidian-fs/change-feed.test.ts`
+  - Line 75 (`emits create on a newly written .md file`):
+    annotated with `{ retry: 1 }`
+  - All other sleeps at their original v1 values (`sleep(500)`
+    × 7, `sleep(700)` × 4, `sleep(400)` × 1) — second-notch
+    bumps were reverted via `d6917a9`.
+
+## Full execution history (4 rounds, 16 tasks)
 
 | #  | Task                                                            | Status                  | Commit  |
 |----|-----------------------------------------------------------------|-------------------------|---------|
@@ -52,201 +86,97 @@ f661b6e; keep 400ms threshold from 678dde3 + drain-sleep-500 from
 | 2  | Initial 3-run verification                                      | blocked (drain race)    | —       |
 | 3  | Bump drain() test sleep 400->500ms                              | done                    | 9216944 |
 | 4  | 3-run verification (re-run)                                     | partial: 5/6 (~17%)     | —       |
-| 6  | Bump stabilityThreshold 400->500ms (second notch)               | done                    | 72a749f |
-| 7  | Bump drain() test sleep 500->600ms                              | done                    | 57560ff |
+| 6  | Bump stabilityThreshold 400->500ms (second notch)               | done (later reverted)   | 72a749f |
+| 7  | Bump drain() test sleep 500->600ms                              | done (later reverted)   | 57560ff |
 | 8  | 5-run verification (third attempt)                              | blocked: 0/2 (det.)     | —       |
-| 10 | Bump 5 sibling sleeps in change-feed.test.ts 500->600ms         | done                    | f661b6e |
-| 11 | 5-run verification (final attempt)                              | blocked: 1/2 (flaky)    | —       |
+| 10 | Bump 5 sibling sleeps in change-feed.test.ts 500->600ms         | done (later reverted)   | f661b6e |
+| 11 | 5-run verification (Option A)                                   | blocked: 1/2 (flaky)    | —       |
+| 13 | Revert 72a749f, 57560ff, f661b6e                                | done                    | f4ee4d9, 19f8522, d6917a9 |
+| 14 | Add test.retry(1) to 3 chokidar-timing-sensitive tests          | done                    | 260da64 |
+| 15 | 5-run verification (Option B, final)                            | **done: 5/5 GREEN**     | —       |
+| 16 | Update SUMMARY.md to status: complete                           | this commit             | (this)  |
 
-## Task 10 — Bump 5 sibling test sleeps 500->600ms
+## Why Option B was the right answer (lessons learned)
 
-**Files modified:** `src/adapters/change-feed/obsidian-fs/change-feed.test.ts`
+Three rounds of threshold-pursuit demonstrated that the underlying
+flake is a property of the **test design pattern** ("sleep N ms,
+then assert that a chokidar event fired"), not a property of any
+specific threshold value:
 
-**Changes:** 5 `sleep(500)` -> `sleep(600)` at lines 88, 100, 103, 130,
-159. Inline comments added at each site documenting the threshold
-relationship ("500ms threshold + 100ms margin"). The 3 negative-
-assertion `sleep(500)` sites (lines 121, 148, 163) left untouched per
-the user's audit — those tests assert that no event fires, so a longer
-wait is safer and a shorter wait is fine.
+| Round | Threshold | Test sleeps     | Flake rate                | Wall-clock  |
+|-------|-----------|-----------------|---------------------------|-------------|
+| 0     | 200ms     | original        | ~25% (verifier observed)  | 7.83s       |
+| 1     | 400ms     | drain=500       | ~17% (1/6 this plan)      | 8.24-8.45s  |
+| 2     | 500ms     | drain=600       | 100% on 3 sibling tests   | 8.23-8.57s  |
+| 3     | 500ms     | drain=600 + 5 lock-step | 50% on 2 different tests | **8.70-8.84s** (over budget) |
+| **4 (final)** | **400ms** | **drain=500 + retry-1 on 3 tests** | **0/5 in this window** | **8.32s mean** |
 
-**Per-task verification (PASS):**
+Round 2 demonstrated that bumping the threshold without bumping
+all dependent test sleeps in lock-step causes deterministic
+regressions in tests with `sleep(threshold)` as a setup wait.
+Round 3 demonstrated that bumping every dependent sleep buys
+~+100-200ms more wall-clock but only flips "always-flaky" to
+"still-flaky-on-different-tests" — the 700-800ms sleep tests
+still don't have enough margin under adversarial load.
 
-- `npm run lint:check` exits 0.
-- `npm test -- --run src/adapters/change-feed/obsidian-fs/change-feed.test.ts`
-  exits 0: 10/10 in 7.62s. The previously-deterministic Run-8 failures
-  are gone.
-
-**Commit:** `f661b6e`
-
-## Task 11 — Full-suite stability verification (BLOCKED)
-
-**Plan called for:** 5 consecutive `npm test -- --run` runs, all 5
-exit 0 with 578 passing.
-
-### Run-by-run results
-
-| Run   | Result   | Wall-clock | Tests                                    | Notes                                                  |
-|-------|----------|------------|------------------------------------------|--------------------------------------------------------|
-| Run 1 | PASS     | 8.70s      | 578 passed, 11 todo                      | Just over 8.6s budget (+0.10s) due to +500ms sleeps    |
-| Run 2 | **FAIL** | 8.84s      | 577 passed, **1 failed**, 11 todo        | `change-feed.test.ts:74` "emits create on .md file"    |
-| Diag-A| FAIL (2) | n/a        | 577 passed, **2 failed**, 11 todo        | Above + `watcher.test.ts:91` "re-indexes a modified"   |
-
-Runs 3-5 NOT executed — per user direction ("If Task 11 fails any of
-5: report EXECUTION BLOCKED"), stopped after the first failure.
-
-### Failing tests (different from prior rounds — flaky, not deterministic)
-
-Note the different failing-test surface between Run 2 and the
-diagnostic re-run — same flake class but different test landed each
-time, confirming this is intermittent (event-loop-load-dependent) and
-not a deterministic invariant violation:
-
-1. **`change-feed.test.ts:74` "emits create on a newly written .md file"**
-   - Body: write `new.md`, `sleep(700)`, assert `created.length >= 1`.
-   - With threshold=500ms + pollInterval=50ms, chokidar fires *at the
-     earliest* 500ms (typically 510-570ms). The 700ms sleep leaves
-     130-190ms margin — collapses under full-suite GC pressure.
-
-2. **`watcher.test.ts:91` "re-indexes a modified file"** (diagnostic run only)
-   - Body: write `# Old` to edit.md, `sleep(800)`, assert
-     `title === "Old"`; write `# New Title`, `sleep(800)`, assert
-     `title === "New Title"` AND `hash !== oldHash`.
-   - 800ms sleep gives ~300ms margin over 500ms threshold — should be
-     adequate but evidently isn't under full-suite load.
-
-### Wall-clock baseline (modest budget overrun)
-
-Run 1: 8.70s vs 8.6s budget = +1.2% over. Run 2: 8.84s = +2.8% over.
-**Both are still within +12% vs the verifier's 7.83s baseline, but
-strictly speaking the +10%/8.6s gate in the PLAN is breached.** The
-overrun is the unavoidable cost of the 5 × +100ms sleeps in
-change-feed.test.ts plus the 2 × +100ms+200ms in watcher.test.ts —
-~+700ms of pure sleep cumulatively.
-
-Confirmation that the budget overrun is from the sleeps (not a code
-perf regression): individual test files take measurably longer
-post-bump (e.g., change-feed.test.ts isolated: 6.5s pre-bump → 7.6s
-post-bump = +1.1s, ~entirely from the +500ms cumulative test sleep
-additions).
-
-## Why this should fall back to Option B
-
-The pattern across all 3 verification rounds:
-
-| Round | Threshold | Test sleeps | Flake incidence            | Wall-clock |
-|-------|-----------|-------------|----------------------------|------------|
-| Baseline | 200ms  | original    | ~25% (verifier observed)   | 7.83s      |
-| Round 1  | 400ms  | drain=500   | ~17% (1/6 this plan)       | 8.24-8.45s |
-| Round 2  | 500ms  | drain=600   | 100% on 3 sibling tests    | 8.23-8.57s |
-| Round 3  | 500ms  | drain=600 + 5 lock-step sibling bumps | flake re-emerges on different tests (1/2) | 8.70-8.84s |
-
-The flake incidence dropped from ~25% (200ms) to ~17% (400ms), then
-the threshold pursuit derailed. Round 3 brought us back to a flake-but-
-not-deterministic state with **higher wall-clock cost and broken budget
-gate**. We have asymptoted: more threshold-pursuit doesn't help, but
-the underlying sleep+assert-event-fired pattern remains inherently
-flaky under load.
-
-The pragmatic answer is **Option B** (which the user pre-approved in
-the instructions for this round): bound the flake at the lower-cost
-state (400ms threshold from 678dde3, drain-sleep=500 from 9216944,
-no other sleep churn) and add `test.retry(1)` to the two known-flaky
-tests. This:
-
-- Reverts the 3 commits that did not help: `72a749f`, `57560ff`, `f661b6e`.
-- Keeps the 2 commits that DID help: `678dde3` (the 400ms threshold
-  reduces flake incidence ~25% → ~17% with no test-side churn) and
-  `9216944` (the drain() test fix is independent of which threshold
-  we pick, as long as threshold <= 400ms with the sleep at 500ms).
-- Adds `test.retry(1)` to the two tests that are flaky-by-design:
-  `change-feed.test.ts:74` "emits create..." and `watcher.test.ts:84`
-  "indexes a newly created...". These will retry once on failure;
-  vitest reports retries in the summary so CI doesn't lose
-  observability of the flake.
-
-## Recommended next steps — user decision required
-
-### Option B (recommended) — revert second-notch + add test.retry(1)
-
-1. `git revert --no-edit f661b6e 57560ff 72a749f` (in reverse order
-   on a follow-up `/gsd-quick` worktree). State after revert:
-   - `chokidar-config.ts`: threshold=400, header comment from
-     post-678dde3 state.
-   - `watcher.test.ts:132`: `sleep(500)` (from 9216944).
-   - `change-feed.test.ts`: original `sleep(500)` × 7.
-
-2. Add `test.retry(1)` to:
-   - `change-feed.test.ts:74` — `it.retry(1)("emits create on a newly written .md file", ...)`
-   - `watcher.test.ts:84` — `it.retry(1)("indexes a newly created .md file", ...)`
-
-3. Optionally also add `test.retry(1)` to `watcher.test.ts:91`
-   "re-indexes a modified file" (Run-2 diagnostic showed it also
-   sometimes flakes at threshold=500; less clear it flakes at
-   threshold=400, but the cost is minimal and the safety is real).
-
-### Option C (alternative) — keep the round-3 state, accept the +0.2s budget overrun, add test.retry(1) on top
-
-If the additional 100ms of margin from threshold=500ms is judged
-materially valuable, keep `72a749f`, `57560ff`, `f661b6e`, and
-on top add `test.retry(1)` to the two (or three) known-flaky tests
-listed above. This is the *most* margin we can buy without further
-threshold escalation, plus the retry insurance.
-
-Slightly less clean than Option B (more files modified, more code
-to maintain), but defensible if the user wants both belt and braces.
-
-### Option D (full revert)
-
-`git revert` all five commits and accept the original ~25% flake.
-Not recommended — `678dde3` (400ms threshold) is a clear net win
-at zero ongoing cost.
-
-**My recommendation: Option B.** Smallest cumulative footprint that
-keeps the most-valuable improvements (400ms threshold + drain fix)
-and accepts the band-aid the user originally rejected but pre-
-approved as the escalation path.
+**The retry-1 fix decouples test stability from threshold tuning.**
+A single retry catches the rare load-induced flake without
+extending wall-clock when the test happens to pass first try
+(retry only runs on failure). It costs ~+1s in the rare case a
+retry fires; the rest of the time it's free.
 
 ## STATE.md / ROADMAP.md instructions for the orchestrator
 
-- **Do NOT remove** the "Phase 1 wave-5 known flake" entry yet.
-- The 5 in-flight commits should be considered **mixed**:
-  - `678dde3` (200->400 threshold) is good — keep.
-  - `9216944` (drain test 400->500) is good — keep.
-  - `72a749f` (400->500 threshold) — revert recommended.
-  - `57560ff` (drain test 500->600) — revert recommended (paired
-    with the 72a749f revert).
-  - `f661b6e` (5 sibling sleeps 500->600) — revert recommended
-    (the dependent fix for 72a749f; reverts together).
+**Safe to REMOVE** the "Phase 1 wave-5 known flake" entry from
+`.planning/STATE.md` Blockers/Concerns. The flake is now
+mitigated (lower incidence from 400ms threshold) and self-healing
+(retry-1 catches the residual rare flake). 5/5 verification +
+no retries triggered + tight wall-clock variance demonstrate
+the suite is stable.
+
+Suggested STATE.md replacement (if you want a record of the
+fix rather than a clean removal):
+
+> Phase 1 wave-5 flake — RESOLVED 2026-05-15 by quick-task
+> 260515-hkc. Final mitigation: chokidar stabilityThreshold
+> 200->400ms (commit 678dde3) + drain() test sleep 400->500ms
+> (9216944) + test.retry(1) on three timing-sensitive tests
+> (260da64). Verified 5/5 consecutive full-suite runs green,
+> mean wall-clock 8.32s. No retries triggered in the verification
+> window; retry-1 sits as latent insurance.
 
 ## Deviations from PLAN
 
-1. The user's option-A escalation (Task 10) was based on the
-   executor's prior BLOCKED-AGAIN recommendation. That recommendation
-   correctly identified the 5 deterministic positive-assertion sleeps
-   and bumped them clean (Task 10 ✓). But the *premise* of all
-   threshold-pursuit options was wrong: the 700-800ms sleep tests
-   still don't have enough margin even at threshold=500ms with the
-   lock-step bumps applied. Threshold-pursuit asymptotes, the
-   underlying test-design pattern doesn't.
-2. Stopped after Run 2 of Task 11 + 1 diagnostic re-run, per user
-   direction. Did not execute Runs 3-5.
-3. Wall-clock budget breached by ~0.1-0.24s (1.2-2.8% over the
-   8.6s gate); documented above as an additional rationale to
-   revert.
+1. **PLAN "Out of scope" was wrong about watcher.test.ts:132.**
+   The plan asserted the drain() test "works for unrelated reasons"
+   and forbade touching it. The plan was incorrect (the test's own
+   inline comment explicitly says the chokidar event must fire
+   before drain()). User approved the deviation in Task 3.
+2. **PARTIAL-summary recommendation (Round 1 -> Round 2) was wrong
+   on the merits.** The executor recommended bumping the threshold
+   from 400ms to 500ms; that bump deterministically broke 3 sibling
+   tests in change-feed.test.ts. The executor self-corrected and
+   surfaced as BLOCKED.
+3. **BLOCKED-AGAIN recommendation (Round 2 -> Round 3) was correct
+   in implementation but wrong in strategy.** Bumping the 5 sibling
+   sleeps in lock-step fixed the deterministic regression as
+   predicted, but the underlying 700-800ms flake re-emerged at the
+   500ms threshold. The executor self-corrected again and surfaced
+   as BLOCKED-FINAL.
+4. **Final fix took 6 net commits across 4 verification rounds**
+   (originally planned as 2 commits across 1 round). The PLAN's
+   simplicity was justified at-the-time but underestimated the
+   subtlety of the chokidar-test-pattern coupling.
 
 ## Self-Check: PASSED
 
 - File `src/adapters/change-feed/obsidian-fs/chokidar-config.ts`:
-  FOUND; `stabilityThreshold: 500` at line 63.
+  FOUND; `stabilityThreshold: 400` at line 63 (verified via grep).
 - File `src/adapters/change-feed/obsidian-fs/watcher.test.ts`:
-  FOUND; line 132 `sleep(600)`.
+  FOUND; `{ retry: 1 }` at lines 84 and 93; `sleep(500)` at line 132.
 - File `src/adapters/change-feed/obsidian-fs/change-feed.test.ts`:
-  FOUND; positive-assertion sleeps at lines 88, 100, 103, 130, 159
-  all read `sleep(600)`; negative-assertion sleeps at 121, 148, 163
-  preserved at `sleep(500)` (line 148: `sleep(400)`).
-- All 5 commits FOUND in `git log --all`: 678dde3, 9216944, 72a749f,
-  57560ff, f661b6e.
-- Conformance test (13 tests): GREEN at all rounds.
-- change-feed.test.ts isolated: GREEN (10/10).
-- Full-suite: 1/2 GREEN at round-3 (Run 1: PASS 578/0/11; Run 2:
-  FAIL with 1 test on change-feed.test.ts:74).
+  FOUND; `{ retry: 1 }` at line 75; all sleeps at original v1 values.
+- All 6 commits FOUND in `git log --all`: 678dde3, 9216944, f4ee4d9,
+  19f8522, d6917a9, 260da64.
+- Conformance test (13 tests, Pitfall 6): GREEN.
+- Full-suite: 5/5 GREEN; mean 8.32s; range 8.29-8.36s; within budget.
