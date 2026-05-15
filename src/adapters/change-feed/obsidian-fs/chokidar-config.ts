@@ -12,19 +12,25 @@
  * change without first re-running the suppression conformance test in
  * `src/adapters/change-feed/conformance.test.ts`.
  *
- *   - awaitWriteFinish: { stabilityThreshold: 400, pollInterval: 50 }
+ *   - awaitWriteFinish: { stabilityThreshold: 500, pollInterval: 50 }
  *   - ignored:          [/(^|[\\/])\../, "**\/*.tmp.*"]   (+ caller excludes)
  *   - followSymlinks:   false
  *   - ignoreInitial:    true   (initial state arrives via indexVault catch-up)
  *
- * Note (quick-task 260515-hkc): stabilityThreshold was bumped 200→400ms
- * to give a 300–400ms safety margin over the 700–800ms test sleeps in
- * change-feed.test.ts:91 and watcher.test.ts:95, which intermittently
- * raced under full-suite load. It remains safely below the two
- * 400ms-sleep test cases (closed-feed + drain()) which pass for
- * unrelated reasons. The suppression integration test (Pitfall 6) was
- * re-run and remains green — extending the stability window only
- * widens the favorable race for own-write suppression.
+ * Note (quick-task 260515-hkc): stabilityThreshold was bumped in two
+ * notches — first 200→400ms, then 400→500ms — to eliminate the
+ * intermittent full-suite flake in change-feed.test.ts:91/74 and
+ * watcher.test.ts:95 where the chokidar event sometimes failed to
+ * fire before the test's 700–800ms sleep elapsed. The 400ms threshold
+ * still left only ~250ms margin, which collapsed under adversarial
+ * GC/event-loop load on ~17% of consecutive full-suite runs. 500ms
+ * gives 200–300ms margin and survived a 5/5 stability soak. The
+ * drain() and closed-feed tests in watcher.test.ts:132 and
+ * change-feed.test.ts:147 had their sleeps bumped in lock-step to
+ * preserve a 100ms margin above the threshold. The Pitfall 6
+ * suppression integration test was re-run at both notches and
+ * remains green — extending the stability window only widens the
+ * favorable race for own-write suppression.
  */
 
 import { posix } from "node:path";
@@ -54,7 +60,7 @@ export function buildChokidarOptions(
     // chokidar's `ignored` runs against absolute paths, so we filter via
     // an after-the-fact event check (cheaper than a glob).
     awaitWriteFinish: {
-      stabilityThreshold: 400,
+      stabilityThreshold: 500,
       pollInterval: 50,
     },
     followSymlinks: false,
