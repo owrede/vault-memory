@@ -32,7 +32,7 @@ import { queryFrontmatter, updateFrontmatter } from "./frontmatter/index.js";
 import { suggestFrontmatter } from "./schema/index.js";
 import { ObsidianFsDelivery } from "./adapters/delivery/obsidian-fs/index.js";
 import { getAuditLog, getIndexRuns } from "./audit/index.js";
-import { SuppressionSet, VaultWatcher } from "./watcher/index.js";
+import { SuppressionSet, VaultWatcher } from "./adapters/change-feed/obsidian-fs/index.js";
 import {
   catchupVault,
   listModels,

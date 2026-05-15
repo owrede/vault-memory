@@ -16,9 +16,9 @@ import chokidar from "chokidar";
 import type { FSWatcher } from "chokidar";
 import { posix } from "node:path";
 import { sep as nativeSep } from "node:path";
-import type { Vault } from "../vault/index.js";
-import type { OllamaClient } from "../ollama/index.js";
-import { indexNote, removeNote } from "../indexer/index.js";
+import type { Vault } from "../../../vault/index.js";
+import type { OllamaClient } from "../../../ollama/index.js";
+import { indexNote, removeNote } from "../../../indexer/index.js";
 import { DebouncedQueue, type QueueEvent } from "./queue.js";
 import type { SuppressionSet } from "./suppression.js";
 

@@ -17,11 +17,11 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { mkdtemp, writeFile, mkdir, unlink, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Database } from "../db/index.js";
+import { Database } from "../../../db/index.js";
 import { SuppressionSet } from "./suppression.js";
 import { VaultWatcher } from "./watcher.js";
-import type { Vault } from "../vault/index.js";
-import type { OllamaClient } from "../ollama/index.js";
+import type { Vault } from "../../../vault/index.js";
+import type { OllamaClient } from "../../../ollama/index.js";
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
