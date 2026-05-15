@@ -136,4 +136,46 @@ export class NotesQueries {
     const row = this._count.get();
     return row?.c ?? 0;
   }
+
+  /**
+   * Plan 02-06 (MEM-09): count rows whose `path` begins with the given
+   * prefix. Used by the `memory-stats` MCP Resource to count documents
+   * inside a `MemorySink` (the sink's `resolveToRelativePath` is the
+   * prefix, with trailing slash). The path is bound as a parameter; the
+   * `prefix` value MUST end with `/` to keep the match well-defined.
+   */
+  countByPathPrefix(prefix: string): number {
+    const row = this.db
+      .prepare<[string], { c: number }>(
+        "SELECT COUNT(*) AS c FROM notes WHERE path LIKE ? ESCAPE '\\'",
+      )
+      .get(escapeLikePrefix(prefix) + "%");
+    return row?.c ?? 0;
+  }
+
+  /**
+   * Plan 02-06 (MEM-09): list rows whose `path` begins with the given
+   * prefix. Used by the `memory-stats` MCP Resource to aggregate
+   * `by_type` / `by_status` counts from the stored frontmatter JSON.
+   * Default limit is intentionally generous (10_000) — sinks are user-
+   * scoped and typically hold tens of documents in v2.0.0; the cap
+   * exists only as a hedge against pathological sinks.
+   */
+  listByPathPrefix(prefix: string, limit = 10_000): NoteRow[] {
+    return this.db
+      .prepare<[string, number], NoteRow>(
+        "SELECT * FROM notes WHERE path LIKE ? ESCAPE '\\' ORDER BY path LIMIT ?",
+      )
+      .all(escapeLikePrefix(prefix) + "%", limit);
+  }
+}
+
+/**
+ * Backslash-escape SQLite LIKE wildcards in a vault-relative path prefix
+ * so a sink `resolveToRelativePath` containing `%` / `_` / `\` matches
+ * literally. Sinks normally use plain folder names ("_memory/"), but
+ * defending against pathological inputs costs nothing.
+ */
+function escapeLikePrefix(prefix: string): string {
+  return prefix.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
 }

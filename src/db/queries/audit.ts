@@ -24,6 +24,14 @@ export interface RecordWriteInput {
   expectedHash: string | null;
   clientId: string | null;
   diffSummary: string | null;
+  /**
+   * Plan 02-06 (MEM-08): true iff this write was routed under a MemorySink
+   * (agent observation / supersede), false for regular user writes. Stored
+   * as INTEGER 1/0 via migration 009's `is_memory_sink_write` column.
+   * Defaults to false when omitted — preserves Phase 1 call sites that
+   * have not yet been threaded with the sink-derived flag.
+   */
+  isMemorySinkWrite?: boolean;
 }
 
 export interface ListWritesFilter {
@@ -31,6 +39,13 @@ export interface ListWritesFilter {
   op?: string;
   since?: number;
   limit?: number;
+  /**
+   * Plan 02-06 (MEM-08): filter to memory-sink writes only (`true`) or
+   * non-memory writes only (`false`). Omit to include all rows (default,
+   * preserves Phase 1 v1 audit_log behavior). Uses the partial index
+   * `idx_write_audit_memory` for the `true` branch.
+   */
+  isMemorySinkWrite?: boolean;
 }
 
 export class AuditQueries {
@@ -65,8 +80,8 @@ export class AuditQueries {
       "SELECT COUNT(*) AS c FROM index_runs WHERE finished_at IS NULL",
     );
     this._recordWrite = db.prepare(`
-      INSERT INTO write_audit (note_id, op, previous_hash, new_hash, expected_hash, client_id, diff_summary, at)
-      VALUES (@note_id, @op, @previous_hash, @new_hash, @expected_hash, @client_id, @diff_summary, @at)
+      INSERT INTO write_audit (note_id, op, previous_hash, new_hash, expected_hash, client_id, diff_summary, at, is_memory_sink_write)
+      VALUES (@note_id, @op, @previous_hash, @new_hash, @expected_hash, @client_id, @diff_summary, @at, @is_memory_sink_write)
     `);
   }
 
@@ -112,6 +127,11 @@ export class AuditQueries {
       client_id: input.clientId,
       diff_summary: input.diffSummary,
       at: Date.now(),
+      // Phase 1 call sites that have not been threaded with the flag default
+      // to 0 (non-memory write) — backwards-compatible with migration 009's
+      // ALTER default. Memory-routed writes (record_observation, supersede)
+      // pass `isMemorySinkWrite: true`.
+      is_memory_sink_write: input.isMemorySinkWrite ? 1 : 0,
     });
   }
 
@@ -130,10 +150,44 @@ export class AuditQueries {
       where.push("at >= ?");
       params.push(filter.since);
     }
+    if (filter.isMemorySinkWrite !== undefined) {
+      where.push("is_memory_sink_write = ?");
+      params.push(filter.isMemorySinkWrite ? 1 : 0);
+    }
     const limit = filter.limit ?? 100;
     const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
     const sql = `SELECT * FROM write_audit ${whereSql} ORDER BY id DESC LIMIT ?`;
     params.push(limit);
     return this.db.prepare<typeof params, WriteAuditRow>(sql).all(...params);
   }
+
+  /**
+   * Plan 02-06 (MEM-09): epoch-ms timestamp of the most recent memory-sink
+   * write to a note whose path begins with `pathPrefix`, or `null` if no
+   * such row exists. Backed by the `idx_write_audit_memory` partial index
+   * (migration 009).
+   *
+   * Looks up via the `notes.path` value joined to `write_audit.note_id`.
+   * Returns null when the note row was hard-deleted (FK SET NULL) or
+   * when no audit row matches.
+   */
+  lastMemoryWriteAtForPathPrefix(pathPrefix: string): number | null {
+    const row = this.db
+      .prepare<[string], { at: number }>(
+        `SELECT wa.at AS at
+           FROM write_audit AS wa
+           JOIN notes AS n ON n.id = wa.note_id
+          WHERE wa.is_memory_sink_write = 1
+            AND n.path LIKE ? ESCAPE '\\'
+          ORDER BY wa.at DESC
+          LIMIT 1`,
+      )
+      .get(escapeAuditLikePrefix(pathPrefix) + "%");
+    return row?.at ?? null;
+  }
+}
+
+/** Mirror of notes.ts `escapeLikePrefix` — local copy to avoid a cross-file dep. */
+function escapeAuditLikePrefix(prefix: string): string {
+  return prefix.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
 }

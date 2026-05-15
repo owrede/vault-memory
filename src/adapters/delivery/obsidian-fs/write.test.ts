@@ -487,6 +487,210 @@ describe("writeNote — MEM-07 entry-point Guard (Plan 02-03b)", () => {
   });
 });
 
+// ── Plan 02-06 (MEM-08): audit discriminator wiring on write paths ──────
+//
+// `writeNote` records the flag verbatim; the facade derives it from
+// `opts.sink !== undefined`. These tests verify both layers stamp the
+// resulting audit row correctly.
+describe("writeNote — MEM-08 audit discriminator (Plan 02-06)", () => {
+  let vaultDir: string;
+  let vault: Vault;
+
+  beforeEach(async () => {
+    vaultDir = await mkdtemp(join(tmpdir(), "vm-mem08-"));
+    vault = makeVault(vaultDir);
+  });
+  afterEach(async () => {
+    vault.db.close();
+    await rm(vaultDir, { recursive: true, force: true });
+  });
+
+  it("writeNote WITHOUT isMemorySinkWrite → audit row has is_memory_sink_write=0", async () => {
+    const res = await writeNote({
+      vault,
+      relativePath: "user.md",
+      content: "x",
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const rows = vault.db.audit.listWrites({ noteId: res.noteId });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.is_memory_sink_write).toBe(0);
+  });
+
+  it("writeNote WITH isMemorySinkWrite: true → audit row has is_memory_sink_write=1", async () => {
+    const res = await writeNote({
+      vault,
+      relativePath: "agent.md",
+      content: "x",
+      isMemorySinkWrite: true,
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    const rows = vault.db.audit.listWrites({ noteId: res.noteId });
+    expect(rows[0]!.is_memory_sink_write).toBe(1);
+    // Filter end-to-end.
+    expect(vault.db.audit.listWrites({ isMemorySinkWrite: true })).toHaveLength(1);
+    expect(vault.db.audit.listWrites({ isMemorySinkWrite: false })).toHaveLength(0);
+  });
+
+  it("deleteNote WITHOUT isMemorySinkWrite → delete audit row has is_memory_sink_write=0", async () => {
+    const w = await writeNote({ vault, relativePath: "doomed.md", content: "x" });
+    expect(w.ok).toBe(true);
+    if (!w.ok) return;
+    const d = await deleteNote({
+      vault,
+      relativePath: "doomed.md",
+      expectedHash: w.newHash,
+    });
+    expect(d.ok).toBe(true);
+    const rows = vault.db.audit.listWrites({});
+    const del = rows.find((r) => r.op === "delete");
+    expect(del).toBeDefined();
+    expect(del!.is_memory_sink_write).toBe(0);
+  });
+});
+
+describe("ObsidianFsDelivery facade — MEM-08 audit discriminator (Plan 02-06)", () => {
+  // The facade derives `isMemorySinkWrite` from `opts.sink !== undefined`.
+  // We use the existing sentinel-fixture pattern (sink + valid sentinel)
+  // so the Guard chain passes and the write actually records an audit row.
+  const SINK_REL_PATH = "_memory/";
+
+  async function makeSinkFixture() {
+    const vaultDir = await mkdtemp(join(tmpdir(), "vm-mem08-facade-"));
+    const db = new Database(":memory:", "mem08-vault");
+    const vault: Vault = {
+      config: { name: "mem08-vault", path: vaultDir, write_enabled: true },
+      db,
+      dbPath: ":memory:",
+    };
+    const registry = new MemorySinkRegistry();
+    const sinkHandle = parseMemorySinkHandle(
+      `obsidian-fs://mem08-vault/${SINK_REL_PATH}`,
+    );
+    await registry.registerMemorySinks(
+      [{ name: "default", handle: sinkHandle, contract: "default-memory-v1" }],
+      {
+        resolveVaultAbsolutePath: () => vaultDir,
+        provisioner: async (sink: MemorySink, vaultAbs: string) => {
+          await provisionSink(sink, vaultAbs, { version: "test" });
+        },
+      },
+    );
+    const adapter = new ObsidianFsDelivery(vault, "test-client", registry);
+    return {
+      adapter,
+      sinkHandle,
+      vault,
+      vaultDir,
+      cleanup: async () => {
+        db.close();
+        await rm(vaultDir, { recursive: true, force: true });
+      },
+    };
+  }
+
+  function fullyValidAgentProps(): Record<string, unknown> {
+    return {
+      source: "agent",
+      confidence: "direct",
+      evidence: ["call-2026-01-01"],
+      status: "active",
+      observed_at: "2026-01-01T10:00:00Z",
+      superseded_by: null,
+      type: "fact",
+    };
+  }
+
+  it("write() WITHOUT opts.sink → audit row is_memory_sink_write=0", async () => {
+    const f = await makeSinkFixture();
+    try {
+      const id = formatDocId("obsidian-fs", "mem08-vault", "regular.md");
+      const res = await f.adapter.write(id, {
+        properties: { source: "user" },
+        blocks: [{ kind: "paragraph", text: "user note" }],
+      });
+      expect(res.ok).toBe(true);
+      const rows = f.vault.db.audit.listWrites({});
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.is_memory_sink_write).toBe(0);
+    } finally {
+      await f.cleanup();
+    }
+  });
+
+  it("write() WITH opts.sink → audit row is_memory_sink_write=1", async () => {
+    const f = await makeSinkFixture();
+    try {
+      const id = formatDocId(
+        "obsidian-fs",
+        "mem08-vault",
+        `${SINK_REL_PATH}obs.md`,
+      );
+      const res = await f.adapter.write(
+        id,
+        {
+          properties: fullyValidAgentProps(),
+          blocks: [{ kind: "paragraph", text: "obs" }],
+        },
+        { sink: f.sinkHandle },
+      );
+      expect(res.ok).toBe(true);
+      const rows = f.vault.db.audit.listWrites({});
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.is_memory_sink_write).toBe(1);
+      // Filter pin: memory-only listWrites returns this row; non-memory excludes it.
+      expect(
+        f.vault.db.audit.listWrites({ isMemorySinkWrite: true }),
+      ).toHaveLength(1);
+      expect(
+        f.vault.db.audit.listWrites({ isMemorySinkWrite: false }),
+      ).toHaveLength(0);
+    } finally {
+      await f.cleanup();
+    }
+  });
+
+  it("update() WITH opts.sink → audit row is_memory_sink_write=1", async () => {
+    const f = await makeSinkFixture();
+    try {
+      const id = formatDocId(
+        "obsidian-fs",
+        "mem08-vault",
+        `${SINK_REL_PATH}obs.md`,
+      );
+      // Seed initial memory write via the facade.
+      const writeRes = await f.adapter.write(
+        id,
+        {
+          properties: fullyValidAgentProps(),
+          blocks: [{ kind: "paragraph", text: "v1" }],
+        },
+        { sink: f.sinkHandle },
+      );
+      expect(writeRes.ok).toBe(true);
+      if (!writeRes.ok) return;
+
+      const updRes = await f.adapter.update(
+        id,
+        {
+          properties: { ...fullyValidAgentProps(), status: "active" },
+          blocks: [{ kind: "paragraph", text: "v2" }],
+        },
+        { sink: f.sinkHandle, expectedHash: writeRes.newHash },
+      );
+      expect(updRes.ok).toBe(true);
+      const rows = f.vault.db.audit.listWrites({});
+      // Both rows are memory-sink writes.
+      expect(rows).toHaveLength(2);
+      for (const r of rows) expect(r.is_memory_sink_write).toBe(1);
+    } finally {
+      await f.cleanup();
+    }
+  });
+});
+
 describe("deleteNote — MEM-07 entry-point Guard (Plan 02-03b)", () => {
   let vaultDir: string;
   let vault: Vault;

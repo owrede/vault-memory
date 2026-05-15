@@ -95,6 +95,15 @@ export interface WriteNoteInput {
    * production callers are always guarded.
    */
   registry?: MemorySinkRegistry;
+  /**
+   * Plan 02-06 (MEM-08): whether this write is routed under a configured
+   * `MemorySink`. The DeliveryAdapter facade derives the flag from
+   * `opts.sink !== undefined` and forwards it; v1 `writeNote` callers
+   * (e.g. `update_frontmatter`, raw `write_note`) leave it `false`. Stored
+   * on the resulting `write_audit` row so `audit_log` can distinguish
+   * agent-written memory documents from regular user writes.
+   */
+  isMemorySinkWrite?: boolean;
 }
 
 export interface DeleteNoteInput {
@@ -110,6 +119,16 @@ export interface DeleteNoteInput {
    *  Plan 02-03 truth: hard deletion of memory documents is forbidden in
    *  v2.0.0; agents retire memory documents via supersede. */
   registry?: MemorySinkRegistry;
+  /**
+   * Plan 02-06 (MEM-08): whether this delete is routed under a configured
+   * `MemorySink`. v2.0.0 forbids hard-deletion inside a sink (the
+   * DeliveryAdapter facade and the entry-point Guard reject sink-resolved
+   * paths) — this flag exists for symmetry with `WriteNoteInput` and for
+   * audit-row stamping at any future delete path that does land inside a
+   * sink (e.g. an admin-tier delete that bypasses the Guard). Defaults to
+   * `false`; pre-Plan-02-06 call sites need no change.
+   */
+  isMemorySinkWrite?: boolean;
 }
 
 /**
@@ -288,6 +307,11 @@ export async function writeNote(input: WriteNoteInput): Promise<WriteResult> {
         expectedHash: input.expectedHash ?? null,
         clientId,
         diffSummary: null,
+        // Plan 02-06 (MEM-08): stamp the audit row with the sink-routing
+        // flag the facade derived from `opts.sink !== undefined`. v1 call
+        // sites that haven't been threaded leave the field undefined →
+        // recordWrite defaults to 0 (non-memory).
+        isMemorySinkWrite: input.isMemorySinkWrite ?? false,
       });
       return up.id;
     });
@@ -399,6 +423,11 @@ export async function deleteNote(input: DeleteNoteInput): Promise<WriteResult> {
         expectedHash,
         clientId,
         diffSummary: null,
+        // Plan 02-06 (MEM-08): symmetric stamp on delete. Production
+        // deletes targeting a sink are refused by the entry-point Guard
+        // and the facade — so this flag is normally `false` on delete
+        // rows. Pass-through retained for symmetry / future admin paths.
+        isMemorySinkWrite: input.isMemorySinkWrite ?? false,
       });
       vault.db.notes.deleteByPath(relativePath);
     });

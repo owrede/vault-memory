@@ -39,3 +39,17 @@ export type { MemoryContract } from "./contract/index.js";
 // Plan 02-05 — citation packet shape (D-01); shared with Phase 3 ASM-05.
 export { displayUrlFor, toCitationPacket } from "./citation-packet.js";
 export type { CitationPacket } from "./citation-packet.js";
+
+// Plan 02-06 (MEM-09) — MCP Resources for sink listing + per-sink stats.
+export {
+  readListSinks,
+  readMemoryStats,
+  RESOURCE_URI_LIST_SINKS,
+  RESOURCE_URI_MEMORY_STATS,
+} from "./resources/index.js";
+export type {
+  ListSinksResource,
+  ListSinkEntry,
+  MemoryStatsResource,
+  MemoryStatsEntry,
+} from "./resources/index.js";

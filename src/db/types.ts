@@ -30,4 +30,12 @@ export interface WriteAuditRow {
   client_id: string | null;
   diff_summary: string | null;
   at: number;
+  /**
+   * Migration 009 (MEM-08, Plan 02-06): 1 iff this write was routed under
+   * a MemorySink (agent observation / supersede). 0 for regular user writes
+   * and for any row predating migration 009 (default applied during ALTER).
+   * Boolean conversion happens at the AuditQueries / audit layer; the DB
+   * column is INTEGER NOT NULL DEFAULT 0.
+   */
+  is_memory_sink_write: 0 | 1;
 }

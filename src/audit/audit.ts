@@ -32,6 +32,14 @@ export interface AuditLogEntry {
   diffSummary: string | null;
   /** Epoch ms. */
   at: number;
+  /**
+   * Plan 02-06 (MEM-08): true iff this write was routed under a configured
+   * MemorySink (agent observation, supersede). False for regular user writes
+   * and for any audit row predating migration 009 (those rows surface as
+   * `false` per the column default). Filter via the `is_memory_sink_write`
+   * filter on `getAuditLog` / the `audit_log` MCP tool.
+   */
+  is_memory_sink_write: boolean;
 }
 
 export interface IndexRunEntry {
@@ -56,6 +64,12 @@ export interface GetAuditLogInput {
   /** Epoch ms — only entries at or after this timestamp. */
   since?: number;
   limit?: number;
+  /**
+   * Plan 02-06 (MEM-08): when set, restricts the result to memory-sink
+   * writes (`true`) or non-memory writes (`false`). When omitted, both
+   * kinds are included — preserves the v1 audit_log default behavior.
+   */
+  is_memory_sink_write?: boolean;
 }
 
 export interface GetIndexRunsInput {
@@ -83,6 +97,9 @@ export function getAuditLog(input: GetAuditLogInput): AuditLogEntry[] {
   }
   if (input.op !== undefined) filter.op = input.op;
   if (input.since !== undefined) filter.since = input.since;
+  if (input.is_memory_sink_write !== undefined) {
+    filter.isMemorySinkWrite = input.is_memory_sink_write;
+  }
 
   const rows = vault.db.audit.listWrites(filter);
 
@@ -99,6 +116,10 @@ export function getAuditLog(input: GetAuditLogInput): AuditLogEntry[] {
       clientId: row.client_id,
       diffSummary: row.diff_summary,
       at: row.at,
+      // SQLite returns the column as 0 | 1; convert to JS boolean at the
+      // audit-layer boundary so callers (MCP audit_log + tests) see the
+      // documented `is_memory_sink_write: boolean` shape.
+      is_memory_sink_write: row.is_memory_sink_write === 1,
     };
   });
 }

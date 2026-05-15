@@ -281,6 +281,11 @@ export const TOOLS = [
           description: "Epoch ms — entries at or after this timestamp.",
         },
         limit: { type: "integer", minimum: 1, maximum: 1000, default: 50 },
+        is_memory_sink_write: {
+          type: "boolean",
+          description:
+            "Filter rows to memory-sink writes only (true) or non-memory writes only (false). Omit to include all. See docs/tools/audit_log.md.",
+        },
       },
     },
   },
@@ -706,6 +711,10 @@ export const TOOL_SCHEMAS = {
     op: z.enum(["create", "update", "delete"]).optional(),
     since: z.number().int().nonnegative().optional(),
     limit: z.number().int().positive().max(1000).optional().default(50),
+    // Plan 02-06 (MEM-08): additive optional filter. The MCP tool's
+    // `description` string is INTENTIONALLY unchanged — Phase 1 byte-identity
+    // is preserved. New capability is documented in docs/tools/audit_log.md.
+    is_memory_sink_write: z.boolean().optional(),
   },
 
   list_models: {
