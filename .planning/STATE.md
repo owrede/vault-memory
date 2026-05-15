@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: release
-status: executing
-stopped_at: Wave 5 (plan 01-05) complete; ready for /gsd-execute-phase 1 --wave 6
-last_updated: "2026-05-15T10:30:00.000Z"
-last_activity: "2026-05-15 -- Wave 5 (01-05) executed in worktree, merged to main (14ec89f). Third vertical seam slice (ChangeFeed) + the major dep bump. git mv src/watcher/{watcher,queue,suppression}{,.test}.ts → src/adapters/change-feed/obsidian-fs/ (6 renames at 86–100% similarity; blame preserved via git log --follow). ObsidianFsChangeFeed facade + StubChangeFeed (EventEmitter-backed). 13-case parameterized conformance suite incl. Pitfall #6 suppression-set integration test. Chokidar config extracted into shared buildChokidarOptions helper (verified byte-for-byte identical to v1 inline — 4 critical fields preserved). MCP SDK ^1.29.0 + Zod ^4.4.3 LIVE (npm install on main was needed post-merge to align node_modules with the lockfile — npm had silently dedupped to Zod 3.25 from the SDK's transitive until the explicit install ran). registerTool × 23 migration: tool-registry.ts split into TOOLS (JSON Schema literals, snapshot-stable) + TOOL_SCHEMAS (Zod 4 raw shapes for SDK consumption). Critical empirical finding: SDK#1143 description-drop (Pitfall #2) is MOOT in SDK 1.29 — toJsonSchemaCompat propagates BOTH top-level description AND per-field .describe() chains end-to-end. The plan's documented workaround (raw JSON Schema to registerTool) doesn't work because SDK 1.29's registerTool throws on non-Zod inputSchema. Zod 4 + SDK 1.29 snapshot regen: ZERO DIFF on evals/v1-baseline/tools-list.snapshot.json. 7 task commits + SUMMARY. 578 tests pass (+38 over 540), lint:check + eval:baseline + build all green. Known: one chokidar timing flake in change-feed.test.ts:91 (700ms awaitWriteFinish race under suite load); 3/4 full-suite runs green, same flake pattern existed pre-wave in watcher.test.ts."
+status: verifying
+stopped_at: All 6 waves complete; Phase 1 implementation done; ready for /gsd-verify-work
+last_updated: "2026-05-15T12:25:00.000Z"
+last_activity: "2026-05-15 -- Wave 6 (01-06) executed in worktree, merged to main (a76cb50): final polish + CI gates. 8 task commits + SUMMARY: scripts/lint-adapters.sh (8 invariants: I-1..I-6 + I-5b + C-1, POSIX, Alpine-portable); scripts/smoketest-non-claude.mjs (Inspector SDK Client harness identifying as 'non-claude-smoketest', 4 assertions: 23 tools / non-empty descriptions / list_vaults call OK / bogus call surfaces error A6); docs/v2/AGENT_AGNOSTIC_AUDIT.md (22 rows cross-referenced to CONCERNS.md, every leak fixed-v2 or deferred-v3 with resolving-commit refs); README rewritten with 'any MCP-aware agent' framing twice in first 12 lines; CHANGELOG [Unreleased] v2.0.0 entries (Added/Changed/Migration); src/cli.ts C-1 sweep + escape markers for legitimate ecosystem refs; .github/workflows/ci.yml wired with lint-adapters + baseline-eval + build + smoketest steps. W6 human-verify checkpoint APPROVED with empirical evidence (snapshot zero-diff, audit completeness, README tone). FINAL PHASE-GATE: all 6 commands green on main — lint:check (8 invariants + tsc + prettier) ✓, 578 tests ✓, eval:baseline (29 tests) ✓, lint-adapters.sh ✓, build (dist/cli.js 233.96 KB) ✓, smoketest (4 assertions) ✓. Three Task-01 deviations auto-fixed (grep -a UTF-8 flag, // vault-memory:claude-ok escape mechanism, I-3 allow-list extension to server.ts + indexer/single.ts). Phase 1 implementation COMPLETE; awaiting gsd-verifier for goal-backward verification."
 progress:
   total_phases: 10
   completed_phases: 1
   total_plans: 21
-  completed_plans: 20
-  percent: 95
+  completed_plans: 21
+  percent: 100
 ---
 
 # Project State
@@ -25,12 +25,12 @@ See: .planning/PROJECT.md (updated 2026-05-14)
 
 ## Current Position
 
-Phase: 01 (adapter-extraction-tech-debt-up) — EXECUTING
-Plan: 5 of 6 complete; 1 remaining (01-06)
-Status: Wave 5 merged (14ec89f). 01-05 SUMMARY committed. Worktree pruned. npm install run on main to align node_modules with lockfile (Zod 4.4.3 now LIVE; SDK 1.29.0 LIVE). lint:check + 578 tests + eval:baseline + build + snapshot regen (zero diff) all green. All three vertical seam slices (Source/Delivery/ChangeFeed) landed; src/{reader,write,watcher}/ all empty; chokidar/gray-matter/fs leaks all confined to adapter directories. Critical empirical finding: SDK#1143 (Pitfall #2) is MOOT in SDK 1.29 — descriptions propagate end-to-end via toJsonSchemaCompat. Known flake: change-feed.test.ts:91 (700ms chokidar awaitWriteFinish race; 1/4 full-suite runs failed but the individual file run is stable; same pattern exists pre-wave in watcher.test.ts). Resume with /gsd-execute-phase 1 --wave 6 (final polish — lint-adapters.sh + Inspector smoketest + AGENT_AGNOSTIC_AUDIT.md + README rewrite + CI wiring + W6 human-verify checkpoint for the manual snapshot description-diff against Phase-0 baseline).
-Last activity: 2026-05-15 -- Wave 5 merged; ChangeFeed adapter + MCP SDK 1.29 + Zod 4 + registerTool x23 land on main
+Phase: 01 (adapter-extraction-tech-debt-up) — IMPLEMENTATION COMPLETE, awaiting verifier
+Plan: 6 of 6 complete (all SUMMARYs committed)
+Status: Wave 6 merged (a76cb50). 01-06 SUMMARY committed (1b7fcb4). Worktree pruned. All 6 final phase-gate commands green on main: lint:check ✓ · 578 tests ✓ · eval:baseline (29) ✓ · lint-adapters.sh (8 invariants) ✓ · build (dist/cli.js 233.96 KB) ✓ · smoketest (4 assertions: 23 tools / non-empty descriptions / list_vaults / A6 error surfacing) ✓. All 5 ROADMAP success criteria materially met; v1-baseline tools-list.snapshot.json byte-for-byte preserved across the entire phase (zero drift under SDK 1.29 + Zod 4); 23 v1 tool surface unchanged. Resume with /gsd-verify-work for goal-backward verification (does the implementation deliver what the phase promised?).
+Last activity: 2026-05-15 -- Wave 6 merged; Phase 1 implementation complete (lint-adapters + smoketest + agent-agnostic audit + README + CHANGELOG + CI). All phase-gate commands green.
 
-Progress: [██████████] 95%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -96,6 +96,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-15T10:30:00.000Z
-Stopped at: Wave 5 (plan 01-05) complete; ready for /gsd-execute-phase 1 --wave 6
-Resume file: .planning/phases/01-adapter-extraction-tech-debt-up/01-06-PLAN.md (wave 6 — final polish: lint-adapters.sh + Inspector smoketest + AGENT_AGNOSTIC_AUDIT.md + README + CI wiring + W6 human-verify checkpoint)
+Last session: 2026-05-15T12:25:00.000Z
+Stopped at: All 6 waves complete; Phase 1 implementation done; ready for /gsd-verify-work
+Resume file: (none — phase done) — run `/gsd-verify-work` to verify the implementation delivers Phase 1's 5 success criteria + 15 ADP requirements end-to-end
