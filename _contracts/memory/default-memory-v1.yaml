@@ -1,0 +1,36 @@
+# default-memory-v1 — canonical Memory Contract baseline.
+#
+# This file mirrors the hardcoded `DEFAULT_MEMORY_V1` constant in
+# `src/memory/contract/default-v1.ts` and the normative spec in
+# `docs/v2/MEMORY_CONTRACT.md`. It is also the shape ratified by the
+# 2026-05-15 ADR-004 amendment (underscored PropertyBag keys, the
+# `[direct, inferred, uncertain]` confidence enum, and the
+# `superseded_reason` cross-field rule).
+#
+# The runtime validator can either consume the hardcoded baseline
+# directly (fast path) OR load this YAML via
+# `loadContractFromDisk("default-memory-v1", vaultPath)` (cold path
+# used by tests + future per-vault contract overrides).
+name: default-memory-v1
+version: "1.0"
+
+required_properties:
+  source:        { type: string, allowed: [agent, user, imported] }
+  confidence:    { type: string, allowed: [direct, inferred, uncertain] }
+  evidence:      { type: array,  items: { type: reference }, min_length: 0 }
+  status:        { type: string, allowed: [active, superseded, archived], default: active }
+  observed_at:   { type: datetime }
+  superseded_by: { type: reference, nullable: true }
+  type:          { type: string, min_length: 1 }
+
+optional_properties:
+  superseded_reason: { type: string }
+  expires_at:        { type: datetime }
+
+cross_field_rules:
+  - when: "status == 'superseded'"
+    require: "superseded_by && superseded_reason"
+
+naming:
+  strategy: date-slug
+  pattern: "{observed_at:YYYY-MM-DD}-{slug}.md"
