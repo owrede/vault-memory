@@ -43,7 +43,7 @@ import { computeNoteHash } from "../../source/obsidian-fs/hash.js";
 import { validateAgentWrite } from "../../../memory/validator.js";
 import { getContract } from "../../../memory/contract/index.js";
 import type { MemorySinkRegistry } from "../../../memory/registry.js";
-import { assertSentinelExists } from "./sentinel.js";
+import { assertSentinelExists, SinkSentinelCheckError } from "./sentinel.js";
 
 // ─── Legacy re-exports (v1 callers + tests) ─────────────────────────────────
 //
@@ -184,8 +184,29 @@ export class ObsidianFsDelivery implements DeliveryAdapter {
     if (sourceCheck) return sourceCheck;
 
     // Sentinel check (filesystem-specific) — only when target lands in a sink.
+    // WR-06 (gap-closure Plan 02-10): ENOENT distinguishes from other errno
+    // codes. The literal `"sentinel_check_failed"` was added to the
+    // WriteConflict.reason union by Plan 02-13 Task 1 in wave 9; this plan
+    // CONSUMES that literal here.
     if (sink !== null) {
-      const ok = await assertSentinelExists(sink, this.vault.config.path);
+      let ok: boolean;
+      try {
+        ok = await assertSentinelExists(sink, this.vault.config.path);
+      } catch (err) {
+        if (err instanceof SinkSentinelCheckError) {
+          return {
+            ok: false,
+            reason: "sentinel_check_failed",
+            sinkName: sink.name,
+            message: err.message,
+            suggestion:
+              `Check filesystem permissions / disk health for ` +
+              `${this.vault.config.name}/${sink.resolveToRelativePath}. ` +
+              `Underlying errno: ${err.underlyingCode}.`,
+          };
+        }
+        throw err;
+      }
       if (!ok) {
         return {
           ok: false,
