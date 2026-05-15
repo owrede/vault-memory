@@ -8,10 +8,12 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { Database } from "../../db/database.js";
+import { LIST_BY_PATH_PREFIX_DEFAULT_LIMIT } from "../../db/queries/notes.js";
 import { MemorySinkRegistry } from "../registry.js";
 import { readMemoryStats } from "./memory-stats.js";
 import type { VaultManager } from "../../vault/manager.js";
 import type { Vault } from "../../vault/manager.js";
+import type { NoteRow } from "../../types.js";
 
 const VAULT_NAME = "atlas";
 const VAULT_PATH = "/abs/vault/atlas";
@@ -215,5 +217,89 @@ describe("readMemoryStats (MEM-09 / Plan 02-06)", () => {
     expect(out.total_docs).toBe(1);
     expect(out.sinks[0]!.by_type).toEqual({});
     expect(out.sinks[0]!.by_status).toEqual({});
+  });
+
+  it("emits truncated:true when listByPathPrefix hits the default cap (IN-03)", async () => {
+    await registry.registerMemorySinks(
+      [
+        {
+          name: "default",
+          handle: `obsidian-fs://${VAULT_NAME}/_memory/`,
+          contract: "default-memory-v1",
+        },
+      ],
+      {
+        resolveVaultAbsolutePath: () => VAULT_PATH,
+        provisioner: vi.fn().mockResolvedValue(undefined),
+      },
+    );
+
+    // Seed a small handful of real rows; the spy below substitutes the
+    // listByPathPrefix output with a cap-hit slice so we don't actually
+    // need 10_000 real rows.
+    seedNote(db, "_memory/obs-1.md", { type: "fact", status: "active" });
+    seedNote(db, "_memory/obs-2.md", { type: "fact", status: "active" });
+
+    // Force `countByPathPrefix` to report MORE docs than the cap so the
+    // entry shows doc_count > by_type aggregate sum.
+    vi.spyOn(db.notes, "countByPathPrefix").mockReturnValue(
+      LIST_BY_PATH_PREFIX_DEFAULT_LIMIT + 42,
+    );
+    // Force `listByPathPrefix` to return exactly cap rows (synthesize a
+    // minimal NoteRow shape — only `frontmatter` is consumed downstream).
+    const synthFm = JSON.stringify({ type: "fact", status: "active" });
+    const synthRows: NoteRow[] = Array.from(
+      { length: LIST_BY_PATH_PREFIX_DEFAULT_LIMIT },
+      (_, i) =>
+        ({
+          id: i + 1,
+          path: `_memory/synth-${i}.md`,
+          content: "x",
+          frontmatter: synthFm,
+          title: `synth-${i}`,
+          hash: `h-${i}`,
+          body_hash: `b-${i}`,
+          doc_uri: null,
+          mtime: 1,
+          word_count: 1,
+          created_at: 1,
+          updated_at: 1,
+        }) as unknown as NoteRow,
+    );
+    vi.spyOn(db.notes, "listByPathPrefix").mockReturnValue(synthRows);
+
+    const out = readMemoryStats(registry, makeManager(vault));
+    const entry = out.sinks[0]!;
+    expect(entry.truncated).toBe(true);
+    expect(entry.doc_count).toBe(LIST_BY_PATH_PREFIX_DEFAULT_LIMIT + 42);
+    const byTypeSum = Object.values(entry.by_type).reduce((a, b) => a + b, 0);
+    expect(byTypeSum).toBe(LIST_BY_PATH_PREFIX_DEFAULT_LIMIT);
+    expect(entry.doc_count).toBeGreaterThan(byTypeSum);
+  });
+
+  it("omits the truncated marker on a small sink well below the cap (IN-03 negative control)", async () => {
+    await registry.registerMemorySinks(
+      [
+        {
+          name: "default",
+          handle: `obsidian-fs://${VAULT_NAME}/_memory/`,
+          contract: "default-memory-v1",
+        },
+      ],
+      {
+        resolveVaultAbsolutePath: () => VAULT_PATH,
+        provisioner: vi.fn().mockResolvedValue(undefined),
+      },
+    );
+
+    for (let i = 0; i < 5; i += 1) {
+      seedNote(db, `_memory/obs-${i}.md`, { type: "fact", status: "active" });
+    }
+
+    const out = readMemoryStats(registry, makeManager(vault));
+    const entry = out.sinks[0]!;
+    expect(entry.doc_count).toBe(5);
+    // The marker is omitted (or explicitly false) when the cap was not hit.
+    expect(entry.truncated).toBeUndefined();
   });
 });

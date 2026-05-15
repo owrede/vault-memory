@@ -1,6 +1,15 @@
 import type BetterSqlite3 from "better-sqlite3";
 import type { NoteRow } from "../../types.js";
 
+/**
+ * Default cap on `listByPathPrefix` row count. Sized to cover any
+ * realistic v2.0.0 sink (sinks hold tens of documents at most). The
+ * cap is exposed as a constant so consumers (e.g. `memory-stats`
+ * Resource at `src/memory/resources/memory-stats.ts`) can detect
+ * when the cap was hit and emit `truncated: true` (IN-03 closure).
+ */
+export const LIST_BY_PATH_PREFIX_DEFAULT_LIMIT = 10_000;
+
 export interface UpsertNoteInput {
   path: string;
   content: string;
@@ -157,11 +166,13 @@ export class NotesQueries {
    * Plan 02-06 (MEM-09): list rows whose `path` begins with the given
    * prefix. Used by the `memory-stats` MCP Resource to aggregate
    * `by_type` / `by_status` counts from the stored frontmatter JSON.
-   * Default limit is intentionally generous (10_000) — sinks are user-
-   * scoped and typically hold tens of documents in v2.0.0; the cap
-   * exists only as a hedge against pathological sinks.
+   * Default limit is `LIST_BY_PATH_PREFIX_DEFAULT_LIMIT` (10_000) —
+   * sinks are user-scoped and typically hold tens of documents in
+   * v2.0.0; the cap exists only as a hedge against pathological sinks.
+   * Callers that need to detect cap-hit (e.g. memory-stats `truncated`
+   * marker, IN-03) compare `rows.length === LIST_BY_PATH_PREFIX_DEFAULT_LIMIT`.
    */
-  listByPathPrefix(prefix: string, limit = 10_000): NoteRow[] {
+  listByPathPrefix(prefix: string, limit = LIST_BY_PATH_PREFIX_DEFAULT_LIMIT): NoteRow[] {
     return this.db
       .prepare<[string, number], NoteRow>(
         "SELECT * FROM notes WHERE path LIKE ? ESCAPE '\\' ORDER BY path LIMIT ?",

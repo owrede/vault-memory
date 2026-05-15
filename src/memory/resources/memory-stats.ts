@@ -21,6 +21,7 @@
 
 import type { MemorySinkRegistry } from "../registry.js";
 import type { VaultManager } from "../../vault/manager.js";
+import { LIST_BY_PATH_PREFIX_DEFAULT_LIMIT } from "../../db/queries/notes.js";
 
 export interface MemoryStatsResource {
   /** Aggregate document count across all sinks. */
@@ -37,6 +38,17 @@ export interface MemoryStatsEntry { // vault-memory:no-telemetry-ok
   by_status: Record<string, number>;
   /** Epoch ms of the most recent memory-sink write into this sink, or null. */
   last_write_at: number | null;
+  /**
+   * IN-03: True iff the `by_type` / `by_status` aggregation hit the
+   * `LIST_BY_PATH_PREFIX_DEFAULT_LIMIT` cap. When true, `doc_count`
+   * still reflects the accurate row count (it comes from
+   * `countByPathPrefix`, which is unbounded), but the `by_type` /
+   * `by_status` sums undercount by
+   * `doc_count - LIST_BY_PATH_PREFIX_DEFAULT_LIMIT`. Omitted when
+   * the cap was not hit. Consumers detecting this can either widen
+   * the sink configuration or accept the undercount.
+   */
+  truncated?: boolean;
 }
 
 /**
@@ -79,14 +91,18 @@ export function readMemoryStats(
     const by_type: Record<string, number> = {};
     const by_status: Record<string, number> = {};
     // Bounded scan — see TSDoc on listByPathPrefix; sinks in v2.0.0 hold
-    // tens of documents, not thousands.
-    for (const row of vault.db.notes.listByPathPrefix(prefix)) {
+    // tens of documents, not thousands. The `truncated` marker (IN-03)
+    // surfaces the rare case where the cap was hit so consumers can
+    // detect the doc_count vs by_type/by_status inconsistency.
+    const rows = vault.db.notes.listByPathPrefix(prefix);
+    for (const row of rows) {
       const fm = parseFrontmatter(row.frontmatter);
       const type = stringField(fm, "type");
       const status = stringField(fm, "status");
       if (type !== null) by_type[type] = (by_type[type] ?? 0) + 1;
       if (status !== null) by_status[status] = (by_status[status] ?? 0) + 1;
     }
+    const truncated = rows.length >= LIST_BY_PATH_PREFIX_DEFAULT_LIMIT;
 
     const last_write_at = vault.db.audit.lastMemoryWriteAtForPathPrefix(prefix);
 
@@ -98,6 +114,7 @@ export function readMemoryStats(
       by_type,
       by_status,
       last_write_at,
+      ...(truncated ? { truncated: true } : {}),
     });
   }
 
