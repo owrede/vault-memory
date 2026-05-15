@@ -112,7 +112,14 @@ describe("ObsidianFsDelivery", () => {
 
   it("update(unknown id) → not_found", async () => {
     const id = formatDocId("obsidian-fs", "test-vault", "ghost.md");
-    const res = await delivery.update(id, { properties: { key: "v" } });
+    // WR-05 (Plan 02-14): update() refuses without opts.expectedHash, so
+    // supply a placeholder hash to exercise the not_found path. The placeholder
+    // never reaches OCC because the file is absent.
+    const res = await delivery.update(
+      id,
+      { properties: { key: "v" } },
+      { expectedHash: "0".repeat(64) },
+    );
     expect(res.ok).toBe(false);
     if (res.ok) return;
     expect(res.reason).toBe("not_found");
@@ -189,5 +196,66 @@ describe("ObsidianFsDelivery", () => {
     await expect(
       delivery.write(wrongId, { blocks: [{ kind: "paragraph", text: "x" }] }),
     ).rejects.toThrow(/vault mismatch/);
+  });
+
+  // ── WR-05 (Plan 02-14): update() refuses without opts.expectedHash ──────────
+  //
+  // The `hashProtected: "strong"` capability descriptor MUST hold for the
+  // update() path. Previously, when expectedHash was omitted, the adapter
+  // silently fabricated it by reading the on-disk hash — racing with
+  // concurrent edits between readFile and atomicWriteFile. This block pins
+  // the refusal so the OCC contract is honest.
+
+  it("WR-05: update without opts returns hash_mismatch", async () => {
+    const id = formatDocId("obsidian-fs", "test-vault", "wr05-no-opts.md");
+    const first = await delivery.write(id, {
+      blocks: [{ kind: "paragraph", text: "v1" }],
+    });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+
+    const res = await delivery.update(id, { properties: { x: 1 } });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.reason).toBe("hash_mismatch");
+    expect(res.message).toMatch(/requires opts\.expectedHash/);
+  });
+
+  it("WR-05: update with opts but no expectedHash returns hash_mismatch", async () => {
+    const id = formatDocId("obsidian-fs", "test-vault", "wr05-empty-opts.md");
+    const first = await delivery.write(id, {
+      blocks: [{ kind: "paragraph", text: "v1" }],
+    });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+
+    const res = await delivery.update(id, { properties: { x: 1 } }, {});
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.reason).toBe("hash_mismatch");
+    expect(res.message).toMatch(/requires opts\.expectedHash/);
+  });
+
+  it("WR-05: update with correct expectedHash succeeds", async () => {
+    const id = formatDocId("obsidian-fs", "test-vault", "wr05-ok.md");
+    const first = await delivery.write(id, {
+      blocks: [{ kind: "paragraph", text: "v1" }],
+      properties: { a: 1 },
+    });
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+
+    const res = await delivery.update(
+      id,
+      { properties: { a: 2 } },
+      { expectedHash: first.newHash },
+    );
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    expect(res.doc_id).toBe(id);
+    expect(res.newHash).toMatch(/^[0-9a-f]{64}$/);
+
+    const onDisk = await fs.readFile(join(vaultDir, "wr05-ok.md"), "utf-8");
+    expect(onDisk).toContain("a: 2");
   });
 });
