@@ -2,10 +2,10 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: release
-status: complete
-stopped_at: Phase 1 COMPLETE + verified + carry-forward flake resolved. Ready for Phase 2 (Memory namespace & provenance contract).
-last_updated: "2026-05-15T13:35:00.000Z"
-last_activity: "2026-05-15 -- Wave 6 (01-06) executed in worktree, merged to main (a76cb50): final polish + CI gates. 8 task commits + SUMMARY: scripts/lint-adapters.sh (8 invariants: I-1..I-6 + I-5b + C-1, POSIX, Alpine-portable); scripts/smoketest-non-claude.mjs (Inspector SDK Client harness identifying as 'non-claude-smoketest', 4 assertions: 23 tools / non-empty descriptions / list_vaults call OK / bogus call surfaces error A6); docs/v2/AGENT_AGNOSTIC_AUDIT.md (22 rows cross-referenced to CONCERNS.md, every leak fixed-v2 or deferred-v3 with resolving-commit refs); README rewritten with 'any MCP-aware agent' framing twice in first 12 lines; CHANGELOG [Unreleased] v2.0.0 entries (Added/Changed/Migration); src/cli.ts C-1 sweep + escape markers for legitimate ecosystem refs; .github/workflows/ci.yml wired with lint-adapters + baseline-eval + build + smoketest steps. W6 human-verify checkpoint APPROVED with empirical evidence (snapshot zero-diff, audit completeness, README tone). FINAL PHASE-GATE: all 6 commands green on main — lint:check (8 invariants + tsc + prettier) ✓, 578 tests ✓, eval:baseline (29 tests) ✓, lint-adapters.sh ✓, build (dist/cli.js 233.96 KB) ✓, smoketest (4 assertions) ✓. Three Task-01 deviations auto-fixed (grep -a UTF-8 flag, // vault-memory:claude-ok escape mechanism, I-3 allow-list extension to server.ts + indexer/single.ts). Phase 1 implementation COMPLETE; awaiting gsd-verifier for goal-backward verification."
+status: planning
+stopped_at: Phase 2 context gathered
+last_updated: "2026-05-15T13:28:12.765Z"
+last_activity: 2026-05-15 -- Phase 1 complete + verified. ROADMAP top-level Phase 1 checkbox flipped to [x].
 progress:
   total_phases: 10
   completed_phases: 2
@@ -102,6 +102,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-15T13:35:00.000Z
-Stopped at: Phase 1 COMPLETE + verified + carry-forward chokidar flake resolved via quick 260515-hkc. Ready for Phase 2.
-Resume file: (none — phase done + flake resolved) — run `/gsd-plan-phase 2` to start Phase 2 (Memory namespace & provenance contract — the foundational safety invariant for agent write-back via labeled MemorySink)
+Last session: 2026-05-15T13:28:12.758Z
+Stopped at: Phase 2 context gathered
+Resume file: .planning/phases/02-memory-namespace-provenance-contract/02-CONTEXT.md
