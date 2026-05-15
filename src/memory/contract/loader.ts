@@ -71,8 +71,11 @@ export function __getCachedContract(name: string): MemoryContract | undefined {
  * value. The mapping is intentionally narrow — Phase 2 supports the
  * types listed in `PropertyRuleSchema` and nothing more. Future
  * contracts that need new types must extend `schema.ts` first.
+ *
+ * `key` is threaded in so fail-closed diagnostics (WR-01, WR-02) can
+ * name the offending property in their error messages.
  */
-function ruleToZod(rule: PropertyRule): ZodType {
+function ruleToZod(rule: PropertyRule, key: string): ZodType {
   let schema: ZodType;
   switch (rule.type) {
     case "string":
@@ -85,9 +88,39 @@ function ruleToZod(rule: PropertyRule): ZodType {
     case "date":
       schema = z.string().datetime({ offset: true });
       break;
-    case "array":
-      schema = z.array(z.string());
+    case "array": {
+      // WR-01: Honor `items.type`. The shipped default-memory-v1
+      // contract uses `items: { type: reference }` for the `evidence`
+      // array, so `reference` (and its alias `doc_id`) is accepted and
+      // mapped to `z.string()` at the element level — references are
+      // structurally strings at the Zod layer; DocId parsing happens
+      // separately when callers need branded values. `string` and
+      // `number` are also supported. Any other element type (including
+      // `date`, `datetime`, `boolean`, nested `array`) is rejected at
+      // load time so contract authors get a fail-loud signal.
+      //
+      // When `items` is omitted entirely the default is `string` to
+      // preserve the pre-WR-01 behavior on legacy contracts.
+      const itemType = rule.items?.type ?? "string";
+      switch (itemType) {
+        case "string":
+          schema = z.array(z.string());
+          break;
+        case "number":
+          schema = z.array(z.number());
+          break;
+        case "reference":
+        case "doc_id":
+          schema = z.array(z.string());
+          break;
+        default:
+          throw new MemoryContractInvalidError(
+            `Property "${key}" has unsupported items.type "${itemType}". ` +
+              `Phase 2 supports array items of type 'string', 'number', or 'reference'.`,
+          );
+      }
       break;
+    }
     case "reference":
     case "doc_id":
       // Reference / doc_id is structurally a string at the Zod level;
@@ -109,9 +142,19 @@ function ruleToZod(rule: PropertyRule): ZodType {
       break;
   }
   if (rule.allowed && rule.allowed.length > 0) {
-    // Override the base schema with an enum when allowed is present;
-    // `z.enum` requires a non-empty tuple, which the YAML schema
-    // does not enforce at parse time, so we guard with a length check.
+    // WR-02: `allowed` is declared as `z.array(z.string())` in
+    // schema.ts — it is string-only by design. Silently overriding a
+    // non-string declared type with a string enum produces semantic
+    // type drift, so reject the combination at load time with a
+    // diagnostic naming the offending key and declared type.
+    if (rule.type !== "string") {
+      throw new MemoryContractInvalidError(
+        `Property "${key}" declares type "${rule.type}" with allowed=[...]. ` +
+          `'allowed' is string-only — either declare type:'string' or remove 'allowed'.`,
+      );
+    }
+    // `z.enum` requires a non-empty tuple, which the YAML schema does
+    // not enforce at parse time, so we guard with a length check above.
     schema = z.enum(rule.allowed as [string, ...string[]]);
   }
   if (rule.nullable) {
@@ -132,22 +175,38 @@ function ruleToZod(rule: PropertyRule): ZodType {
 function buildPropertiesSchema(yaml: MemoryContractYaml): ZodType {
   const shape: Record<string, ZodType> = {};
   for (const [key, rule] of Object.entries(yaml.required_properties)) {
-    shape[key] = ruleToZod(rule);
+    shape[key] = ruleToZod(rule, key);
   }
   for (const [key, rule] of Object.entries(yaml.optional_properties)) {
-    shape[key] = ruleToZod(rule).optional();
+    shape[key] = ruleToZod(rule, key).optional();
   }
   let obj: ZodType = z.object(shape).passthrough();
 
   if (yaml.cross_field_rules.length > 0) {
+    // WR-03: Validate every `when` expression eagerly at load time so
+    // unsupported shapes (typos, `!=`, `=`, double-quoted values,
+    // multi-clause) surface as a `MemoryContractInvalidError` instead
+    // of being silently dropped at runtime. The Phase 2 DSL supports a
+    // single declarative form: `<key> == '<value>'` (single-quoted
+    // value, `==` operator).
+    const WHEN_RE = /^([A-Za-z_][A-Za-z0-9_]*)\s*==\s*'([^']+)'$/;
+    for (const rule of yaml.cross_field_rules) {
+      if (!WHEN_RE.test(rule.when)) {
+        throw new MemoryContractInvalidError(
+          `Cross-field rule has unsupported 'when' expression: ${JSON.stringify(rule.when)}. ` +
+            `Phase 2 supports a single form: \`<key> == '<value>'\` (single-quoted value, '==' operator). ` +
+            `Rule: ${JSON.stringify(rule)}`,
+        );
+      }
+    }
+
     obj = (obj as z.ZodObject<Record<string, ZodType>>).superRefine((data, ctx) => {
       for (const rule of yaml.cross_field_rules) {
-        // Phase 2 supports a single declarative form:
-        //   `<key> == '<value>'` for `when`,
-        //   `<key1> && <key2>` (or single key) for `require`.
-        // The default-memory-v1 contract uses this form; other forms
-        // are rejected at contract-load time (see notes).
-        const whenMatch = /^([A-Za-z_][A-Za-z0-9_]*)\s*==\s*'([^']+)'$/.exec(rule.when);
+        // `require` is `<key1> && <key2>` or single key. The
+        // load-time check above guarantees `when` matches the regex,
+        // so the exec below cannot fail — but we keep the defensive
+        // `continue` to satisfy `noUncheckedIndexedAccess`.
+        const whenMatch = WHEN_RE.exec(rule.when);
         if (!whenMatch) continue;
         const [, whenKey, whenValue] = whenMatch;
         if (whenKey === undefined || whenValue === undefined) continue;
