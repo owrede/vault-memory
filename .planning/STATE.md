@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: release
 status: executing
-stopped_at: Phase 2 context gathered
-last_updated: "2026-05-15T19:06:42.118Z"
-last_activity: 2026-05-15 -- Phase 02 execution started
+stopped_at: Phase 2 complete (pending final human checkpoint); Phase 3 ready
+last_updated: "2026-05-15T23:30:00.000Z"
+last_activity: 2026-05-15 -- Phase 02 complete (9/9 plans + sign-off)
 progress:
   total_phases: 10
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 30
-  completed_plans: 21
-  percent: 70
+  completed_plans: 30
+  percent: 80
 ---
 
 # Project State
@@ -21,17 +21,17 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-14)
 
 **Core value:** Local-first, source-agnostic-ready, agentic knowledge layer over your Obsidian notes — with the memory namespace as a non-negotiable safety invariant.
-**Current focus:** Phase 02 — memory-namespace-provenance-contract
+**Current focus:** Phase 03 — bundles + authority/staleness
 
 ## Current Position
 
-Phase: 02 (memory-namespace-provenance-contract) — EXECUTING
-Plan: 1 of 9
-Plans: 9 plans across 6 waves (02-01, 02-02, 02-03, 02-03b, 02-04, 02-05, 02-06, 02-07, 02-08). 0 of 9 executed.
-Status: Executing Phase 02
-Last activity: 2026-05-15 -- Phase 02 execution started
+Phase: 03 (bundles-authority-staleness) — NOT STARTED
+Plan: 0 of TBD
+Plans: TBD (planner runs after maintainer sign-off on Phase 2)
+Status: Phase 03 planning gate
+Last activity: 2026-05-15 -- Phase 02 9/9 plans complete; awaiting final maintainer checkpoint approval
 
-Progress: [███████░░░] 70%
+Progress: [████████░░] 80%
 
 ## Performance Metrics
 
@@ -66,6 +66,11 @@ Recent decisions affecting current work:
 - Roadmap: Defer brief's Phase 10 (Notion connector) to v3.0.0 — listed as deferred milestone, not active phase
 - Roadmap: Renumber sequentially 0–9 to avoid confusion (brief's 4 folded, brief's 9.5 → 9)
 - Phase 0: Expand from 6 brief-deliverables to 14 (ADR relocation, hash-semantics amendment, v1 eval baseline, tool-snapshot tests, fixture-privacy + telemetry CI lints, adversarial ADR review)
+- Phase 2 D-01: `recall` returns the Phase-3 citation-packet shape (8 fields) from day one — avoids a breaking shape-change between v2.0.0 minor versions
+- Phase 2 D-02: `record_observation` accepts a freeform `properties: Record<string, unknown>` escape hatch; sugar args pre-fill canonical keys, `properties` merges LAST so contract-allowed extras win
+- Phase 2 D-03: `supersede` is forward-only — writes status/superseded_by/superseded_reason on the OLD doc only; back-edges derived at query time in Phase 4 (no materialization in Phase 2)
+- Phase 2 D-04: `record_observation` + `supersede` stay as separate primitives (no composite tool) — supports MEM-09's tool-surface-reduction goal
+- Phase 2 plan-split: 02-03 stayed focused on the centralized DeliveryAdapter chokepoint; the v1 entry-point Guards + server bootstrap wiring split out into a new 02-03b plan (wave 1) — kept each plan's chokepoint focused and isolated MEM-07 + MEM-11 from the validator slice
 
 ### Pending Todos
 
@@ -84,6 +89,12 @@ None yet.
 - Phase 0 follow-up: Alpine docker bake-test for CI lint scripts (00-12) — static review + telemetry red-test + suppression test passed locally; Alpine container POSIX run deferred (Docker daemon was unavailable). Re-verify before Phase 1.
 - ~~Phase 1 wave-5 known flake: chokidar `awaitWriteFinish` timing race in `src/adapters/change-feed/obsidian-fs/{change-feed,watcher}.test.ts` under full-suite load~~ — resolved 2026-05-15 by quick task 260515-hkc (commits `678dde3` `9216944` `260da64` `ff635f3` plus 3 reverts of an over-eager threshold pursuit). Final mitigation: chokidar `stabilityThreshold` bumped 200ms→400ms + drain test sleep 400ms→500ms (root-cause; reduces incidence ~25%→~17%) + `test.retry(1)` on 4 ObsidianFsChangeFeed/VaultWatcher positive-assertion timing tests (insurance against residual ~17% race). 5/5 full-suite runs green on main at mean 8.3s wall-clock. Lessons learned: (i) threshold pursuit beyond 400ms regresses sibling sleep-based tests; (ii) any timing-sensitive test in this family needs retry-1 as belt-and-suspenders; (iii) executor's 5/5 in-worktree run was lucky — flake distribution shifts on main under different load (post-merge testing surfaced a 4th retry candidate beyond the 3 originally annotated).
 - Phase 1 wave-5 environment lesson: after merging the SDK/Zod bump worktree, `npm install` MUST be run on main — npm initially dedupped to the SDK's transitive Zod 3.25 hoist, leaving the project running v3 with a v4 package.json declaration. After explicit `npm install`, Zod 4.4.3 is live and the snapshot regen produces zero diff. The verifier (or 01-06) should re-confirm `node -e "require('zod/package.json').version"` reads `4.x` post-CI install.
+- Phase 2 plan 02-08 latent issue (discovered + resolved): `lint-no-telemetry.sh` banlist regex `sentry` matched the substring `sEntry` in the new `MemoryStatsEntry` type (Plan 02-06). Resolved by appending the prescribed `// vault-memory:no-telemetry-ok` escape comment to the 5 offending lines (commit `3a365b9`). Future Phase 2+ plans introducing identifiers with embedded ban-list substrings should append the same escape marker proactively. The lint script itself documents this remedy.
+- Phase 2 plan 02-08 deferred item (NOT a blocker): `npm run lint:check` reports prettier formatting warnings across 34 Phase 2 source files. This is a cumulative formatting-only debt; none of the four critical gates (`npm test`, `npx tsc --noEmit`, `bash scripts/lint-adapters.sh`, `npm run eval:baseline`) regress. Phase 3 or Phase 8 (polish) should run `prettier --write src/**/*.ts` and commit the result; it is out of scope for the 02-08 sign-off plan.
+
+## Phase 2 Summary (2026-05-15)
+
+Phase 2 (memory-namespace-provenance-contract) shipped across 9 plans in 5 waves: 02-01 (ADR-004 amendment, MEM-12), 02-02 (MemorySink runtime substrate — handle parser, registry, sentinel, default-memory-v1 contract, MEM-01/05/06), 02-03 (centralized validator at the DeliveryAdapter chokepoint with parametric conformance, MEM-05/06), 02-03b (v1 entry-point Guards + server bootstrap wiring, MEM-07/11), 02-04 (`record_observation` + `supersede` MCP tools, MEM-02/04), 02-05 (`recall` MCP tool + Phase-3-shaped 8-field citation packet, MEM-03), 02-06 (`is_memory_sink_write` audit column via migration v9 + the 2 promoted MCP Resources `vault-memory://memory/sinks` and `vault-memory://memory/stats`, MEM-08/09), 02-07 (20-doc memory fixture extension + 5 malformed fixtures under `tests/fixtures/malformed-memory/` + 35-assertion smoke test, MEM-10), 02-08 (final phase-gate verification + traceability + CHANGELOG/STATE + maintainer checkpoint). Plan 02-03 was split mid-phase into 02-03 (validator chokepoint, wave 1) and 02-03b (v1 Guards + bootstrap wiring, wave 1) per maintainer direction to keep each plan's scope focused. The safety invariant ("agent writes go only to a labeled `MemorySink` with mandatory provenance, centralized at `DeliveryAdapter.write()`") is now demonstrably true at runtime — `npm test` reports 825 passing tests; `npm run eval:baseline` 30/30 (+11 todo); `scripts/lint-adapters.sh` 8/8 invariants green; `node scripts/smoketest-non-claude.mjs` exercises ≥1 memory tool + ≥1 memory Resource end-to-end. The tool surface is 26 (23 v1 byte-identical + 3 net-new memory tools); the only audit_log diff is one new optional `is_memory_sink_write` input field on the JSON Schema (description text byte-identical to Phase 1).
 
 ## Quick Tasks Completed
 
@@ -103,6 +114,6 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-15T13:28:12.758Z
-Stopped at: Phase 2 context gathered
-Resume file: .planning/phases/02-memory-namespace-provenance-contract/02-CONTEXT.md
+Last session: 2026-05-15T23:30:00.000Z
+Stopped at: Phase 2 complete — 9/9 plans + sign-off plan; awaiting final maintainer checkpoint
+Resume file: .planning/phases/02-memory-namespace-provenance-contract/02-08-SUMMARY.md

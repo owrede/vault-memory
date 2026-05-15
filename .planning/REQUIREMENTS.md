@@ -45,18 +45,18 @@ Requirements for the v2.0.0 release of vault-memory. Each maps to a roadmap phas
 
 ### Memory Namespace (Phase 2 — FOUNDATIONAL)
 
-- [ ] **MEM-01**: Per-vault config: `memory_sink = "obsidian-fs://_memory/"` — handle parser is the only resolver of sink-as-path
-- [ ] **MEM-02**: `record_observation({claim, evidence, confidence, type, sink?})` MCP tool — writes labeled document via `DeliveryAdapter`
-- [ ] **MEM-03**: `recall({query, min_confidence, types, max_age_days, sink?})` MCP tool — reads from sink with filters
-- [ ] **MEM-04**: `supersede({doc_id, replacement_doc_id, reason})` MCP tool — marks `status: superseded`, links forward
-- [ ] **MEM-05**: Property validator at `DeliveryAdapter.write()` — rejects memory-sink writes missing required provenance keys (Guard A); rejects `source: agent` writes outside any configured sink (Guard B); operates on `Document.properties`, not YAML directly
-- [ ] **MEM-06**: `.memory-sink` sentinel file written at sink-creation time; refuse to resolve a memory sink against a folder lacking the sentinel
-- [ ] **MEM-07**: Guards on existing `write_note` / `update_frontmatter` — refuse memory-sink targets; refuse `source: agent` outside sink
-- [ ] **MEM-08**: `audit_log` flags memory-sink writes distinctly (filterable)
-- [ ] **MEM-09**: List-style memory ops promoted from MCP tools to MCP Resources — `memory_stats`, `list_sinks`. Cuts v2.0.0 tool surface
-- [ ] **MEM-10**: Eval fixture includes a 20-document `_memory/` subset with diverse provenance labels
-- [ ] **MEM-11**: Targeted test confirms naive `write_note` to a memory-sink-resolved path is rejected with a clear error message
-- [ ] **MEM-12**: Phase 2 ADR amendment decides folder vs separate-vault — recommendation defaults to folder-with-config-option
+- [x] **MEM-01**: Per-vault config: `memory_sink = "obsidian-fs://_memory/"` — handle parser is the only resolver of sink-as-path
+- [x] **MEM-02**: `record_observation({claim, evidence, confidence, type, sink?})` MCP tool — writes labeled document via `DeliveryAdapter`
+- [x] **MEM-03**: `recall({query, min_confidence, types, max_age_days, sink?})` MCP tool — reads from sink with filters
+- [x] **MEM-04**: `supersede({doc_id, replacement_doc_id, reason})` MCP tool — marks `status: superseded`, links forward
+- [x] **MEM-05**: Property validator at `DeliveryAdapter.write()` — rejects memory-sink writes missing required provenance keys (Guard A); rejects `source: agent` writes outside any configured sink (Guard B); operates on `Document.properties`, not YAML directly
+- [x] **MEM-06**: `.memory-sink` sentinel file written at sink-creation time; refuse to resolve a memory sink against a folder lacking the sentinel
+- [x] **MEM-07**: Guards on existing `write_note` / `update_frontmatter` — refuse memory-sink targets; refuse `source: agent` outside sink
+- [x] **MEM-08**: `audit_log` flags memory-sink writes distinctly (filterable)
+- [x] **MEM-09**: List-style memory ops promoted from MCP tools to MCP Resources — `memory_stats`, `list_sinks`. Cuts v2.0.0 tool surface
+- [x] **MEM-10**: Eval fixture includes a 20-document `_memory/` subset with diverse provenance labels
+- [x] **MEM-11**: Targeted test confirms naive `write_note` to a memory-sink-resolved path is rejected with a clear error message
+- [x] **MEM-12**: Phase 2 ADR amendment decides folder vs separate-vault — recommendation defaults to folder-with-config-option
 
 ### Assembly + Authority/Staleness (Phase 3 — folds brief Phase 3 + Phase 4)
 
@@ -199,7 +199,7 @@ Phase mapping (sequential numbering 0–9; brief's Phase 4 folded into Phase 3; 
 |-------------|-------|--------|
 | FND-01 to FND-14 | Phase 0 | Pending |
 | ADP-01 to ADP-15 | Phase 1 | Pending |
-| MEM-01 to MEM-12 | Phase 2 | Pending |
+| MEM-01 to MEM-12 | Phase 2 | Complete |
 | ASM-01 to ASM-13 | Phase 3 | Pending |
 | GRA-01 to GRA-05 | Phase 4 | Pending |
 | BRF-01 to BRF-11 | Phase 5 | Pending |

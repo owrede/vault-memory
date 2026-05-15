@@ -12,7 +12,7 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
 
 - [ ] **Phase 0: Foundation & decisions** - Lock ADRs, architecture docs, eval fixtures, regression baselines, CI lints
 - [x] **Phase 1: Adapter extraction & tech-debt-up** - Install adapter seams, bump MCP SDK 1.29 + Zod 4, conformance suite
-- [ ] **Phase 2: Memory namespace & provenance contract** - Foundational safety invariant; labeled agent write-back via MemorySink
+- [x] **Phase 2: Memory namespace & provenance contract** - Foundational safety invariant; labeled agent write-back via MemorySink
 - [ ] **Phase 3: Bundles + authority/staleness** - Document-tree retrieval, citation packets, recency/authority weights (folded brief Phase 3+4)
 - [ ] **Phase 4: Graph-as-retrieval** - Typed-edge expansion and community clustering
 - [ ] **Phase 5: Compiled brief layer** - Signature differentiator; briefs as documents with source-hash staleness daemon
@@ -92,7 +92,7 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
 - [x] 02-05-PLAN.md — recall MCP tool + Phase-3-shaped citation packet (MEM-03) — wave 3
 - [x] 02-06-PLAN.md — audit_log memory-sink discriminator + memory_stats/list_sinks Resources (MEM-08, MEM-09) — wave 4
 - [x] 02-07-PLAN.md — 20-doc fixture extension + malformed-memory tree + smoke test (MEM-10) — wave 5
-- [ ] 02-08-PLAN.md — Phase 2 gate: full verification + traceability + CHANGELOG/STATE (final checkpoint) — wave 5
+- [x] 02-08-PLAN.md — Phase 2 gate: full verification + traceability + CHANGELOG/STATE (final checkpoint) — wave 5
 
 ### Phase 3: Bundles + authority/staleness
 **Goal**: Deliver document-tree retrieval (bundles, outlines, sections, dossiers) with citation packets on every result, plus authority/staleness ranking signals — proven source-neutral against a stub adapter
@@ -203,7 +203,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 →
 |-------|----------------|--------|-----------|
 | 0. Foundation & decisions | 0/TBD | Not started | - |
 | 1. Adapter extraction & tech-debt-up | 0/TBD | Not started | - |
-| 2. Memory namespace & provenance contract | 8/9 | In Progress|  |
+| 2. Memory namespace & provenance contract | 9/9 | Complete (pending final maintainer checkpoint) | 2026-05-15 |
 | 3. Bundles + authority/staleness | 0/TBD | Not started | - |
 | 4. Graph-as-retrieval | 0/TBD | Not started | - |
 | 5. Compiled brief layer | 0/TBD | Not started | - |
