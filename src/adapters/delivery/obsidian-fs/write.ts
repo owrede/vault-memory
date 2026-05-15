@@ -15,6 +15,8 @@ import type { Vault } from "../../../vault/index.js";
 import { computeNoteHash, computeBodyHash } from "../../source/obsidian-fs/hash.js";
 import { extractAliases } from "../../../indexer/index.js";
 import { atomicWriteFile, safeJoinInsideVault } from "./fs.js";
+import { formatDocId } from "../../registry.js";
+import type { MemorySinkRegistry } from "../../../memory/registry.js";
 
 export interface WriteSuccess {
   ok: true;
@@ -26,10 +28,14 @@ export interface WriteSuccess {
 
 export interface WriteConflict {
   ok: false;
-  reason: "hash_mismatch" | "permission_denied";
+  reason: "hash_mismatch" | "permission_denied" | "sink_write_blocked";
   currentHash?: string;
   currentContent?: string;
   message: string;
+  /** Phase 2 envelope (sink_write_blocked). */
+  sinkName?: string;
+  /** Phase 2 envelope — actionable next-step hint. */
+  suggestion?: string;
 }
 
 export type WriteResult = WriteSuccess | WriteConflict;
@@ -70,6 +76,25 @@ export interface WriteNoteInput {
    * external edit that happens shortly after.
    */
   onBeforeFsWrite?: () => void;
+  /**
+   * Plan 02-03b: optional defense-in-depth entry-point Guard.
+   *
+   * When supplied AND the resolved target lands inside a registered
+   * MemorySink (per `registry.findSinkContaining(docId)`), the write
+   * is refused with `{ok:false, reason:"sink_write_blocked"}` BEFORE
+   * any filesystem read. The authoritative chokepoint still lives at
+   * the DeliveryAdapter (`ObsidianFsDelivery.preflight()` per ADR-002
+   * §DeliveryAdapter); this v1 entry-point Guard is defense-in-depth
+   * so that callers bypassing the facade hit a structured refusal
+   * rather than silently dumping into a memory folder.
+   *
+   * When omitted (Phase 1 unit-test fixtures + any caller that has not
+   * yet been threaded with the registry), the guard is silently
+   * skipped — Phase 1 behavior is byte-for-byte preserved. The MCP
+   * server bootstrap in Plan 02-03b always passes the registry, so
+   * production callers are always guarded.
+   */
+  registry?: MemorySinkRegistry;
 }
 
 export interface DeleteNoteInput {
@@ -80,6 +105,11 @@ export interface DeleteNoteInput {
   clientId?: string;
   /** See WriteNoteInput.onBeforeFsWrite. Called just before fs.unlink. */
   onBeforeFsWrite?: () => void;
+  /** See WriteNoteInput.registry — same defense-in-depth Guard semantics
+   *  apply to deleteNote. The suggestion text references `supersede` per
+   *  Plan 02-03 truth: hard deletion of memory documents is forbidden in
+   *  v2.0.0; agents retire memory documents via supersede. */
+  registry?: MemorySinkRegistry;
 }
 
 /**
@@ -148,9 +178,29 @@ async function readExistingFile(absPath: string): Promise<{
 }
 
 export async function writeNote(input: WriteNoteInput): Promise<WriteResult> {
-  const { vault, relativePath, content } = input;
+  const { vault, relativePath, content, registry } = input;
   const frontmatter = input.frontmatter ?? null;
   const clientId = input.clientId ?? UNKNOWN_CLIENT_ID;
+
+  // Plan 02-03b — defense-in-depth entry-point Guard. Runs BEFORE the
+  // write_enabled check and BEFORE any FS read. When the optional registry
+  // is supplied (production path) AND the target lands inside a registered
+  // sink, refuse with the structured `sink_write_blocked` envelope.
+  if (registry) {
+    const docId = formatDocId("obsidian-fs", vault.config.name, relativePath);
+    const sink = registry.findSinkContaining(docId);
+    if (sink !== null) {
+      return {
+        ok: false,
+        reason: "sink_write_blocked",
+        sinkName: sink.name,
+        message:
+          `Target ${relativePath} resolves into MemorySink "${sink.name}". ` +
+          `v1 write_note is refused for memory-sink targets.`,
+        suggestion: `Use record_observation for sink '${sink.name}'.`,
+      };
+    }
+  }
 
   if (vault.config.write_enabled !== true) {
     return permissionDenied(vault.config.name);
@@ -268,8 +318,29 @@ export async function writeNote(input: WriteNoteInput): Promise<WriteResult> {
 }
 
 export async function deleteNote(input: DeleteNoteInput): Promise<WriteResult> {
-  const { vault, relativePath, expectedHash } = input;
+  const { vault, relativePath, expectedHash, registry } = input;
   const clientId = input.clientId ?? UNKNOWN_CLIENT_ID;
+
+  // Plan 02-03b — defense-in-depth entry-point Guard. Same shape as
+  // writeNote, but the suggestion text directs the caller to `supersede`
+  // (hard deletion of memory documents is forbidden in v2.0.0 per Plan
+  // 02-03 truth).
+  if (registry) {
+    const docId = formatDocId("obsidian-fs", vault.config.name, relativePath);
+    const sink = registry.findSinkContaining(docId);
+    if (sink !== null) {
+      return {
+        ok: false,
+        reason: "sink_write_blocked",
+        sinkName: sink.name,
+        message:
+          `Target ${relativePath} resolves into MemorySink "${sink.name}". ` +
+          `Hard deletion of memory documents is not permitted in v2.0.0.`,
+        suggestion:
+          "Use supersede to retire memory documents. Hard deletion is not yet supported in v2.0.0.",
+      };
+    }
+  }
 
   if (vault.config.write_enabled !== true) {
     return permissionDenied(vault.config.name);

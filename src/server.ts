@@ -29,6 +29,14 @@ import { listBacklinks, listForwardLinks, findBrokenLinks } from "./graph/index.
 import { queryFrontmatter, updateFrontmatter } from "./frontmatter/index.js";
 import { suggestFrontmatter } from "./schema/index.js";
 import { ObsidianFsDelivery } from "./adapters/delivery/obsidian-fs/index.js";
+import {
+  provisionSink,
+  sentinelExistsAt,
+} from "./adapters/delivery/obsidian-fs/sentinel.js";
+import {
+  MemorySinkRegistry,
+  type MemorySinkConfig,
+} from "./memory/index.js";
 import { getAuditLog, getIndexRuns } from "./audit/index.js";
 import {
   ObsidianFsChangeFeed,
@@ -49,12 +57,103 @@ import { ObsidianFsSource } from "./adapters/source/obsidian-fs/index.js";
 
 const VERSION = "1.0.0";
 
+/**
+ * Bootstrap phase names — surfaced via the optional `onPhase` callback on
+ * `serve()`. Test-only hook used to assert the bootstrap order invariant
+ * (per Plan 02-03b: `register_memory_sinks` MUST fire before
+ * `start_catchup`).
+ */
+export type BootstrapPhase =
+  | "load_config"
+  | "open_vaults"
+  | "register_memory_sinks"
+  | "start_catchup"
+  | "connect_transport";
+
+export interface ServeOptions {
+  /** Test-only hook: called as each bootstrap phase begins. */
+  onPhase?: (name: BootstrapPhase) => void;
+}
+
+/**
+ * Auto-discover memory sinks per Plan 02-03b. When `config.memory_sinks` is
+ * empty AND a vault contains `_memory/.memory-sink`, synthesize a default
+ * sink config `{name: "default", handle: "obsidian-fs://<vault>/_memory/",
+ * contract: "default-memory-v1"}`. This preserves the v2 fixture's existing
+ * memory docs as a "default sink" without requiring config edits.
+ *
+ * Returns the explicit configs unchanged when `configured` is non-empty.
+ */
+export async function discoverMemorySinks(
+  configured: readonly MemorySinkConfig[],
+  vaults: readonly { name: string; path: string }[],
+): Promise<MemorySinkConfig[]> {
+  if (configured.length > 0) {
+    return [...configured];
+  }
+  const discovered: MemorySinkConfig[] = [];
+  for (const v of vaults) {
+    if (await sentinelExistsAt(v.path, "_memory")) {
+      discovered.push({
+        name: "default",
+        handle: `obsidian-fs://${v.name}/_memory/`,
+        contract: "default-memory-v1",
+      });
+    }
+  }
+  return discovered;
+}
+
+/**
+ * Construct and populate a `MemorySinkRegistry` per Plan 02-03b. Wraps
+ * `discoverMemorySinks` + `registry.registerMemorySinks` with the
+ * production provisioner (calls `provisionSink` from obsidian-fs/sentinel).
+ *
+ * Exported for use by `serve()` and by `src/server.test.ts` (MEM-11
+ * integration + bootstrap-order assertion).
+ */
+export async function setupMemorySinks(
+  config: {
+    memory_sinks: MemorySinkConfig[];
+    memory?: { default_sink?: string };
+  },
+  manager: VaultManager,
+): Promise<MemorySinkRegistry> {
+  const registry = new MemorySinkRegistry();
+  const vaults = manager.list().map((v) => ({
+    name: v.config.name,
+    path: v.config.path,
+  }));
+  const sinksConfig = await discoverMemorySinks(config.memory_sinks, vaults);
+  await registry.registerMemorySinks(sinksConfig, {
+    resolveVaultAbsolutePath: (name) => manager.require(name).config.path,
+    ...(config.memory?.default_sink !== undefined
+      ? { defaultSinkName: config.memory.default_sink }
+      : {}),
+    provisioner: async (sink, vaultAbs) =>
+      provisionSink(sink, vaultAbs, { version: VERSION }),
+  });
+  return registry;
+}
+
 // ─── Server bootstrap ────────────────────────────────────────────────────────
 
-export async function serve(): Promise<void> {
+export async function serve(options: ServeOptions = {}): Promise<void> {
+  const onPhase = options.onPhase ?? ((): void => undefined);
+
+  onPhase("load_config");
   const config = await loadConfig();
+
+  onPhase("open_vaults");
   const manager = new VaultManager();
   await manager.loadAll(config.vaults);
+
+  // Plan 02-03b — wire the MemorySinkRegistry BEFORE catchup so any
+  // sentinel provisioning completes before the catch-up walk touches the
+  // _memory/ folder. Registration failures are fatal per ADR-004
+  // §Provisioning fail-fast.
+  onPhase("register_memory_sinks");
+  const memorySinkRegistry = await setupMemorySinks(config, manager);
 
   // ─── Adapter registry (Phase 1, plans 01-03 + 01-04) ──────────────────────
   //
@@ -89,7 +188,7 @@ export async function serve(): Promise<void> {
     const source = new ObsidianFsSource(vault.config);
     adapterRegistry.registerSource(source.handle, source);
 
-    const delivery = new ObsidianFsDelivery(vault, getClientId);
+    const delivery = new ObsidianFsDelivery(vault, getClientId, memorySinkRegistry);
     adapterRegistry.registerDelivery(delivery.handle, delivery);
 
     // Plan 01-05 task 02: register a ChangeFeed per vault. Coexists with
@@ -338,6 +437,7 @@ export async function serve(): Promise<void> {
       return updateFrontmatter({
         vault,
         registry: adapterRegistry,
+        memorySinkRegistry,
         relativePath: p.path,
         merge: p.merge,
         ...(p.expected_hash !== undefined ? { expectedHash: p.expected_hash } : {}),
@@ -478,6 +578,7 @@ export async function serve(): Promise<void> {
     );
   }
 
+  onPhase("connect_transport");
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
@@ -485,6 +586,12 @@ export async function serve(): Promise<void> {
   // catch-up runs in the background. Errors are already logged inside the
   // function; we still catch here to satisfy the linter and surface anything
   // unexpected on stderr.
+  //
+  // Plan 02-03b: `start_catchup` fires AFTER `register_memory_sinks` (the
+  // sentinel-provisioning step above has already completed). The phase
+  // hook fires synchronously so the bootstrap-order assertion in tests
+  // can observe the invariant `register_memory_sinks` < `start_catchup`.
+  onPhase("start_catchup");
   startCatchupAndWatchers().catch((err) => {
     const message = err instanceof Error ? err.message : String(err);
     process.stderr.write(`[catchup] unexpected failure: ${message}\n`);
@@ -615,13 +722,20 @@ async function handleWriteNote(
   const res = await delivery.write(docId, partial, opts);
   if (!res.ok) {
     // Preserve v1 conflict shape — handlers used to forward writeNote's
-    // v1 WriteConflict directly; reshape to match.
+    // v1 WriteConflict directly; reshape to match. Phase 2 envelope fields
+    // (sinkName / suggestion) are propagated unchanged when present so
+    // callers receive actionable diagnostics on `sink_write_blocked` and
+    // the other Phase 2 refusal codes.
     const out: Record<string, unknown> = {
       ok: false,
       reason: res.reason === "not_found" ? "hash_mismatch" : res.reason,
     };
     if (res.currentHash !== undefined) out.currentHash = res.currentHash;
     if (res.message !== undefined) out.message = res.message;
+    if (res.sinkName !== undefined) out.sinkName = res.sinkName;
+    if (res.suggestion !== undefined) out.suggestion = res.suggestion;
+    if (res.key !== undefined) out.key = res.key;
+    if (res.observedValue !== undefined) out.observedValue = res.observedValue;
     return out;
   }
 
@@ -674,6 +788,8 @@ async function handleDeleteNote(
     };
     if (res.currentHash !== undefined) out.currentHash = res.currentHash;
     if (res.message !== undefined) out.message = res.message;
+    if (res.sinkName !== undefined) out.sinkName = res.sinkName;
+    if (res.suggestion !== undefined) out.suggestion = res.suggestion;
     return out;
   }
   return {

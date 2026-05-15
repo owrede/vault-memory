@@ -163,3 +163,26 @@ export async function assertSentinelExists(
     return false;
   }
 }
+
+/**
+ * Lower-level discovery probe used by server bootstrap auto-discovery
+ * (Plan 02-03b). Returns true iff `<vaultRoot>/<relPath>/.memory-sink`
+ * exists. Confined to this adapter directory because it touches `node:fs`
+ * (ADR-002 I-2). Server bootstrap calls this through `joinVaultPath` so
+ * the path-join stays inside the licensed adapter dir too.
+ */
+export async function sentinelExistsAt(
+  vaultRoot: string,
+  relPath: string,
+): Promise<boolean> {
+  // We intentionally do NOT use pathInSink here — auto-discovery probes a
+  // candidate folder BEFORE any sink record exists, so the join must
+  // operate on a plain relative path.
+  const probe = `${vaultRoot.endsWith("/") ? vaultRoot.slice(0, -1) : vaultRoot}/${relPath.replace(/^\//, "")}/${SENTINEL_FILENAME}`;
+  try {
+    await fs.access(probe);
+    return true;
+  } catch {
+    return false;
+  }
+}

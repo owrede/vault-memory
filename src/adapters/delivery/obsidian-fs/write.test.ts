@@ -409,3 +409,135 @@ describe("ObsidianFsDelivery — sentinel guard (cases 19–21)", () => {
     }
   });
 });
+
+// ── Plan 02-03b: entry-point Guards on writeNote / deleteNote ──────────────
+//
+// Defense-in-depth (the authoritative chokepoint still lives at the
+// DeliveryAdapter per ADR-002 I-6; these tests pin the v1-entry-point
+// refusal so that callers bypassing the facade still hit a structured
+// `sink_write_blocked` rather than silently dumping into a memory folder).
+describe("writeNote — MEM-07 entry-point Guard (Plan 02-03b)", () => {
+  let vaultDir: string;
+  let vault: Vault;
+  let registry: MemorySinkRegistry;
+
+  beforeEach(async () => {
+    vaultDir = await mkdtemp(join(tmpdir(), "vm-write-guard-"));
+    vault = makeVault(vaultDir);
+    vault.config.name = "guard-vault";
+    registry = new MemorySinkRegistry();
+    const sinkHandle = parseMemorySinkHandle(
+      "obsidian-fs://guard-vault/_memory/",
+    );
+    await registry.registerMemorySinks(
+      [
+        { name: "default", handle: sinkHandle, contract: "default-memory-v1" },
+      ],
+      {
+        resolveVaultAbsolutePath: () => vaultDir,
+        provisioner: async (sink: MemorySink, vaultAbs: string) => {
+          await provisionSink(sink, vaultAbs, { version: "test" });
+        },
+      },
+    );
+  });
+  afterEach(async () => {
+    vault.db.close();
+    await rm(vaultDir, { recursive: true, force: true });
+  });
+
+  it("refuses sink-resolved target with sink_write_blocked", async () => {
+    const res = await writeNote({
+      vault,
+      relativePath: "_memory/observations/foo.md",
+      content: "x",
+      registry,
+    });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.reason).toBe("sink_write_blocked");
+    expect(res.sinkName).toBe("default");
+    expect(res.suggestion).toMatch(/record_observation/);
+    expect(res.message).toMatch(/MemorySink "default"/);
+    // No file should have been created.
+    await expect(
+      fs.access(join(vaultDir, "_memory", "observations", "foo.md")),
+    ).rejects.toThrow();
+  });
+
+  it("guard does NOT fire on non-sink paths", async () => {
+    const res = await writeNote({
+      vault,
+      relativePath: "regular-note.md",
+      content: "hello",
+      registry,
+    });
+    expect(res.ok).toBe(true);
+  });
+
+  it("registry omitted → guard silently skipped (back-compat)", async () => {
+    // Same path that would be refused with a registry; without one,
+    // writeNote behaves like Phase 1.
+    const res = await writeNote({
+      vault,
+      relativePath: "_memory/observations/no-guard.md",
+      content: "x",
+    });
+    expect(res.ok).toBe(true);
+  });
+});
+
+describe("deleteNote — MEM-07 entry-point Guard (Plan 02-03b)", () => {
+  let vaultDir: string;
+  let vault: Vault;
+  let registry: MemorySinkRegistry;
+
+  beforeEach(async () => {
+    vaultDir = await mkdtemp(join(tmpdir(), "vm-delete-guard-"));
+    vault = makeVault(vaultDir);
+    vault.config.name = "guard-vault";
+    registry = new MemorySinkRegistry();
+    const sinkHandle = parseMemorySinkHandle(
+      "obsidian-fs://guard-vault/_memory/",
+    );
+    await registry.registerMemorySinks(
+      [
+        { name: "default", handle: sinkHandle, contract: "default-memory-v1" },
+      ],
+      {
+        resolveVaultAbsolutePath: () => vaultDir,
+        provisioner: async (sink: MemorySink, vaultAbs: string) => {
+          await provisionSink(sink, vaultAbs, { version: "test" });
+        },
+      },
+    );
+  });
+  afterEach(async () => {
+    vault.db.close();
+    await rm(vaultDir, { recursive: true, force: true });
+  });
+
+  it("refuses sink-resolved target with sink_write_blocked + supersede suggestion", async () => {
+    // Pre-create a file inside the sink (bypassing the guard by not passing
+    // the registry); then attempt to delete with the guard active.
+    await writeNote({
+      vault,
+      relativePath: "_memory/observations/del-me.md",
+      content: "x",
+    });
+    const w = vault.db.notes.getByPath("_memory/observations/del-me.md");
+    const res = await deleteNote({
+      vault,
+      relativePath: "_memory/observations/del-me.md",
+      expectedHash: w?.hash ?? "x",
+      registry,
+    });
+    expect(res.ok).toBe(false);
+    if (res.ok) return;
+    expect(res.reason).toBe("sink_write_blocked");
+    expect(res.sinkName).toBe("default");
+    expect(res.suggestion).toMatch(/supersede/i);
+    // File still present on disk.
+    await fs.access(join(vaultDir, "_memory", "observations", "del-me.md"));
+  });
+});

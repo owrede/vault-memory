@@ -31,6 +31,7 @@ import type { Vault } from "../vault/index.js";
 import type { Document, DocId, SourceHandle, WikilinkRef } from "../types.js";
 import type { AdapterRegistry } from "../adapters/registry.js";
 import { formatDocId, parseSourceHandle } from "../adapters/registry.js";
+import type { MemorySinkRegistry } from "../memory/registry.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public API
@@ -45,6 +46,17 @@ export interface UpdateFrontmatterInput {
    * adapters from `vault` (delegated by the server handler in Phase 1).
    */
   registry?: AdapterRegistry;
+  /**
+   * Plan 02-03b — defense-in-depth entry-point Guard. When supplied AND
+   * the target lands inside a registered MemorySink, the update is
+   * refused with `{ok:false, reason:"sink_write_blocked"}` BEFORE any
+   * filesystem read. When omitted (Phase 1 unit-test fixtures + back-
+   * compat callers), the guard is silently skipped. See
+   * `src/adapters/delivery/obsidian-fs/write.ts:WriteNoteInput.registry`
+   * for the full rationale (the authoritative chokepoint lives at the
+   * DeliveryAdapter; this is defense-in-depth).
+   */
+  memorySinkRegistry?: MemorySinkRegistry;
   relativePath: string;
   merge: Record<string, unknown>;
   expectedHash?: string;
@@ -74,9 +86,13 @@ export interface UpdateSuccess {
 
 export interface UpdateConflict {
   ok: false;
-  reason: "hash_mismatch" | "permission_denied" | "note_not_found";
+  reason: "hash_mismatch" | "permission_denied" | "note_not_found" | "sink_write_blocked";
   currentHash?: string;
   message: string;
+  /** Phase 2 envelope (sink_write_blocked). */
+  sinkName?: string;
+  /** Phase 2 envelope — actionable next-step hint. */
+  suggestion?: string;
 }
 
 export type UpdateResult = UpdateSuccess | UpdateConflict;
@@ -223,7 +239,38 @@ function blocksToBody(doc: Document): string {
 }
 
 export async function updateFrontmatter(input: UpdateFrontmatterInput): Promise<UpdateResult> {
-  const { vault, relativePath, merge, expectedHash, clientId, registry, onBeforeFsWrite } = input;
+  const {
+    vault,
+    relativePath,
+    merge,
+    expectedHash,
+    clientId,
+    registry,
+    memorySinkRegistry,
+    onBeforeFsWrite,
+  } = input;
+
+  // Plan 02-03b — defense-in-depth entry-point Guard. Runs BEFORE the
+  // write_enabled check and BEFORE any DB / FS read. When the optional
+  // MemorySinkRegistry is supplied (production path) AND the target lands
+  // inside a registered sink, refuse with the structured `sink_write_blocked`
+  // envelope. The suggestion directs the caller to `record_observation +
+  // supersede` per Plan 02-03b action notes.
+  if (memorySinkRegistry) {
+    const docId = formatDocId("obsidian-fs", vault.config.name, relativePath);
+    const sink = memorySinkRegistry.findSinkContaining(docId);
+    if (sink !== null) {
+      return {
+        ok: false,
+        reason: "sink_write_blocked",
+        sinkName: sink.name,
+        message:
+          `Target ${relativePath} resolves into MemorySink "${sink.name}". ` +
+          `v1 update_frontmatter is refused for memory-sink targets.`,
+        suggestion: "Use record_observation + supersede for memory updates.",
+      };
+    }
+  }
 
   if (vault.config.write_enabled !== true) {
     return {
