@@ -12,6 +12,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Adapter seams (Phase 1, plans 01-01..06)** — `SourceConnector` / `DeliveryAdapter` / `ChangeFeed` interfaces under `src/adapters/` per ADR-002. `obsidian-fs` is the v2 reference implementation for all three. The seam shape is preserved across vault-content read, vault-content write, and change-event paths so future connectors (Notion, Logseq, …) drop in without touching `src/server.ts` or any v1 tool. (ADP-01, ADP-02, ADP-03)
+- **Canonical v2 types** in `src/types.ts`: `Document`, `BlockNode`, `Edge`, `ChangeEvent`, `SourceHandle`, `MemorySink`, branded `DocId`, `WikilinkRef`. `Document.properties: Record<string, unknown>` subsumes both YAML frontmatter and future Notion typed properties. (ADP-04, ADP-05)
+- **`src/adapters/registry.ts`** — adapter registry + sole minting point for branded `DocId`s via `parseDocId` / `formatDocId`. Future adapters register under their canonical scheme (`obsidian-fs://`, `notion-api://`, …). (ADP-05)
+- **Stub-adapter conformance suite** — parameterized over `obsidian-fs` and `stub`, three test files (`src/adapters/{source,delivery,change-feed}/conformance.test.ts`). Lets future adapters validate themselves against the v2 contract before any production code lands. (ADP-13)
+- **`scripts/lint-adapters.sh`** — POSIX shell CI gate enforcing ADR-002 Invariants I-1..I-6 + C-1 (Claude-leak) + I-5b (`obsidian://` literal). Wired into `npm run lint:check` and `.github/workflows/ci.yml`. (ADP-12)
+- **`scripts/smoketest-non-claude.mjs`** — end-to-end smoketest against the real MCP SDK Client (identifies as `non-claude-smoketest`); CI-gated. Asserts 23 tools listed, all descriptions non-empty, `tools/call list_vaults` succeeds, `tools/call <bogus>` surfaces as error. (ADP-10)
+- **`docs/v2/AGENT_AGNOSTIC_AUDIT.md`** — per-leak inventory of every Claude / Obsidian assumption in `src/`, with explicit `fixed-v2` / `mixed` / `deferred-v3` status + rationale per row. Cross-references CONCERNS.md, ADR-002, and the resolving Phase-1 plans. (ADP-11)
+
+### Changed
+
+- **`@modelcontextprotocol/sdk` bumped to `^1.29.0`**; tool registration migrated from the v1 low-level `Server` + `setRequestHandler` pattern to `McpServer` + `server.registerTool()` × 23. Raw JSON Schema literals flow directly from `src/tool-registry.ts` (workaround for SDK#1143 / Zod-4 description-drop, although the issue is empirically MOOT in SDK 1.29). (ADP-08)
+- **`zod` bumped to `^4.4.3`**. Refinements and `errorMap` swept per the Zod 4 migration guide; Standard Schema wiring intact. (ADP-09)
+- **Default `client_id` for write / update / delete** is now captured from MCP `InitializeRequest.params.clientInfo.name` via a lazy closure (`getClientId()` in `src/server.ts`), falling back to `"unknown"`. Removes the v1 hardcoded `"claude-code"` default that misidentified every non-Claude write in the audit log. (D-02)
+- **`obsidian://` display-URL minting** moved from `src/server.ts:obsidianUrl()` (deleted) into `SourceConnector.formatDisplayUrl(id)` on the adapter. The `obsidian://open?vault=…&file=…` URL is now adapter-published; future adapters mint their own scheme. (D-01)
+- **README rewritten** to lead with "any MCP-aware agent" framing in the first 20 lines. Equal billing for Claude Code / Claude Desktop / ChatGPT Custom Connectors / MCP Inspector / generic clients. Obsidian framed as the v2 source connector, not the sole consumer. (ADP-14)
+- **`src/cli.ts` user-facing strings** swept for Claude-leak — `"Open ${path} in Claude Code"` → `"Open ${path} in your MCP-aware client"`. (D-02 follow-through)
+
+### Migration
+
+- **`notes.doc_uri` dual-column staging (Strategy A — additive, plan 01-02):**
+  - **MIGRATION_007** (additive) — adds nullable `doc_uri TEXT` column to `notes` + `idx_notes_doc_uri` index. Backwards-compatible; existing rows have `doc_uri IS NULL` post-migration.
+  - **MIGRATION_008** (function-style backfill) — sets `doc_uri = 'obsidian-fs://<vault>/' || path` for every row where `doc_uri IS NULL`. Idempotent; safe to re-run.
+  - Path stored **un-encoded** in the column; percent-encoding happens only at `formatDisplayUrl()` time (per ADR-002 §URL semantics).
+  - **No user action required.** Migrations run automatically on first server start after upgrade. SQLite transaction rollback is the safety net; no pre-migration backup is performed in v2 (deferred to Phase 8 per CONCERNS §"No Pre-Migration DB Backup"). (ADP-07)
+- **v1 tool surface preserved byte-for-byte.** All 23 tool names, input schemas, output envelopes, and descriptions are unchanged. `evals/v1-baseline/tools-list.snapshot.json` regenerated under SDK 1.29 with zero diff against the Phase-0 baseline (W6 human-verify checkpoint passed in plan 01-06 Task 06).
+
 ### Documentation
 
 - Relocate ADRs 001–004 from `docs/dev/` (gitignored) to public `docs/v2/adr/`; amend each with Invariants + Examples sections covering both `obsidian-fs://` and `notion-api://` worked examples (FND-01, FND-04).
