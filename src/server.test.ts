@@ -11,11 +11,12 @@ import { Database } from "./db/database.js";
 import {
   encodeNoteId,
   decodeNoteId,
-  obsidianUrl,
   truncateSnippet,
   aggregateTopTags,
   aggregateTopFrontmatterKeys,
 } from "./server.js";
+import { ObsidianFsSource } from "./adapters/source/obsidian-fs/index.js";
+import { formatDocId } from "./adapters/registry.js";
 
 describe("encodeNoteId / decodeNoteId", () => {
   it("round-trips a plain vault+path pair", () => {
@@ -44,15 +45,62 @@ describe("encodeNoteId / decodeNoteId", () => {
   });
 });
 
-describe("obsidianUrl", () => {
-  it("URL-encodes vault name and path", () => {
-    expect(obsidianUrl("Intelligence Impact", "_research/foo bar.md")).toBe(
+// D-01 (plan 01-04 task 06): the v1 `obsidianUrl` helper was deleted. Display
+// URL minting flows through `SourceConnector.formatDisplayUrl` — for obsidian-fs
+// that's `ObsidianFsSource.formatDisplayUrl(docId)`. The byte-for-byte parity
+// contract with v1 is preserved (see 01-04-SUMMARY.md §"URL encoding parity").
+// These tests pin that parity at the same input → output pairs the v1 unit
+// tests asserted.
+describe("ObsidianFsSource.formatDisplayUrl (D-01 parity with v1 obsidianUrl)", () => {
+  it("URL-encodes vault name and path (v1 parity)", () => {
+    const source = new ObsidianFsSource({
+      name: "Intelligence Impact",
+      path: "/tmp/dummy",
+    });
+    const id = formatDocId("obsidian-fs", "Intelligence Impact", "_research/foo bar.md");
+    expect(source.formatDisplayUrl(id)).toBe(
       "obsidian://open?vault=Intelligence%20Impact&file=_research%2Ffoo%20bar.md",
     );
   });
 
-  it("handles plain ascii unchanged except for slashes/spaces", () => {
-    expect(obsidianUrl("inim", "notes/x.md")).toBe("obsidian://open?vault=inim&file=notes%2Fx.md");
+  it("handles plain ascii unchanged except for slashes/spaces (v1 parity)", () => {
+    const source = new ObsidianFsSource({ name: "inim", path: "/tmp/dummy" });
+    const id = formatDocId("obsidian-fs", "inim", "notes/x.md");
+    expect(source.formatDisplayUrl(id)).toBe("obsidian://open?vault=inim&file=notes%2Fx.md");
+  });
+});
+
+// D-02 (plan 01-04 task 06): clientId fallback semantics. The server
+// constructs ObsidianFsDelivery with a lazy getter
+//   `() => server.getClientVersion()?.name ?? "unknown"`
+// so the post-handshake client name flows through automatically. This test
+// asserts the pre-handshake (or no-clientInfo) fallback surfaces "unknown"
+// in the audit log — explicitly NOT "claude-code" (the C-1 leak).
+describe("D-02 client_info capture: clientId fallback to 'unknown'", () => {
+  it("delivery writes record clientId='unknown' when no handshake / no per-call override", async () => {
+    const { ObsidianFsDelivery } = await import("./adapters/delivery/obsidian-fs/index.js");
+    const { promises: fs } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+
+    const root = await fs.mkdtemp(join(tmpdir(), "vm-d02-"));
+    const db = new Database(":memory:", "test-vault");
+    db.migrate();
+    const vault = {
+      config: { name: "test-vault", path: root, write_enabled: true },
+      db,
+      dbPath: ":memory:",
+    };
+    // Simulate the server-side closure with no `server.getClientVersion()`.
+    const lazyGetter = (): string => undefined ?? "unknown";
+    const delivery = new ObsidianFsDelivery(vault, lazyGetter);
+    const id = formatDocId("obsidian-fs", "test-vault", "rec.md");
+    await delivery.write(id, { blocks: [{ kind: "paragraph", text: "x" }] });
+    const rows = vault.db.audit.listWrites({});
+    expect(rows[0]?.client_id).toBe("unknown");
+    expect(rows[0]?.client_id).not.toBe("claude-code");
+    db.close();
+    await fs.rm(root, { recursive: true, force: true });
   });
 });
 
