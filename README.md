@@ -1,13 +1,19 @@
 # vault-memory
 
-**Local-first semantic memory for Obsidian vaults, exposed to AI agents over MCP.**
+**Local-first, source-agnostic-ready knowledge layer for Obsidian vaults, exposed to
+any MCP-aware agent.**
 
-vault-memory turns one or more Obsidian vaults into a queryable, AI-native knowledge
+vault-memory turns one or more Obsidian vaults into a queryable, agent-native knowledge
 base — running entirely on your machine. It indexes your notes with local embeddings
-(via Ollama), keeps the index live as you edit, and exposes the result to Claude Code
-(and any other [Model Context Protocol](https://modelcontextprotocol.io)–aware agent)
-as a set of well-defined tools for search, graph navigation, frontmatter queries, and
-atomic writes.
+(via Ollama), keeps the index live as you edit, and exposes the result to
+**any MCP-aware agent** — Claude Code, Claude Desktop, ChatGPT Custom Connectors,
+the MCP Inspector, or any other client speaking the
+[Model Context Protocol](https://modelcontextprotocol.io) — as a set of well-defined
+tools for search, graph navigation, frontmatter queries, and atomic writes.
+
+Obsidian is the v2 source connector; the same MCP tool surface backs any future
+adapter (Notion, Logseq, …) via the `SourceConnector` / `DeliveryAdapter` / `ChangeFeed`
+seams introduced in Phase 1.
 
 Nothing leaves your machine. No cloud sync, no API keys, no telemetry.
 
@@ -16,10 +22,10 @@ Nothing leaves your machine. No cloud sync, no API keys, no telemetry.
 ## What is vault-memory?
 
 It's an [MCP server](https://modelcontextprotocol.io) that sits between your Obsidian
-vaults and an AI agent. The agent — whether that's Claude Code in your editor, the
-Claude desktop app via a Custom Connector, ChatGPT in Deep-Research mode, or anything
-else that speaks MCP — gets a set of tools to read, search, and (optionally) write
-notes. vault-memory handles the hard parts:
+vaults and an MCP-aware agent. The agent — whether that's Claude Code in your editor,
+the Claude desktop app via a Custom Connector, ChatGPT in Deep-Research mode, the MCP
+Inspector, or any other client speaking MCP — gets a set of tools to read, search, and
+(optionally) write notes. vault-memory handles the hard parts:
 
 - **Hybrid retrieval** — semantic search over local embeddings, BM25 full-text search,
   and Reciprocal Rank Fusion to merge them. Optional cross-encoder reranking for the
@@ -190,9 +196,12 @@ vault-memory add-vault "/path/to/another/obsidian/vault"
 ```
 
 This appends a `[[vaults]]` block to `~/.vault-memory/config.toml`, writes a `.mcp.json`
-into the vault root (so Claude Code auto-spawns the MCP server when you open it), and
-runs the initial index. Idempotent — re-running on a known path only fills in whatever
-is missing.
+into the vault root (so any MCP-aware client that reads `.mcp.json` — Claude Code,
+ChatGPT Custom Connectors, etc. — auto-spawns the MCP server when you open the vault),
+and runs the initial index. Idempotent — re-running on a known path only fills in
+whatever is missing. The client identity that wrote a note is captured from the MCP
+`InitializeRequest.params.clientInfo.name` (per the MCP spec, optional) and recorded
+in the audit log — no longer hardcoded.
 
 Flags: `--name <slug>` to override the auto-slugified basename, `--write` to enable
 MCP writes (default read-only), `--no-index` to skip the initial index. Inside Claude
