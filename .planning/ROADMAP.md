@@ -203,7 +203,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 →
 |-------|----------------|--------|-----------|
 | 0. Foundation & decisions | 0/TBD | Not started | - |
 | 1. Adapter extraction & tech-debt-up | 0/TBD | Not started | - |
-| 2. Memory namespace & provenance contract | 9/9 | Complete   | 2026-05-15 |
+| 2. Memory namespace & provenance contract | 14/16 | In Progress|  |
 | 3. Bundles + authority/staleness | 0/TBD | Not started | - |
 | 4. Graph-as-retrieval | 0/TBD | Not started | - |
 | 5. Compiled brief layer | 0/TBD | Not started | - |
