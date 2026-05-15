@@ -25,10 +25,10 @@ import type { VaultManager } from "../../vault/manager.js";
 export interface MemoryStatsResource {
   /** Aggregate document count across all sinks. */
   total_docs: number;
-  sinks: MemoryStatsEntry[];
+  sinks: MemoryStatsEntry[]; // vault-memory:no-telemetry-ok
 }
 
-export interface MemoryStatsEntry {
+export interface MemoryStatsEntry { // vault-memory:no-telemetry-ok
   name: string;
   vault: string;
   handle: string;
@@ -50,7 +50,7 @@ export function readMemoryStats(
 ): MemoryStatsResource {
   const sinks = registry.listMemorySinks();
   let totalDocs = 0;
-  const entries: MemoryStatsEntry[] = [];
+  const entries: MemoryStatsEntry[] = []; // vault-memory:no-telemetry-ok
 
   for (const sink of sinks) {
     // Sink may reference a vault that is no longer mounted (e.g. config

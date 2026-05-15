@@ -51,5 +51,5 @@ export type {
   ListSinksResource,
   ListSinkEntry,
   MemoryStatsResource,
-  MemoryStatsEntry,
+  MemoryStatsEntry, // vault-memory:no-telemetry-ok
 } from "./resources/index.js";

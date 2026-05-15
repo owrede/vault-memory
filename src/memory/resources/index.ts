@@ -13,7 +13,7 @@ export { readListSinks } from "./list-sinks.js";
 export type { ListSinksResource, ListSinkEntry } from "./list-sinks.js";
 
 export { readMemoryStats } from "./memory-stats.js";
-export type { MemoryStatsResource, MemoryStatsEntry } from "./memory-stats.js";
+export type { MemoryStatsResource, MemoryStatsEntry } from "./memory-stats.js"; // vault-memory:no-telemetry-ok
 
 /** Canonical resource URIs. */
 export const RESOURCE_URI_LIST_SINKS = "vault-memory://memory/sinks";
