@@ -39,9 +39,35 @@ export interface ServerConfig {
   reranker_model_dir?: string;
 }
 
+/**
+ * Phase 2: `[memory]` TOML block — server-level memory-subsystem
+ * configuration. Optional; missing block means no `default_sink` is
+ * configured and the registry falls back to "first registered sink".
+ */
+export interface MemoryConfig {
+  /** Name of the `[[memory_sinks]]` entry to treat as the default. */
+  default_sink?: string;
+}
+
+/**
+ * Phase 2: a single `[[memory_sinks]]` TOML array entry. The `handle`
+ * is parsed and brand-cast through `parseMemorySinkHandle` at registry
+ * registration time (NOT at config-load time) so the config loader
+ * stays free of `src/memory/*` imports.
+ */
+export interface MemorySinkConfigEntry {
+  name: string;
+  handle: string;
+  contract: string;
+}
+
 export interface AppConfig {
   server: ServerConfig;
   vaults: VaultConfig[];
+  /** Phase 2: optional `[memory]` block. */
+  memory?: MemoryConfig;
+  /** Phase 2: `[[memory_sinks]]` array; empty when unconfigured. */
+  memory_sinks: MemorySinkConfigEntry[];
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
