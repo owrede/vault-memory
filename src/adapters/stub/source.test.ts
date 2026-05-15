@@ -62,7 +62,9 @@ describe("StubSource", () => {
 
   it("readDocument throws on unknown id", async () => {
     const s = new StubSource();
-    await expect(s.readDocument(parseDocId("stub://memory/missing.md"))).rejects.toThrow(/not found/);
+    await expect(s.readDocument(parseDocId("stub://memory/missing.md"))).rejects.toThrow(
+      /not found/,
+    );
   });
 
   it("exists returns true/false without throwing", async () => {
