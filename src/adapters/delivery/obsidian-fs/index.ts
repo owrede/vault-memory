@@ -39,7 +39,6 @@ import {
   type WriteResult as V1WriteResult,
 } from "./write.js";
 import { safeJoinInsideVault } from "./fs.js";
-import { computeNoteHash } from "../../source/obsidian-fs/hash.js";
 import { validateAgentWrite } from "../../../memory/validator.js";
 import { getContract } from "../../../memory/contract/index.js";
 import type { MemorySinkRegistry } from "../../../memory/registry.js";
@@ -261,6 +260,13 @@ export class ObsidianFsDelivery implements DeliveryAdapter {
    * Returns `{ ok: false, reason: "not_found" }` when the file is absent
    * (matches DeliveryAdapter contract — no implicit create on update).
    *
+   * WR-05 (Plan 02-14): callers MUST supply `opts.expectedHash`. Omitting
+   * it returns `{ ok: false, reason: "hash_mismatch" }` — symmetric with
+   * `delete()`'s existing behavior. The previous implementation silently
+   * fabricated `expectedHash` from the on-disk hash, racing with concurrent
+   * edits and downgrading the `hashProtected: "strong"` capability to
+   * best-effort.
+   *
    * The v1 MCP `update_frontmatter` handler continues to route through
    * `src/frontmatter/update.ts` (merge-DSL semantics + diff emission). This
    * `update()` path exists primarily for conformance and for non-merge-DSL
@@ -269,6 +275,19 @@ export class ObsidianFsDelivery implements DeliveryAdapter {
   async update(id: DocId, patch: Partial<Document>, opts?: WriteOptions): Promise<V2UpdateResult> {
     const guard = await this.preflight(id, patch, opts);
     if (guard) return guard;
+
+    // WR-05 (Plan 02-14): refuse if expectedHash is missing. The OCC token
+    // is mandatory for hashProtected="strong" adapters; silently fabricating
+    // it from the on-disk hash (the previous behavior) downgraded the
+    // contract to best-effort and raced with concurrent edits.
+    if (opts?.expectedHash === undefined) {
+      return {
+        ok: false,
+        reason: "hash_mismatch",
+        message: `update() requires opts.expectedHash for hashProtected="strong" adapters`,
+      };
+    }
+
     const path = this.docIdToPath(id);
 
     // Resolve absolute path with safety check; on traversal this throws,
@@ -309,16 +328,9 @@ export class ObsidianFsDelivery implements DeliveryAdapter {
             .join("\n\n")
         : existingBody;
 
-    // When the caller did not supply an expectedHash, compute the current
-    // on-disk hash so the internal writeNote will accept the overwrite as
-    // intentional. Callers can override by passing opts.expectedHash —
-    // the OCC contract still surfaces a hash_mismatch for stale hashes.
-    const existingHash = computeNoteHash(
-      existingBody,
-      Object.keys(existingFm).length > 0 ? existingFm : null,
-    );
-    const effectiveExpectedHash = opts?.expectedHash ?? existingHash;
-
+    // WR-05 (Plan 02-14): expectedHash is mandatory (checked above). The OCC
+    // contract is honored by passing opts.expectedHash straight through;
+    // writeNoteInternal surfaces a hash_mismatch for stale tokens.
     const effectiveClientId = opts?.clientId ?? this.clientId;
     // Plan 02-06 (MEM-08): symmetric with write() — update() also derives
     // the audit-row sink flag from `opts.sink !== undefined`. supersede
@@ -329,7 +341,7 @@ export class ObsidianFsDelivery implements DeliveryAdapter {
       relativePath: path,
       content: nextBody,
       frontmatter: Object.keys(nextFm).length > 0 ? nextFm : null,
-      expectedHash: effectiveExpectedHash,
+      expectedHash: opts.expectedHash,
       clientId: effectiveClientId,
       isMemorySinkWrite: opts?.sink !== undefined,
     });
