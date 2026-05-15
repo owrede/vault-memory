@@ -67,7 +67,7 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
 **Plans**: 6 plans
 - [x] 01-01-PLAN.md — Type surface + branded DocId + adapter directory bootstrap (ADP-04, ADP-05, partial ADP-06)
 - [x] 01-02-PLAN.md — doc_uri dual-column migration, Strategy A (v7 additive + v8 backfill) (ADP-07)
-- [ ] 01-03-PLAN.md — Source adapter extraction + `obsidian-fs` source impl + StubSource + conformance (ADP-01, partial ADP-06, partial ADP-13)
+- [x] 01-03-PLAN.md — Source adapter extraction + `obsidian-fs` source impl + StubSource + conformance (ADP-01, partial ADP-06, partial ADP-13)
 - [ ] 01-04-PLAN.md — Delivery adapter + D-01 `formatDisplayUrl` + D-02 `client_info` + StubDelivery + conformance (ADP-02, partial ADP-06, partial ADP-13)
 - [ ] 01-05-PLAN.md — ChangeFeed adapter + StubChangeFeed + conformance + MCP SDK ^1.29 + Zod ^4 + `registerTool` × 23 + snapshot regen (ADP-03, ADP-08, ADP-09, partial ADP-06, partial ADP-13)
 - [ ] 01-06-PLAN.md — `scripts/lint-adapters.sh` + Inspector smoketest + AGENT_AGNOSTIC_AUDIT.md + README "any MCP-aware agent" rewrite + CI wiring + final phase-gate verification (ADP-10, ADP-11, ADP-12, ADP-14, ADP-15)
