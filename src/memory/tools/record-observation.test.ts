@@ -167,14 +167,85 @@ describe("handleRecordObservation — MEM-02 controller", () => {
     expect(fm.source).toBe("agent");
   });
 
-  it("D-02 override: caller-supplied properties.confidence wins over sugar arg", async () => {
+  // ── WR-07 refinement of D-02 ────────────────────────────────────────────
+  //
+  // D-02's "caller properties win" rule is refined: the rule applies only to
+  // contract-allowed extras (e.g. tags, expires_at, priority). Provenance
+  // keys (source / evidence / confidence / observed_at / type / status /
+  // superseded_by / superseded_reason) are STRIPPED from caller-supplied
+  // `properties` before merge so sugar values survive into the audit trail.
+
+  it.each([
+    ["source", "user"],
+    ["evidence", []],
+    ["confidence", "uncertain"],
+    ["observed_at", "1970-01-01T00:00:00Z"],
+    ["type", "fact"],
+    ["status", "retired"],
+    ["superseded_by", "obsidian-fs://test-vault/_memory/x.md"],
+    ["superseded_reason", "test-override"],
+  ] as const)(
+    "WR-07: caller-supplied properties.%s is stripped — sugar value survives",
+    async (key, bogusValue) => {
+      const explicitDate = "2026-04-01T12:00:00Z";
+      const res = await handleRecordObservation(deps(), {
+        vault: VAULT_NAME,
+        claim: `Protected key test: ${key}`,
+        evidence: ["call-2026-04-01"],
+        confidence: "direct",
+        type: "observation",
+        // Use a known observed_at on the sugar side so we can compare it
+        // against the bogus override for the observed_at sub-case.
+        properties: {
+          // Caller-side bogus override that MUST be stripped:
+          [key]: bogusValue,
+          // Also pin observed_at for stability when key !== observed_at:
+          ...(key === "observed_at" ? {} : { observed_at: explicitDate }),
+        },
+      });
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      const resource = res.doc_id.replace(`obsidian-fs://${VAULT_NAME}/`, "");
+      const fm = matter(
+        await fs.readFile(join(fixture.vaultDir, resource), "utf-8"),
+      ).data as Record<string, unknown>;
+      // The expected sugar value for each protected key:
+      const expectedSugar: Record<string, unknown> = {
+        source: "agent",
+        evidence: ["call-2026-04-01"],
+        confidence: "direct",
+        type: "observation",
+        status: "active",
+        superseded_by: null,
+        superseded_reason: undefined, // never set by sugar; not present in fm
+      };
+      if (key === "observed_at") {
+        // Sugar default is `new Date().toISOString()` — assert NOT the bogus
+        // 1970 epoch and is a recent ISO-8601 string.
+        expect(fm.observed_at).not.toBe(bogusValue);
+        expect(typeof fm.observed_at).toBe("string");
+        expect(String(fm.observed_at).startsWith("19")).toBe(false);
+      } else if (key === "superseded_reason") {
+        // Not in sugar → key MUST NOT appear in frontmatter at all.
+        expect(fm.superseded_reason).toBeUndefined();
+      } else {
+        expect(fm[key]).toEqual(expectedSugar[key]);
+      }
+    },
+  );
+
+  it("WR-07: caller-supplied non-provenance extras (tags, expires_at, priority) flow through (D-02 refinement preserves extras)", async () => {
     const res = await handleRecordObservation(deps(), {
       vault: VAULT_NAME,
-      claim: "Soft signal",
-      evidence: [],
+      claim: "Extras preserved",
+      evidence: ["call-x"],
       confidence: "direct",
       type: "observation",
-      properties: { confidence: "uncertain" },
+      properties: {
+        tags: ["a", "b"],
+        expires_at: "2030-01-01T00:00:00Z",
+        priority: 5,
+      },
     });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
@@ -182,43 +253,12 @@ describe("handleRecordObservation — MEM-02 controller", () => {
     const fm = matter(
       await fs.readFile(join(fixture.vaultDir, resource), "utf-8"),
     ).data as Record<string, unknown>;
-    expect(fm.confidence).toBe("uncertain");
-  });
-
-  it("D-02 source override: caller passing source:'user' bubbles up as non_agent_write_inside_sink (controller does NOT rewrite)", async () => {
-    const res = await handleRecordObservation(deps(), {
-      vault: VAULT_NAME,
-      claim: "User-authored claim",
-      evidence: [],
-      confidence: "direct",
-      type: "observation",
-      properties: { source: "user" },
-    });
-    expect(res.ok).toBe(false);
-    if (res.ok) return;
-    expect(res.reason).toBe("non_agent_write_inside_sink");
-    expect(res.sinkName).toBe("default");
-  });
-
-  it("caller-supplied properties.observed_at overrides the now-default (useful for backfill)", async () => {
-    const explicitDate = "2024-03-14T12:00:00Z";
-    const res = await handleRecordObservation(deps(), {
-      vault: VAULT_NAME,
-      claim: "Historical fact",
-      evidence: [],
-      confidence: "direct",
-      type: "observation",
-      properties: { observed_at: explicitDate },
-    });
-    expect(res.ok).toBe(true);
-    if (!res.ok) return;
-    // The filename's date prefix comes from observed_at — must be 2024-03-14.
-    expect(res.doc_id).toContain("/2024-03-14-");
-    const resource = res.doc_id.replace(`obsidian-fs://${VAULT_NAME}/`, "");
-    const fm = matter(
-      await fs.readFile(join(fixture.vaultDir, resource), "utf-8"),
-    ).data as Record<string, unknown>;
-    expect(fm.observed_at).toBe(explicitDate);
+    expect(fm.tags).toEqual(["a", "b"]);
+    expect(fm.expires_at).toBe("2030-01-01T00:00:00Z");
+    expect(fm.priority).toBe(5);
+    // Sugar defaults still present.
+    expect(fm.source).toBe("agent");
+    expect(fm.confidence).toBe("direct");
   });
 
   it("unknown sink name throws with diagnostic listing registered sinks", async () => {
@@ -249,15 +289,12 @@ describe("handleRecordObservation — MEM-02 controller", () => {
   });
 
   it("DocId collision retries with a fresh hash6 suffix and succeeds on attempt 2", async () => {
-    // Manually pre-create the file that the first hash6 would land at.
-    // We compute the first-attempt path by replicating the slug+hash
-    // logic deterministically (claim + observed_at + salt='0').
+    // WR-04 (b): the per-retry salt is now `crypto.randomBytes(3)` so each
+    // retry mints a fresh suffix. Two identical-arg calls in the same
+    // millisecond must still produce DIFFERENT DocIds.
     const claim = "Deterministic collision";
     const explicitObservedAt = "2026-05-15T09:00:00Z";
 
-    // Drive a first call to learn the first-attempt DocId, then delete
-    // and re-create the collision shape to provoke a retry on the
-    // SECOND invocation.
     const first = await handleRecordObservation(deps(), {
       vault: VAULT_NAME,
       claim,
@@ -273,7 +310,7 @@ describe("handleRecordObservation — MEM-02 controller", () => {
       "",
     );
     // first file is still on disk → next call with identical args MUST
-    // retry to a different DocId (different suffix from salt='1').
+    // retry to a different DocId (fresh randomBytes salt).
     const second = await handleRecordObservation(deps(), {
       vault: VAULT_NAME,
       claim,
@@ -294,21 +331,102 @@ describe("handleRecordObservation — MEM-02 controller", () => {
     await fs.access(join(fixture.vaultDir, secondResource));
   });
 
-  it("returns the WriteConflict UNCHANGED when delivery refuses (e.g. missing_provenance on bad caller override)", async () => {
-    // Force a validator rejection by overriding confidence to an invalid value.
-    const res = await handleRecordObservation(deps(), {
+  // ── WR-04 (a): collision exhaustion returns collision_retry_exhausted ──
+
+  it("WR-04: returns collision_retry_exhausted (NOT permission_denied) when 3 retries fail", async () => {
+    // Stub the source connector so `exists()` ALWAYS returns true — the
+    // controller will exhaust MAX_COLLISION_RETRIES regardless of the
+    // random salt and return the new structured reason.
+    const stubbedDeps = {
+      ...deps(),
+      sourceConnectorFor: () =>
+        ({
+          exists: async () => true,
+          fetch: async () => null,
+        } as unknown as ReturnType<typeof deps>["sourceConnectorFor"] extends (
+          ...args: unknown[]
+        ) => infer R
+          ? R
+          : never),
+    };
+    const res = await handleRecordObservation(stubbedDeps, {
       vault: VAULT_NAME,
-      claim: "Bad confidence",
+      claim: "Always-collides",
       evidence: [],
       confidence: "direct",
       type: "observation",
-      properties: { confidence: "high" }, // not in {direct, inferred, uncertain}
     });
     expect(res.ok).toBe(false);
     if (res.ok) return;
-    expect(res.reason).toBe("invalid_provenance");
-    expect(res.key).toBe("confidence");
-    expect(res.observedValue).toBe("high");
-    expect(res.sinkName).toBe("default");
+    expect(res.reason).toBe("collision_retry_exhausted");
+    // Critically: NOT permission_denied — callers must distinguish
+    // "vault is read-only" from "vary the claim text and retry".
+    expect(res.reason).not.toBe("permission_denied");
+    expect(typeof res.message).toBe("string");
+    expect(res.message).toMatch(/3 attempts/);
+  });
+
+  // ── WR-04 (b): per-retry salts are truly random ─────────────────────────
+
+  it("WR-04: each collision retry mints a DIFFERENT random salt (not deterministic '0','1','2')", async () => {
+    // Capture every DocId the controller attempts by stubbing `exists()`
+    // to record the call and force a retry (true) for the first 2 calls,
+    // then return false (no collision) on the 3rd so the controller can
+    // proceed to delivery.
+    const attemptedIds: string[] = [];
+    let callCount = 0;
+    const stubbedDeps = {
+      ...deps(),
+      sourceConnectorFor: () =>
+        ({
+          exists: async (docId: string) => {
+            attemptedIds.push(docId);
+            callCount += 1;
+            return callCount <= 2; // true, true, then false → 3 attempts
+          },
+          fetch: async () => null,
+        } as unknown as ReturnType<typeof deps>["sourceConnectorFor"] extends (
+          ...args: unknown[]
+        ) => infer R
+          ? R
+          : never),
+    };
+    const res = await handleRecordObservation(stubbedDeps, {
+      vault: VAULT_NAME,
+      claim: "Random-salt verification",
+      evidence: [],
+      confidence: "direct",
+      type: "observation",
+      properties: { observed_at: "2026-05-15T09:00:00Z" },
+    });
+    expect(res.ok).toBe(true);
+    expect(attemptedIds.length).toBe(3);
+    // Extract the 6-char hex suffix from each attempted DocId filename.
+    // Pattern: ...-<slug>-<suffix>.md
+    const suffixes = attemptedIds.map((id) => {
+      const m = id.match(/-([a-f0-9]{6})\.md$/);
+      return m ? m[1] : null;
+    });
+    expect(suffixes.every((s) => s !== null)).toBe(true);
+    // All three suffixes MUST differ — random salts produce
+    // distinct entropy per retry (no deterministic 0/1/2 collision chain).
+    expect(new Set(suffixes).size).toBe(3);
+  });
+
+  // ── IN-04: slugify still strips combining marks (Unicode escape form) ──
+
+  it("IN-04: slugify strips combining diacritical marks (Unicode escape form)", async () => {
+    const res = await handleRecordObservation(deps(), {
+      vault: VAULT_NAME,
+      claim: "café résumé",
+      evidence: [],
+      confidence: "direct",
+      type: "observation",
+    });
+    expect(res.ok).toBe(true);
+    if (!res.ok) return;
+    // The slug portion of the DocId must contain "cafe-resume", proving
+    // the combining marks were stripped.
+    expect(res.doc_id).toMatch(/cafe-resume/);
   });
 });

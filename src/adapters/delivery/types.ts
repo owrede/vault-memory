@@ -105,12 +105,24 @@ export interface WriteSuccess {
  *     `missing_provenance`, `invalid_provenance`, `supersede_mismatch`,
  *     `agent_write_outside_sink`, `non_agent_write_inside_sink`,
  *     `sentinel_missing`, `sink_write_blocked`.
+ *   - Phase 2 gap-closure codes (added in Plan 02-13, wave 9):
+ *     `collision_retry_exhausted` — emitted by `record_observation`
+ *     when `MAX_COLLISION_RETRIES` is exhausted (WR-04 closure).
+ *     Distinct from `permission_denied` (which means
+ *     `write_enabled=false`) so callers can branch on a meaningful
+ *     recovery path (vary the claim text or retry later).
+ *     `sentinel_check_failed` — emitted by
+ *     `ObsidianFsDelivery.preflight()` when `assertSentinelExists`
+ *     throws with a non-ENOENT errno (EACCES, EIO, ENAMETOOLONG,
+ *     EPERM). Distinct from `sentinel_missing` which is reserved for
+ *     the literal not-existing case (WR-06 closure).
  *
  * The Phase 2 codes also populate up to four optional envelope fields:
  * `sinkName`, `key`, `observedValue`, `suggestion` — all additive, all
  * optional, all backwards-compatible with Phase 1 consumers that only
  * branched on `reason`.
  */
+// Added in Plan 02-13; sentinel_check_failed is wired by Plan 02-10 in wave 10.
 export interface WriteConflict {
   ok: false;
   reason:
@@ -124,7 +136,10 @@ export interface WriteConflict {
     | "agent_write_outside_sink"
     | "non_agent_write_inside_sink"
     | "sentinel_missing"
-    | "sink_write_blocked";
+    | "sink_write_blocked"
+    // Phase 2 gap-closure (Plan 02-13, wave 9):
+    | "collision_retry_exhausted"
+    | "sentinel_check_failed";
   /** Current on-store hash (when known); helps callers re-merge. */
   currentHash?: string;
   /** Human-readable diagnostic. */

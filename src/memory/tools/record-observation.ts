@@ -3,9 +3,14 @@
  *
  * Authors a new memory observation under a labeled `MemorySink`. Sugar
  * arguments (`claim`, `evidence`, `confidence`, `type`) pre-fill the
- * contract-required keys; the caller-supplied `properties` bag merges
- * LAST so contract-allowed extras win over sugar defaults — D-02
- * escape hatch.
+ * contract-required keys. The caller-supplied `properties` bag is
+ * filtered to drop the 8 provenance-critical keys
+ * (`source`, `evidence`, `confidence`, `observed_at`, `type`, `status`,
+ * `superseded_by`, `superseded_reason`) BEFORE merge, then the sugar
+ * values are applied LAST. Result: contract-allowed extras (tags,
+ * expires_at, priority, etc.) flow through unchanged — D-02
+ * escape-hatch preserved — but the provenance trail can never be
+ * weakened by the caller (WR-07 closure).
  *
  * The controller never pre-validates beyond required-args presence;
  * contract enforcement is the validator's job at the
@@ -20,7 +25,7 @@
  * collisions.
  */
 
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import type {
   DeliveryAdapter,
   WriteResult,
@@ -36,6 +41,30 @@ const OBSERVATIONS_SUBFOLDER = "observations/";
 
 /** Max number of times we retry the DocId-collision avoidance loop. */
 const MAX_COLLISION_RETRIES = 3;
+
+/**
+ * Provenance-critical keys that callers MAY NOT override via the
+ * `properties` escape-hatch. The validator at the DeliveryAdapter
+ * chokepoint trusts these values; allowing caller override would let
+ * a malicious or buggy agent weaken its own provenance trail.
+ *
+ * WR-07 closure + D-02 refinement: D-02's "caller keys win over sugar
+ * defaults" rule is EXPLICITLY scoped to non-provenance extras (e.g.
+ * tags, expires_at, priority). Provenance keys (the 8 listed below)
+ * come exclusively from validated MCP args. The validator at
+ * `DeliveryAdapter.write()` (Guard A/B, Plan 02-03) remains the single
+ * source of truth for which non-protected keys the contract accepts.
+ */
+const PROTECTED_PROVENANCE_KEYS = new Set<string>([
+  "source",
+  "evidence",
+  "confidence",
+  "observed_at",
+  "type",
+  "status",
+  "superseded_by",
+  "superseded_reason",
+]);
 
 /**
  * Dependencies — supplied by the server bootstrap. Pure interface so
@@ -88,8 +117,11 @@ export interface RecordObservationArgs {
 function slugify(claim: string): string {
   const stripped = claim
     .normalize("NFD")
-    // Strip combining diacritical marks (U+0300–U+036F).
-    .replace(/[̀-ͯ]/g, "")
+    // Strip combining diacritical marks (U+0300–U+036F). IN-04: explicit
+    // Unicode-escape form is source-stable; some editors / log
+    // aggregators silently drop literal combining characters and
+    // produce an empty char-class.
+    .replace(/[\u0300-\u036F]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "");
@@ -143,7 +175,15 @@ export async function handleRecordObservation(
     );
   }
 
-  // ── Build the property bag (sugar first, caller LAST per D-02) ──────────
+  // ── Build the property bag ───────────────────────────────────────────────
+  //
+  // WR-07 closure + D-02 refinement: strip provenance-critical keys from
+  // caller-supplied `properties` BEFORE merging, then place sugar LAST so
+  // the 8 protected keys (source / evidence / confidence / observed_at /
+  // type / status / superseded_by / superseded_reason) cannot be weakened
+  // by the caller. Non-provenance extras (tags, expires_at, priority,
+  // custom_tag, etc.) still win over absent sugar defaults — the D-02
+  // escape-hatch is preserved for contract-allowed extras.
   const observedAtDefault = new Date().toISOString();
   const sugarProps: Record<string, unknown> = {
     source: "agent",
@@ -154,9 +194,19 @@ export async function handleRecordObservation(
     type: args.type,
     superseded_by: null,
   };
+  const callerExtras: Record<string, unknown> = {};
+  if (args.properties !== undefined) {
+    for (const [k, v] of Object.entries(args.properties)) {
+      if (!PROTECTED_PROVENANCE_KEYS.has(k)) {
+        callerExtras[k] = v;
+      }
+    }
+  }
+  // callerExtras FIRST, sugarProps LAST — defensive ordering means even
+  // if the filter is ever bypassed, sugar still wins for provenance keys.
   const properties: Record<string, unknown> = {
+    ...callerExtras,
     ...sugarProps,
-    ...(args.properties ?? {}),
   };
 
   // ── Mint a DocId, retrying with fresh hash suffix on path collision ─────
@@ -171,7 +221,14 @@ export async function handleRecordObservation(
 
   let attempt = 0;
   while (attempt < MAX_COLLISION_RETRIES) {
-    const suffix = hashSuffix(args.claim, observedAtForNaming, String(attempt));
+    // WR-04 (b): per-retry salt is cryptographically random — six hex
+    // chars of fresh entropy. Two same-millisecond calls with identical
+    // claim/observed_at no longer produce identical collision chains.
+    const suffix = hashSuffix(
+      args.claim,
+      observedAtForNaming,
+      randomBytes(3).toString("hex"),
+    );
     const filename = `${dateSlug(observedAtForNaming)}-${slug}-${suffix}.md`;
     // `sink.resolveToRelativePath` already ends in "/" (enforced by the
     // MemorySinkHandle regex in Plan 02-02). Safe to concatenate.
@@ -203,9 +260,15 @@ export async function handleRecordObservation(
     return await delivery.write(docId, partialDoc, { sink: sink.handle });
   }
 
+  // WR-04 (a): distinct reason on retry exhaustion so callers can branch
+  // on a meaningful recovery path (vary the claim text, the observed_at
+  // timestamp, or retry later) — `permission_denied` everywhere else
+  // means "vault is read-only" and would mislead automatic retry logic.
   return {
     ok: false,
-    reason: "permission_denied",
-    message: `Failed to mint unique DocId after ${MAX_COLLISION_RETRIES} attempts`,
+    reason: "collision_retry_exhausted",
+    message:
+      `Failed to mint unique DocId after ${MAX_COLLISION_RETRIES} attempts. ` +
+      `Vary the claim text, the observed_at timestamp, or retry the call.`,
   };
 }

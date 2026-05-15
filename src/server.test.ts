@@ -674,7 +674,11 @@ describe("Plan 02-04: MEM-02 (record_observation) + MEM-04 (supersede) end-to-en
       const fm2 = matter(await fs.readFile(join(vaultDir, fm2Path), "utf-8")).data as Record<string, unknown>;
       expect(fm2.expires_at).toBe("2026-12-31T00:00:00Z");
 
-      // ── caller-supplied source:'user' rejected (no file created) ───────
+      // ── WR-07: caller-supplied source:'user' is STRIPPED before merge ──
+      // (D-02 refinement, Plan 02-13): the 8 provenance-critical keys are
+      // dropped from caller-supplied `properties` so the sugar
+      // `source: "agent"` survives. The write succeeds; the frontmatter
+      // records the truthful sugar provenance, not the caller's override.
       const res3 = await handleRecordObservation(deps, {
         vault: "v2-test-vault",
         claim: "User authored",
@@ -683,10 +687,14 @@ describe("Plan 02-04: MEM-02 (record_observation) + MEM-04 (supersede) end-to-en
         type: "observation",
         properties: { source: "user" },
       });
-      expect(res3.ok).toBe(false);
-      if (res3.ok) return;
-      expect(res3.reason).toBe("non_agent_write_inside_sink");
-      expect(res3.sinkName).toBe("default");
+      expect(res3.ok).toBe(true);
+      if (!res3.ok) return;
+      const fm3Path = res3.doc_id.replace("obsidian-fs://v2-test-vault/", "");
+      const fm3 = matter(
+        await fs.readFile(join(vaultDir, fm3Path), "utf-8"),
+      ).data as Record<string, unknown>;
+      // Sugar wins for the protected `source` key.
+      expect(fm3.source).toBe("agent");
 
       db.close();
     } finally {
