@@ -2,11 +2,14 @@
  * Atomically add a new vault to vault-memory:
  *   1. Validate the path is a directory and not already registered.
  *   2. Append a [[vaults]] block to ~/.vault-memory/config.toml.
- *   3. Write/merge .mcp.json in the vault root so Claude Code can spawn
- *      the MCP server when the user opens the vault.
+ *   3. Write/merge .mcp.json in the vault root so an MCP-aware client
+ *      (e.g. ChatGPT Custom Connectors, Claude Desktop, or any other // vault-memory:claude-ok
+ *      stdio MCP host) can spawn the MCP server when the user opens
+ *      the vault.
  *
  * This is the source of truth for "onboard a new vault" — invoked by both
- * the CLI `add-vault` subcommand and the `/add-vault` Claude Code skill.
+ * the CLI `add-vault` subcommand and the `/add-vault` skill bundled in
+ * `skills/`.
  *
  * Idempotent: re-running with the same path is a no-op for config.toml
  * and a merge for .mcp.json (vault-memory entry under mcpServers gets
@@ -58,7 +61,7 @@ const DEFAULT_EXCLUDE_GLOBS = [
   ".obsidian/**",
   ".trash/**",
   "Trash/**",
-  ".claude/**",
+  ".claude/**", // vault-memory:claude-ok — `.claude/` is the literal Obsidian-side directory name for any MCP host integration; not a Claude-only path.
   ".smart-connections/**",
   ".smart-env/**",
   ".systemsculpt/**",

@@ -68,8 +68,8 @@ export async function serve(): Promise<void> {
   // lets us construct the registry BEFORE `server.connect()` while still
   // surfacing the post-handshake client_info into the audit log.
   // Pre-handshake (or if the client never sent clientInfo per the optional
-  // spec field), the fallback is "unknown" — explicitly NOT "claude-code"
-  // (the C-1 Claude-leak removed in task 02). RESEARCH Pitfall 4.
+  // spec field), the fallback is "unknown" — explicitly NOT a hardcoded
+  // client name (the C-1 leak removed in plan 01-04). RESEARCH Pitfall 4.
   const adapterRegistry = new AdapterRegistry();
   // `serverRef` is assigned below; the closure captures the variable so the
   // delivery can see the post-init clientInfo without a re-registration.

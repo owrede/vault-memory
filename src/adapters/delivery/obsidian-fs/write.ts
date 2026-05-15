@@ -55,9 +55,9 @@ export interface WriteNoteInput {
    * at server bootstrap (falling back to "unknown"). Per-call overrides via
    * the opts.clientId path beat the constructor default.
    *
-   * Note: the v1 hardcoded `DEFAULT_CLIENT_ID = "claude-code"` was removed
-   * (the C-1 Claude-leak). Internal writeNote/deleteNote now require the
-   * caller to supply the value explicitly via the facade.
+   * Note: the v1 hardcoded `DEFAULT_CLIENT_ID` (a fixed client name) was
+   * removed in plan 01-04 (the C-1 leak). Internal writeNote/deleteNote
+   * now require the caller to supply the value explicitly via the facade.
    */
   clientId?: string;
   /**
@@ -86,8 +86,8 @@ export interface DeleteNoteInput {
  * Neutral fallback when no client_id is supplied at any level. Per D-02
  * + RESEARCH Pitfall 4: MCP InitializeRequest.params.clientInfo is
  * OPTIONAL in the spec, so older or non-conformant clients may not send
- * a name. This fallback is observably truthful (the previous hardcode
- * `"claude-code"` lied for any non-Claude client).
+ * a name. This fallback is observably truthful (the previous hardcoded
+ * default lied for any client that wasn't the assumed one).
  */
 const UNKNOWN_CLIENT_ID = "unknown";
 

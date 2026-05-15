@@ -99,8 +99,8 @@ async function runIndex(rest: string[]): Promise<void> {
 /**
  * add-vault: onboard a new Obsidian vault end-to-end.
  *   1. append a [[vaults]] block to ~/.vault-memory/config.toml
- *   2. write/merge .mcp.json in the vault root (so Claude Code can
- *      auto-spawn the MCP server when that vault is opened)
+ *   2. write/merge .mcp.json in the vault root (so an MCP-aware client
+ *      can auto-spawn the MCP server when that vault is opened)
  *   3. build an initial index (unless --no-index is passed)
  *
  * Idempotent: re-running with a known path skips config mutation
@@ -176,7 +176,7 @@ into the vault root, and runs an initial index. Idempotent.`);
   }
 
   console.error(
-    `\nDone. Open ${result.resolvedPath} in Claude Code — the vault-memory MCP server will be available.`,
+    `\nDone. Open ${result.resolvedPath} in your MCP-aware client — the vault-memory MCP server will be available.`,
   );
 }
 

@@ -363,8 +363,10 @@ export const TOOLS = [
   },
   {
     name: "search",
+    // Tool description names "Claude.ai" + "Deep-Research" as the // vault-memory:claude-ok
+    // real OB1-connector-ecosystem product names; not a Claude-only coupling.
     description:
-      "OB1-compatible search adapter. Returns a flat list of {id, title, url, snippet} for connector ecosystems (ChatGPT Custom Connectors, Claude.ai, Deep-Research). Backed by hybrid (semantic+BM25+RRF) search. For richer output use search_hybrid.",
+      "OB1-compatible search adapter. Returns a flat list of {id, title, url, snippet} for connector ecosystems (ChatGPT Custom Connectors, Claude.ai, Deep-Research). Backed by hybrid (semantic+BM25+RRF) search. For richer output use search_hybrid.", // vault-memory:claude-ok
     inputSchema: {
       type: "object",
       required: ["query"],
