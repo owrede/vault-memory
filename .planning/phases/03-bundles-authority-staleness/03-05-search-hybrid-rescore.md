@@ -1,0 +1,187 @@
+---
+plan: 03-05-search-hybrid-rescore
+phase: 03
+wave: 1
+depends_on: [03-01-sections-infrastructure]
+asm: [ASM-06, ASM-07, ASM-08, ASM-09, ASM-11]
+status: pending
+---
+
+# Slice 03-05: `search_hybrid` post-RRF rescore + additive fields + SQL-level superseded filter
+
+## Objective
+
+Extend `search_hybrid` with the authority/staleness ranking signals defined in D-06..D-08:
+
+1. Three new optional parameters: `recency_weight` (default 0), `authority_weight` (default 0), `include_superseded` (default false). Plus an implementation-supporting `half_life_days` (default 30; the planner left this open in D-07, this slice closes it as an optional param to match the D-08 "all phase-3 additions strictly additive" rule and to keep tests deterministic).
+2. Nine new optional result fields on every `SearchHit`: `doc_id`, `source_handle`, `heading_path`, `mtime`, `hash`, `display_url`, `status`, `superseded_by`, `properties`.
+3. A SQL-level `superseded` filter (reading 03-01's denormalized `notes.status` column inside `searchOneVault`) + a post-RRF additive rescore step inserted at the location identified in RESEARCH §10 (`src/search/hybrid.ts:~200`).
+4. Clock-injection seam for deterministic test fixtures.
+5. **v1-baseline invariance proof**: when no new params are supplied, rescore terms are 0 and the SQL filter is a no-op against fixtures without superseded docs, so byte-identical hit lists with byte-identical scores (modulo new optional fields being `undefined`).
+
+This slice can run in parallel with 03-02/03-03/03-04/03-06 because the additions are isolated to `src/search/hybrid.ts` and the `SearchHit` / `HybridSearchOptions` types. It depends on 03-01 for two things: (a) the denormalized `notes.status` column that powers the SQL-level superseded filter (M4 fix); (b) `SectionsQueries.findContainingChunk` for `heading_path` population on promoted-to-section hits.
+
+## Requirements covered
+
+- **ASM-06** — Results carry `mtime`, `status?`, `superseded_by?`.
+- **ASM-07** — `search_hybrid` accepts `recency_weight`, `authority_weight`.
+- **ASM-08** — `superseded` filter default-hides; `include_superseded: true` reveals; filtering happens at SQL level (M4 fix).
+- **ASM-09** — v1 default unchanged when no weights/filters supplied (byte-identical hit lists AND no perf regression).
+- **ASM-11** — Stale-vs-fresh duplicates: fresh ranks higher when `recency_weight > 0`.
+
+## Files to create / modify
+
+### Create
+
+- `evals/fixtures/v2-test-vault/_queries/recency.yaml` — two near-duplicate-doc evals per RESEARCH §"Eval Plan / ASM-11". Mirror the per-category YAML pattern from `_queries/dossier.yaml`.
+- `evals/fixtures/v2-test-vault/notes/old-status.md` — fixture doc with `mtime` 90 days ago (set via git or via fixture loader's mtime injection), body: "Atlas-1 status: prototyping".
+- `evals/fixtures/v2-test-vault/notes/new-status.md` — fixture doc with `mtime` 1 day ago, body: "Atlas-1 status: shipping".
+- (Possibly) one new superseded fixture doc — but the v1 fixture already has at least one (verify via grep `'status: superseded' evals/fixtures/v2-test-vault/`); if absent, add `evals/fixtures/v2-test-vault/notes/superseded-example.md` with `status: superseded` frontmatter to exercise default-hide.
+
+### Modify
+
+- `src/types.ts` — extend `SearchHit` with the 9 new optional fields. Use **snake_case** per RESEARCH §10 "Open questions" recommendation (consistent with citation-packet shape from Phase 2). Add an explanatory comment that the mixed-case within `SearchHit` is intentional and additive-only — existing camelCase fields (`notePath`, `chunkText`) are unchanged.
+  ```ts
+  interface SearchHit {
+    // ...existing fields unchanged...
+    doc_id?: DocId;
+    source_handle?: SourceHandle;
+    heading_path?: string[];        // empty array for doc-level hits; non-empty when promoted to section
+    mtime?: number;
+    hash?: string;
+    display_url?: string;
+    status?: string;
+    superseded_by?: string;
+    properties?: Record<string, unknown>;
+  }
+  ```
+- `src/search/hybrid.ts` — three changes:
+  1. Extend `HybridSearchOptions` (`src/search/hybrid.ts:26`) with the four new params + the `clock` seam:
+     ```ts
+     recencyWeight?: number;       // default 0
+     authorityWeight?: number;     // default 0
+     halfLifeDays?: number;        // default 30
+     includeSuperseded?: boolean;  // default false
+     clock?: () => number;         // default Date.now (mirrors src/memory/tools/recall.ts:205)
+     ```
+  2. **(M4 fix)** Push the `superseded` filter down into the per-vault SQL inside `searchOneVault` — NOT into post-flat-array hydration. The candidate-list SQL queries (BM25/FTS path AND the vec0 ANN path) gain a `WHERE notes.status IS NULL OR notes.status != 'superseded'` predicate when `includeSuperseded === false`. The predicate uses 03-01's denormalized `notes.status` column (partial-indexed via `notes_status` — so the condition is a cheap index lookup, not a frontmatter parse per candidate). When `includeSuperseded === true` the predicate is omitted entirely.
+     - For BM25/FTS: extend the JOIN to `notes` (or, if the FTS path doesn't currently JOIN `notes`, add the JOIN — verify shape via `src/db/queries/fts.ts:1-155`).
+     - For vec0 ANN: extend the JOIN to `chunks → notes` so the filter applies after the kNN search.
+     - Document the SQL change in code comments referencing M4 and the partial index from 03-01 migration 010 part B.
+     - The filter is at SQL level so it costs **zero per-candidate frontmatter parses** on the v1-default path — exactly preserving v1 search perf.
+  3. Insert the rescore block between `flat.sort((a,b) => b.rrf - a.rrf)` (line ~196) and the reranker block (line ~202). Code per RESEARCH §10 with the filter already applied at SQL level:
+     ```ts
+     // ── Post-RRF additive rescore ──
+     // Filter for superseded already applied at SQL level in searchOneVault (M4).
+     // No filtering work here.
+     if ((opts.recencyWeight ?? 0) !== 0 || (opts.authorityWeight ?? 0) !== 0) {
+       const now = opts.clock?.() ?? Date.now();
+       const halfLifeMs = (opts.halfLifeDays ?? 30) * 24 * 60 * 60 * 1000;
+       const recencyWeight = opts.recencyWeight ?? 0;
+       const authorityWeight = opts.authorityWeight ?? 0;
+       for (const h of flat) {
+         const note = hydrateNoteForHit(h);  // existing helper; single DB read
+         if (!note) continue;
+         const ageMs = Math.max(0, now - note.mtime);
+         const recencyTerm = recencyWeight * Math.exp(-ageMs / halfLifeMs);
+         const authoritative = parseFrontmatter(note.frontmatter)?.authoritative === true;
+         const authorityTerm = authorityWeight * (authoritative ? 1.0 : 0);
+         h.rrf += recencyTerm + authorityTerm;
+       }
+       flat.sort((a, b) => b.rrf - a.rrf);
+     }
+     ```
+     Hydration here only fires when rescore weights are non-zero (v1 default: zero hydration, zero cost).
+  4. Extend the hydration loop (`src/search/hybrid.ts:259-287`) to populate the 9 new optional fields on each `SearchHit`. `heading_path` populates from `SectionsQueries.findContainingChunk(chunkId)` (when found, take the section's `heading_path`; otherwise leave `undefined`). `mtime`/`hash` from `notes` row; `status`/`superseded_by`/`authoritative`/`properties` from parsed frontmatter; `doc_id`/`source_handle`/`display_url` from `decomposeDocId` + `displayUrlFor`.
+- `src/db/queries/fts.ts` and the per-vault vec0 query path — add the optional `excludeSuperseded` predicate to both candidate-list queries (the BM25/FTS path AND the vec0 ANN path). The predicate is conditional: when `excludeSuperseded === true` (the default-hide case), append the JOIN + WHERE; otherwise omit. Tests assert that with `excludeSuperseded === true`, candidate rows whose `notes.status = 'superseded'` are not returned by either path.
+- `src/server.ts` — extend `search_hybrid` Zod input schema (`src/server.ts:381` area) with the four new optional params. Strictly `.optional()` — must not change required params.
+- `evals/v1-baseline/tools-list.snapshot.json` — regenerate **exactly once** via `npm run eval:snapshot` (per `package.json:33`). PR review verifies the diff is additive-only (new optional params on `search_hybrid`; no removed or renamed fields).
+- `src/search/hybrid.test.ts` (or new file `src/search/hybrid.rescore.test.ts`) — co-located tests for the new behavior.
+
+## Approach
+
+**Insertion point** — exact line per RESEARCH §10: between `src/search/hybrid.ts:196` (the existing `flat.sort((a,b) => b.rrf - a.rrf)` after RRF merge) and `src/search/hybrid.ts:202` (the reranker block). This ordering matters:
+
+- **Filter at SQL level inside `searchOneVault` (M4 fix)** — candidates with `notes.status = 'superseded'` never enter `flat` when `includeSuperseded` is false. Zero per-candidate hydration on the v1 default path.
+- Rescore at post-RRF location BEFORE reranker. The reranker is a cross-encoder producing absolute scores; if both are active, the reranker's order wins. The rescore shapes the candidate pool that the reranker sees.
+
+**Why SQL-level filtering matters (M4 fix rationale):** in the prior plan iteration, the filter ran in JS after the RRF flat-sort, hydrating every candidate to check `properties.status`. That meant the v1-default path (`include_superseded = false`, no other new params) hit the DB twice per candidate — once for the existing snippet hydration, once for the new status check. Result list was byte-identical but perf was not. Moving the filter into the SQL JOIN against `notes.status` (the denormalized column from 03-01 part B, partial-indexed via `notes_status`) eliminates the extra hydration entirely. The v1 path is now byte-identical AND performance-identical.
+
+**v1-baseline invariance — proof by construction:**
+- `recencyWeight = 0` AND `authorityWeight = 0` → the rescore `if` guard short-circuits; no extra hydration loop; no resort.
+- `includeSuperseded = false` (default) → the SQL JOIN-and-filter is appended to candidate queries, but on the v1 fixture (`evals/fixtures/v1-baseline/`) no doc has `status: "superseded"` (verify via grep — should return zero hits in v1 fixture dir; new fixture additions go into `v2-test-vault/`, not the v1 baseline tree). Filter is therefore an empty WHERE clause result on baseline — candidate rows unchanged, hit list byte-identical, no extra per-row hydration. The `notes_status` partial index is small and cold (no superseded rows → no index entries) so the query planner short-circuits.
+
+**Test for invariance** (lives in `src/search/hybrid.rescore.test.ts`): run `hybridSearch({ query: <pinned>, topK: 10 })` against a v1-baseline-shaped DB → assert hit list (path, chunk_id, score, snippet) is identical to a pre-recorded golden array. Pin a golden in `src/search/__snapshots__/hybrid.rescore.snapshot.json` (vitest snapshots). This is a **second** snapshot beyond `tools-list.snapshot.json` — the tools-list snapshot pins the public API shape; this snapshot pins behavior. Both must remain green for ROADMAP success criterion #2.
+
+**Hydration extension** — the existing loop at `src/search/hybrid.ts:259-287` already reads `notes` rows and frontmatter for snippet building. The new fields piggyback on those reads (zero extra DB queries when search returns hits). The exception is `heading_path`: requires `SectionsQueries.findContainingChunk(chunkId)` — one indexed lookup per hit. This is cheap (the index `sections_chunk_range` from 03-01 makes it O(log N)) but is a new query; document the perf budget in code comments.
+
+**Clock injection** — mirror `src/memory/tools/recall.ts:205`. The server bootstrap passes the real `Date.now`; tests pass `() => 1715817600000` (2026-05-16 00:00:00 UTC) for deterministic `age_days`.
+
+**`half_life_days` parameter exposure decision** — D-07 locked the value at 30 days for v2.0.0 and called the "expose as param" question open. This slice **exposes it as an optional param with default 30**. Rationale: (a) D-08 says all additions strictly additive — exposing it as optional is purely additive; (b) tests benefit from being able to set short half-lives for deterministic fixtures (`half_life_days: 1` with two docs at age 0 vs age 5 produces a clean ranking diff); (c) cost is one Zod field. If the maintainer prefers it hidden, change the Zod schema to omit and hardcode `30` in the implementation — single-line revert.
+
+**Recency math sanity check** — `recencyTerm = recencyWeight * exp(-ageMs / halfLifeMs)`. At `ageMs = halfLifeMs` (30 days old, default), `recencyTerm = recencyWeight * 0.368`. At `ageMs = 0` (just edited), `recencyTerm = recencyWeight * 1.0`. This produces the desired "fresh ranks higher" pressure when `recency_weight > 0` (ASM-11).
+
+**Superseded filter — cross-verify with Phase 2 D-03:** Phase 2 D-03 established forward-only supersede (the doc's own `status: superseded` is authoritative; no graph traversal needed at search time). The filter reads `notes.status` directly from the denormalized column — no graph walk, no joins beyond the existing `chunks → notes` relationship. RESEARCH §"Specifics" §3 confirms this.
+
+**Adapter-seam check:** `src/search/hybrid.ts` and `src/db/queries/fts.ts` are L0 substrate, not adapter. Reading SQLite is fine. No fs/path/gray-matter/chokidar imports.
+
+## Tasks
+
+1. **`HybridSearchOptions` extension + 9 new `SearchHit` optional fields in `src/types.ts`.** Compile-check pass. (~40 LOC across two files)
+2. **SQL-level `superseded` filter (M4 fix)** in `searchOneVault` (`src/search/hybrid.ts`) and the underlying FTS + vec0 candidate queries (`src/db/queries/fts.ts` and the vec0 query path). The candidate list JOIN-and-filters against `notes.status` from 03-01 part B; predicate is conditional on `includeSuperseded`. Unit tests assert (a) default-hide on a fixture with a superseded doc; (b) `include_superseded: true` reveals it; (c) the FTS + vec0 candidate-row counts decrease appropriately under default-hide (verify the filter is at SQL level, not in JS). (~120 LOC)
+3. **Post-RRF additive rescore** at `src/search/hybrid.ts:~200`. With unit test asserting (a) both weights 0 → identical order to pre-rescore; (b) `recency_weight: 1.0` ranks fresher doc above older; (c) `authority_weight: 1.0` ranks `authoritative: true` doc above peers; (d) `clock` injection produces deterministic age math. (~80 LOC)
+4. **Hydration extension** for the 9 new fields including `heading_path` lookup via `SectionsQueries.findContainingChunk`. Test: section-promoted hit has non-empty `heading_path`; doc-level hit has `heading_path: []` or `undefined`. (~80 LOC)
+5. **Zod schema extension in `src/server.ts`** + tools-list snapshot regen. The regen happens once at the end of this slice's commit chain. PR description explicitly calls out "additive-only diff to tools-list.snapshot.json". (~30 LOC + JSON regen)
+6. **v1-baseline invariance pin** — new test `src/search/hybrid.rescore.test.ts` with a pinned golden snapshot for the no-params path; also explicit re-run of `evals/v1-baseline/baseline.test.ts` in CI must remain green. Add a focused micro-perf assertion (or note in test comments) that the v1-default code path does NOT hydrate frontmatter once per candidate — verifies M4 fix at the behavioral level. (~140 LOC + snapshot file)
+7. **Recency eval fixture** — `evals/fixtures/v2-test-vault/_queries/recency.yaml` + the two near-duplicate docs (`notes/old-status.md`, `notes/new-status.md`). Mirror existing `_queries/*.yaml` patterns. Verify `_queries/dossier.yaml:1-75` for format. The eval is a behavioral test, not a baseline pin — included in CI eval suite per `evals/v1-baseline/baseline.test.ts` style. (~80 LOC)
+
+## Tests
+
+- `src/search/hybrid.rescore.test.ts`:
+  - 3 cases for the SQL-level superseded filter (default-hide; reveal-on-true; FTS + vec0 candidate-row counts confirm SQL-level filtering)
+  - 4 cases for the rescore math (weights=0 invariance, recency rank, authority rank, clock determinism)
+  - 3 cases for the new hydrated fields (heading_path for section-promoted; mtime/hash always populated; status/superseded_by populate when present in frontmatter)
+  - 1 invariance pin against the pre-recorded golden snapshot
+- `evals/fixtures/v2-test-vault/_queries/recency.yaml`:
+  - 2 eval scenarios (`recency_weight=0` either order acceptable; `recency_weight=1.0` fresh > old)
+- `evals/v1-baseline/baseline.test.ts` must remain green (no new tests; pre-existing assertion).
+- `evals/v1-baseline/tools-list.snapshot.json` regenerated once; PR diff additive-only.
+
+**Estimated new test cases:** 13–17 (11 unit + 2 eval scenarios + invariance pin).
+
+## Acceptance criteria
+
+- [ ] `search_hybrid` with no new params produces byte-identical hit lists to v1-baseline (`evals/v1-baseline/baseline.test.ts` green; new invariance snapshot green).
+- [ ] **(M4)** `include_superseded: false` (default) excludes `status: "superseded"` docs at the SQL level (candidates with `notes.status = 'superseded'` never enter `flat`). Test asserts: under `EXPLAIN QUERY PLAN`, the candidate query uses `notes_status` index OR a JOIN-WHERE clause referencing `notes.status` — proving the filter is in SQL, not in JS. Equivalent behavioral assertion: a fixture with N total chunks where M chunks belong to superseded docs → the FTS/vec0 candidate row count equals N − M (not N).
+- [ ] **(M4)** Default-hide path performs ZERO additional per-candidate frontmatter parses compared to v1 — proven by the v1 invariance test (same golden hit list AND same hydration count).
+- [ ] `include_superseded: true` reveals superseded docs.
+- [ ] `recency_weight > 0` makes fresher docs outrank older near-duplicates (recency.yaml eval green).
+- [ ] `authority_weight > 0` makes `authoritative: true` docs outrank peers (covered in unit tests + dossier authoritative case in 03-06).
+- [ ] Every result carries `mtime` + `doc_id` + `source_handle` + `display_url` (when frontmatter parses cleanly).
+- [ ] `heading_path` non-empty when chunk maps to a section; `[]` or `undefined` for doc-level hits.
+- [ ] `tools-list.snapshot.json` regenerated; PR review confirms additive-only diff (no removed/renamed params).
+- [ ] All 324 existing tests + new tests pass; CI greps clean (no fs/path/gray-matter/chokidar drift).
+- [ ] Clock-injection seam works: tests pass deterministically with fixed clock.
+
+## Estimated effort
+
+- **Tasks:** 7
+- **Lines changed:** ~520 added + ~50 modified across 4 modified source files (`src/types.ts`, `src/search/hybrid.ts`, `src/db/queries/fts.ts`, and the vec0 query path) + 1 new test file + 1 new eval YAML + 2 new fixture docs + 1 regenerated snapshot
+- **PR shape:** one PR; depends on 03-01 (for both `SectionsQueries.findContainingChunk` AND the denormalized `notes.status` column).
+- **Snapshot regen:** the single tools-list.snapshot.json regen for Phase 3 happens here. 03-02/03-03/03-04/03-06 add their tool definitions to TOOLS array but do NOT regen the snapshot; 03-05 (or whichever PR lands last) consolidates the regen.
+
+  **Practical sequencing:** since 03-05 may merge before 03-02/03-03/03-04/03-06 (it's Wave 1 alongside them), Phase 3 actually regens the snapshot at least twice in PR-review timing — once when the first new tool tries to register and the snapshot test goes red, again when the last tool registers. The constraint is "additive-only diff to MAIN" — every intermediate regen on a feature branch is fine. PR reviewer's job is to verify the cumulative diff at phase-merge time is additive-only.
+
+## Citations
+
+- `src/search/hybrid.ts:26` — `HybridSearchOptions` extension point
+- `src/search/hybrid.ts:153-252` — rescore + filter insertion zone
+- `src/search/hybrid.ts:259-287` — hydration loop extension
+- `src/db/queries/fts.ts:1-155` — BM25/FTS candidate query path (gains the M4 SQL filter)
+- `src/memory/tools/recall.ts:205` — clock-injection idiom
+- `package.json:33` — `eval:snapshot` regen script
+- `evals/v1-baseline/baseline.test.ts:62-68` — snapshot equality test
+- 03-01 §"Migration 010 part B" — denormalized `notes.status` column + `notes_status` partial index (M4 dependency)
+- 03-CONTEXT.md §D-06, §D-07, §D-08 — locked decisions
+- 03-RESEARCH.md §10 — full math + insertion point + Zod schema
+- Plan-checker M4 — superseded filter MUST run at SQL level, not post-flat-array hydration
