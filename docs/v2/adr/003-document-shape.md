@@ -478,6 +478,21 @@ covers `properties`).
   `synced_block`, and the other version-sensitive fields away before
   emitting `BlockNode`s, and the conformance suite asserts identical
   hashes across the supported `Notion-Version` set.
+- **H-7** *(Phase 3 / slice 03-01 — additive, no changes to H-1..H-6)*:
+  A `Section` block aggregates a `HeadingNode` and all `BlockNode`
+  descendants up to (but not including) the next equal-or-shallower
+  heading. The `anchor` is the sha256 hex of
+  `NFC(heading_text) || "\n" || render_blocks_to_plain_text(blocks)`,
+  where `"||"` is byte concatenation and `"\n"` is a single 0x0A byte
+  (emitted even when either side is empty). The `heading_path` is the
+  array of ancestor heading texts (NFC-normalized, root → leaf,
+  inclusive of this section's heading). Top-of-document content with
+  no preceding heading is wrapped as
+  `{kind: "section", level: 0, heading_path: [], heading_text: "",
+  anchor: sha256(NFC("") || "\n" || NFC(body))}`. Section anchors are
+  the chunk-level `source_hashes` referenced by D-05 — Phase 5 briefs
+  consume them directly. NFC normalization of the heading text and
+  body is required (per H-3); LF line endings only (per H-4).
 
 ## Consequences
 
