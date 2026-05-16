@@ -3,6 +3,28 @@ quick_id: 20260516-test-suite-quality-audit
 status: complete
 type: audit
 created: 2026-05-16
+updated: 2026-05-16
+fixes_status: 5_applied_1_deferred
+---
+
+## Fix Status (added 2026-05-16, post-audit)
+
+| Finding | Severity | Fix Status | Commit |
+|---|---|---|---|
+| H1 | HIGH | **Applied** — disk-read sibling test added; original renamed honestly | `1f7f754` |
+| H2 | HIGH | **Applied** — 5 Windows-simulation tests via `path.win32` | `fe5bbb5` |
+| M1 | MEDIUM | **Applied** — `it.todo` → `it.skip` (11 todos → 11 visible skipped) | `88f98c9` |
+| M2 | MEDIUM | **Applied** — delete test renamed + isolated derivation sibling added | `d0102e7` |
+| M3 | MEDIUM | **Applied** — composition characterization block (12 new tests) | `6816f76` |
+| #6 follow-up (Phase 3 retrieval-quality harness) | Phase-scale | **Deferred** — see "Deferred items" below | — |
+
+**Test count change:** 884 passed | 11 todo → **903 passed | 11 skipped**. Net +19 passing tests; all 11 prior invisible `.todo`s now surface as named skips. Full suite + tsc + lint-adapters + eval:baseline all green.
+
+## Deferred items
+
+- **Phase 3 retrieval-quality harness** (recommendation #6 in original audit). Requires Phase 3 to (a) index the fixture vault via v1 indexer, (b) invoke each tool under test for each query, (c) compute precision/recall vs `expected_doc_ids`, (d) assert ≥0.8 on both. The `OLLAMA_AVAILABLE` probe in `evals/v1-baseline/baseline.test.ts` is already wired so Phase 3 can flip `it.skip` to `it.skipIf(!OLLAMA_AVAILABLE)` without re-introducing the probe import.
+- **Defense-in-depth at `pathInSink`** (surfaced by M3 characterization). M3's new test demonstrates that `pathInSink("/v/atlas", { resolveToRelativePath: "../escape/" }, "obs.md")` returns `/v/escape/obs.md` — outside the vault. The parser is currently the only line of defense per the explicit design comment at `src/memory/sink.ts:67-69`. Adding a vault-containment assertion to `pathInSink` would be a small change but requires verifying that no existing positive caller relies on `path.join`'s collapse-inside semantics. Track as a polish task; M3's sharp pin (`expect(out).toBe("/v/escape/obs.md")`) is the failure signal that drives the update if the fix lands.
+
 ---
 
 # Test Suite Quality Audit — Phase 2 Memory Namespace
