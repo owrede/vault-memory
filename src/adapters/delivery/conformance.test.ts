@@ -38,6 +38,13 @@ interface Fixture {
   /** Mint a DocId for this adapter's scheme + authority. */
   mintId(resource: string): DocId;
   cleanup(): Promise<void>;
+  /**
+   * Filesystem root of the fixture vault, if the adapter is FS-backed.
+   * Undefined for non-FS adapters (e.g. StubDelivery). Used by the
+   * obsidian-fs-only "filesystem invariants" block to assert on-disk
+   * state directly via `fs.readFile`, not via adapter round-trips.
+   */
+  vaultDir?: string;
 }
 
 /**
@@ -70,6 +77,7 @@ async function makeObsidianFsFixture(): Promise<Fixture> {
   const adapter = new ObsidianFsDelivery(vault, "conf-client");
   return {
     adapter,
+    vaultDir,
     mintId: (resource) => formatDocId("obsidian-fs", "conf-vault", resource),
     cleanup: async () => {
       db.close();
@@ -586,22 +594,42 @@ describe.each(sinkAdapters)(
 // Not part of the parameterized suite — these assertions are intentionally
 // adapter-specific (filesystem state after write).
 describe("ObsidianFsDelivery — filesystem invariants (adapter-specific)", () => {
-  it("write produces a file on disk at the resolved path", async () => {
+  it("write produces a file on disk at the resolved path (disk-verified via fs.readFile)", async () => {
     const f = await makeObsidianFsFixture();
     try {
       const id = f.mintId("invariant/written.md");
+      const wrote = await f.adapter.write(id, {
+        blocks: [{ kind: "paragraph", text: "hello-on-disk" }],
+      });
+      expect(wrote.ok).toBe(true);
+      if (!wrote.ok) return;
+      expect(f.vaultDir).toBeDefined();
+      // Resolve the absolute on-disk path from the fixture root, NOT via the
+      // adapter facade. This is the test that catches a regression where
+      // write() returns ok=true without touching the filesystem (audit H1).
+      const onDiskPath = join(f.vaultDir as string, "invariant/written.md");
+      const bytes = await fs.readFile(onDiskPath, "utf-8");
+      expect(bytes.length).toBeGreaterThan(0);
+      // The body block is rendered into the markdown body — verify the
+      // literal text we wrote shows up in the file.
+      expect(bytes).toContain("hello-on-disk");
+    } finally {
+      await f.cleanup();
+    }
+  });
+
+  it("write returns ok and the document is subsequently updatable via the adapter facade", async () => {
+    const f = await makeObsidianFsFixture();
+    try {
+      const id = f.mintId("invariant/updatable.md");
       const wrote = await f.adapter.write(id, {
         blocks: [{ kind: "paragraph", text: "z" }],
       });
       expect(wrote.ok).toBe(true);
       if (!wrote.ok) return;
-      // The fs path inside conf-vault was mkdtemp'd; we know the layout
-      // because makeObsidianFsFixture set vault.config.path.
-      // Just verify SOMETHING was written by re-checking via the adapter
-      // facade's own update() not-found probe inverted. WR-05 (Plan 02-14)
-      // requires expectedHash for update() on hashProtected="strong"
-      // adapters — supply the just-written newHash to exercise the success
-      // path (a not-found doc would return reason:"not_found" instead).
+      // WR-05 (Plan 02-14) requires expectedHash for update() on
+      // hashProtected="strong" adapters — supply the just-written newHash
+      // to exercise the success path.
       const upd = await f.adapter.update(
         id,
         { properties: { x: 1 } },
@@ -626,7 +654,6 @@ describe("ObsidianFsDelivery — filesystem invariants (adapter-specific)", () =
   });
 });
 
-// Top-level fs/os imports kept for the obsidian-fs fixture; the conformance
-// suite itself uses no direct fs calls (delegates to the adapter).
-void fs;
+// Top-level os import kept for the obsidian-fs fixture; `fs` is now used
+// directly by the disk-verified test above.
 void tmpdir;
