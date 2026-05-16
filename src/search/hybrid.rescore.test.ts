@@ -382,6 +382,10 @@ describe("hybridSearch — Phase 3 / 03-05 (rescore + filter + hydration)", () =
         ollama: fixture.ollama,
         vaults: [fixture.vault],
         topK: 10,
+        // Inject a synthetic resolver — production bootstrap supplies one
+        // backed by `SourceConnector.formatDisplayUrl`; tests stay
+        // adapter-free.
+        displayUrlFor: (v, p) => `test://${v}/${p}`,
       });
       expect(hits.length).toBeGreaterThan(0);
       for (const h of hits) {
@@ -389,7 +393,20 @@ describe("hybridSearch — Phase 3 / 03-05 (rescore + filter + hydration)", () =
         expect(h.source_handle).toBe("obsidian-fs://test-vault");
         expect(typeof h.mtime).toBe("number");
         expect(typeof h.hash).toBe("string");
-        expect(h.display_url).toMatch(/^obsidian:\/\/open\?vault=test-vault&file=/);
+        expect(h.display_url).toMatch(/^test:\/\/test-vault\//);
+      }
+    });
+
+    it("display_url omitted when no resolver injected (adapter-seam discipline)", async () => {
+      const hits = await hybridSearch({
+        query: "atlas",
+        embeddingModel: "test-model",
+        ollama: fixture.ollama,
+        vaults: [fixture.vault],
+        topK: 10,
+      });
+      for (const h of hits) {
+        expect(h.display_url).toBeUndefined();
       }
     });
 

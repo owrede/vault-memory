@@ -89,6 +89,16 @@ export interface HybridSearchOptions {
   /** Clock injection seam — defaults to `Date.now`. Mirrors the recall
    *  controller's idiom (`src/memory/tools/recall.ts:~205`). */
   clock?: () => number;
+  /**
+   * Phase 3 / 03-05 (ASM-06): display-URL resolver seam.
+   *
+   * `hybridSearch` is L0 substrate and is not allowed to mint adapter
+   * URL strings (ADR-002 §I-5b — `obsidian://` literals live only in // vault-memory:claude-ok
+   * the source adapter or registry). Bootstrap supplies a closure that
+   * delegates to the registered `SourceConnector.formatDisplayUrl` for
+   * the relevant vault; tests can omit it (no `display_url` populated).
+   */
+  displayUrlFor?: (vaultName: string, notePath: string) => string;
 }
 
 const DEFAULT_TOP_K = 10;
@@ -395,11 +405,18 @@ export async function hybridSearch(opts: HybridSearchOptions): Promise<SearchHit
     if (sourceHandle !== undefined) hit.source_handle = sourceHandle;
     hit.mtime = note.mtime;
     hit.hash = note.hash;
-    // Display URL: obsidian:// deep link. Mirror the byte-for-byte shape
-    // produced by the obsidian-fs source adapter's `formatDisplayUrl`.
-    hit.display_url = `obsidian://open?vault=${encodeURIComponent(
-      vault.config.name,
-    )}&file=${encodeURIComponent(note.path.replace(/\.md$/, ""))}`;
+    // Display URL via the injected resolver — keeps the URL minting
+    // confined to the source adapter (ADR-002 §I-5b). When the resolver
+    // is omitted (test fixtures, smoke tests), display_url stays
+    // undefined and is omitted from the JSON response.
+    if (opts.displayUrlFor !== undefined) {
+      try {
+        hit.display_url = opts.displayUrlFor(vault.config.name, note.path);
+      } catch {
+        // Resolver throws (e.g. unknown vault) → leave display_url
+        // unset rather than fail the whole hit.
+      }
+    }
     // Frontmatter parse — best-effort. Stored as JSON-stringified text
     // by the indexer (src/indexer/indexer.ts:176); malformed JSON
     // produces undefined `properties` rather than throwing.

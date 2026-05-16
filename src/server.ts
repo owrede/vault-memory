@@ -409,6 +409,10 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
         p.authority_weight,
         p.half_life_days,
         p.include_superseded,
+        // 03-05: display-URL resolver — delegates to the obsidian-fs source
+        // adapter (or whichever adapter owns the vault) so hybrid.ts never
+        // mints adapter URL strings (ADR-002 §I-5b).
+        (vaultName, notePath) => displayUrl(adapterRegistry, vaultName, notePath),
       );
     },
     list_backlinks: async (a) => {
@@ -1200,6 +1204,9 @@ async function handleSearchHybrid(
   authorityWeight: number = 0,
   halfLifeDays: number = 30,
   includeSuperseded: boolean = false,
+  // Phase 3 / 03-05: optional display-URL resolver (ADR-002 §I-5b
+  // seam-preserving — the URL literal lives in the adapter, not here).
+  displayUrlFor?: (vaultName: string, notePath: string) => string,
 ): Promise<object> {
   const { targets, skipped } = resolveVaultTargets(manager, vaultFilter, activeVault);
 
@@ -1232,6 +1239,7 @@ async function handleSearchHybrid(
     authorityWeight,
     halfLifeDays,
     includeSuperseded,
+    ...(displayUrlFor ? { displayUrlFor } : {}),
   });
 
   const filtered = hasExclude

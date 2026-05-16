@@ -247,7 +247,7 @@ export interface SearchHit {
   mtime?: number;
   /** `notes.hash` content hash. Always populated when hydration succeeds. */
   hash?: string;
-  /** Adapter-provided deep-link URL (`obsidian://open?vault=…&file=…`). */
+  /** Adapter-provided deep-link URL (e.g. an obsidian deep link). */
   display_url?: string;
   /** Frontmatter `status` value (e.g. "active", "superseded", "archived").
    *  Read from the denormalized `notes.status` column (migration 010 B). */
