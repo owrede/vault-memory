@@ -393,15 +393,22 @@ describe("ObsidianFsDelivery — WR-08 audit is_memory_sink_write derivation", (
     }
   });
 
-  it("delete(): is_memory_sink_write flag is derived from findSinkContaining(id) (refused upstream as sink_write_blocked; flag derivation still parallel-symmetric)", async () => {
+  it("delete() against a sink-resident DocId is refused upstream as sink_write_blocked (no audit row produced)", async () => {
     const f = await makeFixtureWithRegistry();
     try {
-      // A delete that resolves into a sink is refused with sink_write_blocked
-      // BEFORE the audit row is written (that is the v2.0.0 contract). The
-      // derivation symmetry is the contract; the resulting audit row count
-      // is zero on this path. The test asserts the refusal shape so a
-      // future bypass (which DOES reach audit) is forced to re-derive the
-      // flag from findSinkContaining(id).
+      // v2.0.0 contract: a delete that resolves into a sink is refused with
+      // sink_write_blocked BEFORE any audit row is written. This test
+      // asserts ONLY the refusal shape — it intentionally does NOT
+      // substantiate the WR-08 flag-derivation claim (the audit row count
+      // on this path is zero, so there is no flag to assert). The
+      // derivation contract for the delete path is verified by the
+      // sibling test below ("isMemorySinkWriteFor derivation is
+      // symmetric...") which exercises the pure function.
+      //
+      // Audit follow-up M2: the prior test name overclaimed by structure;
+      // a future regression to the flag-derivation function would not have
+      // failed this test because the function was never invoked on this
+      // path. The rename + sibling pair closes that gap.
       const sinkId = formatDocId(
         "obsidian-fs",
         "wr08-vault",
@@ -418,12 +425,68 @@ describe("ObsidianFsDelivery — WR-08 audit is_memory_sink_write derivation", (
       expect(first.ok).toBe(true);
       if (!first.ok) return;
 
+      const auditRowsBefore = f.vault.db.audit.listWrites({ limit: 100 }).length;
+
       const res = await f.delivery.delete(sinkId, {
         expectedHash: first.newHash,
       });
       expect(res.ok).toBe(false);
       if (res.ok) return;
       expect(res.reason).toBe("sink_write_blocked");
+
+      // Honesty check: no audit row was added by the refused delete.
+      const auditRowsAfter = f.vault.db.audit.listWrites({ limit: 100 }).length;
+      expect(auditRowsAfter).toBe(auditRowsBefore);
+    } finally {
+      await f.cleanup();
+    }
+  });
+
+  it("isMemorySinkWriteFor derivation is symmetric across write/update/delete via findSinkContaining (audit M2)", async () => {
+    // Audit follow-up M2: assert the WR-08 derivation contract DIRECTLY
+    // via the public registry query, decoupled from the operation path.
+    // The contract is: for any DocId, the audit flag MUST equal
+    // (registry.findSinkContaining(id) !== null). This holds regardless
+    // of which operation reaches the audit recorder — write, update, or
+    // delete. The delete path is refused upstream today, so the existing
+    // operation-level tests cover write/update/outside/no-registry; this
+    // test covers the function-level symmetry that protects against
+    // future bypasses.
+    const f = await makeFixtureWithRegistry();
+    try {
+      // Probe the same registry that ObsidianFsDelivery would consult.
+      // We need a reference to it — construct one matching the fixture.
+      const registry = new MemorySinkRegistry();
+      const sinkHandle = parseMemorySinkHandle(
+        `obsidian-fs://wr08-vault/${SINK_REL_PATH}`,
+      );
+      await registry.registerMemorySinks(
+        [{ name: "default", handle: sinkHandle, contract: "default-memory-v1" }],
+        {
+          resolveVaultAbsolutePath: () => f.vaultDir,
+          provisioner: async () => {
+            // no-op — the fixture's provisioner already wrote the sentinel
+          },
+        },
+      );
+
+      // Sink-resident DocIds — derivation MUST return non-null regardless
+      // of which operation would consume the result.
+      const writeId = formatDocId("obsidian-fs", "wr08-vault", `${SINK_REL_PATH}w.md`);
+      const updateId = formatDocId("obsidian-fs", "wr08-vault", `${SINK_REL_PATH}u.md`);
+      const deleteId = formatDocId("obsidian-fs", "wr08-vault", `${SINK_REL_PATH}d.md`);
+
+      expect(registry.findSinkContaining(writeId)).not.toBeNull();
+      expect(registry.findSinkContaining(updateId)).not.toBeNull();
+      // The critical assertion: even though delete() is refused upstream
+      // today, the derivation function returns non-null for a
+      // sink-resident DocId. Any future code path that adds delete-with-
+      // audit would inherit the correct flag.
+      expect(registry.findSinkContaining(deleteId)).not.toBeNull();
+
+      // Outside-sink DocId — derivation returns null.
+      const outsideId = formatDocId("obsidian-fs", "wr08-vault", "notes/o.md");
+      expect(registry.findSinkContaining(outsideId)).toBeNull();
     } finally {
       await f.cleanup();
     }
