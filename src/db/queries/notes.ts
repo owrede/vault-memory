@@ -49,6 +49,9 @@ export class NotesQueries {
   private readonly _delete: BetterSqlite3.Statement<[string]>;
   private readonly _listAll: BetterSqlite3.Statement<[number, number], NoteRow>;
   private readonly _count: BetterSqlite3.Statement<[], { c: number }>;
+  /** Phase 3 / 03-01 (M4): denormalized `notes.status` accessors. */
+  private readonly _getStatus: BetterSqlite3.Statement<[number], { status: string | null }>;
+  private readonly _setStatus: BetterSqlite3.Statement;
 
   constructor(private readonly db: BetterSqlite3.Database) {
     this._selectByPath = db.prepare<[string], NoteRow>("SELECT * FROM notes WHERE path = ?");
@@ -78,6 +81,14 @@ export class NotesQueries {
       "SELECT * FROM notes ORDER BY id LIMIT ? OFFSET ?",
     );
     this._count = db.prepare<[], { c: number }>("SELECT COUNT(*) AS c FROM notes");
+    // Phase 3 / 03-01 (M4): denormalized `notes.status` column accessors.
+    // Prepared statements MUST be created AFTER migration v10 added the
+    // column. The Database constructor runs migrate() before instantiating
+    // any query class (`src/db/database.ts:57`), so this ordering holds.
+    this._getStatus = db.prepare<[number], { status: string | null }>(
+      "SELECT status FROM notes WHERE id = ?",
+    );
+    this._setStatus = db.prepare("UPDATE notes SET status = @status WHERE id = @id");
   }
 
   upsertByPath(input: UpsertNoteInput): { id: number; isNew: boolean } {
@@ -178,6 +189,30 @@ export class NotesQueries {
         "SELECT * FROM notes WHERE path LIKE ? ESCAPE '\\' ORDER BY path LIMIT ?",
       )
       .all(escapeLikePrefix(prefix) + "%", limit);
+  }
+
+  /**
+   * Phase 3 / 03-01 (M4): read the denormalized `notes.status` column.
+   * Returns `null` for unknown note IDs or notes with no status. Reads
+   * the column directly (avoids re-parsing the JSON frontmatter blob).
+   *
+   * Maintained in sync with `notes.frontmatter` by the indexer — every
+   * write that touches `notes.frontmatter` MUST call `setStatus(...)`
+   * immediately after so the column doesn't drift.
+   */
+  getStatus(noteId: number): string | null {
+    const row = this._getStatus.get(noteId);
+    return row?.status ?? null;
+  }
+
+  /**
+   * Phase 3 / 03-01 (M4): write the denormalized `notes.status` column.
+   * `null` clears the column (frontmatter removed the status key).
+   * Returns the number of rows affected (0 for unknown note IDs).
+   */
+  setStatus(noteId: number, status: string | null): number {
+    const info = this._setStatus.run({ id: noteId, status });
+    return info.changes;
   }
 }
 
