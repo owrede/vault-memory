@@ -559,8 +559,9 @@ describe("Plan 02-04: MEM-02 (record_observation) + MEM-04 (supersede) end-to-en
     const names = TOOLS.map((t) => t.name);
     expect(names).toContain("record_observation");
     expect(names).toContain("supersede");
-    // Plan 02-05 grows the snapshot to 26 (adds `recall`).
-    expect(TOOLS).toHaveLength(26);
+    // Plan 02-05 grows the snapshot to 26 (adds `recall`); Plan 03-06 to 27
+    // (adds `assemble_dossier`). The 23-entry v1 prefix remains byte-identical.
+    expect(TOOLS).toHaveLength(27);
 
     const ro = TOOLS.find((t) => t.name === "record_observation");
     const sup = TOOLS.find((t) => t.name === "supersede");
@@ -907,7 +908,8 @@ describe("Plan 02-05: MEM-03 recall end-to-end", () => {
     expect(names).toContain("record_observation");
     expect(names).toContain("supersede");
     expect(names).toContain("recall");
-    expect(TOOLS).toHaveLength(26);
+    // Plan 03-06 grows the snapshot to 27 (adds `assemble_dossier`).
+    expect(TOOLS).toHaveLength(27);
   });
 
   it("recall against the v2 fixture: 'Atlas pilot' returns the live 2026-04-16 doc; the 2026-04-20 superseded doc is hidden", async () => {
@@ -1439,9 +1441,9 @@ describe("Plan 02-06: MCP Resources (MEM-09)", () => {
     }
   });
 
-  it("tools/list count is still 26 (Resources do NOT add tool entries)", async () => {
+  it("tools/list count is still 27 (Resources do NOT add tool entries)", async () => {
     const { TOOLS } = await import("./tool-registry.js");
-    expect(TOOLS).toHaveLength(26);
+    expect(TOOLS).toHaveLength(27);
     // Spot-check: no memory_stats or list_sinks tool exists.
     const names = TOOLS.map((t) => t.name);
     expect(names).not.toContain("memory_stats");
