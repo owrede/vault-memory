@@ -1,5 +1,7 @@
 ---
 title: Atlas-1
+type: Project
+authoritative: true
 status: active
 owner: alice-chen
 created: 2024-09-15

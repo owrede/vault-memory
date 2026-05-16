@@ -72,3 +72,47 @@ queries:
   rationale: >
     The program itself, the headline duty-cycle decision, the April retro,
     and the metric definition.
+
+# ── Plan 03-06 additions — exercise the new assemble_dossier MCP tool. ──
+# These queries carry an explicit `args` block with the tool's input
+# schema (type + key) so the Phase 3 eval harness can route them to
+# `assemble_dossier` rather than the v1 hybrid pipeline. The
+# `expected_doc_ids` still drive precision/recall scoring against the
+# returned anchor + linked_documents.
+
+- id: alice-by-alias
+  query: "Build me a dossier for Alice via her alias."
+  args:
+    type: Person
+    key: "Alice C."
+  expected_doc_ids:
+  - people/alice-chen.md
+  - projects/atlas-1.md
+  - meetings/2026-04-15-q2-okr-review.md
+  - _memory/observations/2026-04-16-alice-prefers-async-standups.md
+  - _memory/_briefs/2026-04-22-alice-working-style-brief.md
+  rationale: >
+    The alias "Alice C." (in alice-chen.md's properties.aliases array,
+    added in Plan 03-06) MUST resolve to the same anchor as the canonical
+    title match (id: alice-chen-dossier). Same expected_doc_ids — the
+    alias path is a different resolution branch over the same dataset.
+
+- id: authoritative-atlas-1
+  query: "Project dossier for Atlas-1 (authoritative)."
+  args:
+    type: Project
+    key: "Atlas-1"
+    authority_weight: 1.0
+  expected_doc_ids:
+  - projects/atlas-1.md
+  - decisions/2026-03-12-pivot-to-warehouse.md
+  - meetings/2026-04-15-q2-okr-review.md
+  - references/atlas-1-component-spec.md
+  - _memory/_briefs/2026-04-20-atlas-1-state-of-the-project.md
+  rationale: >
+    With `authoritative: true` on atlas-1.md (added in Plan 03-06), the
+    dossier's anchor.properties.authoritative must be `true`. The
+    parallel `search_hybrid({query: "Atlas-1", authority_weight: 1.0})`
+    call (Plan 03-05) is expected to rank atlas-1 above other Project
+    docs; this entry pins both expectations against the same fixture.
+    Same expected_doc_ids as the existing atlas-1-dossier row.

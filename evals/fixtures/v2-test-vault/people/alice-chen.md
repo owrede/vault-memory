@@ -1,5 +1,7 @@
 ---
 title: Alice Chen
+type: Person
+aliases: ["Alice C.", "ac"]
 role: CEO
 joined: 2024-09-01
 created: 2026-01-15
