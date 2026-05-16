@@ -10,6 +10,7 @@ import { AuditQueries } from "./queries/audit.js";
 import { ModelsQueries } from "./queries/models.js";
 import { FtsQueries } from "./queries/fts.js";
 import { AliasesQueries } from "./queries/aliases.js";
+import { SectionsQueries } from "./queries/sections.js";
 
 /**
  * SQLite wrapper for a single vault.
@@ -30,6 +31,8 @@ export class Database {
   readonly models: ModelsQueries;
   readonly fts: FtsQueries;
   readonly aliases: AliasesQueries;
+  /** Phase 3 / 03-01: materialized `sections` table query namespace. */
+  readonly sections: SectionsQueries;
 
   /**
    * Name of the vault this DB belongs to, or `undefined` for `:memory:` /
@@ -67,6 +70,7 @@ export class Database {
     this.audit = new AuditQueries(this.handle);
     this.fts = new FtsQueries(this.handle);
     this.aliases = new AliasesQueries(this.handle);
+    this.sections = new SectionsQueries(this.handle);
   }
 
   static async open(dbPath: string, vaultName?: string): Promise<Database> {

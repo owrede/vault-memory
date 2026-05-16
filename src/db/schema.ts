@@ -10,6 +10,8 @@
  * in order, then sets PRAGMA user_version to the highest version applied.
  */
 
+import { backfillSectionsFromChunks } from "../sections/backfill.js";
+
 /**
  * Context passed to every function-style migration. New optional fields can be
  * added here without rewriting existing migrations — they accept the whole
@@ -500,6 +502,99 @@ function runMigration009(db: BetterSqlite3Database, _ctx: MigrationContext): voi
   `);
 }
 
+/**
+ * Migration 010 — Phase 3 (slice 03-01) sections infrastructure.
+ *
+ * Three ordered steps inside ONE transaction (per plan 03-01):
+ *   A) `sections` table + 3 indexes (DDL).
+ *   B) Denormalized `notes.status` column + UPDATE backfill from
+ *      `json_extract(frontmatter, '$.status')` + partial index
+ *      `notes_status WHERE status IS NOT NULL`.
+ *   C) Function-style call to `backfillSectionsFromChunks(db)` —
+ *      one-time backfill of `sections` rows for existing notes
+ *      (M2 fix from the plan-checker). Re-derives sections from each
+ *      note's `content` column, NOT from `chunks.heading_path` (see
+ *      03-01-DEVIATIONS.md §D1 for why).
+ *
+ * Function-style so we can interleave SQL + a TS helper call inside the
+ * same transaction. The runner is already inside `db.transaction(...)`
+ * at `src/db/database.ts:114` — calling `db.exec` from here participates
+ * in that outer transaction by default with better-sqlite3.
+ *
+ * IDEMPOTENCY: the v1 migration runner only runs migrations whose
+ * version > `user_version` so this function executes at most once per
+ * DB. As a defence-in-depth measure the steps are still individually
+ * idempotent (column-add via PRAGMA introspection; `CREATE TABLE IF
+ * NOT EXISTS`; backfill helper short-circuits when rows already exist
+ * for a note).
+ */
+function runMigration010(db: BetterSqlite3Database, _ctx: MigrationContext): void {
+  // ── Step A: sections table + 3 indexes ────────────────────────────
+  // Use `IF NOT EXISTS` so a fixture replay against a DB whose v10
+  // schema already exists does not crash. The composite indexes match
+  // the plan's read patterns:
+  //   - sections_note_anchor:    O(log) unique lookup by (note_id, anchor)
+  //   - sections_note_parent_ord: O(log) tree iteration in get_outline
+  //   - sections_chunk_range:    O(log) chunk → section promotion
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sections (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      note_id         INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+      anchor          TEXT NOT NULL,
+      heading_path    TEXT NOT NULL,
+      heading_text    TEXT NOT NULL,
+      level           INTEGER NOT NULL,
+      parent_id       INTEGER REFERENCES sections(id) ON DELETE CASCADE,
+      ord             INTEGER NOT NULL,
+      chunk_id_first  INTEGER REFERENCES chunks(id),
+      chunk_id_last   INTEGER REFERENCES chunks(id),
+      created_at      INTEGER NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS sections_note_anchor
+      ON sections(note_id, anchor);
+    CREATE INDEX IF NOT EXISTS sections_note_parent_ord
+      ON sections(note_id, parent_id, ord);
+    CREATE INDEX IF NOT EXISTS sections_chunk_range
+      ON sections(note_id, chunk_id_first, chunk_id_last);
+  `);
+
+  // ── Step B: notes.status denormalized column (M4 fix) ─────────────
+  // Idempotent column-add: check PRAGMA table_info first. `notes.status`
+  // is read by 03-05's superseded SQL filter and maintained by the
+  // indexer via `NotesQueries.setStatus(noteId, parsedProperties.status
+  // ?? null)`.
+  const cols = db.prepare("PRAGMA table_info(notes)").all() as Array<{ name: string }>;
+  const hasStatus = cols.some((c) => c.name === "status");
+  if (!hasStatus) {
+    db.exec("ALTER TABLE notes ADD COLUMN status TEXT");
+  }
+  // Backfill `status` from existing JSON-stringified `notes.frontmatter`.
+  // `notes.frontmatter` is stored as a JSON string (verified at
+  // src/indexer/indexer.ts:168 — `JSON.stringify(parsed.frontmatter)`).
+  // `json_extract` handles malformed JSON by returning NULL, so notes
+  // with corrupt/missing frontmatter end up with `status: NULL` —
+  // exactly the correct behavior.
+  db.exec(`
+    UPDATE notes
+       SET status = json_extract(frontmatter, '$.status')
+     WHERE frontmatter IS NOT NULL
+       AND status IS NULL
+  `);
+  // Partial index: tiny footprint, only indexes rows with a non-null
+  // status. Most notes have no status — the index stays small even on
+  // large vaults.
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS notes_status
+      ON notes(status) WHERE status IS NOT NULL
+  `);
+
+  // ── Step C: section backfill (M2 fix) ─────────────────────────────
+  // Re-derive sections from each note's `content` column. The helper
+  // is co-located in `src/sections/backfill.ts` so the migration
+  // module stays adapter-import-clean.
+  backfillSectionsFromChunks(db);
+}
+
 export const MIGRATIONS: readonly Migration[] = [
   {
     version: 1,
@@ -546,5 +641,11 @@ export const MIGRATIONS: readonly Migration[] = [
     description:
       "audit discriminator — is_memory_sink_write column + partial index (MEM-08, Plan 02-06)",
     run: runMigration009,
+  },
+  {
+    version: 10,
+    description:
+      "sections table + notes.status denormalization + one-time section backfill (Phase 3 / 03-01)",
+    run: runMigration010,
   },
 ];
