@@ -529,6 +529,56 @@ export const TOOLS = [
       },
     },
   },
+  // ── Phase 3 assembly tools (Plan 03-03) ──────────────────────────────────
+  {
+    name: "search_sections",
+    description:
+      "Section-level retrieval. Composes the v1 hybrid (semantic + BM25 + RRF) pipeline with " +
+      "a chunk-to-section promotion step: runs hybrid with an inflated top_k = limit × 5, " +
+      "promotes each chunk hit to its enclosing section, dedupes by (note, section anchor), " +
+      "scores each section as the MAX of its constituent chunks, tie-breaks by " +
+      "chunk_id_first ASC, and returns the top `limit` sections. Each hit carries an 8-field " +
+      "citation packet (D-01) with a non-empty section heading_path PLUS the section anchor, " +
+      "score, contributing chunk_ids, and an optional snippet from the best-scoring chunk. " +
+      "Use when you want WHOLE-SECTION context, not a chunk window.",
+    inputSchema: {
+      type: "object",
+      required: ["query"],
+      properties: {
+        query: { type: "string" },
+        limit: {
+          type: "integer",
+          minimum: 1,
+          maximum: 50,
+          default: 10,
+        },
+        vaults: { type: "array", items: { type: "string" } },
+        recency_weight: {
+          type: "number",
+          minimum: 0,
+          default: 0,
+          description:
+            "Forward-compat with slice 03-05's authority/staleness rescore. " +
+            "Accepted today; ignored until 03-05 lands.",
+        },
+        authority_weight: {
+          type: "number",
+          minimum: 0,
+          default: 0,
+          description:
+            "Forward-compat with slice 03-05's authority/staleness rescore. " +
+            "Accepted today; ignored until 03-05 lands.",
+        },
+        include_superseded: {
+          type: "boolean",
+          default: false,
+          description:
+            "Forward-compat with slice 03-05. When false (default), superseded docs are " +
+            "filtered out at the chunk level inside hybrid; accepted today, ignored until 03-05.",
+        },
+      },
+    },
+  },
   // ── Phase 2 memory tools (Plan 02-05) ────────────────────────────────────
   {
     name: "recall",
@@ -815,6 +865,19 @@ export const TOOL_SCHEMAS = {
       .string()
       .min(1)
       .describe("Why the old document is being retired; written to superseded_reason"),
+  },
+
+  // ── Phase 3 assembly tools (Plan 03-03) ─────────────────────────────────
+  search_sections: {
+    query: z.string().min(1),
+    limit: z.number().int().positive().max(50).optional().default(10),
+    vaults: z.array(z.string().min(1)).optional(),
+    // Forward-compat with slice 03-05's authority/staleness rescore.
+    // Accepted today; ignored by the controller until 03-05 wires the
+    // forwarding inside hybridSearch. See 03-03-DEVIATIONS.md.
+    recency_weight: z.number().min(0).optional().default(0),
+    authority_weight: z.number().min(0).optional().default(0),
+    include_superseded: z.boolean().optional().default(false),
   },
 
   // ── Phase 2 memory tools (Plan 02-05) ───────────────────────────────────

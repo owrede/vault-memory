@@ -642,6 +642,50 @@
       }
     },
     {
+      "name": "search_sections",
+      "description": "Section-level retrieval. Composes the v1 hybrid (semantic + BM25 + RRF) pipeline with a chunk-to-section promotion step: runs hybrid with an inflated top_k = limit × 5, promotes each chunk hit to its enclosing section, dedupes by (note, section anchor), scores each section as the MAX of its constituent chunks, tie-breaks by chunk_id_first ASC, and returns the top `limit` sections. Each hit carries an 8-field citation packet (D-01) with a non-empty section heading_path PLUS the section anchor, score, contributing chunk_ids, and an optional snippet from the best-scoring chunk. Use when you want WHOLE-SECTION context, not a chunk window.",
+      "inputSchema": {
+        "type": "object",
+        "required": [
+          "query"
+        ],
+        "properties": {
+          "query": {
+            "type": "string"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 10
+          },
+          "vaults": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "recency_weight": {
+            "type": "number",
+            "minimum": 0,
+            "default": 0,
+            "description": "Forward-compat with slice 03-05's authority/staleness rescore. Accepted today; ignored until 03-05 lands."
+          },
+          "authority_weight": {
+            "type": "number",
+            "minimum": 0,
+            "default": 0,
+            "description": "Forward-compat with slice 03-05's authority/staleness rescore. Accepted today; ignored until 03-05 lands."
+          },
+          "include_superseded": {
+            "type": "boolean",
+            "default": false,
+            "description": "Forward-compat with slice 03-05. When false (default), superseded docs are filtered out at the chunk level inside hybrid; accepted today, ignored until 03-05."
+          }
+        }
+      }
+    },
+    {
       "name": "recall",
       "description": "Retrieve memory documents from one or more labeled MemorySinks, filtered by provenance (min_confidence, types, max_age_days) and ranked by recency (observed_at DESC). Returns citation packets (doc_id, source_handle, title, heading_path, mtime, hash, display_url, properties) — the same 8-field shape Phase 3 assembly tools use. Superseded documents are hidden by default.",
       "inputSchema": {
