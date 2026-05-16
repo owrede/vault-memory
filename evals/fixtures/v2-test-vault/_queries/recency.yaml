@@ -1,0 +1,44 @@
+# Recency eval queries (Phase 3 / 03-05, ASM-11).
+#
+# Two near-duplicate status notes for the same project, one ~6 months
+# old and one ~1 day old at the eval clock anchor (2026-05-16). The
+# eval harness MUST inject mtimes deterministically via `fs.utimesSync`
+# in a `beforeAll` block before indexing — git does not preserve
+# mtimes on checkout, so the on-disk values cannot be relied upon.
+#
+# Mtime contract (consumed by the eval harness's mtime-injection step):
+#   status_updates/atlas-1-old-update.md  → mtime: 2025-11-15T12:00:00Z (~6 months old)
+#   status_updates/atlas-1-new-update.md  → mtime: 2026-05-15T12:00:00Z (~1 day old)
+#
+# Eval clock anchor for age computation: 2026-05-16T00:00:00Z (UTC).
+
+tool: search_hybrid
+queries:
+  - id: atlas-1-status-neutral-v1
+    query: "Atlas-1 status"
+    args:
+      top_k: 5
+    expected_doc_ids:
+      - status_updates/atlas-1-old-update.md
+      - status_updates/atlas-1-new-update.md
+    rationale: >
+      No recency pressure — both near-duplicate docs are eligible. The
+      eval asserts both appear in the top 5 in EITHER order (recall floor,
+      not order pin). With recency_weight=0 (v1 default), the harness
+      accepts either chronological order.
+
+  - id: atlas-1-status-recency-weighted
+    query: "Atlas-1 status"
+    args:
+      top_k: 5
+      recency_weight: 1.0
+      half_life_days: 30
+    expected_doc_ids:
+      - status_updates/atlas-1-new-update.md
+      - status_updates/atlas-1-old-update.md
+    rationale: >
+      With recency_weight=1.0 and half_life_days=30, the fresh doc
+      (age ~1 day) contributes ~ exp(-1/30) ≈ 0.967, while the old doc
+      (age ~6 months ≈ 182 days) contributes ~ exp(-182/30) ≈ 0.0024.
+      Fresh ranks above old. The eval asserts the ORDER, not just
+      presence — atlas-1-new-update.md MUST be first.
