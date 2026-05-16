@@ -312,7 +312,112 @@ export type BlockNode =
   | { kind: "paragraph"; text: string }
   | { kind: "heading"; level: 1 | 2 | 3 | 4 | 5 | 6; text: string }
   | { kind: "code"; lang?: string; text: string }
-  | { kind: "list"; ordered: boolean; items: string[] };
+  | { kind: "list"; ordered: boolean; items: string[] }
+  | {
+      /**
+       * Phase 3 (ASM-01..ASM-05): a `Section` aggregates a heading and all
+       * `BlockNode` descendants up to (but not including) the next
+       * equal-or-shallower heading. `anchor` is the canonical chunk-level
+       * `source_hash` (ADR-003 D-05 / H-7) — `sha256_hex(NFC(heading_text)
+       * || "\n" || render_blocks_to_plain_text(blocks))`. `heading_path`
+       * is the ordered ancestor heading texts (NFC-normalized, root → leaf,
+       * inclusive of this section's heading). `level: 0` is the synthetic
+       * preamble wrapping content that precedes any heading; in that case
+       * `heading_path` is `[]` and `heading_text` is `""`.
+       *
+       * Additive per H-7. Existing `BlockNode` consumers (none today use
+       * `kind === "section"`) are unaffected.
+       */
+      kind: "section";
+      anchor: string;
+      heading_path: string[];
+      level: 0 | 1 | 2 | 3 | 4 | 5 | 6;
+      blocks: BlockNode[];
+    };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 3 (ASM-01..ASM-05): Sections — in-memory + DB row shapes
+//
+// `SectionInfo` is the pure-in-memory shape produced by `extractSections`
+// (`src/sections/extract.ts`). It carries the data the indexer needs to
+// persist into the `sections` table.
+//
+// `SectionRow` is the canonical DB-row shape; `InsertSectionRow` is the
+// statement-bound input used by `SectionsQueries.insertMany`.
+//
+// These types are declared here (not under `src/sections/`) so adapters,
+// the indexer, the assembly layer, and the DB query class can all import
+// them without crossing layer boundaries. ADR-003 H-7 defines the anchor
+// algorithm.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * In-memory shape of one extracted section. Produced by
+ * `extractSections(blocks)`. The indexer fills in `chunk_id_first` /
+ * `chunk_id_last` after chunks have been inserted (so chunk IDs exist).
+ *
+ * `parent_index` is an index into the flat `SectionInfo[]` array
+ * (or `null` for top-level / preamble). The DB layer translates this
+ * to `parent_id` (FK to `sections.id`) once rows are inserted.
+ *
+ * `ord` is the section's index among its siblings under the same parent
+ * (assigned post-walk in a second pass).
+ */
+export interface SectionInfo {
+  /** Canonical content-hash anchor (ADR-003 H-7). Hex sha256. */
+  anchor: string;
+  /** Ancestor heading texts (root → leaf, inclusive of this section). */
+  heading_path: string[];
+  /** Leaf heading text. Empty string for the preamble. */
+  heading_text: string;
+  /** 0 = preamble; 1..6 = heading level. */
+  level: 0 | 1 | 2 | 3 | 4 | 5 | 6;
+  /** Index into the flat `SectionInfo[]` array; `null` for top-level. */
+  parent_index: number | null;
+  /** Sibling order under `parent_index`. */
+  ord: number;
+  /** Plain-text body fed to `computeAnchor` (kept for downstream readers). */
+  plain_text_body: string;
+}
+
+/**
+ * DB-row shape for the `sections` table (migration 010). `parent_id` is
+ * the FK pointer; `null` for top-level / preamble. `heading_path` is
+ * stored as a JSON array of strings.
+ */
+export interface SectionRow {
+  id: number;
+  note_id: number;
+  anchor: string;
+  /** JSON array of strings — parse with `JSON.parse(heading_path)`. */
+  heading_path: string;
+  heading_text: string;
+  level: number;
+  parent_id: number | null;
+  ord: number;
+  chunk_id_first: number | null;
+  chunk_id_last: number | null;
+  created_at: number;
+}
+
+/**
+ * Input shape for `SectionsQueries.insertMany`. The query class
+ * assigns `id` and `created_at`. `heading_path` must already be
+ * JSON-stringified by the caller (kept explicit so the storage shape
+ * is visible at the call site).
+ */
+export interface InsertSectionRow {
+  note_id: number;
+  anchor: string;
+  /** JSON array of strings, already stringified. */
+  heading_path: string;
+  heading_text: string;
+  level: number;
+  parent_id: number | null;
+  ord: number;
+  chunk_id_first: number | null;
+  chunk_id_last: number | null;
+}
 
 /**
  * A typed link between documents. Reserved for Phase 4 (GRA-04: typed-edge
