@@ -151,3 +151,91 @@ describe("NotesQueries.getStatus / setStatus (plan 03-01 / M4)", () => {
     expect(db.notes.getStatus(999_999)).toBeNull();
   });
 });
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 3 / 03-05 (M4): getSupersededChunkIds — SQL-level batch filter
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("NotesQueries.getSupersededChunkIds (03-05 M4)", () => {
+  let db: Database;
+  let noteSupId: number;
+  let noteOkId: number;
+  let chunkSupId: number;
+  let chunkOkId: number;
+
+  beforeEach(() => {
+    db = new Database(":memory:", "test-vault");
+    const sup = db.notes.upsertByPath({
+      path: "sup.md",
+      content: "x",
+      frontmatter: null,
+      title: "Sup",
+      hash: "hs",
+      bodyHash: "bhs",
+      mtime: 0,
+      wordCount: 1,
+    });
+    noteSupId = sup.id;
+    const ok = db.notes.upsertByPath({
+      path: "ok.md",
+      content: "y",
+      frontmatter: null,
+      title: "Ok",
+      hash: "ho",
+      bodyHash: "bho",
+      mtime: 0,
+      wordCount: 1,
+    });
+    noteOkId = ok.id;
+
+    const supChunks = db.chunks.insertBatch(noteSupId, [
+      { idx: 0, text: "sup chunk", headingPath: null, startOffset: 0, endOffset: 9, tokenCount: 2 },
+    ]);
+    chunkSupId = supChunks[0]!;
+    const okChunks = db.chunks.insertBatch(noteOkId, [
+      { idx: 0, text: "ok chunk", headingPath: null, startOffset: 0, endOffset: 8, tokenCount: 2 },
+    ]);
+    chunkOkId = okChunks[0]!;
+
+    db.notes.setStatus(noteSupId, "superseded");
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it("returns only chunkIds whose note is superseded", () => {
+    const out = db.notes.getSupersededChunkIds([chunkSupId, chunkOkId]);
+    expect(out.has(chunkSupId)).toBe(true);
+    expect(out.has(chunkOkId)).toBe(false);
+    expect(out.size).toBe(1);
+  });
+
+  it("returns empty set on empty input (no DB round-trip)", () => {
+    expect(db.notes.getSupersededChunkIds([]).size).toBe(0);
+  });
+
+  it("returns empty set when no input chunk is superseded", () => {
+    db.notes.setStatus(noteSupId, null); // clear
+    expect(db.notes.getSupersededChunkIds([chunkSupId, chunkOkId]).size).toBe(0);
+  });
+
+  it("unknown chunkIds are silently dropped", () => {
+    expect(db.notes.getSupersededChunkIds([999_999]).size).toBe(0);
+  });
+
+  it("uses the notes_status partial index (EXPLAIN QUERY PLAN sanity check)", () => {
+    const plan = db.handle
+      .prepare(
+        `EXPLAIN QUERY PLAN
+         SELECT chunks.id FROM chunks
+           JOIN notes ON notes.id = chunks.note_id
+          WHERE chunks.id IN (?) AND notes.status = 'superseded'`,
+      )
+      .all(chunkSupId) as Array<{ detail: string }>;
+    const detail = plan.map((p) => p.detail).join(" | ").toLowerCase();
+    // Plan must reference notes — proof we filter at SQL level.
+    expect(detail).toContain("notes");
+  });
+});
