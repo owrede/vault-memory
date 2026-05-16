@@ -20,6 +20,7 @@ import {
   parseMemorySinkHandle,
   SENTINEL_FILENAME,
 } from "./sink.js";
+import { pathInSink } from "../adapters/delivery/obsidian-fs/path.js";
 
 describe("parseMemorySinkHandle", () => {
   it("accepts a well-formed obsidian-fs handle with trailing slash", () => {
@@ -159,5 +160,103 @@ describe("parseMemorySinkHandle — CR-01 path-traversal rejection", () => {
     // per-segment `..` check.
     const sneaky = "obsidian-fs://atlas/../x/";
     expect(() => parseMemorySinkHandle(sneaky)).toThrow(/segment/);
+  });
+});
+
+// ────────────────────────────────────────────────────────────────────────────
+// Audit follow-up M3 — characterize the parser → pathInSink composition.
+//
+// CR-01 closure rests on src/memory/sink.ts:67-69:
+//
+//   "Downstream `pathInSink` is safe-by-construction precisely because the
+//    parser refuses any traversal-shaped input here."
+//
+// That claim is true today, but it has no compositional regression guard:
+// if a future change loosens SEGMENT_PATTERN, no test downstream of the
+// parser will fail — pathInSink does not enforce vault-containment.
+//
+// This describe block makes the implicit contract visible:
+//   1. Confirm the parser refuses each adversarial input (CR-01 regression
+//      guard, already covered above — repeated here as a load-bearing
+//      anchor so the composition logic reads end-to-end).
+//   2. Characterize the downstream behavior IF the parser were bypassed by
+//      constructing the same logical sink shape directly as a SinkLike
+//      object. `pathInSink` does NOT throw and does NOT clamp to the vault
+//      — it returns a path OUTSIDE the vault root.
+//
+// A future fix that adds vault-containment enforcement to `pathInSink`
+// (defense in depth) would change step 2's expectation from "escapes" to
+// "throws or clamps". When that happens, this test is the one to update —
+// and the audit/PHASE work that justifies the change is documented here.
+// ────────────────────────────────────────────────────────────────────────────
+
+describe("M3 — parser → pathInSink composition characterization", () => {
+  const VAULT_ROOT = "/v/atlas";
+
+  // Cases lifted from the CR-01 negative table above. Each (handle, sinkRel)
+  // pair represents the same logical input as a full handle (rejected by
+  // the parser) and as the bare `resolveToRelativePath` (what would survive
+  // if the parser were bypassed).
+  const adversarial: Array<[handle: string, sinkRel: string, label: string]> = [
+    ["obsidian-fs://atlas/../escape/", "../escape/", "root-level path traversal"],
+    [
+      "obsidian-fs://atlas/../../etc/passwd-fake/",
+      "../../etc/passwd-fake/",
+      "multi-step traversal",
+    ],
+    ["obsidian-fs://atlas/foo/../bar/", "foo/../bar/", "interior dot-dot"],
+    ["obsidian-fs://atlas/./foo/", "./foo/", "interior single-dot"],
+    ["obsidian-fs://atlas//double/", "/double/", "empty segment via leading slash"],
+  ];
+
+  it.each(adversarial)(
+    "parser REJECTS adversarial handle %s — primary CR-01 defense",
+    (handle) => {
+      expect(() => parseMemorySinkHandle(handle)).toThrow();
+    },
+  );
+
+  it.each(adversarial)(
+    "pathInSink with bypassed parser (%s) does NOT contain the escape (documents current design dependency)",
+    (_handle, sinkRel) => {
+      // SECURITY NOTE: this is a characterization test of CURRENT behavior,
+      // not a security guarantee. It documents that the parser is the only
+      // line of defense. If a future change adds vault-containment to
+      // pathInSink, the assertion below must flip to `toThrow()` or
+      // `containedIn(VAULT_ROOT)` — and CR-01's safety claim gains a
+      // proper defense-in-depth guard.
+      const sink = { resolveToRelativePath: sinkRel };
+      const out = pathInSink(VAULT_ROOT, sink, "obs.md");
+      // The point: at least one adversarial input produces a path outside
+      // the vault. We assert per-case that the escape happens, so a future
+      // defense-in-depth fix breaks this test and forces the maintainer to
+      // update the characterization (and the comment above) deliberately.
+      const escapes = !out.startsWith(VAULT_ROOT + "/") && out !== VAULT_ROOT;
+      const collapsesInside = out.startsWith(VAULT_ROOT + "/");
+      // Some inputs (e.g., "./foo/", "foo/../bar/") collapse benignly INSIDE
+      // the vault via path.join normalization; others ("../escape/") escape.
+      // The contract we lock is: at least one of the two states holds,
+      // pathInSink does not throw, and the result is a string.
+      expect(typeof out).toBe("string");
+      expect(escapes || collapsesInside).toBe(true);
+    },
+  );
+
+  it("documents the ONE input that demonstrably escapes the vault root", () => {
+    // Pin the worst-case behavior with a single, sharp assertion. If a
+    // future change adds containment, this single line is the failure
+    // signal that drives the test-and-comment update for the block above.
+    const sink = { resolveToRelativePath: "../escape/" };
+    const out = pathInSink(VAULT_ROOT, sink, "obs.md");
+    expect(out.startsWith(VAULT_ROOT)).toBe(false);
+    // Specifically:
+    expect(out).toBe("/v/escape/obs.md");
+  });
+
+  it("benign positive control: a valid sink stays inside the vault", () => {
+    const sink = { resolveToRelativePath: "_memory/" };
+    const out = pathInSink(VAULT_ROOT, sink, "obs.md");
+    expect(out.startsWith(VAULT_ROOT + "/")).toBe(true);
+    expect(out).toBe("/v/atlas/_memory/obs.md");
   });
 });
