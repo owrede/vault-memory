@@ -167,3 +167,90 @@ describe("vaultRelativeInSink (comparison-bound, forward-slash)", () => {
     expect(rel.startsWith(sink.resolveToRelativePath)).toBe(true);
   });
 });
+
+// ────────────────────────────────────────────────────────────────────────────
+// CR-03 cross-platform simulation (audit follow-up H2)
+//
+// The existing tests above inject literal backslash STRINGS and assert
+// `joinVaultPathPosix` normalizes them away. They do NOT verify the actual
+// scenario that motivates CR-03: on Windows, `joinVaultPath` (the FS-bound
+// helper backed by `path.join`) produces backslash output, and the
+// comparison-bound helpers must then translate that to forward-slash before
+// SQL `LIKE` lookups or `findSinkContaining` startsWith checks.
+//
+// We can't run the suite on Windows here, but `node:path` exposes platform-
+// specific implementations (`path.win32`, `path.posix`). The Windows
+// behavior of `path.join` IS `path.win32.join` — they are the same function
+// object on Windows hosts. Asserting against `path.win32.join` therefore
+// simulates the Windows code path on a POSIX test runner with no mocking.
+// ────────────────────────────────────────────────────────────────────────────
+
+import { win32 as pathWin32 } from "node:path";
+
+describe("CR-03 cross-platform simulation (Windows path semantics)", () => {
+  it("path.win32.join produces backslashes (sanity check the simulation premise)", () => {
+    // If this assertion ever fails, the simulation premise is broken and
+    // the rest of the block becomes meaningless. Lock it explicitly.
+    const winJoined = pathWin32.join("C:\\Users\\dev\\vault", "_memory", "observations");
+    expect(winJoined).toContain("\\");
+    expect(winJoined).toBe("C:\\Users\\dev\\vault\\_memory\\observations");
+  });
+
+  it("joinVaultPathPosix produces forward-slash even when fed Windows-shape segments", () => {
+    // Caller-side shape: a Windows host where a future caller smuggles a
+    // backslash-bearing segment through. The Posix helper MUST normalize.
+    const winLikeInput = pathWin32.join("_memory", "observations");
+    expect(winLikeInput).toContain("\\");
+    const posixOut = joinVaultPathPosix(winLikeInput, "foo.md");
+    expect(posixOut).not.toContain("\\");
+    expect(posixOut).toBe("_memory/observations/foo.md");
+  });
+
+  it("vaultRelativeInSink emits forward-slash for the audit/recall prefix path", () => {
+    // This is the path that the audit-log SQL prefix lookup and recall's
+    // notePath.startsWith comparison consume. On Windows, if the caller
+    // accidentally hands in a backslash-segmented subpath, the comparison
+    // must still produce a forward-slash string — otherwise Guard B
+    // silently no-ops because notes.path uses forward-slash by indexer
+    // convention.
+    const sink = { resolveToRelativePath: "_memory/" };
+    const winSubpath = pathWin32.join("observations", "2026-04-23.md");
+    expect(winSubpath).toContain("\\");
+    const rel = vaultRelativeInSink(sink, winSubpath);
+    expect(rel).not.toContain("\\");
+    expect(rel).toBe("_memory/observations/2026-04-23.md");
+    // Most importantly: the prefix invariant findSinkContaining depends on
+    // still holds against forward-slash-canonical notes.path values.
+    expect(rel.startsWith(sink.resolveToRelativePath)).toBe(true);
+  });
+
+  it("findSinkContaining-equivalent prefix match holds on Windows-shape inputs", () => {
+    // Simulate the full flow: on a Windows host, the indexer stores
+    // notes.path in forward-slash form (per ObsidianFsChangeFeed
+    // normalization). The Guards must produce a comparison key that
+    // matches that convention regardless of where the input came from.
+    const sink = { resolveToRelativePath: "_memory/" };
+    const winShapedSubpath = pathWin32.join("observations", "spire.md");
+    expect(winShapedSubpath).toContain("\\"); // confirm Windows shape
+    const guardKey = vaultRelativeInSink(sink, winShapedSubpath);
+    const notesPathRow = "_memory/observations/spire.md"; // forward-slash by indexer convention
+    // Byte-equality is the contract: Guards must produce exactly what audit/recall sees.
+    expect(guardKey).toBe(notesPathRow);
+    // And the prefix invariant findSinkContaining depends on holds:
+    expect(notesPathRow.startsWith(sink.resolveToRelativePath)).toBe(true);
+  });
+
+  it("joinVaultPath stays OS-native on the host platform (no forced normalization)", () => {
+    // The FS-bound helper is intentionally OS-native. On POSIX hosts this
+    // test asserts forward-slash output (current platform). On a Windows
+    // host the same call would produce backslashes — which is correct,
+    // because fs.* APIs on Windows accept either separator and the OS-
+    // native form is what `path.join` documents. We do NOT normalize here.
+    const joined = joinVaultPath("/abs/vault", "_memory/foo.md");
+    // The presence/absence of backslash is platform-dependent on the FS
+    // helper; assert only that the FS helper preserves the input segments
+    // (the comparison-bound helpers carry the normalization invariant).
+    expect(joined).toContain("_memory");
+    expect(joined).toContain("foo.md");
+  });
+});
