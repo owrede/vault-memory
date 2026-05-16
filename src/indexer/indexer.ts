@@ -14,8 +14,16 @@ import { parseNote } from "../adapters/source/obsidian-fs/parser.js";
 import { chunkNote } from "../chunker/index.js";
 import { OllamaClient } from "../ollama/index.js";
 import type { Vault } from "../vault/index.js";
-import type { ParsedNote, ParsedWikilink } from "../types.js";
+import type {
+  ChunkRow,
+  InsertSectionRow,
+  ParsedNote,
+  ParsedWikilink,
+  SectionInfo,
+} from "../types.js";
 import { WikilinkResolver } from "./resolver.js";
+import { extractSections, markdownToSectionBlocks } from "../sections/index.js";
+import { extractHeadings } from "../chunker/headings.js";
 
 export interface IndexerOptions {
   mode?: "full" | "incremental";
@@ -173,6 +181,14 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
         wordCount: parsed.wordCount,
       });
 
+      // Phase 3 / 03-01 (M4): maintain the denormalized notes.status
+      // column in sync with the frontmatter on every write. The
+      // migration-time backfill populates this for existing notes;
+      // this call keeps it correct for new writes and re-indexes.
+      // Done unconditionally (every run, not just on reindex) so an
+      // alias-only frontmatter edit that flips status also propagates.
+      vault.db.notes.setStatus(upsert.id, extractStatus(parsed.frontmatter));
+
       // Persist aliases from frontmatter. We do this every run (not just on
       // reindex) so alias-only frontmatter edits propagate even when the body
       // is unchanged. The set is idempotent: setForNote does delete+insert.
@@ -205,6 +221,9 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
       // Clear old chunks (handles re-index)
       vault.db.chunks.deleteByNote(noteId);
       vault.db.wikilinks.deleteByNote(noteId);
+      // Phase 3 / 03-01: also clear sections for the same reason
+      // (re-index produces a fresh section partition).
+      vault.db.sections.deleteByNote(noteId);
 
       const chunks = chunkNote(parsed.content);
 
@@ -224,6 +243,14 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
         tokenCount: c.tokenCount,
       }));
       const chunkIds = vault.db.chunks.insertBatch(noteId, chunkInputs);
+
+      // Phase 3 / 03-01: extract + persist sections. Runs AFTER chunks
+      // are inserted so chunk IDs exist (sections.chunk_id_first/last
+      // reference chunks.id). The chunk-to-section binning uses the
+      // chunker's start_offset to find each chunk's owning heading
+      // region. Sections of a heading with no body content get
+      // chunk_id_first = chunk_id_last = NULL.
+      buildSectionsForNote(vault, noteId, parsed.content, chunkIds);
 
       // Embed
       const embedResult = await options.ollama.embed({
@@ -411,6 +438,159 @@ export function extractAliases(frontmatter: Record<string, unknown> | null): str
     return raw.filter((v): v is string => typeof v === "string");
   }
   return [];
+}
+
+/**
+ * Phase 3 / 03-01: extract the `status` value from a parsed
+ * frontmatter object. Accepts any string value; returns null when
+ * absent / non-string. The denormalized `notes.status` column is
+ * read by 03-05's SQL-level superseded filter.
+ */
+export function extractStatus(frontmatter: Record<string, unknown> | null): string | null {
+  if (!frontmatter) return null;
+  const raw = frontmatter["status"];
+  if (typeof raw === "string") return raw;
+  return null;
+}
+
+/**
+ * Phase 3 / 03-01: extract sections for a note and persist them.
+ *
+ * Sections are materialized from the SAME `notes.content` bytes the
+ * chunker just consumed — `markdownToSectionBlocks` → `extractSections`
+ * runs on the unmodified parsed body. The resulting `SectionInfo[]`
+ * gets `chunk_id_first` / `chunk_id_last` filled in by walking the
+ * inserted chunk IDs and binning each chunk into the section whose
+ * source-offset window contains the chunk's `start_offset`.
+ *
+ * Sibling: `backfillSectionsFromChunks` does the same operation for
+ * existing v1 notes at migration time. Both code paths run the same
+ * pipeline against the same `content` bytes → identical anchors
+ * (anchor-equivalence proven in
+ * `src/sections/backfill.test.ts`).
+ */
+export function buildSectionsForNote(
+  vault: Vault,
+  noteId: number,
+  content: string,
+  insertedChunkIds: number[],
+): number {
+  if (content.length === 0) return 0;
+  const blocks = markdownToSectionBlocks(content);
+  const sections = extractSections(blocks);
+  if (sections.length === 0) return 0;
+
+  // Hydrate just-inserted chunks so we can bin by start_offset. The
+  // `getByNote` query returns chunks in `idx` order — same as
+  // `insertedChunkIds`. We pass the chunk rows through to the helper
+  // so the helper itself is pure (no DB dep).
+  const chunkRows = vault.db.chunks.getByNote(noteId);
+  // Defensive sanity: chunk count must match.
+  if (chunkRows.length !== insertedChunkIds.length) {
+    // This should never happen — chunkInputs went in via insertBatch
+    // and we read them right back. If it does, the section ranges are
+    // best-effort but the anchors are still correct.
+  }
+
+  const sectionRanges = computeSectionOffsetRanges(content, sections);
+  const rangePairs = mapChunksToSections(chunkRows, sectionRanges);
+
+  // Materialize rows: parent_id is filled in via the inserted-id map
+  // (the in-memory `SectionInfo.parent_index` is an array index).
+  const insertedIds: number[] = [];
+  for (let i = 0; i < sections.length; i++) {
+    const s = sections[i]!;
+    const parentId = s.parent_index === null ? null : insertedIds[s.parent_index] ?? null;
+    const pair = rangePairs[i] ?? { first: null, last: null };
+    const row: InsertSectionRow = {
+      note_id: noteId,
+      anchor: s.anchor,
+      heading_path: JSON.stringify(s.heading_path),
+      heading_text: s.heading_text,
+      level: s.level,
+      parent_id: parentId,
+      ord: s.ord,
+      chunk_id_first: pair.first,
+      chunk_id_last: pair.last,
+    };
+    const ids = vault.db.sections.insertMany([row]);
+    insertedIds.push(ids[0]!);
+  }
+  return insertedIds.length;
+}
+
+/**
+ * Phase 3 / 03-01: pure helper that bins each chunk into the section
+ * whose source-offset range contains its `start_offset`. Returns the
+ * `{first, last}` chunk-id pair per section index (in the order of
+ * the `sectionRanges` array). Sections with no contained chunks get
+ * `{first: null, last: null}`.
+ *
+ * Exported for unit testing.
+ */
+export function mapChunksToSections(
+  chunks: ChunkRow[],
+  sectionRanges: Array<{ start: number; end: number }>,
+): Array<{ first: number | null; last: number | null }> {
+  const out: Array<{ first: number | null; last: number | null }> = sectionRanges.map(
+    () => ({ first: null, last: null }),
+  );
+  for (const chunk of chunks) {
+    const offset = chunk.start_offset;
+    let chosenIdx: number | null = null;
+    // Walk in reverse so the innermost (deepest) section wins.
+    for (let i = sectionRanges.length - 1; i >= 0; i--) {
+      const r = sectionRanges[i];
+      if (!r) continue;
+      if (offset >= r.start && offset < r.end) {
+        chosenIdx = i;
+        break;
+      }
+    }
+    if (chosenIdx === null) continue;
+    const slot = out[chosenIdx]!;
+    if (slot.first === null || chunk.id < slot.first) slot.first = chunk.id;
+    if (slot.last === null || chunk.id > slot.last) slot.last = chunk.id;
+  }
+  return out;
+}
+
+/**
+ * Compute the [start, end) byte range for each section in `content`.
+ * Mirrors `src/sections/backfill.ts:computeSectionOffsetRanges`. Kept
+ * here (not imported) so the indexer doesn't reach into the
+ * backfill module's private surface — both implementations share
+ * `src/chunker/headings.ts:extractHeadings` as the canonical heading
+ * source, which is what guarantees they agree byte-for-byte.
+ */
+function computeSectionOffsetRanges(
+  content: string,
+  sections: SectionInfo[],
+): Array<{ start: number; end: number }> {
+  const headings = extractHeadings(content);
+  const ranges: Array<{ start: number; end: number }> = [];
+  const hasPreamble =
+    sections.length > 0 && sections[0]!.level === 0 && sections[0]!.heading_text === "";
+  const firstHeadingOffset =
+    headings.length === 0 ? content.length : headings[0]!.startOffset;
+  if (hasPreamble) {
+    ranges.push({ start: 0, end: firstHeadingOffset });
+  }
+  for (let h = 0; h < headings.length; h++) {
+    const h0 = headings[h]!;
+    let endOffset = content.length;
+    for (let j = h + 1; j < headings.length; j++) {
+      if (headings[j]!.level <= h0.level) {
+        endOffset = headings[j]!.startOffset;
+        break;
+      }
+    }
+    ranges.push({ start: h0.startOffset, end: endOffset });
+  }
+  while (ranges.length < sections.length) {
+    ranges.push({ start: 0, end: content.length });
+  }
+  return ranges;
 }
 
 function relativize(absPath: string, vaultRoot: string): string {
