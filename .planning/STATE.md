@@ -106,6 +106,7 @@ Phase 2 (memory-namespace-provenance-contract) shipped across 9 plans in 5 waves
 | Date | Slug | Description | Outcome |
 |------|------|-------------|---------|
 | 2026-05-15 | [260515-hkc](.planning/quick/260515-hkc-fix-chokidar-timing-flake/SUMMARY.md) | Fix chokidar timing flake (Phase 1 carry-forward) | complete via option B fallback — 400ms `stabilityThreshold` + drain test 500ms sleep + `test.retry(1)` on 4 tests. 5/5 post-merge full-suite runs green (mean 8.3s wall-clock). 4 rounds, 9 commits + 3 reverts. |
+| 2026-05-16 | [20260516-test-suite-quality-audit](.planning/quick/20260516-test-suite-quality-audit/SUMMARY.md) | Audit test-suite quality vs Phase 2 safety claims (--validate, no code changes) | 3 overclaims found (H1 filesystem invariant via adapter; H2 CR-03 closed without Windows simulation; M2 WR-08 delete asserts refusal not flag), 2 acknowledged gaps (M1 retrieval precision/recall it.todo; M3 parser→pathInSink composition). Prior assessment confirmed in 7/9 points, partially in 1, overstated in 1. 6 surgical fixes recommended for Phase 8 polish. |
 
 ## Deferred Items
 
