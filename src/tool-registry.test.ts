@@ -8,21 +8,24 @@ import { describe, expect, it } from "vitest";
 import { TOOLS, TOOL_SCHEMAS, buildToolSchema, type ToolName } from "./tool-registry.js";
 
 describe("TOOLS array", () => {
-  it("has exactly 26 entries (23 v1 + Plan 02-04 record_observation + supersede + Plan 02-05 recall)", () => {
-    expect(TOOLS).toHaveLength(26);
+  it("has exactly 27 entries (23 v1 + 02-04 record_observation + supersede + 02-05 recall + 03-06 assemble_dossier)", () => {
+    expect(TOOLS).toHaveLength(27);
   });
 
-  it("includes record_observation, supersede, and recall with non-empty descriptions", () => {
+  it("includes record_observation, supersede, recall, and assemble_dossier with non-empty descriptions", () => {
     const byName = new Map(TOOLS.map((t) => [t.name, t]));
     const ro = byName.get("record_observation");
     const sup = byName.get("supersede");
     const rc = byName.get("recall");
+    const ad = byName.get("assemble_dossier");
     expect(ro).toBeDefined();
     expect(sup).toBeDefined();
     expect(rc).toBeDefined();
+    expect(ad).toBeDefined();
     expect((ro?.description ?? "").length).toBeGreaterThan(0);
     expect((sup?.description ?? "").length).toBeGreaterThan(0);
     expect((rc?.description ?? "").length).toBeGreaterThan(0);
+    expect((ad?.description ?? "").length).toBeGreaterThan(0);
   });
 
   it("each entry has {name, description, inputSchema}", () => {
@@ -197,6 +200,43 @@ describe("TOOL_SCHEMAS", () => {
       const schema = buildToolSchema("recall");
       const r = schema.safeParse({ query: "foo", limit: 1000 });
       expect(r.success).toBe(false);
+    });
+  });
+
+  describe("assemble_dossier schema (Plan 03-06)", () => {
+    it("accepts a minimal valid payload (type + key only)", () => {
+      const schema = buildToolSchema("assemble_dossier");
+      const r = schema.safeParse({ type: "Person", key: "Alice Chen" });
+      expect(r.success).toBe(true);
+    });
+
+    it("rejects empty type", () => {
+      const schema = buildToolSchema("assemble_dossier");
+      const r = schema.safeParse({ type: "", key: "Alice" });
+      expect(r.success).toBe(false);
+    });
+
+    it("rejects empty key", () => {
+      const schema = buildToolSchema("assemble_dossier");
+      const r = schema.safeParse({ type: "Person", key: "" });
+      expect(r.success).toBe(false);
+    });
+
+    it("rejects missing required fields", () => {
+      const schema = buildToolSchema("assemble_dossier");
+      expect(schema.safeParse({}).success).toBe(false);
+      expect(schema.safeParse({ type: "Person" }).success).toBe(false);
+      expect(schema.safeParse({ key: "Alice" }).success).toBe(false);
+    });
+
+    it("accepts the optional vaults filter", () => {
+      const schema = buildToolSchema("assemble_dossier");
+      const r = schema.safeParse({
+        type: "Project",
+        key: "Atlas-1",
+        vaults: ["atlas"],
+      });
+      expect(r.success).toBe(true);
     });
   });
 });
