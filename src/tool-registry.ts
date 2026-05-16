@@ -529,6 +529,32 @@ export const TOOLS = [
       },
     },
   },
+  // ── Phase 3 assembly tools (Plan 03-02 / ASM-02) ─────────────────────────
+  {
+    name: "get_outline",
+    description:
+      "Return the navigable section tree for a document. Each OutlineNode " +
+      "carries an `anchor` (the section's citation token), `heading_path` " +
+      "(root → leaf), `heading_text`, `level`, and `chunk_ids` (v1 chunk-table " +
+      "IDs in that section). Consume `anchor` + `heading_path` as the section-" +
+      "level half of the citation packet. Unknown doc_id returns an error " +
+      "response with {error:'doc_not_found', doc_id}.",
+    inputSchema: {
+      type: "object",
+      required: ["doc_id"],
+      properties: {
+        doc_id: {
+          type: "string",
+          description: "Opaque DocId (obsidian-fs://<vault>/<path>) of the document",
+        },
+        vaults: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional vault filter; usually omitted (the DocId names a vault).",
+        },
+      },
+    },
+  },
   // ── Phase 2 memory tools (Plan 02-05) ────────────────────────────────────
   {
     name: "recall",
@@ -815,6 +841,18 @@ export const TOOL_SCHEMAS = {
       .string()
       .min(1)
       .describe("Why the old document is being retired; written to superseded_reason"),
+  },
+
+  // ── Phase 3 assembly tools (Plan 03-02 / ASM-02) ────────────────────────
+  get_outline: {
+    doc_id: z
+      .string()
+      .regex(DOC_ID_PATTERN)
+      .describe("Opaque DocId (obsidian-fs://<vault>/<path>) of the document"),
+    vaults: z
+      .array(z.string().min(1))
+      .optional()
+      .describe("Optional vault filter; usually omitted (the DocId names a vault)"),
   },
 
   // ── Phase 2 memory tools (Plan 02-05) ───────────────────────────────────
