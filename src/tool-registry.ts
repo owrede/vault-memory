@@ -143,6 +143,31 @@ export const TOOLS = [
           description:
             "Apply a cross-encoder rerank over the top candidates. Requires `reranker_model` in server config; silently ignored otherwise.",
         },
+        recency_weight: {
+          type: "number",
+          default: 0,
+          description:
+            "Phase 3 (D-07, ASM-07): additive recency term coefficient. final_score = rrf + recency_weight * exp(-age_days / half_life_days). Default 0 (no recency pressure — v1 behavior).",
+        },
+        authority_weight: {
+          type: "number",
+          default: 0,
+          description:
+            "Phase 3 (D-07, ASM-07): additive authority term coefficient. Adds `authority_weight * 1` for docs whose frontmatter has `authoritative: true`. Default 0.",
+        },
+        half_life_days: {
+          type: "number",
+          minimum: 0,
+          default: 30,
+          description:
+            "Phase 3 (D-07): half-life for the recency exponential decay, in days. Default 30. Only meaningful when recency_weight > 0.",
+        },
+        include_superseded: {
+          type: "boolean",
+          default: false,
+          description:
+            "Phase 3 (D-08, ASM-08): when false (default), docs whose frontmatter has `status: superseded` are excluded at SQL level via the notes_status partial index. Set true to reveal them.",
+        },
       },
     },
   },
@@ -658,6 +683,13 @@ export const TOOL_SCHEMAS = {
     rrf_k: z.number().int().positive().max(1000).optional().default(60),
     exclude_paths: z.array(z.string()).optional(),
     rerank: z.boolean().optional().default(false),
+    // Phase 3 / 03-05 additive params — D-07, D-08, ASM-07, ASM-08.
+    // All `.optional()` with defaults that vanish when unset, so v1
+    // callers see no behavior change.
+    recency_weight: z.number().optional().default(0),
+    authority_weight: z.number().optional().default(0),
+    half_life_days: z.number().positive().optional().default(30),
+    include_superseded: z.boolean().optional().default(false),
   },
 
   list_backlinks: {
