@@ -124,7 +124,14 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
   2. `cluster({query | seed_doc_ids, method: "edge-community"})` produces deterministic cluster summaries per fixture; opt-in/feature-flagged if computation is slow
   3. Edges carry an explicit `type` field per ADR-003 — schema supports `wikilink`, `frontmatter-ref`, `mention`, and `hyperlink` types
   4. Eval fixture includes ≥5 "find me everything related to X" queries that are answered correctly by expansion (precision/recall ≥0.8)
-**Plans**: TBD
+**Plans**: 7 plans
+- [ ] 04-01-edges-substrate-PLAN.md — migration 011 + EdgesQueries + Database wiring + v1 graph tools additive `type` (GRA-04 substrate)
+- [ ] 04-02-edge-extractors-PLAN.md — indexer extracts mention/frontmatter-ref/hyperlink in a single per-note parse pass (GRA-04 indexer)
+- [ ] 04-03-expand-tool-PLAN.md — `expand()` BFS over typed edges with shortest-path `via` dedup + `_memory` opacity + MCP tool (GRA-01)
+- [ ] 04-04-search-hybrid-expand-PLAN.md — additive `search_hybrid({expand})` post-rescore attachment (GRA-03)
+- [ ] 04-05-cluster-tool-PLAN.md — Louvain wrapper via graphology + seeded RNG + 5000-node hard cap + MCP tool (GRA-02)
+- [ ] 04-06-evals-conformance-PLAN.md — `_queries/expand.yaml` + `cluster.yaml` + `search-hybrid-with-expand.yaml` + cross-adapter conformance (GRA-05)
+- [ ] 04-07-phase-gate-PLAN.md — tool-list snapshot regen + full eval + CHANGELOG + STATE + ROADMAP + sign-off doc
 
 ### Phase 5: Compiled brief layer
 **Goal**: Defeat the 85%-rediscovery failure mode by shipping compiled briefs as first-class `Document`s in `_memory/_briefs/` with deterministic source-hash staleness propagation — vault-memory's signature v2 differentiator
@@ -212,7 +219,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 →
 | 1. Adapter extraction & tech-debt-up | 0/TBD | Not started | - |
 | 2. Memory namespace & provenance contract | 16/16 | Complete   | 2026-05-15 |
 | 3. Bundles + authority/staleness | 0/TBD | Not started | - |
-| 4. Graph-as-retrieval | 0/TBD | Not started | - |
+| 4. Graph-as-retrieval | 0/7 | In progress (planned) | - |
 | 5. Compiled brief layer | 0/TBD | Not started | - |
 | 6. Task contract DSL | 0/TBD | Not started | - |
 | 7. Visual contract editor (Canvas) | 0/TBD | Not started | - |

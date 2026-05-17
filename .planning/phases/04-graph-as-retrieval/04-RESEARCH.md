@@ -713,22 +713,22 @@ queries:
 
 **If this table is empty:** N/A — 8 assumptions logged. Each carries an explicit mitigation. None block planning; all are validation tasks during execution.
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Should `Document.links` be runtime-populated by the indexer (in addition to `edges` table)?**
    - What we know: ADR-003 + `src/types.ts:540` reserve `Document.links: Edge[]` as the adapter contract surface; current adapters return `[]`.
    - What's unclear: whether Phase 4 should promote it to runtime (so adapter writers in v3 don't have to populate `edges` themselves), or keep it adapter-contract-only and have the indexer be the sole writer to `edges`.
-   - Recommendation: keep adapter-contract-only for v2; runtime path is `edges` table. v3 Notion connector can populate `Document.links` if it wants; the indexer will write through to `edges`. Decision deferred — flag for plan-checker.
+   - **RESOLVED:** keep adapter-contract-only for v2; runtime path is `edges` table. v3 Notion connector can populate `Document.links` if it wants; the indexer will write through to `edges`. Locked into Plan 04-02 (indexer is sole writer to `edges`; `Document.links` stays adapter-contract-only).
 
 2. **Cross-vault expand?**
    - What we know: vault-memory supports multi-vault; current `expand` signature does not specify which vault each seed lives in (DocId carries it implicitly via `obsidian-fs://<vault-name>/…`).
    - What's unclear: should `expand` cross vault boundaries when seeds are in different vaults?
-   - Recommendation: v2.0.0 — single-vault expand only. Multi-vault seeds → error per-vault. Cross-vault traversal is Phase 10 territory (where source-neutral edges become meaningful). Document this in tool description.
+   - **RESOLVED:** v2.0.0 — single-vault expand only. Multi-vault seeds → error per-vault. Cross-vault traversal is Phase 10 territory (where source-neutral edges become meaningful). Locked into Plan 04-03 (single-vault; documented in tool description; multi-vault seeds rejected at Zod layer).
 
 3. **Should `cluster()` accept an `edge_types?` filter (like `expand` does)?**
    - What we know: D-13/D-14 doesn't mention edge-type filter.
    - What's unclear: whether the planner should add it as a Claude's-discretion additive surface (e.g., "cluster only over frontmatter-ref + wikilink edges, ignore mentions").
-   - Recommendation: defer to v2.x; ship v2.0.0 `cluster()` as a single algorithm over the full typed-edge graph. Edge weighting in Louvain (treating different edge types differently) is also v2.x.
+   - **RESOLVED:** defer to v2.x; ship v2.0.0 `cluster()` as a single algorithm over the full typed-edge graph. Edge weighting in Louvain (treating different edge types differently) is also v2.x. Locked into Plan 04-05 (no `edge_types?` param on cluster v2.0.0).
 
 ## Environment Availability
 
