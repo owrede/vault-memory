@@ -570,4 +570,156 @@ describe("EdgesQueries / migration 011", () => {
       ]);
     });
   });
+
+  // ─── Plan 04-05 / GRA-02: getAllForNodes ───────────────────────────────
+  describe("EdgesQueries.getAllForNodes (Plan 04-05)", () => {
+    it("returns ALL edges where BOTH source_doc and target_doc are in the input set", () => {
+      const { a, b, c } = seedNotes(db);
+      // Edge inside the input set: a → b (wikilink).
+      // Edge inside the input set: b → c (mention).
+      // Edge with target outside the set: a → c with anchor — STILL inside (c in set).
+      // Edge with unresolved target — should NOT surface (target_doc IS NULL).
+      db.edges.insertBatch(a, [
+        {
+          targetNoteId: b,
+          targetPath: "b.md",
+          type: "wikilink",
+          rel: null,
+          anchor: null,
+          lineNumber: 1,
+          linkText: null,
+        },
+        {
+          targetNoteId: c,
+          targetPath: "c.md",
+          type: "wikilink",
+          rel: null,
+          anchor: "section",
+          lineNumber: 2,
+          linkText: null,
+        },
+        {
+          targetNoteId: null,
+          targetPath: "ghost.md",
+          type: "wikilink",
+          rel: null,
+          anchor: null,
+          lineNumber: 3,
+          linkText: null,
+        },
+      ]);
+      db.edges.insertBatch(b, [
+        {
+          targetNoteId: c,
+          targetPath: "c.md",
+          type: "mention",
+          rel: null,
+          anchor: null,
+          lineNumber: 1,
+          linkText: null,
+        },
+      ]);
+      const rows = db.edges.getAllForNodes([a, b, c]);
+      // Exactly 3 in-set edges; unresolved row excluded.
+      expect(rows).toHaveLength(3);
+      const triples = rows
+        .map((r) => `${r.sourceDoc}→${r.targetDoc}/${r.type}`)
+        .sort();
+      expect(triples).toEqual(
+        [
+          `${a}→${b}/wikilink`,
+          `${a}→${c}/wikilink`,
+          `${b}→${c}/mention`,
+        ].sort(),
+      );
+      // Each row carries the documented fields.
+      for (const r of rows) {
+        expect(typeof r.sourceDoc).toBe("number");
+        expect(typeof r.targetDoc).toBe("number");
+        expect(typeof r.type).toBe("string");
+        // anchor / lineNumber present (may be null)
+        expect(r).toHaveProperty("anchor");
+        expect(r).toHaveProperty("lineNumber");
+      }
+    });
+
+    it("excludes edges whose target_doc is OUTSIDE the input set", () => {
+      const { a, b, c } = seedNotes(db);
+      // a → b (in-set if input is [a,b]); a → c (out-of-set if input is [a,b]).
+      db.edges.insertBatch(a, [
+        {
+          targetNoteId: b,
+          targetPath: "b.md",
+          type: "wikilink",
+          rel: null,
+          anchor: null,
+          lineNumber: 1,
+          linkText: null,
+        },
+        {
+          targetNoteId: c,
+          targetPath: "c.md",
+          type: "wikilink",
+          rel: null,
+          anchor: null,
+          lineNumber: 2,
+          linkText: null,
+        },
+      ]);
+      const rows = db.edges.getAllForNodes([a, b]);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.sourceDoc).toBe(a);
+      expect(rows[0]?.targetDoc).toBe(b);
+    });
+
+    it("returns empty array for empty input", () => {
+      seedNotes(db);
+      expect(db.edges.getAllForNodes([])).toEqual([]);
+    });
+
+    it("returns empty array for a single-node input (no self-loops in edges)", () => {
+      const { a, b } = seedNotes(db);
+      db.edges.insertBatch(a, [
+        {
+          targetNoteId: b,
+          targetPath: "b.md",
+          type: "wikilink",
+          rel: null,
+          anchor: null,
+          lineNumber: 1,
+          linkText: null,
+        },
+      ]);
+      // Single noteId — its own edges all leave the set; should be empty.
+      expect(db.edges.getAllForNodes([a])).toEqual([]);
+    });
+
+    it("excludes edges with target_doc IS NULL (unresolved hyperlinks)", () => {
+      const { a, b } = seedNotes(db);
+      db.edges.insertBatch(a, [
+        {
+          targetNoteId: null,
+          targetPath: "https://example.com",
+          type: "hyperlink",
+          rel: null,
+          anchor: null,
+          lineNumber: 1,
+          linkText: null,
+        },
+        {
+          targetNoteId: b,
+          targetPath: "b.md",
+          type: "wikilink",
+          rel: null,
+          anchor: null,
+          lineNumber: 2,
+          linkText: null,
+        },
+      ]);
+      const rows = db.edges.getAllForNodes([a, b]);
+      // Only the resolved wikilink survives.
+      expect(rows).toHaveLength(1);
+      expect(rows[0]?.type).toBe("wikilink");
+    });
+  });
 });

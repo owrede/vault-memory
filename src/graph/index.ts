@@ -16,3 +16,13 @@ export type {
   ViaTrace,
   CitationPacketWithVia,
 } from "./expand.js";
+
+// ── Phase 4 / 04-05 / GRA-02: Louvain community detection (`cluster`) ──
+export { cluster } from "./cluster.js";
+export type {
+  Cluster,
+  ClusterDeps,
+  ClusterOptions,
+  ClusterResult,
+  ClusterSummary,
+} from "./cluster.js";

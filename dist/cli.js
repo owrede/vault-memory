@@ -269,6 +269,361 @@ var init_config = __esm({
   }
 });
 
+// src/chunker/headings.ts
+function extractHeadings(content) {
+  const headings = [];
+  if (content.length === 0) return headings;
+  const lines = content.split("\n");
+  let offset = 0;
+  let inFence = false;
+  let fenceMarker = null;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i] ?? "";
+    const fenceMatch = FENCE_RE.exec(line);
+    if (fenceMatch) {
+      const marker = fenceMatch[2] ?? "";
+      if (!inFence) {
+        inFence = true;
+        fenceMarker = marker[0] ?? null;
+      } else if (fenceMarker && marker.startsWith(fenceMarker)) {
+        inFence = false;
+        fenceMarker = null;
+      }
+    } else if (!inFence) {
+      const m = ATX_HEADING_RE.exec(line);
+      if (m) {
+        const hashes = m[1] ?? "";
+        const text = m[2] ?? "";
+        headings.push({
+          level: hashes.length,
+          text: text.trim(),
+          line: i + 1,
+          startOffset: offset
+        });
+      }
+    }
+    offset += line.length + 1;
+  }
+  return headings;
+}
+function headingPathAtOffset(headings, offset) {
+  let last = null;
+  for (const h of headings) {
+    if (h.startOffset <= offset) {
+      last = h;
+    } else {
+      break;
+    }
+  }
+  if (!last) return null;
+  return `${"#".repeat(last.level)} ${last.text}`;
+}
+var ATX_HEADING_RE, FENCE_RE;
+var init_headings = __esm({
+  "src/chunker/headings.ts"() {
+    "use strict";
+    init_esm_shims();
+    ATX_HEADING_RE = /^(#{1,6})\s+(.+?)\s*#*\s*$/;
+    FENCE_RE = /^(\s*)(`{3,}|~{3,})/;
+  }
+});
+
+// src/sections/anchor.ts
+import { createHash } from "crypto";
+function computeAnchor(headingText, blocks) {
+  const plainBody = blocks.map(blockToPlainText).join("\n");
+  const canonical = headingText.normalize("NFC") + "\n" + plainBody.normalize("NFC");
+  return createHash("sha256").update(canonical, "utf8").digest("hex");
+}
+function blockToPlainText(block) {
+  switch (block.kind) {
+    case "paragraph":
+      return block.text;
+    case "heading":
+      return "#".repeat(block.level) + " " + block.text;
+    case "code":
+      return "```" + (block.lang ?? "") + "\n" + block.text + "\n```";
+    case "list": {
+      const marker = block.ordered ? "1." : "-";
+      return block.items.map((item) => marker + " " + item).join("\n");
+    }
+    case "section":
+      return "#".repeat(Math.max(1, block.level)) + " " + // For the synthetic preamble (level 0, empty heading_text) the
+      // hash collapses to "# " + "" which is fine — sections-of-sections
+      // is an unusual shape and only appears in tree-builder outputs.
+      (block.heading_path[block.heading_path.length - 1] ?? "") + "\n" + block.blocks.map(blockToPlainText).join("\n");
+    default: {
+      const _exhaustive = block;
+      return _exhaustive;
+    }
+  }
+}
+var init_anchor = __esm({
+  "src/sections/anchor.ts"() {
+    "use strict";
+    init_esm_shims();
+  }
+});
+
+// src/sections/extract.ts
+function extractSections(blocks) {
+  const out = [];
+  const stack = [];
+  const stackTop = () => stack.length === 0 ? null : stack[stack.length - 1] ?? null;
+  const ensurePreamble = () => {
+    if (out.length > 0 && out[0].level === 0) return 0;
+    if (out.length > 0) {
+      throw new Error(
+        "Internal invariant: ensurePreamble called after sections exist; section walker is buggy."
+      );
+    }
+    out.push({
+      level: 0,
+      heading_text: "",
+      heading_path: [],
+      parent_index: null,
+      blocks: []
+    });
+    stack.push(0);
+    return 0;
+  };
+  for (const block of blocks) {
+    if (block.kind === "heading") {
+      while (stack.length > 0) {
+        const topIdx2 = stack[stack.length - 1];
+        const top = out[topIdx2];
+        if (top.level >= block.level || top.level === 0) {
+          stack.pop();
+        } else {
+          break;
+        }
+      }
+      const parentIdx = stackTop();
+      const parentPath = parentIdx === null ? [] : out[parentIdx].heading_path;
+      const headingText = block.text;
+      out.push({
+        level: block.level,
+        heading_text: headingText,
+        heading_path: [...parentPath, headingText],
+        parent_index: parentIdx,
+        blocks: []
+      });
+      stack.push(out.length - 1);
+      continue;
+    }
+    if (stack.length === 0) {
+      ensurePreamble();
+    }
+    const topIdx = stackTop();
+    out[topIdx].blocks.push(block);
+  }
+  const ords = new Array(out.length).fill(0);
+  const seenPerParent = /* @__PURE__ */ new Map();
+  for (let i = 0; i < out.length; i++) {
+    const parent = out[i].parent_index;
+    const next = seenPerParent.get(parent) ?? 0;
+    ords[i] = next;
+    seenPerParent.set(parent, next + 1);
+  }
+  return out.map((w, i) => {
+    const plainBody = w.blocks.map(blockToPlainTextLocal).join("\n");
+    const anchor = computeAnchor(w.heading_text, w.blocks);
+    return {
+      anchor,
+      heading_path: w.heading_path,
+      heading_text: w.heading_text,
+      level: w.level,
+      parent_index: w.parent_index,
+      ord: ords[i],
+      plain_text_body: plainBody
+    };
+  });
+}
+function blockToPlainTextLocal(block) {
+  switch (block.kind) {
+    case "paragraph":
+      return block.text;
+    case "heading":
+      return "#".repeat(block.level) + " " + block.text;
+    case "code":
+      return "```" + (block.lang ?? "") + "\n" + block.text + "\n```";
+    case "list": {
+      const marker = block.ordered ? "1." : "-";
+      return block.items.map((item) => marker + " " + item).join("\n");
+    }
+    case "section":
+      return "#".repeat(Math.max(1, block.level)) + " " + (block.heading_path[block.heading_path.length - 1] ?? "") + "\n" + block.blocks.map(blockToPlainTextLocal).join("\n");
+    default: {
+      const _exhaustive = block;
+      return _exhaustive;
+    }
+  }
+}
+function markdownToSectionBlocks(content) {
+  if (content.length === 0) return [];
+  const headings = extractHeadings(content);
+  const out = [];
+  const firstHeadingStart = headings.length === 0 ? content.length : headings[0].startOffset;
+  if (firstHeadingStart > 0) {
+    const preamble = content.slice(0, firstHeadingStart);
+    if (preamble.length > 0) {
+      out.push({ kind: "paragraph", text: stripTrailingNewline(preamble) });
+    }
+  }
+  for (let i = 0; i < headings.length; i++) {
+    const h = headings[i];
+    const next = headings[i + 1];
+    const headingLineEnd = nextLineEnd(content, h.startOffset);
+    const headingBodyStart = headingLineEnd;
+    const headingBodyEnd = next ? next.startOffset : content.length;
+    const level = h.level;
+    out.push({ kind: "heading", level, text: h.text });
+    if (headingBodyEnd > headingBodyStart) {
+      const body = content.slice(headingBodyStart, headingBodyEnd);
+      const trimmed = stripTrailingNewline(body);
+      if (trimmed.length > 0) {
+        out.push({ kind: "paragraph", text: trimmed });
+      }
+    }
+  }
+  return out;
+}
+function nextLineEnd(content, start) {
+  const idx = content.indexOf("\n", start);
+  if (idx === -1) return content.length;
+  return idx + 1;
+}
+function stripTrailingNewline(s) {
+  if (s.endsWith("\r\n")) return s.slice(0, -2);
+  if (s.endsWith("\n")) return s.slice(0, -1);
+  return s;
+}
+var init_extract = __esm({
+  "src/sections/extract.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_headings();
+    init_anchor();
+  }
+});
+
+// src/sections/backfill.ts
+function backfillSectionsFromChunks(db) {
+  const notesRows = db.prepare("SELECT id, content FROM notes").all();
+  const existingCount = db.prepare(
+    "SELECT COUNT(*) AS c FROM sections WHERE note_id = ?"
+  );
+  const getChunks = db.prepare(
+    "SELECT * FROM chunks WHERE note_id = ? ORDER BY id ASC"
+  );
+  const insertSection = db.prepare(`
+    INSERT INTO sections
+      (note_id, anchor, heading_path, heading_text, level,
+       parent_id, ord, chunk_id_first, chunk_id_last, created_at)
+    VALUES
+      (@note_id, @anchor, @heading_path, @heading_text, @level,
+       @parent_id, @ord, @chunk_id_first, @chunk_id_last, @created_at)
+  `);
+  let backfilled = 0;
+  const now = Date.now();
+  for (const note of notesRows) {
+    const existing = existingCount.get(note.id);
+    if (existing && existing.c > 0) continue;
+    if (!note.content || note.content.length === 0) {
+      continue;
+    }
+    const blocks = markdownToSectionBlocks(note.content);
+    const sectionInfos = extractSections(blocks);
+    if (sectionInfos.length === 0) continue;
+    const chunks = getChunks.all(note.id);
+    const chunkRanges = computeChunkRangesForSections(
+      note.content,
+      sectionInfos,
+      chunks
+    );
+    const insertedIds = [];
+    for (let i = 0; i < sectionInfos.length; i++) {
+      const s = sectionInfos[i];
+      const parentId = s.parent_index === null ? null : insertedIds[s.parent_index] ?? null;
+      const range = chunkRanges[i] ?? { first: null, last: null };
+      const row = {
+        note_id: note.id,
+        anchor: s.anchor,
+        heading_path: JSON.stringify(s.heading_path),
+        heading_text: s.heading_text,
+        level: s.level,
+        parent_id: parentId,
+        ord: s.ord,
+        chunk_id_first: range.first,
+        chunk_id_last: range.last,
+        created_at: now
+      };
+      const info = insertSection.run(row);
+      insertedIds.push(Number(info.lastInsertRowid));
+    }
+    backfilled++;
+  }
+  return backfilled;
+}
+function computeChunkRangesForSections(content, sections, chunks) {
+  const ranges = computeSectionOffsetRanges(content, sections);
+  const out = sections.map(
+    () => ({ first: null, last: null })
+  );
+  for (const chunk of chunks) {
+    const offset = chunk.start_offset;
+    let chosenIdx = null;
+    for (let i = ranges.length - 1; i >= 0; i--) {
+      const r = ranges[i];
+      if (!r) continue;
+      if (offset >= r.start && offset < r.end) {
+        chosenIdx = i;
+        break;
+      }
+    }
+    if (chosenIdx === null) continue;
+    const slot = out[chosenIdx];
+    if (slot.first === null || chunk.id < slot.first) slot.first = chunk.id;
+    if (slot.last === null || chunk.id > slot.last) slot.last = chunk.id;
+  }
+  return out;
+}
+function computeSectionOffsetRanges(content, sections) {
+  const headings = extractHeadings(content);
+  const ranges = [];
+  let cursor = 0;
+  const hasPreamble = sections.length > 0 && sections[0].level === 0 && sections[0].heading_text === "";
+  const firstHeadingOffset = headings.length === 0 ? content.length : headings[0].startOffset;
+  if (hasPreamble) {
+    ranges.push({ start: 0, end: firstHeadingOffset });
+    cursor = 1;
+  }
+  for (let h = 0; h < headings.length; h++) {
+    const h0 = headings[h];
+    let endOffset = content.length;
+    for (let j = h + 1; j < headings.length; j++) {
+      if (headings[j].level <= h0.level) {
+        endOffset = headings[j].startOffset;
+        break;
+      }
+    }
+    ranges.push({ start: h0.startOffset, end: endOffset });
+    cursor++;
+  }
+  while (ranges.length < sections.length) {
+    ranges.push({ start: 0, end: content.length });
+  }
+  return ranges;
+}
+var init_backfill = __esm({
+  "src/sections/backfill.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_extract();
+    init_headings();
+  }
+});
+
 // src/db/schema.ts
 function runMigration005(db, _ctx) {
   const rows = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'embeddings\\_%' ESCAPE '\\'").all();
@@ -334,11 +689,91 @@ function runMigration009(db, _ctx) {
       WHERE is_memory_sink_write = 1
   `);
 }
+function runMigration010(db, _ctx) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS sections (
+      id              INTEGER PRIMARY KEY AUTOINCREMENT,
+      note_id         INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+      anchor          TEXT NOT NULL,
+      heading_path    TEXT NOT NULL,
+      heading_text    TEXT NOT NULL,
+      level           INTEGER NOT NULL,
+      parent_id       INTEGER REFERENCES sections(id) ON DELETE CASCADE,
+      ord             INTEGER NOT NULL,
+      chunk_id_first  INTEGER REFERENCES chunks(id),
+      chunk_id_last   INTEGER REFERENCES chunks(id),
+      created_at      INTEGER NOT NULL
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS sections_note_anchor
+      ON sections(note_id, anchor);
+    CREATE INDEX IF NOT EXISTS sections_note_parent_ord
+      ON sections(note_id, parent_id, ord);
+    CREATE INDEX IF NOT EXISTS sections_chunk_range
+      ON sections(note_id, chunk_id_first, chunk_id_last);
+  `);
+  const cols = db.prepare("PRAGMA table_info(notes)").all();
+  const hasStatus = cols.some((c) => c.name === "status");
+  if (!hasStatus) {
+    db.exec("ALTER TABLE notes ADD COLUMN status TEXT");
+  }
+  db.exec(`
+    UPDATE notes
+       SET status = json_extract(frontmatter, '$.status')
+     WHERE frontmatter IS NOT NULL
+       AND status IS NULL
+  `);
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS notes_status
+      ON notes(status) WHERE status IS NOT NULL
+  `);
+  backfillSectionsFromChunks(db);
+}
+function runMigration011(db, _ctx) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS edges (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      source_doc   INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+      target_doc   INTEGER REFERENCES notes(id) ON DELETE SET NULL,
+      target_path  TEXT,
+      type         TEXT NOT NULL CHECK (type IN ('wikilink','mention','frontmatter-ref','hyperlink')),
+      rel          TEXT,
+      anchor       TEXT,
+      line_number  INTEGER,
+      link_text    TEXT
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_edges_unique
+      ON edges(source_doc, COALESCE(target_doc, -1), type, COALESCE(anchor, ''));
+    CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_doc);
+    CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_doc);
+    CREATE INDEX IF NOT EXISTS idx_edges_type   ON edges(type);
+  `);
+  const pending = db.prepare("SELECT COUNT(*) AS c FROM wikilinks").get();
+  if (!pending || pending.c === 0) return;
+  const CHUNK = 1e4;
+  const copy = db.prepare(`
+    INSERT OR IGNORE INTO edges
+      (source_doc, target_doc, target_path, type, rel, anchor, line_number, link_text)
+    SELECT source_note, target_note, target_path, 'wikilink', NULL, anchor, line_number, link_text
+      FROM wikilinks
+     WHERE id > @after_id
+     ORDER BY id ASC
+     LIMIT @chunk
+  `);
+  const nextLast = db.prepare("SELECT id FROM wikilinks WHERE id > ? ORDER BY id ASC LIMIT 1 OFFSET ?");
+  let lastId = 0;
+  while (true) {
+    copy.run({ after_id: lastId, chunk: CHUNK });
+    const nxt = nextLast.get(lastId, CHUNK - 1);
+    if (!nxt) break;
+    lastId = nxt.id;
+  }
+}
 var INITIAL_SCHEMA, MIGRATION_002_ALIASES, MIGRATION_003_FIX_DELETE_FKS, MIGRATION_004_VARIABLE_DIMS, MIGRATION_006_BODY_HASH, MIGRATION_007_DOC_URI_ADD, MIGRATIONS;
 var init_schema = __esm({
   "src/db/schema.ts"() {
     "use strict";
     init_esm_shims();
+    init_backfill();
     INITIAL_SCHEMA = `
 -- \u2500\u2500 3.1 Raw Layer \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
@@ -582,6 +1017,16 @@ CREATE INDEX IF NOT EXISTS idx_notes_doc_uri ON notes(doc_uri);
         version: 9,
         description: "audit discriminator \u2014 is_memory_sink_write column + partial index (MEM-08, Plan 02-06)",
         run: runMigration009
+      },
+      {
+        version: 10,
+        description: "sections table + notes.status denormalization + one-time section backfill (Phase 3 / 03-01)",
+        run: runMigration010
+      },
+      {
+        version: 11,
+        description: "edges table + backfill from wikilinks (Phase 4 / 04-01 / GRA-04)",
+        run: runMigration011
       }
     ];
   }
@@ -591,11 +1036,12 @@ CREATE INDEX IF NOT EXISTS idx_notes_doc_uri ON notes(doc_uri);
 function escapeLikePrefix(prefix) {
   return prefix.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
 }
-var NotesQueries;
+var LIST_BY_PATH_PREFIX_DEFAULT_LIMIT, NotesQueries;
 var init_notes = __esm({
   "src/db/queries/notes.ts"() {
     "use strict";
     init_esm_shims();
+    LIST_BY_PATH_PREFIX_DEFAULT_LIMIT = 1e4;
     NotesQueries = class {
       constructor(db) {
         this.db = db;
@@ -623,6 +1069,10 @@ var init_notes = __esm({
           "SELECT * FROM notes ORDER BY id LIMIT ? OFFSET ?"
         );
         this._count = db.prepare("SELECT COUNT(*) AS c FROM notes");
+        this._getStatus = db.prepare(
+          "SELECT status FROM notes WHERE id = ?"
+        );
+        this._setStatus = db.prepare("UPDATE notes SET status = @status WHERE id = @id");
       }
       db;
       _selectByPath;
@@ -632,6 +1082,9 @@ var init_notes = __esm({
       _delete;
       _listAll;
       _count;
+      /** Phase 3 / 03-01 (M4): denormalized `notes.status` accessors. */
+      _getStatus;
+      _setStatus;
       upsertByPath(input) {
         const existing = this._selectByPath.get(input.path);
         const now = Date.now();
@@ -704,14 +1157,68 @@ var init_notes = __esm({
        * Plan 02-06 (MEM-09): list rows whose `path` begins with the given
        * prefix. Used by the `memory-stats` MCP Resource to aggregate
        * `by_type` / `by_status` counts from the stored frontmatter JSON.
-       * Default limit is intentionally generous (10_000) — sinks are user-
-       * scoped and typically hold tens of documents in v2.0.0; the cap
-       * exists only as a hedge against pathological sinks.
+       * Default limit is `LIST_BY_PATH_PREFIX_DEFAULT_LIMIT` (10_000) —
+       * sinks are user-scoped and typically hold tens of documents in
+       * v2.0.0; the cap exists only as a hedge against pathological sinks.
+       * Callers that need to detect cap-hit (e.g. memory-stats `truncated`
+       * marker, IN-03) compare `rows.length === LIST_BY_PATH_PREFIX_DEFAULT_LIMIT`.
        */
-      listByPathPrefix(prefix, limit = 1e4) {
+      listByPathPrefix(prefix, limit = LIST_BY_PATH_PREFIX_DEFAULT_LIMIT) {
         return this.db.prepare(
           "SELECT * FROM notes WHERE path LIKE ? ESCAPE '\\' ORDER BY path LIMIT ?"
         ).all(escapeLikePrefix(prefix) + "%", limit);
+      }
+      /**
+       * Phase 3 / 03-01 (M4): read the denormalized `notes.status` column.
+       * Returns `null` for unknown note IDs or notes with no status. Reads
+       * the column directly (avoids re-parsing the JSON frontmatter blob).
+       *
+       * Maintained in sync with `notes.frontmatter` by the indexer — every
+       * write that touches `notes.frontmatter` MUST call `setStatus(...)`
+       * immediately after so the column doesn't drift.
+       */
+      getStatus(noteId) {
+        const row = this._getStatus.get(noteId);
+        return row?.status ?? null;
+      }
+      /**
+       * Phase 3 / 03-01 (M4): write the denormalized `notes.status` column.
+       * `null` clears the column (frontmatter removed the status key).
+       * Returns the number of rows affected (0 for unknown note IDs).
+       */
+      setStatus(noteId, status) {
+        const info = this._setStatus.run({ id: noteId, status });
+        return info.changes;
+      }
+      /**
+       * Phase 3 / 03-05 (M4): return the subset of `chunkIds` whose owning
+       * note has `notes.status = 'superseded'`. Used by `searchOneVault` to
+       * filter the vec0 ANN candidate list at the SQL level after the kNN
+       * search (vec0 virtual tables do not support inline JOINs the way
+       * FTS5 does).
+       *
+       * Uses the `notes_status` partial index (migration 010) — superseded
+       * notes are rare, so the index is tiny and lookups are cheap.
+       *
+       * The query parameterizes a variable-length IN clause; we generate
+       * the placeholders inline rather than re-preparing the statement
+       * because the chunk-id list varies per call. better-sqlite3's
+       * `pluck()` returns a flat array of scalar column values when the
+       * SELECT projects a single column — we lean on that to avoid an
+       * extra map step.
+       */
+      getSupersededChunkIds(chunkIds) {
+        if (chunkIds.length === 0) return /* @__PURE__ */ new Set();
+        const ids = chunkIds.slice(0, 999);
+        const placeholders = ids.map(() => "?").join(",");
+        const sql = `SELECT chunks.id AS chunkId
+         FROM chunks
+         JOIN notes ON notes.id = chunks.note_id
+        WHERE chunks.id IN (${placeholders})
+          AND notes.status = 'superseded'`;
+        const stmt = this.db.prepare(sql);
+        const rows = stmt.all(...ids);
+        return new Set(rows.map((r) => r.chunkId));
       }
     };
   }
@@ -982,6 +1489,184 @@ var init_wikilinks = __esm({
   }
 });
 
+// src/db/queries/edges.ts
+var EdgesQueries;
+var init_edges = __esm({
+  "src/db/queries/edges.ts"() {
+    "use strict";
+    init_esm_shims();
+    EdgesQueries = class {
+      constructor(db) {
+        this.db = db;
+        this._insert = db.prepare(`
+      INSERT OR IGNORE INTO edges
+        (source_doc, target_doc, target_path, type, rel, anchor, line_number, link_text)
+      VALUES (@source_doc, @target_doc, @target_path, @type, @rel, @anchor, @line_number, @link_text)
+    `);
+        this._deleteByNote = db.prepare("DELETE FROM edges WHERE source_doc = ?");
+        this._backlinks = db.prepare(
+          `SELECT source_doc, type, anchor, line_number, link_text
+       FROM edges
+       WHERE target_doc = ?`
+        );
+        this._forward = db.prepare(
+          `SELECT target_doc, target_path, type, anchor, line_number, link_text
+       FROM edges
+       WHERE source_doc = ?`
+        );
+        this._broken = db.prepare(
+          `SELECT source_doc, target_path, type, line_number
+       FROM edges
+       WHERE target_doc IS NULL`
+        );
+      }
+      db;
+      _insert;
+      _deleteByNote;
+      _backlinks;
+      _forward;
+      _broken;
+      insertBatch(sourceNoteId, edges) {
+        const tx = this.db.transaction((xs) => {
+          for (const x of xs) {
+            this._insert.run({
+              source_doc: sourceNoteId,
+              target_doc: x.targetNoteId,
+              target_path: x.targetPath,
+              type: x.type,
+              rel: x.rel,
+              anchor: x.anchor,
+              line_number: x.lineNumber,
+              link_text: x.linkText
+            });
+          }
+        });
+        tx(edges);
+      }
+      deleteByNote(noteId) {
+        return this._deleteByNote.run(noteId).changes;
+      }
+      /**
+       * Get inbound edges where `target_doc = noteId`.
+       *
+       * Phase 4 / 04-03 (GRA-01 / D-08): the optional `edgeTypes` filter
+       * narrows the result to rows matching one of the listed types. The
+       * filter is passed through as parameterized placeholders in an
+       * `IN (?, ?, …)` clause; `EdgeType` is a closed Zod-validated union
+       * (4 strings), so SQL injection is not a vector. When `edgeTypes` is
+       * `undefined` or empty, the unfiltered prepared statement is used (no
+       * per-call prepare cost — matches the v1 behavior).
+       */
+      getBacklinks(noteId, edgeTypes) {
+        if (!edgeTypes || edgeTypes.length === 0) {
+          return this._backlinks.all(noteId).map((r) => ({
+            sourceNoteId: r.source_doc,
+            type: r.type,
+            anchor: r.anchor,
+            lineNumber: r.line_number,
+            linkText: r.link_text
+          }));
+        }
+        const placeholders = edgeTypes.map(() => "?").join(", ");
+        const stmt = this.db.prepare(
+          `SELECT source_doc, type, anchor, line_number, link_text
+       FROM edges
+       WHERE target_doc = ? AND type IN (${placeholders})`
+        );
+        return stmt.all(noteId, ...edgeTypes).map((r) => ({
+          sourceNoteId: r.source_doc,
+          type: r.type,
+          anchor: r.anchor,
+          lineNumber: r.line_number,
+          linkText: r.link_text
+        }));
+      }
+      /**
+       * Get outbound edges where `source_doc = noteId`.
+       *
+       * Phase 4 / 04-03 (GRA-01 / D-08): optional `edgeTypes` filter — see
+       * `getBacklinks` for the SQL injection / closed-union rationale.
+       * Hyperlink rows return `target_doc=null` + raw URL in `target_path`;
+       * callers iterating for BFS traversal SKIP those (Phase 4 BFS only
+       * traverses resolved edges).
+       */
+      getForwardLinks(noteId, edgeTypes) {
+        if (!edgeTypes || edgeTypes.length === 0) {
+          return this._forward.all(noteId).map((r) => ({
+            targetPath: r.target_path,
+            targetNoteId: r.target_doc,
+            type: r.type,
+            anchor: r.anchor,
+            lineNumber: r.line_number,
+            linkText: r.link_text
+          }));
+        }
+        const placeholders = edgeTypes.map(() => "?").join(", ");
+        const stmt = this.db.prepare(
+          `SELECT target_doc, target_path, type, anchor, line_number, link_text
+       FROM edges
+       WHERE source_doc = ? AND type IN (${placeholders})`
+        );
+        return stmt.all(noteId, ...edgeTypes).map((r) => ({
+          targetPath: r.target_path,
+          targetNoteId: r.target_doc,
+          type: r.type,
+          anchor: r.anchor,
+          lineNumber: r.line_number,
+          linkText: r.link_text
+        }));
+      }
+      resolveBrokenLinks() {
+        return this._broken.all().map((r) => ({
+          sourceNoteId: r.source_doc,
+          targetPath: r.target_path,
+          type: r.type,
+          lineNumber: r.line_number
+        }));
+      }
+      /**
+       * Phase 4 / 04-05 / GRA-02 — return ALL resolved edges whose BOTH
+       * endpoints (`source_doc` AND `target_doc`) lie inside the input
+       * `noteIds` set. Unresolved edges (`target_doc IS NULL`) are excluded
+       * — `cluster()` operates only on the resolved-DocId graph.
+       *
+       * The implementation uses a dynamic `IN (?, ?, …)` clause on both the
+       * source and target columns; the placeholders are integer noteIds, so
+       * there is no SQL-injection vector (the input type is `number[]`, not
+       * caller-supplied strings). The statement is NOT cached because the
+       * placeholder count varies per call and this method is invoked at most
+       * once per `cluster()` call.
+       *
+       * Self-loops are not filtered here because the `edges` table does not
+       * store them (the indexer skips `source === target`); `cluster()`
+       * defensively filters at graph-build time anyway (Plan 04-05 task 2).
+       *
+       * Empty input → empty output (no SQL executed). Single-node input →
+       * empty output (no in-set edge possible because target ∉ {noteId}).
+       */
+      getAllForNodes(noteIds) {
+        if (noteIds.length === 0) return [];
+        const placeholders = noteIds.map(() => "?").join(", ");
+        const sql = `
+      SELECT source_doc, target_doc, type, anchor, line_number
+        FROM edges
+       WHERE source_doc IN (${placeholders})
+         AND target_doc IN (${placeholders})
+         AND target_doc IS NOT NULL
+    `;
+        const stmt = this.db.prepare(sql);
+        return stmt.all(...noteIds, ...noteIds).map((r) => ({
+          sourceDoc: r.source_doc,
+          targetDoc: r.target_doc,
+          type: r.type,
+          anchor: r.anchor,
+          lineNumber: r.line_number
+        }));
+      }
+    };
+  }
+});
+
 // src/db/queries/audit.ts
 function escapeAuditLikePrefix(prefix) {
   return prefix.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
@@ -1199,6 +1884,19 @@ var init_fts = __esm({
     FtsQueries = class _FtsQueries {
       _search;
       _searchWithSnippet;
+      /**
+       * Phase 3 / 03-05 (M4 fix): same FTS5 BM25 search but JOINed against
+       * `chunks → notes` so the candidate list excludes any chunk whose
+       * owning note has `notes.status = 'superseded'`.
+       *
+       * Filter runs at the SQL level so the v1-default path (which passes
+       * `excludeSuperseded = false` from `searchOneVault`) is byte-identical
+       * to v1, and the new default-hide path performs zero per-candidate
+       * frontmatter parses. The `notes_status` partial index from migration
+       * 010 keeps the JOIN cheap (only rows with a non-null status are
+       * indexed).
+       */
+      _searchExclSup;
       constructor(db) {
         this._search = db.prepare(
           `SELECT rowid AS chunkId, bm25(chunks_fts) AS score
@@ -1217,8 +1915,31 @@ var init_fts = __esm({
        ORDER BY bm25(chunks_fts) ASC
        LIMIT ?`
         );
+        this._searchExclSup = db.prepare(
+          `SELECT chunks_fts.rowid AS chunkId, bm25(chunks_fts) AS score
+       FROM chunks_fts
+       JOIN chunks ON chunks.id = chunks_fts.rowid
+       JOIN notes  ON notes.id  = chunks.note_id
+       WHERE chunks_fts MATCH ?
+         AND (notes.status IS NULL OR notes.status != 'superseded')
+       ORDER BY bm25(chunks_fts) ASC
+       LIMIT ?`
+        );
       }
-      search(query, topK, withSnippet = false) {
+      /**
+       * Run BM25 over `chunks_fts`.
+       *
+       * @param query                user query (sanitized internally)
+       * @param topK                 max rows to return
+       * @param withSnippet          when true, include FTS5 `snippet(...)` output
+       *                             (mutually exclusive with excludeSuperseded —
+       *                             snippets are debug/UI only, not the search path)
+       * @param excludeSuperseded    when true (03-05 M4), JOIN-and-filter against
+       *                             `notes.status` so candidates from superseded
+       *                             docs never reach the caller. v1-default path
+       *                             passes `false` and stays byte-identical.
+       */
+      search(query, topK, withSnippet = false, excludeSuperseded = false) {
         const sanitized = _FtsQueries.sanitize(query);
         if (sanitized.length === 0) return [];
         if (withSnippet) {
@@ -1229,7 +1950,8 @@ var init_fts = __esm({
             snippet: r.snippet
           }));
         }
-        const rows = this._search.all(sanitized, topK);
+        const stmt = excludeSuperseded ? this._searchExclSup : this._search;
+        const rows = stmt.all(sanitized, topK);
         return rows.map((r) => ({ chunkId: r.chunkId, score: -r.score }));
       }
       /**
@@ -1311,6 +2033,7 @@ var init_aliases = __esm({
       deleteStmt;
       listForNoteStmt;
       resolveStmt;
+      listAllStmt;
       constructor(db) {
         this.setStmt = db.prepare(
           `INSERT OR IGNORE INTO note_aliases (note_id, alias, alias_norm)
@@ -1328,6 +2051,22 @@ var init_aliases = __esm({
        ORDER BY length(n.path) ASC
        LIMIT 1`
         );
+        this.listAllStmt = db.prepare(
+          `SELECT na.note_id AS note_id, n.path AS path,
+              na.alias AS alias, na.alias_norm AS alias_norm
+       FROM note_aliases na
+       JOIN notes n ON n.id = na.note_id
+       ORDER BY na.alias_norm ASC`
+        );
+      }
+      /**
+       * Phase 4 / 04-02 / GRA-04 (D-03): full alias inventory for the
+       * mention extractor's per-run candidate set. Result is sorted by
+       * `alias_norm` ASC so regex alternation ordering is deterministic
+       * across runs (T-04-02-04 mitigation).
+       */
+      listAll() {
+        return this.listAllStmt.all();
       }
       /**
        * Replace all aliases for a note with the given list (atomic).
@@ -1357,6 +2096,114 @@ var init_aliases = __esm({
       }
       static normalize(alias) {
         return alias.trim().toLowerCase();
+      }
+    };
+  }
+});
+
+// src/db/queries/sections.ts
+var SectionsQueries;
+var init_sections = __esm({
+  "src/db/queries/sections.ts"() {
+    "use strict";
+    init_esm_shims();
+    SectionsQueries = class {
+      constructor(db) {
+        this.db = db;
+        this._insert = db.prepare(`
+      INSERT INTO sections
+        (note_id, anchor, heading_path, heading_text, level,
+         parent_id, ord, chunk_id_first, chunk_id_last, created_at)
+      VALUES
+        (@note_id, @anchor, @heading_path, @heading_text, @level,
+         @parent_id, @ord, @chunk_id_first, @chunk_id_last, @created_at)
+    `);
+        this._deleteByNote = db.prepare("DELETE FROM sections WHERE note_id = ?");
+        this._getByNote = db.prepare(
+          // parent_id ASC NULLS FIRST lets callers build the tree top-down
+          // in one pass. SQLite NULLs sort first by default for ASC.
+          "SELECT * FROM sections WHERE note_id = ? ORDER BY parent_id IS NULL DESC, parent_id ASC, ord ASC"
+        );
+        this._getByAnchor = db.prepare(
+          "SELECT * FROM sections WHERE note_id = ? AND anchor = ?"
+        );
+        this._findContainingChunk = db.prepare(
+          // `chunk_id` is monotonically increasing per note; chunk_id_first
+          // and chunk_id_last carve disjoint ranges (or both NULL for a
+          // heading with no body content). We require both range bounds
+          // to be NON-NULL — sections with NULL ranges contain zero chunks.
+          `SELECT * FROM sections
+         WHERE note_id = ?
+           AND chunk_id_first IS NOT NULL
+           AND chunk_id_last IS NOT NULL
+           AND chunk_id_first <= ?
+           AND chunk_id_last  >= ?
+         ORDER BY (chunk_id_last - chunk_id_first) ASC
+         LIMIT 1`
+        );
+        this._countByNote = db.prepare(
+          "SELECT COUNT(*) AS c FROM sections WHERE note_id = ?"
+        );
+      }
+      db;
+      _insert;
+      _deleteByNote;
+      _getByNote;
+      _getByAnchor;
+      _findContainingChunk;
+      _countByNote;
+      /**
+       * Batch insert. Returns the new `id` for each row in the same order
+       * as the input. The transaction wraps the whole batch so a mid-batch
+       * failure rolls back cleanly.
+       */
+      insertMany(rows) {
+        if (rows.length === 0) return [];
+        const ids = [];
+        const now = Date.now();
+        const tx = this.db.transaction((rs) => {
+          for (const r of rs) {
+            const info = this._insert.run({
+              note_id: r.note_id,
+              anchor: r.anchor,
+              heading_path: r.heading_path,
+              heading_text: r.heading_text,
+              level: r.level,
+              parent_id: r.parent_id,
+              ord: r.ord,
+              chunk_id_first: r.chunk_id_first,
+              chunk_id_last: r.chunk_id_last,
+              created_at: now
+            });
+            ids.push(Number(info.lastInsertRowid));
+          }
+        });
+        tx(rows);
+        return ids;
+      }
+      deleteByNote(noteId) {
+        return this._deleteByNote.run(noteId).changes;
+      }
+      /**
+       * Returns all sections for the note in tree order: top-level rows
+       * (parent_id IS NULL) first, then deeper rows; within the same
+       * parent, ord ASC.
+       */
+      getByNote(noteId) {
+        return this._getByNote.all(noteId);
+      }
+      getByAnchor(noteId, anchor) {
+        return this._getByAnchor.get(noteId, anchor) ?? null;
+      }
+      /**
+       * Return the most-specific section whose chunk range contains
+       * `chunkId`. "Most specific" = smallest range (innermost section).
+       */
+      findContainingChunk(noteId, chunkId) {
+        return this._findContainingChunk.get(noteId, chunkId, chunkId) ?? null;
+      }
+      countByNote(noteId) {
+        return this._countByNote.get(noteId)?.c ?? 0;
       }
     };
   }
@@ -1396,20 +2243,26 @@ var init_database = __esm({
     init_chunks();
     init_embeddings();
     init_wikilinks();
+    init_edges();
     init_audit();
     init_models();
     init_fts();
     init_aliases();
+    init_sections();
     Database = class _Database {
       handle;
       notes;
       chunks;
       embeddings;
       wikilinks;
+      /** Phase 4 / 04-01 / GRA-04: typed-edge substrate (`vault.db.edges`). */
+      edges;
       audit;
       models;
       fts;
       aliases;
+      /** Phase 3 / 03-01: materialized `sections` table query namespace. */
+      sections;
       /**
        * Name of the vault this DB belongs to, or `undefined` for `:memory:` /
        * unrecognised paths. Threaded into function-style migrations as
@@ -1433,9 +2286,11 @@ var init_database = __esm({
         this.models = new ModelsQueries(this.handle);
         this.embeddings = new EmbeddingsQueries(this.handle, this.models);
         this.wikilinks = new WikilinksQueries(this.handle);
+        this.edges = new EdgesQueries(this.handle);
         this.audit = new AuditQueries(this.handle);
         this.fts = new FtsQueries(this.handle);
         this.aliases = new AliasesQueries(this.handle);
+        this.sections = new SectionsQueries(this.handle);
       }
       static async open(dbPath, vaultName) {
         return new _Database(dbPath, vaultName);
@@ -1794,6 +2649,653 @@ var init_ollama = __esm({
   }
 });
 
+// src/adapters/registry.ts
+function formatDocId(scheme, authority, resource) {
+  return parseDocId(`${scheme}://${authority}/${resource}`);
+}
+function decomposeDocId(docId) {
+  parseDocId(docId);
+  const schemeEnd = docId.indexOf("://");
+  const scheme = docId.slice(0, schemeEnd);
+  const rest = docId.slice(schemeEnd + 3);
+  const authoritySlash = rest.indexOf("/");
+  const authority = rest.slice(0, authoritySlash);
+  const resource = rest.slice(authoritySlash + 1);
+  return { scheme, authority, resource };
+}
+function parseSourceHandle(s) {
+  if (!SOURCE_HANDLE_PATTERN.test(s)) {
+    throw new Error(
+      `Invalid SourceHandle: ${JSON.stringify(s)}. Expected <scheme>://<authority> with no resource path or trailing slash.`
+    );
+  }
+  return s;
+}
+var DOC_ID_PATTERN, SOURCE_HANDLE_PATTERN, parseDocId, AdapterRegistry;
+var init_registry = __esm({
+  "src/adapters/registry.ts"() {
+    "use strict";
+    init_esm_shims();
+    DOC_ID_PATTERN = /^[a-z][a-z0-9-]*:\/\/[^/]+\/.+$/;
+    SOURCE_HANDLE_PATTERN = /^[a-z][a-z0-9-]*:\/\/[^/]+$/;
+    ({ parseDocId } = /* @__PURE__ */ (() => {
+      const mint = (s) => s;
+      const parse = (s) => {
+        if (!DOC_ID_PATTERN.test(s)) {
+          throw new Error(
+            `Invalid DocId: ${JSON.stringify(s)}. Expected <scheme>://<authority>/<resource> (scheme: lowercase letter + alnum/dashes; authority: non-slash; resource: non-empty).`
+          );
+        }
+        return mint(s);
+      };
+      return { parseDocId: parse };
+    })());
+    AdapterRegistry = class {
+      sources = /* @__PURE__ */ new Map();
+      deliveries = /* @__PURE__ */ new Map();
+      changeFeeds = /* @__PURE__ */ new Map();
+      // ── source ────────────────────────────────────────────────────────────────
+      /** Register a source. Overwrites any prior registration under the same handle. */
+      registerSource(handle, adapter) {
+        this.sources.set(handle, adapter);
+      }
+      /** Resolve a source. Throws with a helpful message on miss. */
+      resolveSource(handle) {
+        const a = this.sources.get(handle);
+        if (!a) {
+          const known = [...this.sources.keys()].join(", ") || "(none)";
+          throw new Error(`Unknown source handle: "${handle}". Registered sources: ${known}`);
+        }
+        return a;
+      }
+      /** List registered source handles. */
+      listSources() {
+        return [...this.sources.keys()];
+      }
+      // ── delivery ──────────────────────────────────────────────────────────────
+      registerDelivery(handle, adapter) {
+        this.deliveries.set(handle, adapter);
+      }
+      resolveDelivery(handle) {
+        const a = this.deliveries.get(handle);
+        if (!a) {
+          const known = [...this.deliveries.keys()].join(", ") || "(none)";
+          throw new Error(`Unknown delivery handle: "${handle}". Registered deliveries: ${known}`);
+        }
+        return a;
+      }
+      listDeliveries() {
+        return [...this.deliveries.keys()];
+      }
+      // ── change-feed ───────────────────────────────────────────────────────────
+      registerChangeFeed(handle, feed) {
+        this.changeFeeds.set(handle, feed);
+      }
+      resolveChangeFeed(handle) {
+        const f = this.changeFeeds.get(handle);
+        if (!f) {
+          const known = [...this.changeFeeds.keys()].join(", ") || "(none)";
+          throw new Error(`Unknown change-feed handle: "${handle}". Registered feeds: ${known}`);
+        }
+        return f;
+      }
+      listChangeFeeds() {
+        return [...this.changeFeeds.keys()];
+      }
+    };
+  }
+});
+
+// src/graph/graph.ts
+function listBacklinks(vault, notePath) {
+  const note = vault.db.notes.getByPath(notePath);
+  if (!note) {
+    throw new Error(`Note not found: ${notePath}`);
+  }
+  const rows = vault.db.edges.getBacklinks(note.id);
+  const results = [];
+  for (const row of rows) {
+    const src = vault.db.notes.getById(row.sourceNoteId);
+    if (!src) continue;
+    results.push({
+      sourcePath: src.path,
+      sourceTitle: src.title,
+      lineNumber: row.lineNumber,
+      linkText: row.linkText,
+      type: row.type
+    });
+  }
+  return results;
+}
+function listForwardLinks(vault, notePath, includeBroken = true) {
+  const note = vault.db.notes.getByPath(notePath);
+  if (!note) {
+    throw new Error(`Note not found: ${notePath}`);
+  }
+  const rows = vault.db.edges.getForwardLinks(note.id);
+  const results = [];
+  for (const row of rows) {
+    const resolved = row.targetNoteId !== null;
+    if (!resolved && !includeBroken) continue;
+    let targetTitle = null;
+    if (resolved && row.targetNoteId !== null) {
+      const target = vault.db.notes.getById(row.targetNoteId);
+      targetTitle = target?.title ?? null;
+    }
+    results.push({
+      // For hyperlink / external edges the target is a URL string; for
+      // wikilinks it's the original path. Either way `target_path` on
+      // the edges row preserves the v1 wikilinks.target_path shape.
+      // When `target_path` is NULL (resolved internal-edge with no
+      // raw target string), surface the empty string — preserves the
+      // existing `targetPath: string` contract.
+      targetPath: row.targetPath ?? "",
+      resolved,
+      targetTitle,
+      anchor: row.anchor,
+      linkText: row.linkText,
+      type: row.type
+    });
+  }
+  return results;
+}
+function findBrokenLinks(vault) {
+  const rows = vault.db.edges.resolveBrokenLinks();
+  if (rows.length === 0) return [];
+  const noteCache = /* @__PURE__ */ new Map();
+  const results = [];
+  for (const row of rows) {
+    let src = noteCache.get(row.sourceNoteId);
+    if (!src) {
+      const n = vault.db.notes.getById(row.sourceNoteId);
+      if (!n) continue;
+      src = { path: n.path, title: n.title };
+      noteCache.set(row.sourceNoteId, src);
+    }
+    results.push({
+      sourcePath: src.path,
+      sourceTitle: src.title,
+      // `target_path` is NULLABLE on the edges row — only broken
+      // wikilinks (and external hyperlinks) carry a raw target.
+      targetPath: row.targetPath ?? "",
+      // v1 behavior: findBrokenLinks always returned `lineNumber: null`
+      // (the v1 wikilinks.resolveBrokenLinks query omitted the column).
+      // Plan 04-01 preserves that contract to keep the result shape
+      // byte-identical; Plan 04-02 may surface `row.lineNumber` directly
+      // once the unified extractor lands.
+      lineNumber: null,
+      type: row.type
+    });
+  }
+  return results;
+}
+var init_graph = __esm({
+  "src/graph/graph.ts"() {
+    "use strict";
+    init_esm_shims();
+  }
+});
+
+// src/memory/citation-packet.ts
+function toCitationPacket(doc, displayUrl2) {
+  return {
+    doc_id: doc.id,
+    source_handle: doc.source,
+    title: doc.title,
+    heading_path: doc.heading_path ? [...doc.heading_path] : [],
+    mtime: doc.mtime,
+    hash: doc.hash,
+    display_url: displayUrl2,
+    properties: { ...doc.properties }
+  };
+}
+function displayUrlFor(docId, source) {
+  return source.formatDisplayUrl?.(docId) ?? docId;
+}
+var init_citation_packet = __esm({
+  "src/memory/citation-packet.ts"() {
+    "use strict";
+    init_esm_shims();
+  }
+});
+
+// src/graph/expand.ts
+function isShorterPath(a, b) {
+  if (a.hop !== b.hop) return a.hop < b.hop;
+  if (a.seed_doc_id !== b.seed_doc_id) return a.seed_doc_id < b.seed_doc_id;
+  if (a.edge_type !== b.edge_type) return a.edge_type < b.edge_type;
+  if (a.direction !== b.direction) return a.direction === "forward";
+  return false;
+}
+function resolveSeed(deps, seedDocId) {
+  let scheme;
+  let vaultName;
+  let resource;
+  try {
+    const docId = parseDocId(seedDocId);
+    ({ scheme, authority: vaultName, resource } = decomposeDocId(docId));
+  } catch {
+    return null;
+  }
+  let vault;
+  try {
+    vault = deps.manager.require(vaultName);
+  } catch {
+    return null;
+  }
+  const note = vault.db.notes.getByPath(resource);
+  if (!note) return null;
+  return { vault, vaultName, noteId: note.id, notePath: resource, scheme };
+}
+function isMemoryPath(notePath) {
+  return notePath.startsWith(MEMORY_PREFIX);
+}
+async function expand(deps, opts) {
+  const warnings = [];
+  if (opts.seed_doc_ids.length === 0) {
+    return { documents: [], warnings };
+  }
+  const direction = opts.direction ?? "both";
+  const hops = opts.hops;
+  const edgeTypeFilter = opts.edge_types && opts.edge_types.length > 0 ? opts.edge_types : void 0;
+  const resolved = [];
+  const seedNoteIds = /* @__PURE__ */ new Set();
+  for (const id of opts.seed_doc_ids) {
+    const r = resolveSeed(deps, id);
+    if (!r) {
+      warnings.push({ seed_doc_id: id, reason: "unknown_doc" });
+      continue;
+    }
+    resolved.push({
+      seedDocId: id,
+      vault: r.vault,
+      vaultName: r.vaultName,
+      noteId: r.noteId,
+      notePath: r.notePath,
+      scheme: r.scheme
+    });
+    seedNoteIds.add(r.noteId);
+  }
+  const byVault = /* @__PURE__ */ new Map();
+  for (const r of resolved) {
+    if (!byVault.has(r.vaultName)) {
+      byVault.set(r.vaultName, {
+        vault: r.vault,
+        vaultName: r.vaultName,
+        scheme: r.scheme,
+        visited: /* @__PURE__ */ new Map(),
+        seedNoteIdsInVault: /* @__PURE__ */ new Set()
+      });
+    }
+    byVault.get(r.vaultName)?.seedNoteIdsInVault.add(r.noteId);
+  }
+  for (const seed of resolved) {
+    const state = byVault.get(seed.vaultName);
+    if (!state) continue;
+    const directionsToWalk = direction === "both" ? ["forward", "backward"] : [direction];
+    for (const dir of directionsToWalk) {
+      let frontier = [
+        { noteId: seed.noteId, depth: 0 }
+      ];
+      while (frontier.length > 0) {
+        const next = [];
+        for (const node of frontier) {
+          const newHop = node.depth + 1;
+          if (newHop > hops) continue;
+          const rows = dir === "forward" ? seed.vault.db.edges.getForwardLinks(node.noteId, edgeTypeFilter) : seed.vault.db.edges.getBacklinks(node.noteId, edgeTypeFilter);
+          for (const row of rows) {
+            const targetNoteId = dir === "forward" ? (
+              // EdgeForwardLinkRow shape
+              row.targetNoteId
+            ) : row.sourceNoteId;
+            if (targetNoteId === null) continue;
+            if (targetNoteId === seed.noteId) continue;
+            if (state.seedNoteIdsInVault.has(targetNoteId)) continue;
+            const candidate = {
+              seed_doc_id: seed.seedDocId,
+              hop: newHop,
+              edge_type: row.type,
+              direction: dir
+            };
+            const existing = state.visited.get(targetNoteId);
+            if (!existing || isShorterPath(candidate, existing.via)) {
+              state.visited.set(targetNoteId, {
+                via: candidate,
+                inboundSourceNoteId: node.noteId
+              });
+              if (newHop < hops) {
+                next.push({ noteId: targetNoteId, depth: newHop });
+              }
+            }
+          }
+        }
+        frontier = next;
+      }
+    }
+  }
+  const documents = [];
+  for (const [, state] of byVault) {
+    const memoryVisited = /* @__PURE__ */ new Set();
+    for (const [noteId] of state.visited) {
+      const row = state.vault.db.notes.getById(noteId);
+      if (row && isMemoryPath(row.path)) memoryVisited.add(noteId);
+    }
+    for (const [noteId, entry] of state.visited) {
+      const noteRow = state.vault.db.notes.getById(noteId);
+      if (!noteRow) continue;
+      if (memoryVisited.has(noteId)) {
+        const inboundSourceRow = state.vault.db.notes.getById(entry.inboundSourceNoteId);
+        const inboundIsMemory = inboundSourceRow != null && isMemoryPath(inboundSourceRow.path);
+        if (inboundIsMemory) continue;
+      }
+      const docId = formatDocId(state.scheme, state.vaultName, noteRow.path);
+      const source = (() => {
+        try {
+          return deps.sourceConnectorFor(state.vaultName);
+        } catch {
+          return null;
+        }
+      })();
+      if (!source) continue;
+      let doc;
+      try {
+        doc = await source.readDocument(docId);
+      } catch {
+        continue;
+      }
+      const packet = toCitationPacket(doc, displayUrlFor(docId, source));
+      if (!opts.include_superseded && packet.properties.status === "superseded") {
+        continue;
+      }
+      if (opts.filter_properties) {
+        let match = true;
+        for (const [key, want] of Object.entries(opts.filter_properties)) {
+          if (packet.properties[key] !== want) {
+            match = false;
+            break;
+          }
+        }
+        if (!match) continue;
+      }
+      documents.push({ ...packet, via: entry.via });
+    }
+  }
+  return { documents, warnings };
+}
+var MEMORY_PREFIX;
+var init_expand = __esm({
+  "src/graph/expand.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_registry();
+    init_citation_packet();
+    MEMORY_PREFIX = "_memory/";
+  }
+});
+
+// src/graph/cluster.ts
+import Graph from "graphology";
+import louvain from "graphology-communities-louvain";
+import seedrandom from "seedrandom";
+async function cluster(deps, opts) {
+  if (opts.query !== void 0 && opts.seed_doc_ids !== void 0) {
+    return {
+      ok: false,
+      reason: "both_seeds_and_query",
+      hint: "Pass exactly one of `query` or `seed_doc_ids`; not both."
+    };
+  }
+  if (opts.query === void 0 && opts.seed_doc_ids === void 0) {
+    return {
+      ok: false,
+      reason: "both_seeds_and_query",
+      hint: "Pass exactly one of `query` or `seed_doc_ids`."
+    };
+  }
+  let seedDocIds = [];
+  let vault = null;
+  let vaultName = null;
+  let scheme = null;
+  if (opts.query !== void 0) {
+    const limit = opts.query_top_k ?? 50;
+    const allVaults = deps.manager.list();
+    if (allVaults.length === 0) {
+      return { ok: true, clusters: [], node_count: 0 };
+    }
+    const firstVault = allVaults[0];
+    if (!firstVault) {
+      return { ok: true, clusters: [], node_count: 0 };
+    }
+    const hits = await deps.hybridSearch(firstVault, opts.query, limit);
+    const ids = [];
+    for (const h of hits) {
+      if (h.doc_id !== void 0) ids.push(h.doc_id);
+    }
+    seedDocIds = ids;
+  } else {
+    seedDocIds = opts.seed_doc_ids ?? [];
+  }
+  if (seedDocIds.length === 0) {
+    return { ok: true, clusters: [], node_count: 0 };
+  }
+  const expansion = await expand(
+    {
+      manager: deps.manager,
+      sourceConnectorFor: deps.sourceConnectorFor
+    },
+    { seed_doc_ids: seedDocIds, hops: 1, direction: "both" }
+  );
+  const allDocIdsSet = /* @__PURE__ */ new Set();
+  for (const s of seedDocIds) allDocIdsSet.add(s);
+  for (const d of expansion.documents) allDocIdsSet.add(d.doc_id);
+  const sortedDocIds = Array.from(allDocIdsSet).sort();
+  if (vault === null) {
+    const firstId = sortedDocIds[0];
+    if (firstId === void 0) {
+      return { ok: true, clusters: [], node_count: 0 };
+    }
+    try {
+      const parsed = parseDocId(firstId);
+      const dec = decomposeDocId(parsed);
+      vault = deps.manager.require(dec.authority);
+      vaultName = dec.authority;
+      scheme = dec.scheme;
+    } catch {
+      return { ok: true, clusters: [], node_count: 0 };
+    }
+  }
+  const docIdToNoteId = /* @__PURE__ */ new Map();
+  const noteIdToDocId = /* @__PURE__ */ new Map();
+  for (const docId of sortedDocIds) {
+    try {
+      const parsed = parseDocId(docId);
+      const dec = decomposeDocId(parsed);
+      if (dec.authority !== vaultName) continue;
+      const note = vault.db.notes.getByPath(dec.resource);
+      if (!note) continue;
+      docIdToNoteId.set(docId, note.id);
+      noteIdToDocId.set(note.id, docId);
+    } catch {
+      continue;
+    }
+  }
+  const resolvedDocIds = Array.from(docIdToNoteId.keys()).sort();
+  if (resolvedDocIds.length > NODE_CAP && !opts.force) {
+    return {
+      ok: false,
+      reason: "node_count_exceeded",
+      node_count: resolvedDocIds.length,
+      threshold: NODE_CAP,
+      hint: "pass force:true to compute"
+    };
+  }
+  if (resolvedDocIds.length === 0) {
+    return { ok: true, clusters: [], node_count: 0 };
+  }
+  if (resolvedDocIds.length === 1) {
+    const singleId = resolvedDocIds[0];
+    if (singleId === void 0) {
+      return { ok: true, clusters: [], node_count: 0 };
+    }
+    const cp = await hydratePacket(deps, scheme, vaultName, singleId, vault);
+    if (cp === null) {
+      return { ok: true, clusters: [], node_count: 0 };
+    }
+    return {
+      ok: true,
+      node_count: 1,
+      clusters: [
+        {
+          cluster_id: singleId,
+          size: 1,
+          members: [cp],
+          summary: { top_types: [], top_titles: [], edge_density: 0 }
+        }
+      ]
+    };
+  }
+  const g = new Graph({ type: "undirected", multi: false });
+  for (const docId of resolvedDocIds) g.addNode(docId);
+  const sortedNoteIds = resolvedDocIds.map((d) => docIdToNoteId.get(d));
+  const edges = vault.db.edges.getAllForNodes(sortedNoteIds);
+  for (const e of edges) {
+    const srcDocId = noteIdToDocId.get(e.sourceDoc);
+    const tgtDocId = noteIdToDocId.get(e.targetDoc);
+    if (!srcDocId || !tgtDocId) continue;
+    if (srcDocId === tgtDocId) continue;
+    const a = srcDocId < tgtDocId ? srcDocId : tgtDocId;
+    const b = srcDocId < tgtDocId ? tgtDocId : srcDocId;
+    if (g.hasEdge(a, b)) continue;
+    g.addEdge(a, b, { weight: 1 });
+  }
+  const rng = seedrandom(LOUVAIN_SEED);
+  const detailed = louvain.detailed(g, {
+    rng,
+    randomWalk: true
+  });
+  const communities = detailed.communities;
+  const byCommunity = /* @__PURE__ */ new Map();
+  for (const [nodeId, communityIdx] of Object.entries(communities)) {
+    const docId = nodeId;
+    const arr = byCommunity.get(communityIdx);
+    if (arr === void 0) byCommunity.set(communityIdx, [docId]);
+    else arr.push(docId);
+  }
+  const clusters = [];
+  for (const [, memberDocIds] of byCommunity) {
+    const sortedMembers = [...memberDocIds].sort();
+    const firstMember = sortedMembers[0];
+    if (firstMember === void 0) continue;
+    const clusterId = firstMember;
+    const members = [];
+    for (const docId of sortedMembers) {
+      const cp = await hydratePacket(deps, scheme, vaultName, docId, vault);
+      if (cp !== null) members.push(cp);
+    }
+    if (members.length === 0) continue;
+    const summary = computeSummary(members, sortedMembers, g);
+    clusters.push({
+      cluster_id: clusterId,
+      size: members.length,
+      members,
+      summary
+    });
+  }
+  clusters.sort((a, b) => a.cluster_id < b.cluster_id ? -1 : a.cluster_id > b.cluster_id ? 1 : 0);
+  return { ok: true, clusters, node_count: resolvedDocIds.length };
+}
+async function hydratePacket(deps, scheme, vaultName, docId, _vault) {
+  const source = (() => {
+    try {
+      return deps.sourceConnectorFor(vaultName);
+    } catch {
+      return null;
+    }
+  })();
+  if (!source) return null;
+  const canonicalDocId = formatDocId(scheme, vaultName, decomposeDocId(parseDocId(docId)).resource);
+  let doc;
+  try {
+    doc = await source.readDocument(canonicalDocId);
+  } catch {
+    return null;
+  }
+  return toCitationPacket(doc, displayUrlFor(canonicalDocId, source));
+}
+function computeSummary(members, sortedDocIds, g) {
+  const size = members.length;
+  const typeCounts = /* @__PURE__ */ new Map();
+  for (const m of members) {
+    const t = m.properties.type;
+    if (typeof t !== "string") continue;
+    typeCounts.set(t, (typeCounts.get(t) ?? 0) + 1);
+  }
+  const topTypes = Array.from(typeCounts.entries()).sort((a, b) => {
+    if (a[1] !== b[1]) return b[1] - a[1];
+    return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0;
+  }).slice(0, 5).map(([type, count]) => ({ type, count }));
+  const memberSet = new Set(sortedDocIds);
+  const degreeByDocId = /* @__PURE__ */ new Map();
+  for (const docId of sortedDocIds) {
+    if (!g.hasNode(docId)) {
+      degreeByDocId.set(docId, 0);
+      continue;
+    }
+    let d = 0;
+    for (const neighbor of g.neighbors(docId)) {
+      if (memberSet.has(neighbor)) d += 1;
+    }
+    degreeByDocId.set(docId, d);
+  }
+  const titleEntries = members.map((m) => ({
+    doc_id: m.doc_id,
+    title: m.title,
+    degree: degreeByDocId.get(m.doc_id) ?? 0
+  }));
+  titleEntries.sort((a, b) => {
+    if (a.degree !== b.degree) return b.degree - a.degree;
+    return a.doc_id < b.doc_id ? -1 : a.doc_id > b.doc_id ? 1 : 0;
+  });
+  const topTitles = titleEntries.slice(0, 3).map(({ title, degree }) => ({ title, degree }));
+  let edgeDensity = 0;
+  if (size >= 2) {
+    let intraEdgeCount = 0;
+    for (const docId of sortedDocIds) {
+      if (!g.hasNode(docId)) continue;
+      for (const neighbor of g.neighbors(docId)) {
+        if (!memberSet.has(neighbor)) continue;
+        if (docId < neighbor) intraEdgeCount += 1;
+      }
+    }
+    const possible = size * (size - 1) / 2;
+    edgeDensity = possible > 0 ? intraEdgeCount / possible : 0;
+  }
+  return { top_types: topTypes, top_titles: topTitles, edge_density: edgeDensity };
+}
+var NODE_CAP, LOUVAIN_SEED;
+var init_cluster = __esm({
+  "src/graph/cluster.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_registry();
+    init_citation_packet();
+    init_expand();
+    NODE_CAP = 5e3;
+    LOUVAIN_SEED = "vault-memory-cluster-v1";
+  }
+});
+
+// src/graph/index.ts
+var init_graph2 = __esm({
+  "src/graph/index.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_graph();
+    init_expand();
+    init_cluster();
+  }
+});
+
 // src/search/hybrid.ts
 function rrfMerge(rankings, k = DEFAULT_RRF_K) {
   const scores = /* @__PURE__ */ new Map();
@@ -1855,13 +3357,53 @@ async function hybridSearch(opts) {
   };
   const rerankFanOut = Math.max(1, opts.rerankFanOut ?? 5);
   const perVaultTopN = opts.reranker ? topK * rerankFanOut : topK;
+  const excludeSuperseded = (opts.includeSuperseded ?? false) === false;
   const perVault = await Promise.all(
     opts.vaults.map(
-      (vault) => searchOneVault(vault, query, opts.embeddingModel, rrfK, perVaultTopN, getQueryVector)
+      (vault) => searchOneVault(
+        vault,
+        query,
+        opts.embeddingModel,
+        rrfK,
+        perVaultTopN,
+        getQueryVector,
+        excludeSuperseded
+      )
     )
   );
   const flat = perVault.flat();
   flat.sort((a, b) => b.rrf - a.rrf);
+  const recencyWeight = opts.recencyWeight ?? 0;
+  const authorityWeight = opts.authorityWeight ?? 0;
+  if (recencyWeight !== 0 || authorityWeight !== 0) {
+    const clock = opts.clock ?? Date.now;
+    const now = clock();
+    const halfLifeMs = (opts.halfLifeDays ?? 30) * 24 * 60 * 60 * 1e3;
+    const vaultByNameLocal = /* @__PURE__ */ new Map();
+    for (const v of opts.vaults) vaultByNameLocal.set(v.config.name, v);
+    for (const h of flat) {
+      const vault = vaultByNameLocal.get(h.vaultName);
+      if (!vault) continue;
+      const chunk = vault.db.chunks.getById(h.chunkId);
+      if (!chunk) continue;
+      const note = vault.db.notes.getById(chunk.note_id);
+      if (!note) continue;
+      const ageMs = Math.max(0, now - note.mtime);
+      const recencyTerm = recencyWeight * Math.exp(-ageMs / halfLifeMs);
+      let authoritative = false;
+      if (authorityWeight !== 0 && note.frontmatter) {
+        try {
+          const fm = JSON.parse(note.frontmatter);
+          authoritative = fm["authoritative"] === true;
+        } catch {
+          authoritative = false;
+        }
+      }
+      const authorityTerm = authorityWeight * (authoritative ? 1 : 0);
+      h.rrf += recencyTerm + authorityTerm;
+    }
+    flat.sort((a, b) => b.rrf - a.rrf);
+  }
   let winners;
   if (opts.reranker && flat.length > 0) {
     const poolSize = Math.min(flat.length, topK * rerankFanOut);
@@ -1937,11 +3479,85 @@ async function hybridSearch(opts) {
       if (h.rerankScore !== void 0) breakdown.rerank = h.rerankScore;
       hit.scoreBreakdown = breakdown;
     }
+    let docId;
+    let sourceHandle;
+    try {
+      docId = formatDocId("obsidian-fs", vault.config.name, note.path);
+      sourceHandle = parseSourceHandle(`obsidian-fs://${vault.config.name}`);
+    } catch {
+    }
+    if (docId !== void 0) hit.doc_id = docId;
+    if (sourceHandle !== void 0) hit.source_handle = sourceHandle;
+    hit.mtime = note.mtime;
+    hit.hash = note.hash;
+    if (opts.displayUrlFor !== void 0) {
+      try {
+        hit.display_url = opts.displayUrlFor(vault.config.name, note.path);
+      } catch {
+      }
+    }
+    let props;
+    if (note.frontmatter) {
+      try {
+        props = JSON.parse(note.frontmatter);
+      } catch {
+        props = void 0;
+      }
+    }
+    if (props !== void 0) hit.properties = props;
+    const status = vault.db.notes.getStatus(note.id);
+    if (typeof status === "string") {
+      hit.status = status;
+    } else if (typeof props?.status === "string") {
+      hit.status = props.status;
+    }
+    if (typeof props?.["superseded_by"] === "string") {
+      hit.superseded_by = props["superseded_by"];
+    }
+    const section = vault.db.sections.findContainingChunk(note.id, chunk.id);
+    if (section) {
+      try {
+        hit.heading_path = JSON.parse(section.heading_path);
+      } catch {
+      }
+    }
     hits.push(hit);
+  }
+  if (opts.expand && opts.expandDeps && hits.length > 0) {
+    const seedDocIds = [];
+    for (const hit of hits) {
+      if (hit.doc_id !== void 0) seedDocIds.push(hit.doc_id);
+    }
+    if (seedDocIds.length > 0) {
+      try {
+        const expansionInput = {
+          seed_doc_ids: seedDocIds,
+          hops: opts.expand.hops,
+          direction: opts.expand.direction ?? "both"
+        };
+        if (opts.expand.edge_types !== void 0) {
+          expansionInput.edge_types = opts.expand.edge_types;
+        }
+        const result = await expand(opts.expandDeps, expansionInput);
+        const bySeed = /* @__PURE__ */ new Map();
+        for (const doc of result.documents) {
+          const seedId = doc.via.seed_doc_id;
+          const arr = bySeed.get(seedId);
+          if (arr) arr.push(doc);
+          else bySeed.set(seedId, [doc]);
+        }
+        for (const hit of hits) {
+          if (hit.doc_id !== void 0) {
+            hit.expansions = bySeed.get(hit.doc_id) ?? [];
+          }
+        }
+      } catch {
+      }
+    }
   }
   return hits;
 }
-async function searchOneVault(vault, query, embeddingModelName, rrfK, topK, getQueryVector) {
+async function searchOneVault(vault, query, embeddingModelName, rrfK, topK, getQueryVector, excludeSuperseded = false) {
   const fanK = Math.max(topK * 3, topK);
   const activeModel = vault.db.models.getActive();
   const queryModelName = activeModel?.name ?? embeddingModelName;
@@ -1956,10 +3572,21 @@ async function searchOneVault(vault, query, embeddingModelName, rrfK, topK, getQ
       chunkIds.push(h.chunkId);
       distances.set(h.chunkId, h.distance);
     }
+    if (excludeSuperseded && chunkIds.length > 0) {
+      const supSet = vault.db.notes.getSupersededChunkIds(chunkIds);
+      if (supSet.size > 0) {
+        const filtered = [];
+        for (const id of chunkIds) {
+          if (!supSet.has(id)) filtered.push(id);
+          else distances.delete(id);
+        }
+        return { chunkIds: filtered, distances };
+      }
+    }
     return { chunkIds, distances };
   })() : Promise.resolve(null);
   const bm25Promise = Promise.resolve().then(() => {
-    const hits = vault.db.fts.search(query, fanK);
+    const hits = vault.db.fts.search(query, fanK, false, excludeSuperseded);
     const scores = /* @__PURE__ */ new Map();
     const chunkIds = [];
     for (const h of hits) {
@@ -2002,6 +3629,8 @@ var init_hybrid = __esm({
   "src/search/hybrid.ts"() {
     "use strict";
     init_esm_shims();
+    init_registry();
+    init_graph2();
     DEFAULT_TOP_K = 10;
     DEFAULT_RRF_K = 60;
     MIN_RERANK_TRIM_CHARS = 20;
@@ -2219,89 +3848,6 @@ var init_rerank = __esm({
   }
 });
 
-// src/graph/graph.ts
-function listBacklinks(vault, notePath) {
-  const note = vault.db.notes.getByPath(notePath);
-  if (!note) {
-    throw new Error(`Note not found: ${notePath}`);
-  }
-  const rows = vault.db.wikilinks.getBacklinks(note.id);
-  const results = [];
-  for (const row of rows) {
-    const src = vault.db.notes.getById(row.sourceNoteId);
-    if (!src) continue;
-    results.push({
-      sourcePath: src.path,
-      sourceTitle: src.title,
-      lineNumber: row.lineNumber,
-      linkText: row.linkText
-    });
-  }
-  return results;
-}
-function listForwardLinks(vault, notePath, includeBroken = true) {
-  const note = vault.db.notes.getByPath(notePath);
-  if (!note) {
-    throw new Error(`Note not found: ${notePath}`);
-  }
-  const rows = vault.db.wikilinks.getForwardLinks(note.id);
-  const results = [];
-  for (const row of rows) {
-    const resolved = row.targetNoteId !== null;
-    if (!resolved && !includeBroken) continue;
-    let targetTitle = null;
-    if (resolved && row.targetNoteId !== null) {
-      const target = vault.db.notes.getById(row.targetNoteId);
-      targetTitle = target?.title ?? null;
-    }
-    results.push({
-      targetPath: row.targetPath,
-      resolved,
-      targetTitle,
-      anchor: row.anchor,
-      linkText: row.linkText
-    });
-  }
-  return results;
-}
-function findBrokenLinks(vault) {
-  const rows = vault.db.wikilinks.resolveBrokenLinks();
-  if (rows.length === 0) return [];
-  const noteCache = /* @__PURE__ */ new Map();
-  const results = [];
-  for (const row of rows) {
-    let src = noteCache.get(row.sourceNoteId);
-    if (!src) {
-      const n = vault.db.notes.getById(row.sourceNoteId);
-      if (!n) continue;
-      src = { path: n.path, title: n.title };
-      noteCache.set(row.sourceNoteId, src);
-    }
-    results.push({
-      sourcePath: src.path,
-      sourceTitle: src.title,
-      targetPath: row.targetPath,
-      lineNumber: null
-    });
-  }
-  return results;
-}
-var init_graph = __esm({
-  "src/graph/graph.ts"() {
-    "use strict";
-    init_esm_shims();
-  }
-});
-
-// src/graph/index.ts
-var init_graph2 = __esm({
-  "src/graph/index.ts"() {
-    "use strict";
-    init_esm_shims();
-    init_graph();
-  }
-});
-
 // src/frontmatter/query.ts
 function isPlainObject(v) {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -2373,103 +3919,6 @@ var init_query = __esm({
     "use strict";
     init_esm_shims();
     MAX_FIELD_DEPTH = 5;
-  }
-});
-
-// src/adapters/registry.ts
-function formatDocId(scheme, authority, resource) {
-  return parseDocId(`${scheme}://${authority}/${resource}`);
-}
-function decomposeDocId(docId) {
-  parseDocId(docId);
-  const schemeEnd = docId.indexOf("://");
-  const scheme = docId.slice(0, schemeEnd);
-  const rest = docId.slice(schemeEnd + 3);
-  const authoritySlash = rest.indexOf("/");
-  const authority = rest.slice(0, authoritySlash);
-  const resource = rest.slice(authoritySlash + 1);
-  return { scheme, authority, resource };
-}
-function parseSourceHandle(s) {
-  if (!SOURCE_HANDLE_PATTERN.test(s)) {
-    throw new Error(
-      `Invalid SourceHandle: ${JSON.stringify(s)}. Expected <scheme>://<authority> with no resource path or trailing slash.`
-    );
-  }
-  return s;
-}
-var DOC_ID_PATTERN, SOURCE_HANDLE_PATTERN, parseDocId, AdapterRegistry;
-var init_registry = __esm({
-  "src/adapters/registry.ts"() {
-    "use strict";
-    init_esm_shims();
-    DOC_ID_PATTERN = /^[a-z][a-z0-9-]*:\/\/[^/]+\/.+$/;
-    SOURCE_HANDLE_PATTERN = /^[a-z][a-z0-9-]*:\/\/[^/]+$/;
-    ({ parseDocId } = /* @__PURE__ */ (() => {
-      const mint = (s) => s;
-      const parse = (s) => {
-        if (!DOC_ID_PATTERN.test(s)) {
-          throw new Error(
-            `Invalid DocId: ${JSON.stringify(s)}. Expected <scheme>://<authority>/<resource> (scheme: lowercase letter + alnum/dashes; authority: non-slash; resource: non-empty).`
-          );
-        }
-        return mint(s);
-      };
-      return { parseDocId: parse };
-    })());
-    AdapterRegistry = class {
-      sources = /* @__PURE__ */ new Map();
-      deliveries = /* @__PURE__ */ new Map();
-      changeFeeds = /* @__PURE__ */ new Map();
-      // ── source ────────────────────────────────────────────────────────────────
-      /** Register a source. Overwrites any prior registration under the same handle. */
-      registerSource(handle, adapter) {
-        this.sources.set(handle, adapter);
-      }
-      /** Resolve a source. Throws with a helpful message on miss. */
-      resolveSource(handle) {
-        const a = this.sources.get(handle);
-        if (!a) {
-          const known = [...this.sources.keys()].join(", ") || "(none)";
-          throw new Error(`Unknown source handle: "${handle}". Registered sources: ${known}`);
-        }
-        return a;
-      }
-      /** List registered source handles. */
-      listSources() {
-        return [...this.sources.keys()];
-      }
-      // ── delivery ──────────────────────────────────────────────────────────────
-      registerDelivery(handle, adapter) {
-        this.deliveries.set(handle, adapter);
-      }
-      resolveDelivery(handle) {
-        const a = this.deliveries.get(handle);
-        if (!a) {
-          const known = [...this.deliveries.keys()].join(", ") || "(none)";
-          throw new Error(`Unknown delivery handle: "${handle}". Registered deliveries: ${known}`);
-        }
-        return a;
-      }
-      listDeliveries() {
-        return [...this.deliveries.keys()];
-      }
-      // ── change-feed ───────────────────────────────────────────────────────────
-      registerChangeFeed(handle, feed) {
-        this.changeFeeds.set(handle, feed);
-      }
-      resolveChangeFeed(handle) {
-        const f = this.changeFeeds.get(handle);
-        if (!f) {
-          const known = [...this.changeFeeds.keys()].join(", ") || "(none)";
-          throw new Error(`Unknown change-feed handle: "${handle}". Registered feeds: ${known}`);
-        }
-        return f;
-      }
-      listChangeFeeds() {
-        return [...this.changeFeeds.keys()];
-      }
-    };
   }
 });
 
@@ -2693,9 +4142,9 @@ var init_wikilinks2 = __esm({
 });
 
 // src/adapters/source/obsidian-fs/hash.ts
-import { createHash } from "crypto";
+import { createHash as createHash2 } from "crypto";
 function sha256(input) {
-  return createHash("sha256").update(input, "utf8").digest("hex");
+  return createHash2("sha256").update(input, "utf8").digest("hex");
 }
 function canonicalJsonStringify(value) {
   if (value === null || value === void 0) return "null";
@@ -2951,65 +4400,6 @@ var init_tokens = __esm({
   "src/chunker/tokens.ts"() {
     "use strict";
     init_esm_shims();
-  }
-});
-
-// src/chunker/headings.ts
-function extractHeadings(content) {
-  const headings = [];
-  if (content.length === 0) return headings;
-  const lines = content.split("\n");
-  let offset = 0;
-  let inFence = false;
-  let fenceMarker = null;
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? "";
-    const fenceMatch = FENCE_RE.exec(line);
-    if (fenceMatch) {
-      const marker = fenceMatch[2] ?? "";
-      if (!inFence) {
-        inFence = true;
-        fenceMarker = marker[0] ?? null;
-      } else if (fenceMarker && marker.startsWith(fenceMarker)) {
-        inFence = false;
-        fenceMarker = null;
-      }
-    } else if (!inFence) {
-      const m = ATX_HEADING_RE.exec(line);
-      if (m) {
-        const hashes = m[1] ?? "";
-        const text = m[2] ?? "";
-        headings.push({
-          level: hashes.length,
-          text: text.trim(),
-          line: i + 1,
-          startOffset: offset
-        });
-      }
-    }
-    offset += line.length + 1;
-  }
-  return headings;
-}
-function headingPathAtOffset(headings, offset) {
-  let last = null;
-  for (const h of headings) {
-    if (h.startOffset <= offset) {
-      last = h;
-    } else {
-      break;
-    }
-  }
-  if (!last) return null;
-  return `${"#".repeat(last.level)} ${last.text}`;
-}
-var ATX_HEADING_RE, FENCE_RE;
-var init_headings = __esm({
-  "src/chunker/headings.ts"() {
-    "use strict";
-    init_esm_shims();
-    ATX_HEADING_RE = /^(#{1,6})\s+(.+?)\s*#*\s*$/;
-    FENCE_RE = /^(\s*)(`{3,}|~{3,})/;
   }
 });
 
@@ -3278,6 +4668,289 @@ var init_resolver = __esm({
   }
 });
 
+// src/indexer/extract-edges.ts
+function extractAllEdges(vault, parsed, resolver) {
+  return [
+    ...extractWikilinkEdges(parsed, resolver),
+    ...extractMentionEdges(parsed, vault),
+    ...extractFrontmatterRefEdges(parsed, vault, resolver),
+    ...extractHyperlinkEdges(parsed)
+  ];
+}
+function extractWikilinkEdges(parsed, resolver) {
+  const out = [];
+  for (const wl of parsed.wikilinks) {
+    const hit = resolver.resolve(wl.normalizedTarget);
+    out.push({
+      targetNoteId: hit?.id ?? null,
+      targetPath: wl.normalizedTarget,
+      type: "wikilink",
+      rel: null,
+      anchor: wl.anchor,
+      lineNumber: wl.line,
+      linkText: wl.alias
+    });
+  }
+  return out;
+}
+function extractMentionEdges(parsed, vault) {
+  const candidates = buildMentionCandidateSet(vault);
+  if (candidates.size === 0) return [];
+  const masked = maskForMentionScope(parsed.content);
+  const lineStarts = computeLineStarts(masked);
+  const alts = [...candidates.keys()].sort((a, b) => b.length - a.length || a.localeCompare(b)).map(escapeRegex);
+  const re = new RegExp(`(?<![\\w-])(?:${alts.join("|")})(?![\\w-])`, "gi");
+  const seen = /* @__PURE__ */ new Set();
+  const out = [];
+  let match;
+  while ((match = re.exec(masked)) !== null) {
+    const lower = match[0].toLowerCase();
+    const cand = candidates.get(lower);
+    if (!cand) continue;
+    const line = lineOf2(lineStarts, match.index);
+    const key = `${cand.noteId}:${line}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({
+      targetNoteId: cand.noteId,
+      targetPath: cand.path,
+      type: "mention",
+      rel: null,
+      anchor: null,
+      lineNumber: line,
+      linkText: null
+    });
+  }
+  return out;
+}
+function buildMentionCandidateSet(vault) {
+  const out = /* @__PURE__ */ new Map();
+  for (const row of vault.db.aliases.listAll()) {
+    const norm = row.alias_norm;
+    if (norm.length < MIN_MENTION_LEN) continue;
+    if (!out.has(norm)) {
+      out.set(norm, { noteId: row.note_id, path: row.path });
+    }
+  }
+  return out;
+}
+function extractFrontmatterRefEdges(parsed, vault, resolver) {
+  const fm = parsed.frontmatter;
+  if (!fm) return [];
+  const out = [];
+  for (const [key, value] of Object.entries(fm)) {
+    if (key === "aliases" || key === "alias") continue;
+    collectFrontmatterRefsForKey(key, value, vault, resolver, out);
+  }
+  return out;
+}
+function collectFrontmatterRefsForKey(key, value, vault, resolver, out) {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectFrontmatterRefsForKey(key, item, vault, resolver, out);
+    }
+    return;
+  }
+  if (typeof value === "string") {
+    const wl = WIKILINK_SHAPED.exec(value);
+    if (wl !== null) {
+      const inner = wl[1];
+      if (inner !== void 0) {
+        const normalized = normalizeWikilinkInner(inner);
+        if (normalized.length > 0) {
+          const hit = resolver.resolve(normalized);
+          if (hit) {
+            out.push({
+              targetNoteId: hit.id,
+              targetPath: normalized,
+              type: "frontmatter-ref",
+              rel: key,
+              anchor: null,
+              lineNumber: null,
+              linkText: null
+            });
+          }
+        }
+      }
+      return;
+    }
+    if (FRONTMATTER_REF_ALLOWLIST.has(key)) {
+      const aliasHit = vault.db.aliases.resolve(value);
+      if (aliasHit) {
+        out.push({
+          targetNoteId: aliasHit.note_id,
+          targetPath: aliasHit.path,
+          type: "frontmatter-ref",
+          rel: key,
+          anchor: null,
+          lineNumber: null,
+          linkText: null
+        });
+      }
+    }
+    return;
+  }
+  if (value !== null && typeof value === "object") {
+    for (const v of Object.values(value)) {
+      collectFrontmatterRefsForKey(key, v, vault, resolver, out);
+    }
+  }
+}
+function normalizeWikilinkInner(inner) {
+  let s = inner;
+  const pipe = s.indexOf("|");
+  if (pipe >= 0) s = s.slice(0, pipe);
+  const hash = s.indexOf("#");
+  if (hash >= 0) s = s.slice(0, hash);
+  s = s.trim().replace(/\\/g, "/").replace(/\.md$/i, "");
+  return s;
+}
+function extractHyperlinkEdges(parsed) {
+  const masked = maskForMentionScope(parsed.content);
+  const lineStarts = computeLineStarts(masked);
+  const seen = /* @__PURE__ */ new Set();
+  const out = [];
+  MD_LINK_RE.lastIndex = 0;
+  let m;
+  while ((m = MD_LINK_RE.exec(masked)) !== null) {
+    const url = m[2];
+    if (url === void 0) continue;
+    const line = lineOf2(lineStarts, m.index);
+    const cleaned = stripTrailingPunctuation(url);
+    pushHyperlinkEdge(out, seen, cleaned, line);
+  }
+  BARE_URL_RE.lastIndex = 0;
+  while ((m = BARE_URL_RE.exec(masked)) !== null) {
+    const raw = m[0];
+    const line = lineOf2(lineStarts, m.index);
+    const cleaned = stripTrailingPunctuation(raw);
+    pushHyperlinkEdge(out, seen, cleaned, line);
+  }
+  return out;
+}
+function pushHyperlinkEdge(out, seen, url, line) {
+  const key = `${url}:${line}`;
+  if (seen.has(key)) return;
+  seen.add(key);
+  out.push({
+    targetNoteId: null,
+    targetPath: url,
+    type: "hyperlink",
+    rel: null,
+    anchor: null,
+    lineNumber: line,
+    linkText: null
+  });
+}
+function stripTrailingPunctuation(url) {
+  return url.replace(/[.,;:!?]+$/, "");
+}
+function maskForMentionScope(content) {
+  const lines = content.split("\n");
+  const out = [];
+  let inFence = false;
+  let fenceMarker = "";
+  for (const line of lines) {
+    const trimmed = line.trimStart();
+    if (!inFence) {
+      const fenceOpen = /^(`{3,}|~{3,})/.exec(trimmed);
+      if (fenceOpen !== null && fenceOpen[1] !== void 0) {
+        inFence = true;
+        fenceMarker = fenceOpen[1][0] ?? "`";
+        out.push(blankLine(line));
+        continue;
+      }
+    } else {
+      const fenceClose = /^(`{3,}|~{3,})\s*$/.exec(trimmed);
+      if (fenceClose !== null && fenceClose[1] !== void 0 && fenceClose[1][0] === fenceMarker) {
+        inFence = false;
+        out.push(blankLine(line));
+        continue;
+      }
+      out.push(blankLine(line));
+      continue;
+    }
+    if (/^\s{0,3}#{1,6}\s/.test(line)) {
+      out.push(blankLine(line));
+      continue;
+    }
+    let lineOut = line;
+    lineOut = maskRanges(lineOut, /`[^`\n]*`/g);
+    lineOut = maskRanges(lineOut, /\[\[[^\[\]\n]+\]\]/g);
+    out.push(lineOut);
+  }
+  return out.join("\n");
+}
+function blankLine(line) {
+  return " ".repeat(line.length);
+}
+function maskRanges(line, re) {
+  let result = "";
+  let last = 0;
+  re.lastIndex = 0;
+  let m;
+  while ((m = re.exec(line)) !== null) {
+    result += line.slice(last, m.index);
+    result += " ".repeat(m[0].length);
+    last = m.index + m[0].length;
+  }
+  result += line.slice(last);
+  return result;
+}
+function computeLineStarts(content) {
+  const starts = [0];
+  for (let i = 0; i < content.length; i++) {
+    if (content[i] === "\n") starts.push(i + 1);
+  }
+  return starts;
+}
+function lineOf2(lineStarts, offset) {
+  let lo = 0;
+  let hi = lineStarts.length - 1;
+  while (lo < hi) {
+    const mid = lo + hi + 1 >>> 1;
+    const v = lineStarts[mid];
+    if (v !== void 0 && v <= offset) lo = mid;
+    else hi = mid - 1;
+  }
+  return lo + 1;
+}
+function escapeRegex(s) {
+  return s.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
+}
+var MIN_MENTION_LEN, FRONTMATTER_REF_ALLOWLIST, WIKILINK_SHAPED, MD_LINK_RE, BARE_URL_RE;
+var init_extract_edges = __esm({
+  "src/indexer/extract-edges.ts"() {
+    "use strict";
+    init_esm_shims();
+    MIN_MENTION_LEN = 4;
+    FRONTMATTER_REF_ALLOWLIST = /* @__PURE__ */ new Set([
+      "assignee",
+      "owner",
+      "project",
+      "related",
+      "parent",
+      "child",
+      "attendees",
+      "superseded_by"
+    ]);
+    WIKILINK_SHAPED = /^\s*\[\[([^\]]+)\]\]\s*$/;
+    MD_LINK_RE = /(!?)\[(?:[^\]]*?)\]\((https?:\/\/[^\s)]+)\)/g;
+    BARE_URL_RE = /(?<![\(\[a-zA-Z0-9])https?:\/\/[^\s)\]]+/g;
+  }
+});
+
+// src/sections/index.ts
+var init_sections2 = __esm({
+  "src/sections/index.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_anchor();
+    init_extract();
+    init_backfill();
+  }
+});
+
 // src/indexer/indexer.ts
 import { randomUUID } from "crypto";
 async function indexVault(vault, options) {
@@ -3349,6 +5022,7 @@ async function indexVault(vault, options) {
         for (const n of allNotes) {
           vault.db.chunks.deleteByNote(n.id);
           vault.db.wikilinks.deleteByNote(n.id);
+          vault.db.edges.deleteByNote(n.id);
         }
       });
     }
@@ -3379,6 +5053,7 @@ async function indexVault(vault, options) {
         mtime: parsed.mtime,
         wordCount: parsed.wordCount
       });
+      vault.db.notes.setStatus(upsert.id, extractStatus(parsed.frontmatter));
       vault.db.aliases.setForNote(upsert.id, extractAliases(parsed.frontmatter));
       const noteExisted = !upsert.isNew;
       const existing = noteExisted ? vault.db.notes.getById(upsert.id) : null;
@@ -3395,9 +5070,12 @@ async function indexVault(vault, options) {
     for (const { parsed, noteId } of parsedNotes) {
       vault.db.chunks.deleteByNote(noteId);
       vault.db.wikilinks.deleteByNote(noteId);
+      vault.db.edges.deleteByNote(noteId);
+      vault.db.sections.deleteByNote(noteId);
       const chunks = chunkNote(parsed.content);
       if (chunks.length === 0) {
-        insertWikilinks(vault, noteId, parsed.wikilinks);
+        insertWikilinks(vault, noteId, parsed.wikilinks, firstPassResolver);
+        writeAllEdges(vault, noteId, parsed, firstPassResolver);
         continue;
       }
       const chunkInputs = chunks.map((c) => ({
@@ -3409,6 +5087,7 @@ async function indexVault(vault, options) {
         tokenCount: c.tokenCount
       }));
       const chunkIds = vault.db.chunks.insertBatch(noteId, chunkInputs);
+      buildSectionsForNote(vault, noteId, parsed.content, chunkIds);
       const embedResult = await options.ollama.embed({
         model: options.embeddingModel,
         texts: chunks.map((c) => c.text)
@@ -3441,6 +5120,7 @@ async function indexVault(vault, options) {
         );
       }
       insertWikilinks(vault, noteId, parsed.wikilinks, firstPassResolver);
+      writeAllEdges(vault, noteId, parsed, firstPassResolver);
       chunksCreated += chunks.length;
     }
     const knownPaths = new Set(files.map((f) => relativize(f, vault.config.path)));
@@ -3523,6 +5203,10 @@ function insertWikilinks(vault, sourceNoteId, wikilinks, resolver) {
   });
   vault.db.wikilinks.insertBatch(sourceNoteId, inputs);
 }
+function writeAllEdges(vault, sourceNoteId, parsed, resolver) {
+  const edges = extractAllEdges(vault, parsed, resolver);
+  if (edges.length > 0) vault.db.edges.insertBatch(sourceNoteId, edges);
+}
 function resolveWikilinkTarget(vault, normalizedTarget) {
   return new WikilinkResolver(vault).resolve(normalizedTarget);
 }
@@ -3535,6 +5219,89 @@ function extractAliases(frontmatter) {
     return raw.filter((v) => typeof v === "string");
   }
   return [];
+}
+function extractStatus(frontmatter) {
+  if (!frontmatter) return null;
+  const raw = frontmatter["status"];
+  if (typeof raw === "string") return raw;
+  return null;
+}
+function buildSectionsForNote(vault, noteId, content, insertedChunkIds) {
+  if (content.length === 0) return 0;
+  const blocks = markdownToSectionBlocks(content);
+  const sections = extractSections(blocks);
+  if (sections.length === 0) return 0;
+  const chunkRows = vault.db.chunks.getByNote(noteId);
+  if (chunkRows.length !== insertedChunkIds.length) {
+  }
+  const sectionRanges = computeSectionOffsetRanges2(content, sections);
+  const rangePairs = mapChunksToSections(chunkRows, sectionRanges);
+  const insertedIds = [];
+  for (let i = 0; i < sections.length; i++) {
+    const s = sections[i];
+    const parentId = s.parent_index === null ? null : insertedIds[s.parent_index] ?? null;
+    const pair = rangePairs[i] ?? { first: null, last: null };
+    const row = {
+      note_id: noteId,
+      anchor: s.anchor,
+      heading_path: JSON.stringify(s.heading_path),
+      heading_text: s.heading_text,
+      level: s.level,
+      parent_id: parentId,
+      ord: s.ord,
+      chunk_id_first: pair.first,
+      chunk_id_last: pair.last
+    };
+    const ids = vault.db.sections.insertMany([row]);
+    insertedIds.push(ids[0]);
+  }
+  return insertedIds.length;
+}
+function mapChunksToSections(chunks, sectionRanges) {
+  const out = sectionRanges.map(
+    () => ({ first: null, last: null })
+  );
+  for (const chunk of chunks) {
+    const offset = chunk.start_offset;
+    let chosenIdx = null;
+    for (let i = sectionRanges.length - 1; i >= 0; i--) {
+      const r = sectionRanges[i];
+      if (!r) continue;
+      if (offset >= r.start && offset < r.end) {
+        chosenIdx = i;
+        break;
+      }
+    }
+    if (chosenIdx === null) continue;
+    const slot = out[chosenIdx];
+    if (slot.first === null || chunk.id < slot.first) slot.first = chunk.id;
+    if (slot.last === null || chunk.id > slot.last) slot.last = chunk.id;
+  }
+  return out;
+}
+function computeSectionOffsetRanges2(content, sections) {
+  const headings = extractHeadings(content);
+  const ranges = [];
+  const hasPreamble = sections.length > 0 && sections[0].level === 0 && sections[0].heading_text === "";
+  const firstHeadingOffset = headings.length === 0 ? content.length : headings[0].startOffset;
+  if (hasPreamble) {
+    ranges.push({ start: 0, end: firstHeadingOffset });
+  }
+  for (let h = 0; h < headings.length; h++) {
+    const h0 = headings[h];
+    let endOffset = content.length;
+    for (let j = h + 1; j < headings.length; j++) {
+      if (headings[j].level <= h0.level) {
+        endOffset = headings[j].startOffset;
+        break;
+      }
+    }
+    ranges.push({ start: h0.startOffset, end: endOffset });
+  }
+  while (ranges.length < sections.length) {
+    ranges.push({ start: 0, end: content.length });
+  }
+  return ranges;
 }
 function relativize(absPath, vaultRoot) {
   let p = absPath;
@@ -3555,6 +5322,9 @@ var init_indexer = __esm({
     init_chunker2();
     init_ollama();
     init_resolver();
+    init_extract_edges();
+    init_sections2();
+    init_headings();
   }
 });
 
@@ -3599,7 +5369,9 @@ async function indexNote(options) {
     });
     vault.db.aliases.setForNote(upsert2.id, extractAliases(parsed.frontmatter));
     vault.db.wikilinks.deleteByNote(upsert2.id);
+    vault.db.edges.deleteByNote(upsert2.id);
     insertWikilinks2(vault, upsert2.id, parsed.wikilinks);
+    writeAllEdges2(vault, upsert2.id, parsed);
     return {
       status: "indexed",
       notePath: parsed.relativePath,
@@ -3632,9 +5404,11 @@ async function indexNote(options) {
   vault.db.aliases.setForNote(upsert.id, extractAliases(parsed.frontmatter));
   vault.db.chunks.deleteByNote(upsert.id);
   vault.db.wikilinks.deleteByNote(upsert.id);
+  vault.db.edges.deleteByNote(upsert.id);
   const chunks = chunkNote(parsed.content);
   if (chunks.length === 0) {
     insertWikilinks2(vault, upsert.id, parsed.wikilinks);
+    writeAllEdges2(vault, upsert.id, parsed);
     return {
       status: "indexed",
       notePath: parsed.relativePath,
@@ -3692,6 +5466,7 @@ async function indexNote(options) {
     }
   }
   insertWikilinks2(vault, upsert.id, parsed.wikilinks);
+  writeAllEdges2(vault, upsert.id, parsed);
   return {
     status: "indexed",
     notePath: parsed.relativePath,
@@ -3737,8 +5512,9 @@ function isENOENT(err) {
 }
 function insertWikilinks2(vault, sourceNoteId, wikilinks) {
   if (wikilinks.length === 0) return;
+  const resolver = new WikilinkResolver(vault);
   const inputs = wikilinks.map((wl) => {
-    const target = resolveWikilinkTarget(vault, wl.normalizedTarget);
+    const target = resolver.resolve(wl.normalizedTarget);
     return {
       targetPath: wl.normalizedTarget,
       targetNoteId: target?.id ?? null,
@@ -3749,6 +5525,11 @@ function insertWikilinks2(vault, sourceNoteId, wikilinks) {
   });
   vault.db.wikilinks.insertBatch(sourceNoteId, inputs);
 }
+function writeAllEdges2(vault, sourceNoteId, parsed) {
+  const resolver = new WikilinkResolver(vault);
+  const edges = extractAllEdges(vault, parsed, resolver);
+  if (edges.length > 0) vault.db.edges.insertBatch(sourceNoteId, edges);
+}
 var init_single = __esm({
   "src/indexer/single.ts"() {
     "use strict";
@@ -3756,6 +5537,8 @@ var init_single = __esm({
     init_parser();
     init_chunker2();
     init_indexer();
+    init_resolver();
+    init_extract_edges();
   }
 });
 
@@ -4610,19 +6393,31 @@ var init_contract = __esm({
 });
 
 // src/memory/sink.ts
-var MEMORY_SINK_HANDLE_PATTERN, parseMemorySinkHandle, SENTINEL_FILENAME;
+var MEMORY_SINK_HANDLE_PATTERN, SEGMENT_PATTERN, parseMemorySinkHandle, SENTINEL_FILENAME;
 var init_sink = __esm({
   "src/memory/sink.ts"() {
     "use strict";
     init_esm_shims();
     MEMORY_SINK_HANDLE_PATTERN = /^obsidian-fs:\/\/[a-z0-9][a-z0-9-]*\/[^\s]+\/$/;
+    SEGMENT_PATTERN = /^[A-Za-z0-9._\-]+$/;
     ({ parseMemorySinkHandle } = /* @__PURE__ */ (() => {
       const mint = (s) => s;
-      const parse = (s) => {
+      const parse = (rawInput) => {
+        const s = typeof rawInput === "string" ? rawInput.normalize("NFC") : rawInput;
         if (!MEMORY_SINK_HANDLE_PATTERN.test(s)) {
           throw new Error(
             `Invalid MemorySinkHandle: ${JSON.stringify(s)}. Expected obsidian-fs://<vault>/<path>/ (trailing slash required).`
           );
+        }
+        const authStart = "obsidian-fs://".length;
+        const authEnd = s.indexOf("/", authStart);
+        const resource = s.slice(authEnd + 1, s.length - 1);
+        for (const segment of resource.split("/")) {
+          if (segment.length === 0 || segment === "." || segment === ".." || !SEGMENT_PATTERN.test(segment)) {
+            throw new Error(
+              `Invalid MemorySinkHandle: ${JSON.stringify(s)}. Resource path segment ${JSON.stringify(segment)} is not allowed: only [A-Za-z0-9._-]+ segments are permitted (no "..", no ".", no empty segments, no backslashes, no control characters).`
+            );
+          }
         }
         return mint(s);
       };
@@ -4639,7 +6434,6 @@ function isExpectedSinkContent(entry) {
   if (entry === "observations" || entry === "_briefs" || entry === "status-updates") {
     return true;
   }
-  if (entry.endsWith(".md")) return true;
   return false;
 }
 function formatSentinelContent(args2) {
@@ -4695,8 +6489,14 @@ async function assertSentinelExists(sink, vaultAbsolutePath) {
   try {
     await fs7.access(sentinelPath);
     return true;
-  } catch {
-    return false;
+  } catch (err) {
+    const code = err.code;
+    if (code === "ENOENT") return false;
+    throw new SinkSentinelCheckError(
+      sink.name,
+      code ?? "UNKNOWN",
+      `Sentinel check for MemorySink "${sink.name}" at ${sentinelPath} failed: ${err.message}`
+    );
   }
 }
 async function sentinelExistsAt(vaultRoot, relPath) {
@@ -4708,7 +6508,7 @@ async function sentinelExistsAt(vaultRoot, relPath) {
     return false;
   }
 }
-var SENTINEL_FILENAME2, SinkProvisioningError;
+var SENTINEL_FILENAME2, SinkProvisioningError, SinkSentinelCheckError;
 var init_sentinel = __esm({
   "src/adapters/delivery/obsidian-fs/sentinel.ts"() {
     "use strict";
@@ -4730,6 +6530,17 @@ var init_sentinel = __esm({
       offendingEntries;
       name = "SinkProvisioningError";
       code = "SINK_PROVISION_UNSAFE";
+    };
+    SinkSentinelCheckError = class extends Error {
+      constructor(sinkName, underlyingCode, message) {
+        super(message);
+        this.sinkName = sinkName;
+        this.underlyingCode = underlyingCode;
+      }
+      sinkName;
+      underlyingCode;
+      name = "SinkSentinelCheckError";
+      code = "SINK_SENTINEL_CHECK_FAILED";
     };
   }
 });
@@ -4782,7 +6593,6 @@ var init_obsidian_fs2 = __esm({
     init_registry();
     init_write();
     init_fs();
-    init_hash();
     init_validator();
     init_contract();
     init_sentinel();
@@ -4856,6 +6666,23 @@ var init_obsidian_fs2 = __esm({
         return registry.findSinkContaining(id);
       }
       /**
+       * Derive the `is_memory_sink_write` flag for the audit row.
+       *
+       * WR-08 (Plan 02-14): this MUST use the resolved truth
+       * (`registry.findSinkContaining(id)`), NOT the caller-intent signal
+       * (`opts.sink !== undefined`). The two signals diverge when a write
+       * lands inside a sink WITHOUT the caller having routed through the
+       * sink-aware path (legacy `writeNote` bypass, future code paths). The
+       * audit must reflect what the disk says, not what the caller said.
+       *
+       * When no registry is configured (Phase 1 fixture constructors), the
+       * flag falls back to `false` — preserves back-compat fixture tests.
+       */
+      isMemorySinkWriteFor(id) {
+        const sink = this.memorySinkRegistry?.findSinkContaining(id);
+        return sink !== null && sink !== void 0;
+      }
+      /**
        * Run Guards A/B + sentinel for a write or update. Returns the
        * conflict to short-circuit on, or `null` to proceed.
        *
@@ -4870,7 +6697,21 @@ var init_obsidian_fs2 = __esm({
         const sourceCheck = validateAgentWrite(id, doc, sink, null);
         if (sourceCheck) return sourceCheck;
         if (sink !== null) {
-          const ok2 = await assertSentinelExists(sink, this.vault.config.path);
+          let ok2;
+          try {
+            ok2 = await assertSentinelExists(sink, this.vault.config.path);
+          } catch (err) {
+            if (err instanceof SinkSentinelCheckError) {
+              return {
+                ok: false,
+                reason: "sentinel_check_failed",
+                sinkName: sink.name,
+                message: err.message,
+                suggestion: `Check filesystem permissions / disk health for ${this.vault.config.name}/${sink.resolveToRelativePath}. Underlying errno: ${err.underlyingCode}.`
+              };
+            }
+            throw err;
+          }
           if (!ok2) {
             return {
               ok: false,
@@ -4900,7 +6741,7 @@ var init_obsidian_fs2 = __esm({
           frontmatter,
           ...opts?.expectedHash !== void 0 ? { expectedHash: opts.expectedHash } : {},
           clientId: effectiveClientId,
-          isMemorySinkWrite: opts?.sink !== void 0
+          isMemorySinkWrite: this.isMemorySinkWriteFor(id)
         });
         return v1ToV2WriteResult(id, v1);
       }
@@ -4913,6 +6754,13 @@ var init_obsidian_fs2 = __esm({
        * Returns `{ ok: false, reason: "not_found" }` when the file is absent
        * (matches DeliveryAdapter contract — no implicit create on update).
        *
+       * WR-05 (Plan 02-14): callers MUST supply `opts.expectedHash`. Omitting
+       * it returns `{ ok: false, reason: "hash_mismatch" }` — symmetric with
+       * `delete()`'s existing behavior. The previous implementation silently
+       * fabricated `expectedHash` from the on-disk hash, racing with concurrent
+       * edits and downgrading the `hashProtected: "strong"` capability to
+       * best-effort.
+       *
        * The v1 MCP `update_frontmatter` handler continues to route through
        * `src/frontmatter/update.ts` (merge-DSL semantics + diff emission). This
        * `update()` path exists primarily for conformance and for non-merge-DSL
@@ -4921,6 +6769,13 @@ var init_obsidian_fs2 = __esm({
       async update(id, patch, opts) {
         const guard = await this.preflight(id, patch, opts);
         if (guard) return guard;
+        if (opts?.expectedHash === void 0) {
+          return {
+            ok: false,
+            reason: "hash_mismatch",
+            message: `update() requires opts.expectedHash for hashProtected="strong" adapters`
+          };
+        }
         const path7 = this.docIdToPath(id);
         const abs = await safeJoinInsideVault(this.vault.config.path, path7);
         let raw;
@@ -4942,20 +6797,15 @@ var init_obsidian_fs2 = __esm({
         const patchProps = patch.properties;
         const nextFm = patchProps !== void 0 ? { ...existingFm, ...stripWikilinks(patchProps) } : existingFm;
         const nextBody = patch.blocks !== void 0 ? patch.blocks.map((b) => b.kind === "paragraph" ? b.text : "").filter((s) => s.length > 0).join("\n\n") : existingBody;
-        const existingHash = computeNoteHash(
-          existingBody,
-          Object.keys(existingFm).length > 0 ? existingFm : null
-        );
-        const effectiveExpectedHash = opts?.expectedHash ?? existingHash;
         const effectiveClientId = opts?.clientId ?? this.clientId;
         const v1 = await writeNote({
           vault: this.vault,
           relativePath: path7,
           content: nextBody,
           frontmatter: Object.keys(nextFm).length > 0 ? nextFm : null,
-          expectedHash: effectiveExpectedHash,
+          expectedHash: opts.expectedHash,
           clientId: effectiveClientId,
-          isMemorySinkWrite: opts?.sink !== void 0
+          isMemorySinkWrite: this.isMemorySinkWriteFor(id)
         });
         return v1ToV2UpdateResult(id, v1);
       }
@@ -4996,7 +6846,7 @@ var init_obsidian_fs2 = __esm({
           relativePath: path7,
           expectedHash: opts.expectedHash,
           clientId: effectiveClientId,
-          isMemorySinkWrite: opts?.sink !== void 0
+          isMemorySinkWrite: this.isMemorySinkWriteFor(id)
         });
         if (!v1.ok) {
           if (v1.reason === "hash_mismatch" && v1.currentHash === void 0) {
@@ -5995,29 +7845,6 @@ var init_registry2 = __esm({
   }
 });
 
-// src/memory/citation-packet.ts
-function toCitationPacket(doc, displayUrl2) {
-  return {
-    doc_id: doc.id,
-    source_handle: doc.source,
-    title: doc.title,
-    heading_path: doc.heading_path ? [...doc.heading_path] : [],
-    mtime: doc.mtime,
-    hash: doc.hash,
-    display_url: displayUrl2,
-    properties: { ...doc.properties }
-  };
-}
-function displayUrlFor(docId, source) {
-  return source.formatDisplayUrl?.(docId) ?? docId;
-}
-var init_citation_packet = __esm({
-  "src/memory/citation-packet.ts"() {
-    "use strict";
-    init_esm_shims();
-  }
-});
-
 // src/memory/resources/list-sinks.ts
 function readListSinks(registry) {
   const sinks = registry.listMemorySinks();
@@ -6066,13 +7893,15 @@ function readMemoryStats(registry, manager) {
     totalDocs += doc_count;
     const by_type = {};
     const by_status = {};
-    for (const row of vault.db.notes.listByPathPrefix(prefix)) {
+    const rows = vault.db.notes.listByPathPrefix(prefix);
+    for (const row of rows) {
       const fm = parseFrontmatter(row.frontmatter);
       const type = stringField(fm, "type");
       const status = stringField(fm, "status");
       if (type !== null) by_type[type] = (by_type[type] ?? 0) + 1;
       if (status !== null) by_status[status] = (by_status[status] ?? 0) + 1;
     }
+    const truncated = rows.length >= LIST_BY_PATH_PREFIX_DEFAULT_LIMIT;
     const last_write_at = vault.db.audit.lastMemoryWriteAtForPathPrefix(prefix);
     entries.push({
       name: sink.name,
@@ -6081,7 +7910,8 @@ function readMemoryStats(registry, manager) {
       doc_count,
       by_type,
       by_status,
-      last_write_at
+      last_write_at,
+      ...truncated ? { truncated: true } : {}
     });
   }
   return {
@@ -6109,6 +7939,7 @@ var init_memory_stats = __esm({
   "src/memory/resources/memory-stats.ts"() {
     "use strict";
     init_esm_shims();
+    init_notes();
   }
 });
 
@@ -6139,14 +7970,14 @@ var init_memory = __esm({
 });
 
 // src/memory/tools/record-observation.ts
-import { createHash as createHash2 } from "crypto";
+import { createHash as createHash3, randomBytes as randomBytes2 } from "crypto";
 function slugify(claim) {
-  const stripped = claim.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  const stripped = claim.normalize("NFD").replace(/[\u0300-\u036F]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   if (stripped.length <= 60) return stripped || "observation";
   return stripped.slice(0, 60).replace(/-+$/g, "") || "observation";
 }
 function hashSuffix(claim, observedAt, salt = "") {
-  return createHash2("sha256").update(`${claim}\0${observedAt}\0${salt}`).digest("hex").slice(0, 6);
+  return createHash3("sha256").update(`${claim}\0${observedAt}\0${salt}`).digest("hex").slice(0, 6);
 }
 function dateSlug(isoTimestamp) {
   return isoTimestamp.slice(0, 10);
@@ -6169,9 +8000,17 @@ async function handleRecordObservation(deps, args2) {
     type: args2.type,
     superseded_by: null
   };
+  const callerExtras = {};
+  if (args2.properties !== void 0) {
+    for (const [k, v] of Object.entries(args2.properties)) {
+      if (!PROTECTED_PROVENANCE_KEYS.has(k)) {
+        callerExtras[k] = v;
+      }
+    }
+  }
   const properties = {
-    ...sugarProps,
-    ...args2.properties ?? {}
+    ...callerExtras,
+    ...sugarProps
   };
   const observedAtForNaming = typeof properties.observed_at === "string" ? properties.observed_at : observedAtDefault;
   const slug = slugify(args2.claim);
@@ -6179,7 +8018,11 @@ async function handleRecordObservation(deps, args2) {
   const source = deps.sourceConnectorFor(args2.vault);
   let attempt = 0;
   while (attempt < MAX_COLLISION_RETRIES) {
-    const suffix = hashSuffix(args2.claim, observedAtForNaming, String(attempt));
+    const suffix = hashSuffix(
+      args2.claim,
+      observedAtForNaming,
+      randomBytes2(3).toString("hex")
+    );
     const filename = `${dateSlug(observedAtForNaming)}-${slug}-${suffix}.md`;
     const relativeResource = sink.resolveToRelativePath + OBSERVATIONS_SUBFOLDER + filename;
     const docId = formatDocId("obsidian-fs", args2.vault, relativeResource);
@@ -6198,11 +8041,11 @@ async function handleRecordObservation(deps, args2) {
   }
   return {
     ok: false,
-    reason: "permission_denied",
-    message: `Failed to mint unique DocId after ${MAX_COLLISION_RETRIES} attempts`
+    reason: "collision_retry_exhausted",
+    message: `Failed to mint unique DocId after ${MAX_COLLISION_RETRIES} attempts. Vary the claim text, the observed_at timestamp, or retry the call.`
   };
 }
-var OBSERVATIONS_SUBFOLDER, MAX_COLLISION_RETRIES;
+var OBSERVATIONS_SUBFOLDER, MAX_COLLISION_RETRIES, PROTECTED_PROVENANCE_KEYS;
 var init_record_observation = __esm({
   "src/memory/tools/record-observation.ts"() {
     "use strict";
@@ -6210,6 +8053,16 @@ var init_record_observation = __esm({
     init_registry();
     OBSERVATIONS_SUBFOLDER = "observations/";
     MAX_COLLISION_RETRIES = 3;
+    PROTECTED_PROVENANCE_KEYS = /* @__PURE__ */ new Set([
+      "source",
+      "evidence",
+      "confidence",
+      "observed_at",
+      "type",
+      "status",
+      "superseded_by",
+      "superseded_reason"
+    ]);
   }
 });
 
@@ -6374,6 +8227,384 @@ var init_tools = __esm({
   }
 });
 
+// src/assembly/search-sections.ts
+async function searchSections(deps, args2) {
+  const chunkHits = await deps.searchHybrid({
+    query: args2.query,
+    topK: args2.limit * TOP_K_INFLATION_FACTOR,
+    vaults: args2.vaults
+  });
+  if (chunkHits.length === 0) return [];
+  const sectionMap = /* @__PURE__ */ new Map();
+  for (const hit of chunkHits) {
+    const resolution = deps.sectionForHit(hit.vault, hit.notePath, hit.chunkIdx);
+    if (!resolution) continue;
+    if (resolution.headingPath.length === 0) continue;
+    const key = `${resolution.noteId}#${resolution.anchor}`;
+    const existing = sectionMap.get(key);
+    if (!existing) {
+      sectionMap.set(key, {
+        resolution,
+        bestHit: hit,
+        bestScore: hit.score,
+        chunkIdxs: [hit.chunkIdx],
+        vaultName: hit.vault,
+        notePath: hit.notePath
+      });
+      continue;
+    }
+    existing.chunkIdxs.push(hit.chunkIdx);
+    if (hit.score > existing.bestScore) {
+      existing.bestScore = hit.score;
+      existing.bestHit = hit;
+    }
+  }
+  if (sectionMap.size === 0) return [];
+  const sorted = [...sectionMap.values()].sort((a, b) => {
+    if (b.bestScore !== a.bestScore) return b.bestScore - a.bestScore;
+    return a.resolution.chunkIdFirst - b.resolution.chunkIdFirst;
+  });
+  const winners = sorted.slice(0, args2.limit);
+  const hits = [];
+  for (const acc of winners) {
+    let doc;
+    try {
+      doc = await deps.readDocument(acc.vaultName, acc.notePath);
+    } catch {
+      continue;
+    }
+    const packet = toCitationPacket(
+      {
+        id: doc.id,
+        source: doc.source,
+        title: doc.title,
+        mtime: doc.mtime,
+        hash: doc.hash,
+        properties: doc.properties,
+        heading_path: acc.resolution.headingPath
+      },
+      deps.displayUrlFor(doc.id, acc.vaultName)
+    );
+    const hit = {
+      ...packet,
+      anchor: acc.resolution.anchor,
+      score: acc.bestScore,
+      chunk_ids: [...acc.chunkIdxs]
+    };
+    if (acc.bestHit.chunkText.length > 0) {
+      hit.snippet = acc.bestHit.chunkText;
+    }
+    hits.push(hit);
+  }
+  return hits;
+}
+var TOP_K_INFLATION_FACTOR;
+var init_search_sections = __esm({
+  "src/assembly/search-sections.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_citation_packet();
+    TOP_K_INFLATION_FACTOR = 5;
+  }
+});
+
+// src/assembly/outline.ts
+async function getOutline(deps, args2) {
+  let parsed;
+  try {
+    const docId2 = parseDocId(args2.doc_id);
+    parsed = decomposeDocId(docId2);
+  } catch {
+    throw new DocNotFoundError(args2.doc_id);
+  }
+  const { scheme, authority: vaultName, resource: path7 } = parsed;
+  if (args2.vaults && args2.vaults.length > 0 && !args2.vaults.includes(vaultName)) {
+    throw new DocNotFoundError(args2.doc_id);
+  }
+  let vault;
+  try {
+    vault = deps.manager.require(vaultName);
+  } catch {
+    throw new DocNotFoundError(args2.doc_id);
+  }
+  const noteRow = vault.db.notes.getByPath(path7);
+  if (!noteRow) {
+    throw new DocNotFoundError(args2.doc_id);
+  }
+  const source = deps.sourceConnectorFor(vaultName);
+  const docId = parseDocId(args2.doc_id);
+  let docFields;
+  let displayUrl2;
+  try {
+    const doc = await source.readDocument(docId);
+    docFields = { title: doc.title, mtime: doc.mtime, hash: doc.hash };
+    const packet = toCitationPacket(doc, displayUrlFor(doc.id, source));
+    displayUrl2 = packet.display_url;
+  } catch {
+    throw new DocNotFoundError(args2.doc_id);
+  }
+  const sectionRows = vault.db.sections.getByNote(noteRow.id);
+  const allChunks = vault.db.chunks.getByNote(noteRow.id);
+  const root = buildOutlineTree(sectionRows, allChunks);
+  const sourceHandle = parseSourceHandle(`${scheme}://${vaultName}`);
+  return {
+    doc_id: docId,
+    source_handle: sourceHandle,
+    title: docFields.title,
+    root,
+    mtime: docFields.mtime,
+    hash: docFields.hash,
+    display_url: displayUrl2
+  };
+}
+function buildOutlineTree(rows, allChunks) {
+  const byId = /* @__PURE__ */ new Map();
+  const roots = [];
+  for (const r of rows) {
+    const node = {
+      anchor: r.anchor,
+      heading_path: parseHeadingPath(r.heading_path),
+      heading_text: r.heading_text,
+      level: r.level,
+      chunk_ids: collectChunkIdsInRange(allChunks, r.chunk_id_first, r.chunk_id_last),
+      children: []
+    };
+    byId.set(r.id, node);
+    if (r.parent_id == null) {
+      roots.push(node);
+    } else {
+      const parent = byId.get(r.parent_id);
+      if (parent) {
+        parent.children.push(node);
+      } else {
+        roots.push(node);
+      }
+    }
+  }
+  return roots;
+}
+function parseHeadingPath(raw) {
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed) && parsed.every((s) => typeof s === "string")) {
+      return parsed;
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+function collectChunkIdsInRange(allChunks, first, last) {
+  if (first === null || last === null) return [];
+  const ids = [];
+  for (const c of allChunks) {
+    if (c.id >= first && c.id <= last) {
+      ids.push(String(c.id));
+    }
+  }
+  return ids;
+}
+var DocNotFoundError;
+var init_outline = __esm({
+  "src/assembly/outline.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_registry();
+    init_citation_packet();
+    DocNotFoundError = class extends Error {
+      name = "DocNotFoundError";
+      doc_id;
+      constructor(docId) {
+        super(`Document not found: ${docId}`);
+        this.doc_id = docId;
+      }
+    };
+  }
+});
+
+// src/assembly/dossier.ts
+function emptyResult2(args2) {
+  return {
+    anchor: null,
+    linked_documents: [],
+    property_rollups: {
+      linked_count: 0,
+      linked_types: {},
+      status_distribution: {}
+    },
+    error: {
+      code: "no_matching_anchor_document",
+      type: args2.type,
+      key: args2.key
+    }
+  };
+}
+function sortByKey(counts) {
+  const keys = Object.keys(counts).sort();
+  const out = {};
+  for (const k of keys) {
+    out[k] = counts[k];
+  }
+  return out;
+}
+function readAliases(props) {
+  const raw = props.aliases;
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const v of raw) {
+    if (typeof v === "string") out.push(v);
+  }
+  return out;
+}
+function noteSortKey(vaultName, notePath) {
+  return `vault://${vaultName}/${notePath}`;
+}
+function schemeFromSource(source) {
+  const parts = source.handle.split("://");
+  return parts[0] ?? "obsidian-fs";
+}
+function findAnchorCandidate(vault, args2) {
+  const rows = queryFrontmatter(vault, {
+    where: { type: args2.type },
+    limit: 1e3
+  });
+  if (rows.length === 0) return null;
+  const matches = [];
+  for (const row of rows) {
+    let props = {};
+    if (row.frontmatter !== null) {
+      try {
+        const parsed = JSON.parse(row.frontmatter);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          props = parsed;
+        }
+      } catch {
+        continue;
+      }
+    }
+    const titleMatch = row.title === args2.key;
+    const aliasMatch = readAliases(props).includes(args2.key);
+    if (!titleMatch && !aliasMatch) continue;
+    matches.push({
+      vaultName: vault.config.name,
+      notePath: row.path,
+      title: row.title,
+      sortKey: `${row.title}\0${noteSortKey(vault.config.name, row.path)}`
+    });
+  }
+  if (matches.length === 0) return null;
+  matches.sort((a, b) => a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0);
+  return matches[0] ?? null;
+}
+function findAnchorAcrossVaults(vaults, args2) {
+  const matches = [];
+  for (const vault of vaults) {
+    const c = findAnchorCandidate(vault, args2);
+    if (c) matches.push(c);
+  }
+  if (matches.length === 0) return null;
+  matches.sort((a, b) => a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0);
+  return matches[0] ?? null;
+}
+function withDossierExtras(packet) {
+  const out = { ...packet };
+  const status = packet.properties.status;
+  if (typeof status === "string") out.status = status;
+  const supersededBy = packet.properties.superseded_by;
+  if (typeof supersededBy === "string") out.superseded_by = supersededBy;
+  return out;
+}
+async function assembleDossier(deps, args2) {
+  const vaults = [];
+  if (args2.vaults && args2.vaults.length > 0) {
+    for (const name of args2.vaults) {
+      vaults.push(deps.manager.require(name));
+    }
+  } else {
+    for (const v of deps.manager.list()) {
+      vaults.push(v);
+    }
+  }
+  if (vaults.length === 0) return emptyResult2(args2);
+  const anchorCandidate = findAnchorAcrossVaults(vaults, args2);
+  if (anchorCandidate === null) return emptyResult2(args2);
+  const anchorVault = vaults.find((v) => v.config.name === anchorCandidate.vaultName);
+  if (anchorVault === void 0) return emptyResult2(args2);
+  const anchorSource = deps.sourceConnectorFor(anchorCandidate.vaultName);
+  const anchorScheme = schemeFromSource(anchorSource);
+  const anchorDocId = formatDocId(
+    anchorScheme,
+    anchorCandidate.vaultName,
+    anchorCandidate.notePath
+  );
+  let anchorDoc;
+  try {
+    anchorDoc = await anchorSource.readDocument(anchorDocId);
+  } catch {
+    return emptyResult2(args2);
+  }
+  const anchorPacket = withDossierExtras(
+    toCitationPacket(anchorDoc, displayUrlFor(anchorDocId, anchorSource))
+  );
+  let backlinkRows;
+  try {
+    backlinkRows = listBacklinks(anchorVault, anchorCandidate.notePath);
+  } catch {
+    return emptyResult2(args2);
+  }
+  const linkedDocuments = [];
+  for (const bl of backlinkRows) {
+    const linkedDocId = formatDocId(
+      anchorScheme,
+      anchorCandidate.vaultName,
+      bl.sourcePath
+    );
+    let linkedDoc;
+    try {
+      linkedDoc = await anchorSource.readDocument(linkedDocId);
+    } catch {
+      continue;
+    }
+    const packet = toCitationPacket(
+      linkedDoc,
+      displayUrlFor(linkedDocId, anchorSource)
+    );
+    const withExtras = withDossierExtras(packet);
+    linkedDocuments.push({
+      ...withExtras,
+      relation: "wikilink"
+    });
+  }
+  const linked_types = {};
+  const status_distribution = {};
+  for (const linked of linkedDocuments) {
+    const type = typeof linked.properties.type === "string" ? linked.properties.type : "unknown";
+    linked_types[type] = (linked_types[type] ?? 0) + 1;
+    const status = typeof linked.properties.status === "string" ? linked.properties.status : "unknown";
+    status_distribution[status] = (status_distribution[status] ?? 0) + 1;
+  }
+  return {
+    anchor: anchorPacket,
+    linked_documents: linkedDocuments,
+    property_rollups: {
+      linked_count: linkedDocuments.length,
+      linked_types: sortByKey(linked_types),
+      status_distribution: sortByKey(status_distribution)
+    },
+    error: null
+  };
+}
+var init_dossier = __esm({
+  "src/assembly/dossier.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_registry();
+    init_query();
+    init_graph();
+    init_citation_packet();
+  }
+});
+
 // src/audit/audit.ts
 function clampLimit(value, fallback, max) {
   if (value === void 0) return fallback;
@@ -6453,6 +8684,175 @@ var init_audit2 = __esm({
     MAX_AUDIT_LIMIT = 1e3;
     DEFAULT_RUNS_LIMIT = 20;
     MAX_RUNS_LIMIT = 200;
+  }
+});
+
+// src/assembly/bundle.ts
+function withBundleAnchorExtras(packet) {
+  const out = { ...packet };
+  const status = packet.properties.status;
+  if (typeof status === "string") out.status = status;
+  const supersededBy = packet.properties.superseded_by;
+  if (typeof supersededBy === "string") out.superseded_by = supersededBy;
+  return out;
+}
+function bodyPlainText(blocks) {
+  const parts = [];
+  for (const b of blocks) {
+    switch (b.kind) {
+      case "paragraph":
+      case "code":
+        parts.push(b.text);
+        break;
+      case "heading":
+        parts.push(b.text);
+        break;
+      case "list":
+        parts.push(b.items.join(" "));
+        break;
+      case "section":
+        parts.push(bodyPlainText(b.blocks));
+        break;
+      default:
+        break;
+    }
+  }
+  const text = parts.join(" ").trim();
+  if (text.length <= PROPERTY_SNIPPET_MAX) return text;
+  return text.slice(0, PROPERTY_SNIPPET_MAX);
+}
+async function getDocumentBundle(deps, args2) {
+  let parsed;
+  try {
+    const docId2 = parseDocId(args2.doc_id);
+    parsed = decomposeDocId(docId2);
+  } catch {
+    throw new DocNotFoundError(args2.doc_id);
+  }
+  const { scheme: anchorScheme, authority: vaultName, resource: path7 } = parsed;
+  if (args2.vaults && args2.vaults.length > 0 && !args2.vaults.includes(vaultName)) {
+    throw new DocNotFoundError(args2.doc_id);
+  }
+  let vault;
+  try {
+    vault = deps.manager.require(vaultName);
+  } catch {
+    throw new DocNotFoundError(args2.doc_id);
+  }
+  const noteRow = vault.db.notes.getByPath(path7);
+  if (!noteRow) {
+    throw new DocNotFoundError(args2.doc_id);
+  }
+  const source = deps.sourceConnectorFor(vaultName);
+  const docId = parseDocId(args2.doc_id);
+  let anchorDoc;
+  try {
+    anchorDoc = await source.readDocument(docId);
+  } catch {
+    throw new DocNotFoundError(args2.doc_id);
+  }
+  const anchorPacket = withBundleAnchorExtras(
+    toCitationPacket(anchorDoc, displayUrlFor(docId, source))
+  );
+  const sectionRows = vault.db.sections.getByNote(noteRow.id);
+  const allChunks = vault.db.chunks.getByNote(noteRow.id);
+  const outline = buildOutlineTree(sectionRows, allChunks);
+  let backlinkRows;
+  try {
+    backlinkRows = listBacklinks(vault, path7);
+  } catch {
+    throw new DocNotFoundError(args2.doc_id);
+  }
+  const backlinks = [];
+  for (const bl of backlinkRows) {
+    const sourceDocId = formatDocId(anchorScheme, vaultName, bl.sourcePath);
+    let linkedDoc;
+    try {
+      linkedDoc = await source.readDocument(sourceDocId);
+    } catch {
+      continue;
+    }
+    const packet = toCitationPacket(linkedDoc, displayUrlFor(sourceDocId, source));
+    backlinks.push({
+      ...packet,
+      property_snippet: bodyPlainText(linkedDoc.blocks),
+      relation: bl.type
+    });
+  }
+  let forwardLinkRows;
+  try {
+    forwardLinkRows = listForwardLinks(
+      vault,
+      path7,
+      /* includeBroken */
+      false
+    );
+  } catch {
+    throw new DocNotFoundError(args2.doc_id);
+  }
+  const forward_links = [];
+  for (const fl of forwardLinkRows) {
+    const targetDocId = formatDocId(anchorScheme, vaultName, fl.targetPath);
+    let linkedDoc;
+    try {
+      linkedDoc = await source.readDocument(targetDocId);
+    } catch {
+      continue;
+    }
+    const packet = toCitationPacket(linkedDoc, displayUrlFor(targetDocId, source));
+    forward_links.push({
+      ...packet,
+      property_snippet: bodyPlainText(linkedDoc.blocks),
+      // PHASE-4-WIDEN — see backlinks loop above. COMPLETED Phase 4 / 04-01.
+      relation: fl.type
+    });
+  }
+  const auditEntries = getAuditLog({
+    vault,
+    notePath: path7,
+    limit: RECENT_EDITS_LIMIT
+  });
+  const recent_edits = auditEntries.map((e) => {
+    const out = {
+      at: e.at,
+      op: e.op,
+      client_id: e.clientId
+    };
+    if (e.is_memory_sink_write) out.is_memory_sink_write = true;
+    return out;
+  });
+  return {
+    anchor: anchorPacket,
+    outline,
+    backlinks,
+    forward_links,
+    recent_edits
+  };
+}
+var RECENT_EDITS_LIMIT, PROPERTY_SNIPPET_MAX;
+var init_bundle = __esm({
+  "src/assembly/bundle.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_registry();
+    init_audit2();
+    init_graph();
+    init_citation_packet();
+    init_outline();
+    init_outline();
+    RECENT_EDITS_LIMIT = 10;
+    PROPERTY_SNIPPET_MAX = 200;
+  }
+});
+
+// src/assembly/index.ts
+var init_assembly = __esm({
+  "src/assembly/index.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_dossier();
+    init_bundle();
+    init_outline();
   }
 });
 
@@ -7008,7 +9408,7 @@ var init_tool_registry = __esm({
       },
       {
         name: "search_hybrid",
-        description: "Hybrid search: combines semantic (embedding) and BM25 (full-text) results via Reciprocal Rank Fusion. Best general-purpose query.",
+        description: "Hybrid search: combines semantic (embedding) and BM25 (full-text) results via Reciprocal Rank Fusion. Best general-purpose query. Pass `expand: {hops: 1}` to auto-attach 1\u20132 hop typed-edge neighbors as `expansions[]` per hit (preserves ranking; runs after recency/authority rescore).",
         inputSchema: {
           type: "object",
           required: ["query"],
@@ -7037,6 +9437,49 @@ var init_tool_registry = __esm({
               type: "boolean",
               default: false,
               description: "Apply a cross-encoder rerank over the top candidates. Requires `reranker_model` in server config; silently ignored otherwise."
+            },
+            recency_weight: {
+              type: "number",
+              default: 0,
+              description: "Phase 3 (D-07, ASM-07): additive recency term coefficient. final_score = rrf + recency_weight * exp(-age_days / half_life_days). Default 0 (no recency pressure \u2014 v1 behavior)."
+            },
+            authority_weight: {
+              type: "number",
+              default: 0,
+              description: "Phase 3 (D-07, ASM-07): additive authority term coefficient. Adds `authority_weight * 1` for docs whose frontmatter has `authoritative: true`. Default 0."
+            },
+            half_life_days: {
+              type: "number",
+              minimum: 0,
+              default: 30,
+              description: "Phase 3 (D-07): half-life for the recency exponential decay, in days. Default 30. Only meaningful when recency_weight > 0."
+            },
+            include_superseded: {
+              type: "boolean",
+              default: false,
+              description: "Phase 3 (D-08, ASM-08): when false (default), docs whose frontmatter has `status: superseded` are excluded at SQL level via the notes_status partial index. Set true to reveal them."
+            },
+            // ── Phase 4 / 04-04 / GRA-03 (D-15): additive auto-expansion ──
+            // When omitted, search_hybrid behavior is byte-identical to v1.
+            expand: {
+              type: "object",
+              required: ["hops"],
+              description: "Phase 4 (D-15, D-16): auto-attach 1\u20132 hop typed-edge neighbors as `expansions[]` per hit. Runs AFTER recency/authority rescore (D-16); never participates in score computation; top-K ranking unchanged.",
+              properties: {
+                hops: { type: "number", enum: [1, 2] },
+                direction: {
+                  type: "string",
+                  enum: ["forward", "backward", "both"],
+                  default: "both"
+                },
+                edge_types: {
+                  type: "array",
+                  items: {
+                    type: "string",
+                    enum: ["wikilink", "mention", "frontmatter-ref", "hyperlink"]
+                  }
+                }
+              }
             }
           }
         }
@@ -7383,6 +9826,62 @@ var init_tool_registry = __esm({
           }
         }
       },
+      // ── Phase 3 assembly tools (Plan 03-02 / ASM-02) ─────────────────────────
+      {
+        name: "get_outline",
+        description: "Return the navigable section tree for a document. Each OutlineNode carries an `anchor` (the section's citation token), `heading_path` (root \u2192 leaf), `heading_text`, `level`, and `chunk_ids` (v1 chunk-table IDs in that section). Consume `anchor` + `heading_path` as the section-level half of the citation packet. Unknown doc_id returns an error response with {error:'doc_not_found', doc_id}.",
+        inputSchema: {
+          type: "object",
+          required: ["doc_id"],
+          properties: {
+            doc_id: {
+              type: "string",
+              description: "Opaque DocId (obsidian-fs://<vault>/<path>) of the document"
+            },
+            vaults: {
+              type: "array",
+              items: { type: "string" },
+              description: "Optional vault filter; usually omitted (the DocId names a vault)."
+            }
+          }
+        }
+      },
+      // ── Phase 3 assembly tools (Plan 03-03) ──────────────────────────────────
+      {
+        name: "search_sections",
+        description: "Section-level retrieval. Composes the v1 hybrid (semantic + BM25 + RRF) pipeline with a chunk-to-section promotion step: runs hybrid with an inflated top_k = limit \xD7 5, promotes each chunk hit to its enclosing section, dedupes by (note, section anchor), scores each section as the MAX of its constituent chunks, tie-breaks by chunk_id_first ASC, and returns the top `limit` sections. Each hit carries an 8-field citation packet (D-01) with a non-empty section heading_path PLUS the section anchor, score, contributing chunk_ids, and an optional snippet from the best-scoring chunk. Use when you want WHOLE-SECTION context, not a chunk window.",
+        inputSchema: {
+          type: "object",
+          required: ["query"],
+          properties: {
+            query: { type: "string" },
+            limit: {
+              type: "integer",
+              minimum: 1,
+              maximum: 50,
+              default: 10
+            },
+            vaults: { type: "array", items: { type: "string" } },
+            recency_weight: {
+              type: "number",
+              minimum: 0,
+              default: 0,
+              description: "Forward-compat with slice 03-05's authority/staleness rescore. Accepted today; ignored until 03-05 lands."
+            },
+            authority_weight: {
+              type: "number",
+              minimum: 0,
+              default: 0,
+              description: "Forward-compat with slice 03-05's authority/staleness rescore. Accepted today; ignored until 03-05 lands."
+            },
+            include_superseded: {
+              type: "boolean",
+              default: false,
+              description: "Forward-compat with slice 03-05. When false (default), superseded docs are filtered out at the chunk level inside hybrid; accepted today, ignored until 03-05."
+            }
+          }
+        }
+      },
       // ── Phase 2 memory tools (Plan 02-05) ────────────────────────────────────
       {
         name: "recall",
@@ -7428,6 +9927,142 @@ var init_tool_registry = __esm({
             }
           }
         }
+      },
+      // ── Phase 3 assembly tools (Plan 03-04 / ASM-01) ─────────────────────────
+      {
+        name: "get_document_bundle",
+        description: `Document-tree retrieval. Returns a structured bundle for a single document: { anchor (citation packet + optional status/superseded_by), outline (section tree via buildOutlineTree \u2014 same shape as get_outline.root), backlinks (citation packets + property_snippet + relation:"wikilink"), forward_links (same shape; broken links omitted), recent_edits (\u226410 most recent audit_log rows mapped to {at, op, client_id, is_memory_sink_write?}) }. Every citation packet is the full 8-field D-01 shape from src/memory/citation-packet.ts. v2.0.0 accepts only depth:1 (one-hop links); the field is zod-pinned to z.literal(1) for forward compatibility. recent_edits is keyed by the anchor's CURRENT note path \u2014 pre-rename history is preserved in audit_log but not surfaced here (Phase 4 widens). Unknown doc_id returns { isError: true, error: "doc_not_found", doc_id }.`,
+        inputSchema: {
+          type: "object",
+          required: ["doc_id"],
+          properties: {
+            doc_id: {
+              type: "string",
+              description: "Opaque DocId (obsidian-fs://<vault>/<path>) of the anchor document."
+            },
+            depth: {
+              type: "integer",
+              enum: [1],
+              default: 1,
+              description: "Depth of the link walk. v2.0.0 accepts only depth:1 (one-hop). Phase 4 may widen."
+            },
+            vaults: {
+              type: "array",
+              items: { type: "string" },
+              description: "Optional vault filter; usually omitted (the DocId names a vault)."
+            }
+          }
+        }
+      },
+      // ── Phase 4 graph tools (Plan 04-03 / GRA-01) ───────────────────────────
+      {
+        name: "expand",
+        description: "Typed-edge BFS retrieval. Returns the typed-edge neighborhood of one or more seed documents as a flat array of citation packets, each carrying `via: {seed_doc_id, hop, edge_type, direction}` provenance. Hops hard-capped at 2 (v2.0.0). Default direction = 'both'. Filterable by edge_type and by document properties (strict equality, no operators). Memory-sink documents (`_memory/...`) surface only when they are already linked from a user note in the result set (per ADR-004 memory-namespace opacity rule). Frontmatter-ref edges are extracted heuristically: `[[...]]` syntax in any property value OR allowlisted property names (`assignee`, `owner`, `project`, `related`, `parent`, `child`, `attendees`, `superseded_by`) matched against `note_aliases`. `include_superseded` defaults to false (Phase 2 D-03 forward-only supersede). Unknown seed_doc_ids do not throw \u2014 they are returned in a `warnings: [{seed_doc_id, reason: 'unknown_doc'}]` array. Shortest path wins on dedup; ties broken by (seed_doc_id, edge_type, direction).",
+        inputSchema: {
+          type: "object",
+          required: ["seed_doc_ids", "hops"],
+          properties: {
+            seed_doc_ids: {
+              type: "array",
+              minItems: 1,
+              items: {
+                type: "string",
+                description: "Opaque DocId (e.g. obsidian-fs://<vault>/<path>)."
+              }
+            },
+            hops: {
+              type: "number",
+              enum: [1, 2],
+              description: "Hop cap (1 or 2). v2.0.0 hard-caps at 2."
+            },
+            direction: {
+              type: "string",
+              enum: ["forward", "backward", "both"],
+              default: "both",
+              description: "Edge traversal direction; default 'both'."
+            },
+            edge_types: {
+              type: "array",
+              items: {
+                type: "string",
+                enum: ["wikilink", "mention", "frontmatter-ref", "hyperlink"]
+              },
+              description: "Optional filter on edge types; default = all four types."
+            },
+            filter_properties: {
+              type: "object",
+              additionalProperties: true,
+              description: "Strict-equality predicate on document properties (e.g. {type: 'Project'})."
+            },
+            include_superseded: {
+              type: "boolean",
+              default: false,
+              description: "When false (default), docs whose properties.status === 'superseded' are dropped."
+            }
+          }
+        }
+      },
+      // ── Phase 4 graph tools (Plan 04-05 / GRA-02) ───────────────────────────
+      {
+        name: "cluster",
+        description: "Community detection over the typed-edge graph via Louvain modularity (Blondel et al. 2008) using `graphology` + `graphology-communities-louvain`. Deterministic: same input produces byte-identical cluster_id assignment via DocId-sorted node insertion + seeded RNG (`vault-memory-cluster-v1`). cluster_id = smallest member DocId per community. Hard-capped at 5000 nodes; pass `force: true` to override. Either `query` (composes search_hybrid + expand 1-hop) OR `seed_doc_ids` (uses provided seeds + induced 1-hop neighborhood); not both \u2014 passing both returns {ok:false, reason:'both_seeds_and_query'}. Returns per-cluster {cluster_id, size, members[], summary: {top_types, top_titles, edge_density}}. No LLM enrichment \u2014 summary fields are pure-deterministic computations (LLM enrichment is Phase 5 brief layer's job). _memory opacity inherited from expand() (Plan 04-03).",
+        inputSchema: {
+          type: "object",
+          required: ["method"],
+          properties: {
+            query: {
+              type: "string",
+              description: "Natural-language query. When set, composes search_hybrid + expand(hops=1, both). Mutually exclusive with seed_doc_ids."
+            },
+            seed_doc_ids: {
+              type: "array",
+              minItems: 1,
+              items: { type: "string" },
+              description: "1+ opaque DocIds. When set, cluster() uses these seeds + their induced 1-hop neighborhood. Mutually exclusive with query."
+            },
+            method: {
+              type: "string",
+              enum: ["edge-community"],
+              description: "Clustering algorithm. v2.0.0 supports only 'edge-community' (Louvain)."
+            },
+            query_top_k: {
+              type: "integer",
+              minimum: 1,
+              maximum: 200,
+              default: 50,
+              description: "Only used in the query path: how many top hits to retrieve before expansion. Default 50."
+            },
+            force: {
+              type: "boolean",
+              default: false,
+              description: "Bypass the 5000-node hard cap. When false (default), oversized inputs return {ok:false, reason:'node_count_exceeded'}."
+            }
+          }
+        }
+      },
+      // ── Phase 3 assembly tools (Plan 03-06) ──────────────────────────────────
+      {
+        name: "assemble_dossier",
+        description: `Resolve a {type, key} pair to an anchor document and walk its backlinks into a structured dossier: { anchor (citation packet), linked_documents (citation packets + relation), property_rollups (linked_count, linked_types, status_distribution) }. Strict properties.type match (D-03). The key matches the candidate's title OR any entry in properties.aliases (D-04). v2.0.0 returns relation:"wikilink" on every linked_documents entry (the v1 wikilinks table is the only edge source); Phase 4 (GRA-04) widens to typed edges. Superseded backlinks are NOT filtered \u2014 dossiers show the whole picture (CONTEXT D-04).`,
+        inputSchema: {
+          type: "object",
+          required: ["type", "key"],
+          properties: {
+            type: {
+              type: "string",
+              description: "Exact-match value for properties.type on the anchor document (e.g. 'Person', 'Project', 'Meeting'). No fuzzy / synonym matching."
+            },
+            key: {
+              type: "string",
+              description: "Candidate key. Matches the document's title OR any entry in properties.aliases (a string[] from frontmatter). Exact-string match."
+            },
+            vaults: {
+              type: "array",
+              items: { type: "string" },
+              description: "Restrict to these vault names; defaults to all configured."
+            }
+          }
+        }
       }
     ];
     DOC_ID_PATTERN2 = /^[a-z][a-z0-9-]*:\/\/[^/]+\/.+$/;
@@ -7464,7 +10099,25 @@ var init_tool_registry = __esm({
         top_k: z6.number().int().positive().max(100).optional().default(10),
         rrf_k: z6.number().int().positive().max(1e3).optional().default(60),
         exclude_paths: z6.array(z6.string()).optional(),
-        rerank: z6.boolean().optional().default(false)
+        rerank: z6.boolean().optional().default(false),
+        // Phase 3 / 03-05 additive params — D-07, D-08, ASM-07, ASM-08.
+        // All `.optional()` with defaults that vanish when unset, so v1
+        // callers see no behavior change.
+        recency_weight: z6.number().optional().default(0),
+        authority_weight: z6.number().optional().default(0),
+        half_life_days: z6.number().positive().optional().default(30),
+        include_superseded: z6.boolean().optional().default(false),
+        // ── Phase 4 / 04-04 / GRA-03 (D-15): additive auto-expansion ──
+        // Nested under a single optional `expand` object per D-15. When
+        // omitted, hybridSearch behavior is byte-identical to v1 (the
+        // guard `if (opts.expand && opts.expandDeps && ...)` at the end of
+        // `src/search/hybrid.ts` short-circuits entirely). The literal-
+        // union for `hops` enforces the D-05 hop cap at the boundary.
+        expand: z6.object({
+          hops: z6.union([z6.literal(1), z6.literal(2)]),
+          direction: z6.enum(["forward", "backward", "both"]).optional(),
+          edge_types: z6.array(z6.enum(["wikilink", "mention", "frontmatter-ref", "hyperlink"])).optional()
+        }).optional()
       },
       list_backlinks: {
         vault: z6.string(),
@@ -7577,6 +10230,23 @@ var init_tool_registry = __esm({
         replacement_doc_id: z6.string().regex(DOC_ID_PATTERN2).describe("DocId of the replacement document"),
         reason: z6.string().min(1).describe("Why the old document is being retired; written to superseded_reason")
       },
+      // ── Phase 3 assembly tools (Plan 03-02 / ASM-02) ────────────────────────
+      get_outline: {
+        doc_id: z6.string().regex(DOC_ID_PATTERN2).describe("Opaque DocId (obsidian-fs://<vault>/<path>) of the document"),
+        vaults: z6.array(z6.string().min(1)).optional().describe("Optional vault filter; usually omitted (the DocId names a vault)")
+      },
+      // ── Phase 3 assembly tools (Plan 03-03) ─────────────────────────────────
+      search_sections: {
+        query: z6.string().min(1),
+        limit: z6.number().int().positive().max(50).optional().default(10),
+        vaults: z6.array(z6.string().min(1)).optional(),
+        // Forward-compat with slice 03-05's authority/staleness rescore.
+        // Accepted today; ignored by the controller until 03-05 wires the
+        // forwarding inside hybridSearch. See 03-03-DEVIATIONS.md.
+        recency_weight: z6.number().min(0).optional().default(0),
+        authority_weight: z6.number().min(0).optional().default(0),
+        include_superseded: z6.boolean().optional().default(false)
+      },
       // ── Phase 2 memory tools (Plan 02-05) ───────────────────────────────────
       recall: {
         query: z6.string().min(1).describe("Natural-language query; routes through hybrid (semantic + BM25) search"),
@@ -7590,12 +10260,77 @@ var init_tool_registry = __esm({
         ),
         limit: z6.number().int().positive().max(200).optional().describe("Maximum results AFTER filter+sort; default 20"),
         vaults: z6.array(z6.string().min(1)).optional().describe("Restrict to these vault names; defaults to all configured")
+      },
+      // ── Phase 3 assembly tools (Plan 03-04 / ASM-01) ────────────────────────
+      get_document_bundle: {
+        doc_id: z6.string().regex(DOC_ID_PATTERN2).describe("Opaque DocId (obsidian-fs://<vault>/<path>) of the anchor document"),
+        // v2.0.0 accepts only depth:1. The literal pin guarantees Zod
+        // rejects any other value at the boundary so the controller does
+        // not need to clamp. Phase 4 may widen additively (z.union of
+        // literals, or `z.number().int().min(1).max(2)`).
+        depth: z6.literal(1).optional().default(1).describe("Link-walk depth. v2.0.0: only 1 (one-hop). Phase 4 may widen."),
+        vaults: z6.array(z6.string().min(1)).optional().describe("Optional vault filter; usually omitted (the DocId names a vault)")
+      },
+      // ── Phase 4 graph tools (Plan 04-03 / GRA-01) ───────────────────────────
+      expand: {
+        seed_doc_ids: z6.array(z6.string().regex(DOC_ID_PATTERN2)).min(1).describe(
+          "1+ opaque DocIds (e.g. obsidian-fs://<vault>/<path>) \u2014 seeds of the BFS."
+        ),
+        // Hops hard-capped at 2 (D-05) via Zod literal union — `hops: 3`
+        // is rejected at the boundary; the controller does not clamp.
+        hops: z6.union([z6.literal(1), z6.literal(2)]).describe("Hop cap (1 or 2). v2.0.0 hard-caps at 2."),
+        direction: z6.enum(["forward", "backward", "both"]).optional().default("both").describe("Edge traversal direction; default 'both'."),
+        edge_types: z6.array(z6.enum(["wikilink", "mention", "frontmatter-ref", "hyperlink"])).optional().describe("Optional filter on edge types; default = all four types."),
+        filter_properties: z6.record(z6.string(), z6.unknown()).optional().describe(
+          "Strict-equality predicate on document properties (e.g. {type: 'Project'})."
+        ),
+        include_superseded: z6.boolean().optional().default(false).describe(
+          "When false (default), docs whose properties.status === 'superseded' are dropped."
+        )
+      },
+      // ── Phase 4 graph tools (Plan 04-05 / GRA-02) ───────────────────────────
+      //
+      // The cluster tool's schema is unusual: it requires EXACTLY ONE of
+      // `query` or `seed_doc_ids` (mutual exclusion per D-15a). Zod can't
+      // model "exactly one" in a raw shape directly — we declare the union
+      // of both shapes in `SCHEMA_BUILDERS` below; here we publish the raw
+      // shape so the MCP SDK's `tools/list` JSON Schema projection still
+      // works. The runtime path goes through `buildToolSchema("cluster")`
+      // which calls the SCHEMA_BUILDERS entry.
+      cluster: {
+        query: z6.string().min(1).optional(),
+        seed_doc_ids: z6.array(z6.string().regex(DOC_ID_PATTERN2)).min(1).optional(),
+        method: z6.literal("edge-community"),
+        query_top_k: z6.number().int().positive().max(200).optional().default(50),
+        force: z6.boolean().optional().default(false)
+      },
+      // ── Phase 3 assembly tools (Plan 03-06) ─────────────────────────────────
+      assemble_dossier: {
+        type: z6.string().min(1).describe(
+          "Exact-match value for properties.type on the anchor document (D-03 \u2014 no fuzzy match)"
+        ),
+        key: z6.string().min(1).describe(
+          "Candidate key \u2014 matches the document's title OR any entry in properties.aliases (D-04)"
+        ),
+        vaults: z6.array(z6.string().min(1)).optional().describe("Restrict to these vault names; defaults to all configured")
       }
     };
     SCHEMA_BUILDERS = {
       suggest_frontmatter: () => z6.object(TOOL_SCHEMAS.suggest_frontmatter).refine((v) => v.path !== void 0 || v.content !== void 0, {
         message: "suggest_frontmatter requires either `path` or `content`"
-      })
+      }),
+      // Plan 04-05 / D-15a — EXACTLY ONE of `query` or `seed_doc_ids` must
+      // be present. The runtime path also returns a structured
+      // {ok:false, reason:'both_seeds_and_query'} error when both are set,
+      // so this Zod refinement is the early-rejection gate at the MCP
+      // boundary (cluster's internal validator handles the same case for
+      // direct callers that bypass Zod).
+      cluster: () => z6.object(TOOL_SCHEMAS.cluster).refine(
+        (v) => v.query !== void 0 && v.seed_doc_ids === void 0 || v.query === void 0 && v.seed_doc_ids !== void 0,
+        {
+          message: "cluster requires EXACTLY ONE of `query` or `seed_doc_ids` (D-15a mutual exclusion)"
+        }
+      )
     };
   }
 });
@@ -7603,6 +10338,7 @@ var init_tool_registry = __esm({
 // src/server.ts
 var server_exports = {};
 __export(server_exports, {
+  MEMORY_AUTO_DISCOVERY_FOLDER: () => MEMORY_AUTO_DISCOVERY_FOLDER,
   aggregateTopFrontmatterKeys: () => aggregateTopFrontmatterKeys,
   aggregateTopTags: () => aggregateTopTags,
   decodeNoteId: () => decodeNoteId,
@@ -7622,10 +10358,10 @@ async function discoverMemorySinks(configured, vaults) {
   }
   const discovered = [];
   for (const v of vaults) {
-    if (await sentinelExistsAt(v.path, "_memory")) {
+    if (await sentinelExistsAt(v.path, MEMORY_AUTO_DISCOVERY_FOLDER)) {
       discovered.push({
         name: "default",
-        handle: `obsidian-fs://${v.name}/_memory/`,
+        handle: `obsidian-fs://${v.name}/${MEMORY_AUTO_DISCOVERY_FOLDER}/`,
         contract: "default-memory-v1"
       });
     }
@@ -7778,7 +10514,25 @@ async function serve(options = {}) {
         p.top_k,
         p.rrf_k,
         p.exclude_paths,
-        p.rerank ? reranker : void 0
+        p.rerank ? reranker : void 0,
+        p.recency_weight,
+        p.authority_weight,
+        p.half_life_days,
+        p.include_superseded,
+        // 03-05: display-URL resolver — delegates to the obsidian-fs source
+        // adapter (or whichever adapter owns the vault) so hybrid.ts never
+        // mints adapter URL strings (ADR-002 §I-5b).
+        (vaultName, notePath) => displayUrl(adapterRegistry, vaultName, notePath),
+        // Phase 4 / 04-04 (D-15): pass the optional expand object + its
+        // injected deps (manager + sourceConnectorFor) so hybridSearch
+        // can compose Plan 04-03's `expand()` over the rescored top-K.
+        p.expand,
+        {
+          manager,
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
+            parseSourceHandle(`obsidian-fs://${vaultName}`)
+          )
+        }
       );
     },
     list_backlinks: async (a) => {
@@ -7984,13 +10738,186 @@ async function serve(options = {}) {
         p
       );
       return { packets, count: packets.length };
+    },
+    // ── Phase 3 assembly tools (Plan 03-02 / ASM-02) ───────────────────────
+    get_outline: async (a) => {
+      const p = a;
+      return getOutline(
+        {
+          manager,
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
+            parseSourceHandle(`obsidian-fs://${vaultName}`)
+          )
+        },
+        p
+      );
+    },
+    // ── Phase 3 assembly tools (Plan 03-03) ──────────────────────────────────
+    search_sections: async (a) => {
+      const p = a;
+      const allVaults = manager.list();
+      const targetVaults = p.vaults ? p.vaults.map((name) => manager.require(name)) : allVaults;
+      const results = await searchSections(
+        {
+          searchHybrid: async (input) => hybridSearch({
+            query: input.query,
+            embeddingModel: defaultModel,
+            ollama,
+            vaults: input.vaults ? input.vaults.map((name) => manager.require(name)) : targetVaults,
+            topK: input.topK,
+            rrfK: 60,
+            includeBreakdown: false
+          }),
+          sectionForHit: (vaultName, notePath, chunkIdx) => {
+            let vault;
+            try {
+              vault = manager.require(vaultName);
+            } catch {
+              return null;
+            }
+            const note = vault.db.notes.getByPath(notePath);
+            if (!note) return null;
+            const chunks = vault.db.chunks.getByNote(note.id);
+            const chunk = chunks.find((c) => c.idx === chunkIdx);
+            if (!chunk) return null;
+            const section = vault.db.sections.findContainingChunk(note.id, chunk.id);
+            if (!section) return null;
+            let headingPath;
+            try {
+              const parsed = JSON.parse(section.heading_path);
+              headingPath = Array.isArray(parsed) ? parsed : [];
+            } catch {
+              headingPath = [];
+            }
+            return {
+              noteId: note.id,
+              anchor: section.anchor,
+              headingPath,
+              // Sections with a NULL chunk_id_first have been filtered out
+              // by findContainingChunk (it requires non-NULL bounds), so
+              // chunk_id_first is guaranteed non-null here. Fall back to
+              // MAX_SAFE_INTEGER defensively for the tie-break sort.
+              chunkIdFirst: section.chunk_id_first ?? Number.MAX_SAFE_INTEGER
+            };
+          },
+          readDocument: async (vaultName, notePath) => {
+            const docId = formatDocId("obsidian-fs", vaultName, notePath);
+            return adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)).readDocument(docId);
+          },
+          displayUrlFor: (docId, vaultName) => {
+            const source = adapterRegistry.resolveSource(
+              parseSourceHandle(`obsidian-fs://${vaultName}`)
+            );
+            return source.formatDisplayUrl?.(docId) ?? docId;
+          }
+        },
+        {
+          query: p.query,
+          limit: p.limit ?? 10,
+          ...p.vaults !== void 0 ? { vaults: p.vaults } : {},
+          ...p.recency_weight !== void 0 ? { recency_weight: p.recency_weight } : {},
+          ...p.authority_weight !== void 0 ? { authority_weight: p.authority_weight } : {},
+          ...p.include_superseded !== void 0 ? { include_superseded: p.include_superseded } : {}
+        }
+      );
+      return { results, count: results.length };
+    },
+    // ── Phase 3 assembly tools (Plan 03-06) ────────────────────────────────
+    assemble_dossier: async (a) => {
+      const p = a;
+      return assembleDossier(
+        {
+          manager,
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
+            parseSourceHandle(`obsidian-fs://${vaultName}`)
+          )
+        },
+        p
+      );
+    },
+    // ── Phase 4 graph tools (Plan 04-03 / GRA-01) ─────────────────────────
+    expand: async (a) => {
+      const p = a;
+      const seeds = p.seed_doc_ids.map((s) => parseDocId(s));
+      return expand(
+        {
+          manager,
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
+            parseSourceHandle(`obsidian-fs://${vaultName}`)
+          )
+        },
+        {
+          seed_doc_ids: seeds,
+          hops: p.hops,
+          direction: p.direction,
+          ...p.edge_types !== void 0 ? { edge_types: p.edge_types } : {},
+          ...p.filter_properties !== void 0 ? { filter_properties: p.filter_properties } : {},
+          include_superseded: p.include_superseded
+        }
+      );
+    },
+    // ── Phase 4 graph tools (Plan 04-05 / GRA-02) ─────────────────────────
+    cluster: async (a) => {
+      const p = a;
+      let opts;
+      if (p.query !== void 0) {
+        opts = {
+          query: p.query,
+          method: "edge-community",
+          ...p.query_top_k !== void 0 ? { query_top_k: p.query_top_k } : {},
+          ...p.force !== void 0 ? { force: p.force } : {}
+        };
+      } else {
+        const seeds = (p.seed_doc_ids ?? []).map((s) => parseDocId(s));
+        opts = {
+          seed_doc_ids: seeds,
+          method: "edge-community",
+          ...p.force !== void 0 ? { force: p.force } : {}
+        };
+      }
+      return cluster(
+        {
+          manager,
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
+            parseSourceHandle(`obsidian-fs://${vaultName}`)
+          ),
+          // Bind hybridSearch at call time — avoids the
+          // src/graph/cluster.ts → src/search/hybrid.ts circular
+          // import. The injected callback returns SearchHit[]; the
+          // dispatcher already has `ollama` + `defaultModel` in scope.
+          hybridSearch: async (vault, query, limit) => hybridSearch({
+            query,
+            embeddingModel: defaultModel,
+            ollama,
+            vaults: [vault],
+            topK: limit,
+            includeBreakdown: false,
+            ...reranker ? { reranker } : {},
+            displayUrlFor: (vaultName, notePath) => displayUrl(adapterRegistry, vaultName, notePath)
+          })
+        },
+        opts
+      );
+    },
+    // ── Phase 3 assembly tools (Plan 03-04 / ASM-01) ───────────────────────
+    get_document_bundle: async (a) => {
+      const p = a;
+      return getDocumentBundle(
+        {
+          manager,
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
+            parseSourceHandle(`obsidian-fs://${vaultName}`)
+          )
+        },
+        p
+      );
     }
   };
   for (const tool of TOOLS) {
     const name = tool.name;
     const handler = handlers[name];
     const schema = TOOL_SCHEMAS[name];
-    const needsRefinementCheck = name === "suggest_frontmatter";
+    const needsRefinementCheck = name === "suggest_frontmatter" || name === "cluster";
     server.registerTool(
       name,
       { description: tool.description, inputSchema: schema },
@@ -8003,6 +10930,9 @@ async function serve(options = {}) {
           const data = await handler(validated);
           return ok(data);
         } catch (err) {
+          if (err instanceof DocNotFoundError) {
+            return errorResponseJson({ error: "doc_not_found", doc_id: err.doc_id });
+          }
           const message = err instanceof Error ? err.message : String(err);
           return errorResponse(message);
         }
@@ -8281,7 +11211,7 @@ function handleSearchText(manager, activeVault, query, vaultFilter, topK, exclud
   }
   return out;
 }
-async function handleSearchHybrid(manager, ollama, defaultModel, activeVault, query, vaultFilter, topK, rrfK, excludePaths, reranker) {
+async function handleSearchHybrid(manager, ollama, defaultModel, activeVault, query, vaultFilter, topK, rrfK, excludePaths, reranker, recencyWeight = 0, authorityWeight = 0, halfLifeDays = 30, includeSuperseded = false, displayUrlFor2, expandOpts, expandDeps) {
   const { targets, skipped } = resolveVaultTargets(manager, vaultFilter, activeVault);
   if (targets.length === 0) {
     return {
@@ -8299,7 +11229,17 @@ async function handleSearchHybrid(manager, ollama, defaultModel, activeVault, qu
     topK: innerTopK,
     rrfK,
     includeBreakdown: true,
-    reranker
+    reranker,
+    recencyWeight,
+    authorityWeight,
+    halfLifeDays,
+    includeSuperseded,
+    ...displayUrlFor2 ? { displayUrlFor: displayUrlFor2 } : {},
+    // Phase 4 / 04-04 (D-15): forward optional expand + deps. When
+    // `expandOpts` is undefined, hybridSearch short-circuits the
+    // expand block (zero new DB reads — v1-baseline byte-identical).
+    ...expandOpts ? { expand: expandOpts } : {},
+    ...expandDeps ? { expandDeps } : {}
   });
   const filtered = hasExclude ? hits.filter((h) => !matchesAnyGlob(h.notePath, excludePaths)) : hits;
   const out = {
@@ -8560,7 +11500,13 @@ function errorResponse(message) {
     content: [{ type: "text", text: message }]
   };
 }
-var VERSION;
+function errorResponseJson(payload) {
+  return {
+    isError: true,
+    content: [{ type: "text", text: JSON.stringify(payload) }]
+  };
+}
+var VERSION, MEMORY_AUTO_DISCOVERY_FOLDER;
 var init_server = __esm({
   "src/server.ts"() {
     "use strict";
@@ -8578,6 +11524,9 @@ var init_server = __esm({
     init_sentinel();
     init_memory();
     init_tools();
+    init_search_sections();
+    init_outline();
+    init_assembly();
     init_audit3();
     init_obsidian_fs3();
     init_indexer2();
@@ -8585,6 +11534,7 @@ var init_server = __esm({
     init_registry();
     init_obsidian_fs();
     VERSION = "1.0.0";
+    MEMORY_AUTO_DISCOVERY_FOLDER = "_memory";
   }
 });
 

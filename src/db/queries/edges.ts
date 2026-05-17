@@ -78,6 +78,22 @@ export interface EdgeBrokenLinkRow {
   lineNumber: number | null;
 }
 
+/**
+ * Row shape returned by `getAllForNodes` — Phase 4 / 04-05 / GRA-02.
+ *
+ * Carries the full edge metadata needed by `cluster()` to build an
+ * undirected graphology graph (source + target DocIds), collapse
+ * parallel edges by `(min(src,tgt), max(src,tgt))`, skip self-loops,
+ * and pass the result into Louvain.
+ */
+export interface EdgeRowFull {
+  sourceDoc: number;
+  targetDoc: number;
+  type: EdgeType;
+  anchor: string | null;
+  lineNumber: number | null;
+}
+
 export class EdgesQueries {
   private readonly _insert: BetterSqlite3.Statement;
   private readonly _deleteByNote: BetterSqlite3.Statement<[number]>;
@@ -257,6 +273,55 @@ export class EdgesQueries {
       sourceNoteId: r.source_doc,
       targetPath: r.target_path,
       type: r.type,
+      lineNumber: r.line_number,
+    }));
+  }
+
+  /**
+   * Phase 4 / 04-05 / GRA-02 — return ALL resolved edges whose BOTH
+   * endpoints (`source_doc` AND `target_doc`) lie inside the input
+   * `noteIds` set. Unresolved edges (`target_doc IS NULL`) are excluded
+   * — `cluster()` operates only on the resolved-DocId graph.
+   *
+   * The implementation uses a dynamic `IN (?, ?, …)` clause on both the
+   * source and target columns; the placeholders are integer noteIds, so
+   * there is no SQL-injection vector (the input type is `number[]`, not
+   * caller-supplied strings). The statement is NOT cached because the
+   * placeholder count varies per call and this method is invoked at most
+   * once per `cluster()` call.
+   *
+   * Self-loops are not filtered here because the `edges` table does not
+   * store them (the indexer skips `source === target`); `cluster()`
+   * defensively filters at graph-build time anyway (Plan 04-05 task 2).
+   *
+   * Empty input → empty output (no SQL executed). Single-node input →
+   * empty output (no in-set edge possible because target ∉ {noteId}).
+   */
+  getAllForNodes(noteIds: readonly number[]): EdgeRowFull[] {
+    if (noteIds.length === 0) return [];
+    const placeholders = noteIds.map(() => "?").join(", ");
+    const sql = `
+      SELECT source_doc, target_doc, type, anchor, line_number
+        FROM edges
+       WHERE source_doc IN (${placeholders})
+         AND target_doc IN (${placeholders})
+         AND target_doc IS NOT NULL
+    `;
+    const stmt = this.db.prepare<
+      number[],
+      {
+        source_doc: number;
+        target_doc: number;
+        type: EdgeType;
+        anchor: string | null;
+        line_number: number | null;
+      }
+    >(sql);
+    return stmt.all(...noteIds, ...noteIds).map((r) => ({
+      sourceDoc: r.source_doc,
+      targetDoc: r.target_doc,
+      type: r.type,
+      anchor: r.anchor,
       lineNumber: r.line_number,
     }));
   }

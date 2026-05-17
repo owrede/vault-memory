@@ -810,6 +810,64 @@ export const TOOLS = [
       },
     },
   },
+  // ── Phase 4 graph tools (Plan 04-05 / GRA-02) ───────────────────────────
+  {
+    name: "cluster",
+    description:
+      "Community detection over the typed-edge graph via Louvain " +
+      "modularity (Blondel et al. 2008) using `graphology` + " +
+      "`graphology-communities-louvain`. Deterministic: same input " +
+      "produces byte-identical cluster_id assignment via DocId-sorted " +
+      "node insertion + seeded RNG (`vault-memory-cluster-v1`). " +
+      "cluster_id = smallest member DocId per community. Hard-capped at " +
+      "5000 nodes; pass `force: true` to override. Either `query` " +
+      "(composes search_hybrid + expand 1-hop) OR `seed_doc_ids` (uses " +
+      "provided seeds + induced 1-hop neighborhood); not both — passing " +
+      "both returns {ok:false, reason:'both_seeds_and_query'}. Returns " +
+      "per-cluster {cluster_id, size, members[], summary: {top_types, " +
+      "top_titles, edge_density}}. No LLM enrichment — summary fields " +
+      "are pure-deterministic computations (LLM enrichment is Phase 5 " +
+      "brief layer's job). _memory opacity inherited from expand() " +
+      "(Plan 04-03).",
+    inputSchema: {
+      type: "object",
+      required: ["method"],
+      properties: {
+        query: {
+          type: "string",
+          description:
+            "Natural-language query. When set, composes search_hybrid + expand(hops=1, both). Mutually exclusive with seed_doc_ids.",
+        },
+        seed_doc_ids: {
+          type: "array",
+          minItems: 1,
+          items: { type: "string" },
+          description:
+            "1+ opaque DocIds. When set, cluster() uses these seeds + their induced 1-hop neighborhood. Mutually exclusive with query.",
+        },
+        method: {
+          type: "string",
+          enum: ["edge-community"],
+          description:
+            "Clustering algorithm. v2.0.0 supports only 'edge-community' (Louvain).",
+        },
+        query_top_k: {
+          type: "integer",
+          minimum: 1,
+          maximum: 200,
+          default: 50,
+          description:
+            "Only used in the query path: how many top hits to retrieve before expansion. Default 50.",
+        },
+        force: {
+          type: "boolean",
+          default: false,
+          description:
+            "Bypass the 5000-node hard cap. When false (default), oversized inputs return {ok:false, reason:'node_count_exceeded'}.",
+        },
+      },
+    },
+  },
   // ── Phase 3 assembly tools (Plan 03-06) ──────────────────────────────────
   {
     name: "assemble_dossier",
@@ -1227,6 +1285,23 @@ export const TOOL_SCHEMAS = {
       ),
   },
 
+  // ── Phase 4 graph tools (Plan 04-05 / GRA-02) ───────────────────────────
+  //
+  // The cluster tool's schema is unusual: it requires EXACTLY ONE of
+  // `query` or `seed_doc_ids` (mutual exclusion per D-15a). Zod can't
+  // model "exactly one" in a raw shape directly — we declare the union
+  // of both shapes in `SCHEMA_BUILDERS` below; here we publish the raw
+  // shape so the MCP SDK's `tools/list` JSON Schema projection still
+  // works. The runtime path goes through `buildToolSchema("cluster")`
+  // which calls the SCHEMA_BUILDERS entry.
+  cluster: {
+    query: z.string().min(1).optional(),
+    seed_doc_ids: z.array(z.string().regex(DOC_ID_PATTERN)).min(1).optional(),
+    method: z.literal("edge-community"),
+    query_top_k: z.number().int().positive().max(200).optional().default(50),
+    force: z.boolean().optional().default(false),
+  },
+
   // ── Phase 3 assembly tools (Plan 03-06) ─────────────────────────────────
   assemble_dossier: {
     type: z
@@ -1260,6 +1335,24 @@ const SCHEMA_BUILDERS: Partial<Record<ToolName, () => z.ZodTypeAny>> = {
       .refine((v) => v.path !== undefined || v.content !== undefined, {
         message: "suggest_frontmatter requires either `path` or `content`",
       }),
+  // Plan 04-05 / D-15a — EXACTLY ONE of `query` or `seed_doc_ids` must
+  // be present. The runtime path also returns a structured
+  // {ok:false, reason:'both_seeds_and_query'} error when both are set,
+  // so this Zod refinement is the early-rejection gate at the MCP
+  // boundary (cluster's internal validator handles the same case for
+  // direct callers that bypass Zod).
+  cluster: () =>
+    z
+      .object(TOOL_SCHEMAS.cluster)
+      .refine(
+        (v) =>
+          (v.query !== undefined && v.seed_doc_ids === undefined) ||
+          (v.query === undefined && v.seed_doc_ids !== undefined),
+        {
+          message:
+            "cluster requires EXACTLY ONE of `query` or `seed_doc_ids` (D-15a mutual exclusion)",
+        },
+      ),
 };
 
 /**
