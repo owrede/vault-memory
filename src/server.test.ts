@@ -564,7 +564,7 @@ describe("Plan 02-04: MEM-02 (record_observation) + MEM-04 (supersede) end-to-en
     // (adds `search_sections`); Plan 03-06 grows it to 29 (adds
     // `assemble_dossier`); Plan 03-04 grows it to 30 (adds
     // `get_document_bundle`). The 23-entry v1 prefix remains byte-identical.
-    expect(TOOLS).toHaveLength(30);
+    expect(TOOLS).toHaveLength(31);
 
     const ro = TOOLS.find((t) => t.name === "record_observation");
     const sup = TOOLS.find((t) => t.name === "supersede");
@@ -915,7 +915,7 @@ describe("Plan 02-05: MEM-03 recall end-to-end", () => {
     expect(names).toContain("get_outline");
     expect(names).toContain("assemble_dossier");
     expect(names).toContain("get_document_bundle");
-    expect(TOOLS).toHaveLength(30);
+    expect(TOOLS).toHaveLength(31);
   });
 
   it("recall against the v2 fixture: 'Atlas pilot' returns the live 2026-04-16 doc; the 2026-04-20 superseded doc is hidden", async () => {
@@ -1455,7 +1455,7 @@ describe("Plan 02-06: MCP Resources (MEM-09)", () => {
     // (27 → 28), 03-06 added `assemble_dossier` (28 → 29), and 03-04
     // added `get_document_bundle` (29 → 30); the resource invariant
     // still holds at the new count.
-    expect(TOOLS).toHaveLength(30);
+    expect(TOOLS).toHaveLength(31);
     // Spot-check: no memory_stats or list_sinks tool exists.
     const names = TOOLS.map((t) => t.name);
     expect(names).not.toContain("memory_stats");
@@ -1533,5 +1533,110 @@ describe("Plan 02-06: audit_log filters memory-sink writes (MEM-08)", () => {
     } finally {
       db.close();
     }
+  });
+});
+
+// ─── Plan 04-03 (GRA-01) — `expand` tool registration ─────────────────────
+describe("Plan 04-03: expand MCP tool", () => {
+  it("Test 1: expand is registered in TOOLS with a long-form description", async () => {
+    const { TOOLS } = await import("./tool-registry.js");
+    const tool = TOOLS.find((t) => t.name === "expand");
+    expect(tool).toBeDefined();
+    // Description MUST cover all locked rules (Test 5 from the plan).
+    expect((tool?.description ?? "").length).toBeGreaterThan(0);
+    expect(tool?.description).toContain("hop");
+    expect(tool?.description).toContain("2"); // hop cap 2 mentioned
+    expect(tool?.description).toContain("_memory"); // opacity rule
+    expect(tool?.description).toContain("ADR-004"); // ADR cite
+    // Allowlist constants explicitly named (Pitfall-6 reference).
+    expect(tool?.description).toContain("assignee");
+    expect(tool?.description).toContain("owner");
+    expect(tool?.description).toContain("project");
+    expect(tool?.description).toContain("related");
+    expect(tool?.description).toContain("parent");
+    expect(tool?.description).toContain("child");
+    expect(tool?.description).toContain("attendees");
+    expect(tool?.description).toContain("superseded_by");
+  });
+
+  it("Test 2: Zod rejects hops: 3 (literal union 1 | 2)", async () => {
+    const { buildToolSchema } = await import("./tool-registry.js");
+    const schema = buildToolSchema("expand");
+    const r = schema.safeParse({
+      seed_doc_ids: ["obsidian-fs://v/a.md"],
+      hops: 3,
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("Test 3: Zod rejects empty seed_doc_ids (min: 1 per Plan 04-03 choice)", async () => {
+    const { buildToolSchema } = await import("./tool-registry.js");
+    const schema = buildToolSchema("expand");
+    const r = schema.safeParse({
+      seed_doc_ids: [],
+      hops: 1,
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("Test 4: Zod accepts optional fields and fills defaults when omitted", async () => {
+    const { buildToolSchema } = await import("./tool-registry.js");
+    const schema = buildToolSchema("expand");
+    const r = schema.safeParse({
+      seed_doc_ids: ["obsidian-fs://v/a.md"],
+      hops: 1,
+    });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      // direction defaults to 'both'; include_superseded defaults to false.
+      const parsed = r.data as {
+        direction: string;
+        include_superseded: boolean;
+        edge_types?: string[];
+        filter_properties?: Record<string, unknown>;
+      };
+      expect(parsed.direction).toBe("both");
+      expect(parsed.include_superseded).toBe(false);
+    }
+    // Also accepts edge_types + filter_properties when explicitly supplied.
+    const r2 = schema.safeParse({
+      seed_doc_ids: ["obsidian-fs://v/a.md", "obsidian-fs://v/b.md"],
+      hops: 2,
+      direction: "forward",
+      edge_types: ["wikilink", "mention"],
+      filter_properties: { type: "Project" },
+      include_superseded: true,
+    });
+    expect(r2.success).toBe(true);
+  });
+
+  it("Test 5: Zod rejects unknown edge_types", async () => {
+    const { buildToolSchema } = await import("./tool-registry.js");
+    const schema = buildToolSchema("expand");
+    const r = schema.safeParse({
+      seed_doc_ids: ["obsidian-fs://v/a.md"],
+      hops: 1,
+      edge_types: ["embed"], // not in the closed union
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("Test 6: Zod rejects malformed seed_doc_ids (DOC_ID_PATTERN regex)", async () => {
+    const { buildToolSchema } = await import("./tool-registry.js");
+    const schema = buildToolSchema("expand");
+    // Missing scheme separator.
+    const r = schema.safeParse({
+      seed_doc_ids: ["not-a-uri"],
+      hops: 1,
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("Test 7: TOOLS length is 31 (additive — does not modify v1 tools)", async () => {
+    const { TOOLS } = await import("./tool-registry.js");
+    expect(TOOLS).toHaveLength(31);
+    // The 23-v1-tool prefix is byte-identical (asserted in baseline.test.ts).
+    const names = TOOLS.map((t) => t.name);
+    expect(names).toContain("expand");
   });
 });
