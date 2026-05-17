@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: release
-status: phase_complete
-stopped_at: Phase 4 complete
-last_updated: "2026-05-17T22:30:00.000Z"
+status: ready_to_plan
+stopped_at: Phase 04 complete (7/7) — ready to discuss Phase 5
+last_updated: 2026-05-17T21:14:44.641Z
 last_activity: 2026-05-17 -- Phase 04 complete; sign-off doc + tool-list regen
 progress:
   total_phases: 10
@@ -21,12 +21,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-14)
 
 **Core value:** Local-first, source-agnostic-ready, agentic knowledge layer over your Obsidian notes — with the memory namespace as a non-negotiable safety invariant.
-**Current focus:** Phase 05 — compiled brief layer (next)
+**Current focus:** Phase 5 — compiled brief layer
 
 ## Current Position
 
-Phase: 04 (graph-as-retrieval) — COMPLETE (2026-05-17)
-Plan: 7 of 7 (all complete)
+Phase: 5
+Plan: Not started
 Plans: 7 implementation slices, all signed off. Phase 4 sign-off doc at `docs/v2/PHASE-4-SIGN-OFF.md`.
 
 Phase 4 ships:
@@ -42,7 +42,7 @@ Phase 4 ships:
 - 3 new deps (Phase 4 plan 04-05): `graphology`, `graphology-communities-louvain`, `seedrandom` — all pure-JS ESM MIT, provenance-verified; bundle 376KB → 392KB
 
 Next: `/gsd-plan-phase 5` — Compiled brief layer (BRF-01..BRF-11).
-Last activity: 2026-05-17 -- Phase 04 complete; sign-off doc + tool-list regen
+Last activity: 2026-05-17
 
 ---
 
@@ -64,7 +64,7 @@ Progress: [██████████████░░░░░░] 50%
 
 **Velocity:**
 
-- Total plans completed: 16
+- Total plans completed: 23
 - Average duration: —
 - Total execution time: 0 hours
 
@@ -73,6 +73,7 @@ Progress: [██████████████░░░░░░] 50%
 | Phase | Plans | Total | Avg/Plan |
 |-------|-------|-------|----------|
 | 02 | 16 | - | - |
+| 04 | 7 | - | - |
 
 **Recent Trend:**
 
