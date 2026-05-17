@@ -47,7 +47,20 @@ findings:
   warning: 7
   info: 4
   total: 13
-status: issues_found
+status: blockers_resolved
+fixes:
+  CR-01:
+    status: resolved
+    commit: 45659c5
+    artifact: migration 012 + widened idx_edges_unique + 5 regression tests
+  CR-02:
+    status: resolved
+    commit: 06d45a0
+    artifact: cluster() query-path requires `vault` on multi-vault setups + 4 regression tests
+remaining:
+  warnings: 7
+  info: 4
+  recommendation: triage in a follow-up gap-closure phase or close out individually
 ---
 
 # Phase 4: Code Review Report
@@ -55,7 +68,7 @@ status: issues_found
 **Reviewed:** 2026-05-17
 **Depth:** standard
 **Files Reviewed:** 38
-**Status:** issues_found
+**Status:** blockers_resolved (CR-01 fixed in 45659c5, CR-02 fixed in 06d45a0; 7 warnings + 4 info remain)
 
 ## Summary
 
