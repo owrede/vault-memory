@@ -23,6 +23,13 @@ import type { Vault } from "../vault/index.js";
 import type { DocId, SearchHit, SourceHandle } from "../types.js";
 import type { Reranker } from "../rerank/index.js";
 import { formatDocId, parseSourceHandle } from "../adapters/registry.js";
+import {
+  expand,
+  type CitationPacketWithVia,
+  type ExpandDeps,
+  type ExpandDirection,
+} from "../graph/index.js";
+import type { EdgeType } from "../db/queries/edges.js";
 
 export interface HybridSearchOptions {
   query: string;
@@ -99,6 +106,32 @@ export interface HybridSearchOptions {
    * the relevant vault; tests can omit it (no `display_url` populated).
    */
   displayUrlFor?: (vaultName: string, notePath: string) => string;
+  // ── Phase 4 / 04-04 / GRA-03 (D-15, D-16): additive auto-expansion ──
+  //
+  // When `opts.expand` is undefined (the v1/v2 default), this guard
+  // short-circuits entirely — zero new DB reads, zero new computation,
+  // preserving v1-baseline byte-identical behavior. Expand runs AFTER
+  // Phase 3 recency/authority rescore so that expansions attach to the
+  // RESCORED top-K (D-16). Expand never participates in score
+  // computation; top-K ranking is stable.
+  //
+  // `expand` and `expandDeps` MUST be supplied together. When only
+  // one is set, the guard silently no-ops (defensive: callers wiring
+  // this up incrementally see no behavior change until both are
+  // provided). The dependency injection mirrors `displayUrlFor` — the
+  // graph-traversal seam stays out of hybrid.ts's transitive imports
+  // by surfacing it as an optional dep on the call site.
+  /** Optional auto-expansion settings (D-15). When set, each hit
+   *  gains an additive `expansions: CitationPacketWithVia[]` field. */
+  expand?: {
+    hops: 1 | 2;
+    direction?: ExpandDirection;
+    edge_types?: EdgeType[];
+  };
+  /** Injected dependencies required by `expand()` — `manager` and
+   *  `sourceConnectorFor`. Required whenever `expand` is set; ignored
+   *  otherwise. */
+  expandDeps?: ExpandDeps;
 }
 
 const DEFAULT_TOP_K = 10;
@@ -453,6 +486,64 @@ export async function hybridSearch(opts: HybridSearchOptions): Promise<SearchHit
       }
     }
     hits.push(hit);
+  }
+
+  // ── Phase 4 / 04-04 / GRA-03 (D-15, D-16): post-rescore expand attachment ──
+  //
+  // When `opts.expand` is undefined (the v1/v2 default), this guard
+  // short-circuits entirely — zero new DB reads, zero new computation,
+  // preserving v1-baseline byte-identical behavior. Expand runs AFTER
+  // Phase 3 recency/authority rescore and AFTER hit hydration so that
+  // expansions attach to the RESCORED top-K (D-16). Expand never
+  // participates in score computation; top-K ranking is stable.
+  //
+  // Deviation from plan §<action> pseudocode (Rule 3 - Blocking):
+  // the plan referenced `expand(vault, {...})` but the actual
+  // `expand()` signature is `expand(deps, opts)` where `deps =
+  // {manager, sourceConnectorFor}` (locked by Plan 04-03). We use the
+  // real signature and inject deps via `opts.expandDeps`. A single
+  // expand() call handles ALL hit seeds — `expand()` already groups
+  // seeds by vault internally (see `src/graph/expand.ts` `byVault`
+  // map), so cross-vault traversal is already prevented at the
+  // expand() boundary (T-04-04-02 mitigation: per-vault BFS isolation
+  // happens inside expand()).
+  if (opts.expand && opts.expandDeps && hits.length > 0) {
+    const seedDocIds: DocId[] = [];
+    for (const hit of hits) {
+      if (hit.doc_id !== undefined) seedDocIds.push(hit.doc_id);
+    }
+    if (seedDocIds.length > 0) {
+      try {
+        const expansionInput: Parameters<typeof expand>[1] = {
+          seed_doc_ids: seedDocIds,
+          hops: opts.expand.hops,
+          direction: opts.expand.direction ?? "both",
+        };
+        if (opts.expand.edge_types !== undefined) {
+          expansionInput.edge_types = opts.expand.edge_types;
+        }
+        const result = await expand(opts.expandDeps, expansionInput);
+        // Group by `via.seed_doc_id` (D-15). One pass; O(n) where n is
+        // the total expansion-doc count.
+        const bySeed = new Map<DocId, CitationPacketWithVia[]>();
+        for (const doc of result.documents) {
+          const seedId = doc.via.seed_doc_id;
+          const arr = bySeed.get(seedId);
+          if (arr) arr.push(doc);
+          else bySeed.set(seedId, [doc]);
+        }
+        for (const hit of hits) {
+          if (hit.doc_id !== undefined) {
+            hit.expansions = bySeed.get(hit.doc_id) ?? [];
+          }
+        }
+      } catch {
+        // Expand failures are silent. The rest of the hybrid result
+        // is intact; only the `expansions` field stays unset. This
+        // matches the defensive posture of the reranker fallback
+        // (lines 342–347 above).
+      }
+    }
   }
 
   return hits;

@@ -257,6 +257,37 @@ export interface SearchHit {
   superseded_by?: string;
   /** Shallow copy of the parsed frontmatter (`notes.frontmatter` JSON). */
   properties?: Record<string, unknown>;
+  // ── Phase 4 / 04-04 / GRA-03 (D-15): additive expansions field ──
+  //
+  // When `search_hybrid({expand: {hops}})` is supplied, `hybridSearch`
+  // attaches the 1–2 hop typed-edge neighborhood of this hit's doc_id
+  // here AFTER Phase 3 rescore (D-16). The field is strictly additive:
+  // when `expand` is omitted, the field stays `undefined` and is omitted
+  // from the JSON response — v1 callers see byte-identical output.
+  //
+  // The element type is `CitationPacketWithVia` defined in
+  // `src/graph/expand.ts`. We declare it structurally inline here so
+  // that `types.ts` does NOT take a top-level import dependency on the
+  // graph layer (the type dependency direction stays `graph → types`,
+  // not the reverse). The structural shape MUST stay in sync with
+  // `CitationPacketWithVia` extends `CitationPacket` (8-field shape
+  // from `src/memory/citation-packet.ts`).
+  expansions?: Array<{
+    doc_id: DocId;
+    source_handle: SourceHandle;
+    title: string;
+    heading_path: string[];
+    mtime: number;
+    hash: string;
+    display_url: string;
+    properties: Record<string, unknown>;
+    via: {
+      seed_doc_id: DocId;
+      hop: 1 | 2;
+      edge_type: "wikilink" | "mention" | "frontmatter-ref" | "hyperlink";
+      direction: "forward" | "backward";
+    };
+  }>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
