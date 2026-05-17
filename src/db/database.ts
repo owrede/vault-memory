@@ -6,6 +6,7 @@ import { NotesQueries } from "./queries/notes.js";
 import { ChunksQueries } from "./queries/chunks.js";
 import { EmbeddingsQueries } from "./queries/embeddings.js";
 import { WikilinksQueries } from "./queries/wikilinks.js";
+import { EdgesQueries } from "./queries/edges.js";
 import { AuditQueries } from "./queries/audit.js";
 import { ModelsQueries } from "./queries/models.js";
 import { FtsQueries } from "./queries/fts.js";
@@ -27,6 +28,8 @@ export class Database {
   readonly chunks: ChunksQueries;
   readonly embeddings: EmbeddingsQueries;
   readonly wikilinks: WikilinksQueries;
+  /** Phase 4 / 04-01 / GRA-04: typed-edge substrate (`vault.db.edges`). */
+  readonly edges: EdgesQueries;
   readonly audit: AuditQueries;
   readonly models: ModelsQueries;
   readonly fts: FtsQueries;
@@ -67,6 +70,9 @@ export class Database {
     this.models = new ModelsQueries(this.handle);
     this.embeddings = new EmbeddingsQueries(this.handle, this.models);
     this.wikilinks = new WikilinksQueries(this.handle);
+    // Phase 4 / 04-01 / GRA-04 (D-01): edges substrate. Only prepares
+    // statements; construction order is independent of other namespaces.
+    this.edges = new EdgesQueries(this.handle);
     this.audit = new AuditQueries(this.handle);
     this.fts = new FtsQueries(this.handle);
     this.aliases = new AliasesQueries(this.handle);
