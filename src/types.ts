@@ -221,6 +221,42 @@ export interface SearchHit {
      *  when a reranker was applied. */
     rerank?: number;
   };
+  // ── Phase 3 / 03-05 (ASM-06): nine optional citation-shaped fields ──
+  //
+  // Strictly additive (D-08). All are `?` so a v1 caller that does not
+  // request the new behavior (no `recency_weight` / `authority_weight`,
+  // `include_superseded = false`, no chunk that maps to a section)
+  // continues to receive a `SearchHit` whose JSON output is byte-identical
+  // to v1 — every new field is `undefined` and JSON-omitted.
+  //
+  // Field naming uses snake_case (per RESEARCH §10 "Open questions" — keep
+  // the citation-packet shape consistent across `search_hybrid` and
+  // `record_observation` / `supersede` / `recall`). The existing v1 fields
+  // (`notePath`, `chunkText`, `headingPath`) remain camelCase; the mixed
+  // case within this interface is intentional and additive-only.
+
+  /** Opaque, branded DocId (e.g. `obsidian-fs://my-vault/notes/foo.md`). */
+  doc_id?: DocId;
+  /** Adapter source-handle (e.g. `obsidian-fs://my-vault`). */
+  source_handle?: SourceHandle;
+  /** Section heading-path when the chunk maps to a section
+   *  (`SectionsQueries.findContainingChunk`); `undefined` for doc-level
+   *  hits with no enclosing section. */
+  heading_path?: string[];
+  /** `notes.mtime` (epoch ms). Always populated when hydration succeeds. */
+  mtime?: number;
+  /** `notes.hash` content hash. Always populated when hydration succeeds. */
+  hash?: string;
+  /** Adapter-provided deep-link URL (e.g. an obsidian deep link). */
+  display_url?: string;
+  /** Frontmatter `status` value (e.g. "active", "superseded", "archived").
+   *  Read from the denormalized `notes.status` column (migration 010 B). */
+  status?: string;
+  /** When `status === "superseded"`, the `supersedes` chain target if
+   *  declared in frontmatter (`frontmatter.superseded_by` or similar). */
+  superseded_by?: string;
+  /** Shallow copy of the parsed frontmatter (`notes.frontmatter` JSON). */
+  properties?: Record<string, unknown>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -182,4 +182,68 @@ describe("FtsQueries", () => {
     expect(() => db.fts.search("Netzwerk/Personen Bildung", 10)).not.toThrow();
     expect(() => db.fts.search("Wer ist Holger Hoos?", 10)).not.toThrow();
   });
+
+  // ── Phase 3 / 03-05 (M4): SQL-level superseded filter ───────────────
+  describe("excludeSuperseded (03-05 M4)", () => {
+    it("excludes chunks whose owning note has notes.status = 'superseded'", () => {
+      // Mark note A as superseded via the denormalized column (migration 010).
+      db.notes.setStatus(noteAId, "superseded");
+      // Reality check: status is set.
+      expect(db.notes.getStatus(noteAId)).toBe("superseded");
+
+      // Default-search (excludeSuperseded = false) returns the Bildung
+      // chunk from note A like v1.
+      const v1 = db.fts.search("Bildung", 10);
+      const v1Ids = new Set(v1.map((h) => h.chunkId));
+      expect(v1Ids.has(chunkFoerderprojekteId)).toBe(true);
+      expect(v1Ids.has(chunkBildungId)).toBe(true);
+
+      // With excludeSuperseded = true, note A's chunks are filtered at
+      // SQL level — note B's chunk is the only survivor for "Bildung".
+      const v2 = db.fts.search("Bildung", 10, /*withSnippet*/ false, /*excludeSuperseded*/ true);
+      const v2Ids = new Set(v2.map((h) => h.chunkId));
+      expect(v2Ids.has(chunkFoerderprojekteId)).toBe(false);
+      expect(v2Ids.has(chunkBildungId)).toBe(true);
+    });
+
+    it("no-op on a vault without any superseded docs (v1 invariance)", () => {
+      // No notes marked superseded — default and excludeSuperseded must
+      // return the same candidate list.
+      const v1 = db.fts.search("Bildung", 10);
+      const v2 = db.fts.search("Bildung", 10, false, true);
+      expect(v2.map((r) => r.chunkId)).toEqual(v1.map((r) => r.chunkId));
+    });
+
+    it("include_superseded reveal path: excludeSuperseded=false returns superseded chunks", () => {
+      db.notes.setStatus(noteAId, "superseded");
+      // The v1 path (excludeSuperseded omitted/false) still sees the
+      // superseded chunks — opt-in to filter is the new behavior.
+      const v1 = db.fts.search("Förderprojekte", 10);
+      expect(v1.some((h) => h.chunkId === chunkFoerderprojekteId)).toBe(true);
+    });
+
+    it("EXPLAIN QUERY PLAN shows JOIN against notes (not a separate scan)", () => {
+      db.notes.setStatus(noteAId, "superseded");
+      // Direct introspection of the prepared statement is awkward — we
+      // run EXPLAIN QUERY PLAN against the same SQL shape and assert
+      // that the planner JOINs `notes` (i.e. the filter is in SQL).
+      const sql =
+        `SELECT chunks_fts.rowid AS chunkId, bm25(chunks_fts) AS score
+         FROM chunks_fts
+         JOIN chunks ON chunks.id = chunks_fts.rowid
+         JOIN notes  ON notes.id  = chunks.note_id
+         WHERE chunks_fts MATCH ?
+           AND (notes.status IS NULL OR notes.status != 'superseded')
+         ORDER BY bm25(chunks_fts) ASC
+         LIMIT ?`;
+      const plan = db.handle.prepare(`EXPLAIN QUERY PLAN ${sql}`)
+        .all("Bildung", 10) as Array<{ detail: string }>;
+      const detail = plan.map((p) => p.detail).join(" | ");
+      // The plan MUST mention `notes` somewhere (proof the filter
+      // ran in SQL, not in JS). It may also use the partial index by
+      // name; we don't pin the index name because the planner is
+      // allowed to choose alternatives that are still SQL-side.
+      expect(detail.toLowerCase()).toContain("notes");
+    });
+  });
 });

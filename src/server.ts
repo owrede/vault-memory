@@ -388,6 +388,13 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
         rrf_k: number;
         exclude_paths?: string[];
         rerank: boolean;
+        // Phase 3 / 03-05 additive params — Zod fills defaults so these
+        // are always present after validation. v1 callers omit them and
+        // get the v1-identical default behavior.
+        recency_weight: number;
+        authority_weight: number;
+        half_life_days: number;
+        include_superseded: boolean;
       };
       return handleSearchHybrid(
         manager,
@@ -400,6 +407,14 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
         p.rrf_k,
         p.exclude_paths,
         p.rerank ? reranker : undefined,
+        p.recency_weight,
+        p.authority_weight,
+        p.half_life_days,
+        p.include_superseded,
+        // 03-05: display-URL resolver — delegates to the obsidian-fs source
+        // adapter (or whichever adapter owns the vault) so hybrid.ts never
+        // mints adapter URL strings (ADR-002 §I-5b).
+        (vaultName, notePath) => displayUrl(adapterRegistry, vaultName, notePath),
       );
     },
     list_backlinks: async (a) => {
@@ -1302,6 +1317,14 @@ async function handleSearchHybrid(
   rrfK: number,
   excludePaths: string[] | undefined,
   reranker: Reranker | undefined,
+  // Phase 3 / 03-05 additive params — D-07/D-08/ASM-07/ASM-08.
+  recencyWeight: number = 0,
+  authorityWeight: number = 0,
+  halfLifeDays: number = 30,
+  includeSuperseded: boolean = false,
+  // Phase 3 / 03-05: optional display-URL resolver (ADR-002 §I-5b
+  // seam-preserving — the URL literal lives in the adapter, not here).
+  displayUrlFor?: (vaultName: string, notePath: string) => string,
 ): Promise<object> {
   const { targets, skipped } = resolveVaultTargets(manager, vaultFilter, activeVault);
 
@@ -1330,6 +1353,11 @@ async function handleSearchHybrid(
     rrfK,
     includeBreakdown: true,
     reranker,
+    recencyWeight,
+    authorityWeight,
+    halfLifeDays,
+    includeSuperseded,
+    ...(displayUrlFor ? { displayUrlFor } : {}),
   });
 
   const filtered = hasExclude

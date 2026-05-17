@@ -214,6 +214,44 @@ export class NotesQueries {
     const info = this._setStatus.run({ id: noteId, status });
     return info.changes;
   }
+
+  /**
+   * Phase 3 / 03-05 (M4): return the subset of `chunkIds` whose owning
+   * note has `notes.status = 'superseded'`. Used by `searchOneVault` to
+   * filter the vec0 ANN candidate list at the SQL level after the kNN
+   * search (vec0 virtual tables do not support inline JOINs the way
+   * FTS5 does).
+   *
+   * Uses the `notes_status` partial index (migration 010) — superseded
+   * notes are rare, so the index is tiny and lookups are cheap.
+   *
+   * The query parameterizes a variable-length IN clause; we generate
+   * the placeholders inline rather than re-preparing the statement
+   * because the chunk-id list varies per call. better-sqlite3's
+   * `pluck()` returns a flat array of scalar column values when the
+   * SELECT projects a single column — we lean on that to avoid an
+   * extra map step.
+   */
+  getSupersededChunkIds(chunkIds: readonly number[]): Set<number> {
+    if (chunkIds.length === 0) return new Set<number>();
+    // Inline placeholders — chunkIds are int primary keys from our own
+    // DB, never user input, so injection risk is zero. Cap the list
+    // size defensively at 999 (SQLite's default SQLITE_MAX_VARIABLE_NUMBER
+    // floor) — callers asking for more should batch.
+    const ids = chunkIds.slice(0, 999);
+    const placeholders = ids.map(() => "?").join(",");
+    const sql =
+      `SELECT chunks.id AS chunkId
+         FROM chunks
+         JOIN notes ON notes.id = chunks.note_id
+        WHERE chunks.id IN (${placeholders})
+          AND notes.status = 'superseded'`;
+    const stmt = this.db.prepare<number[], { chunkId: number }>(sql);
+    // better-sqlite3 spread-args want a tuple type; widen via `as` so the
+    // variable-length IN list survives strict-mode argument typing.
+    const rows = (stmt.all as (...args: number[]) => { chunkId: number }[])(...ids);
+    return new Set(rows.map((r) => r.chunkId));
+  }
 }
 
 /**

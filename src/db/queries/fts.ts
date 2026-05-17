@@ -33,6 +33,19 @@ export class FtsQueries {
     [string, number],
     BM25RowWithSnippet
   >;
+  /**
+   * Phase 3 / 03-05 (M4 fix): same FTS5 BM25 search but JOINed against
+   * `chunks → notes` so the candidate list excludes any chunk whose
+   * owning note has `notes.status = 'superseded'`.
+   *
+   * Filter runs at the SQL level so the v1-default path (which passes
+   * `excludeSuperseded = false` from `searchOneVault`) is byte-identical
+   * to v1, and the new default-hide path performs zero per-candidate
+   * frontmatter parses. The `notes_status` partial index from migration
+   * 010 keeps the JOIN cheap (only rows with a non-null status are
+   * indexed).
+   */
+  private readonly _searchExclSup: BetterSqlite3.Statement<[string, number], BM25Row>;
 
   constructor(db: BetterSqlite3.Database) {
     this._search = db.prepare<[string, number], BM25Row>(
@@ -52,13 +65,50 @@ export class FtsQueries {
        ORDER BY bm25(chunks_fts) ASC
        LIMIT ?`,
     );
+    // 03-05 M4: SQL-level superseded filter. The JOIN against
+    // `chunks → notes` references the denormalized `notes.status` column
+    // (migration 010 part B) so we never re-parse the JSON frontmatter
+    // blob for filtering. `notes.status IS NULL` covers notes with no
+    // frontmatter status (the common case) — those are NOT superseded.
+    this._searchExclSup = db.prepare<[string, number], BM25Row>(
+      `SELECT chunks_fts.rowid AS chunkId, bm25(chunks_fts) AS score
+       FROM chunks_fts
+       JOIN chunks ON chunks.id = chunks_fts.rowid
+       JOIN notes  ON notes.id  = chunks.note_id
+       WHERE chunks_fts MATCH ?
+         AND (notes.status IS NULL OR notes.status != 'superseded')
+       ORDER BY bm25(chunks_fts) ASC
+       LIMIT ?`,
+    );
   }
 
-  search(query: string, topK: number, withSnippet = false): BM25Hit[] {
+  /**
+   * Run BM25 over `chunks_fts`.
+   *
+   * @param query                user query (sanitized internally)
+   * @param topK                 max rows to return
+   * @param withSnippet          when true, include FTS5 `snippet(...)` output
+   *                             (mutually exclusive with excludeSuperseded —
+   *                             snippets are debug/UI only, not the search path)
+   * @param excludeSuperseded    when true (03-05 M4), JOIN-and-filter against
+   *                             `notes.status` so candidates from superseded
+   *                             docs never reach the caller. v1-default path
+   *                             passes `false` and stays byte-identical.
+   */
+  search(
+    query: string,
+    topK: number,
+    withSnippet = false,
+    excludeSuperseded = false,
+  ): BM25Hit[] {
     const sanitized = FtsQueries.sanitize(query);
     if (sanitized.length === 0) return [];
 
     if (withSnippet) {
+      // Snippet path is debug/UI only — keep it on the v1 statement so
+      // 03-05 doesn't need to prepare a third statement just for the
+      // rarely-used branch. If a future caller needs `snippet + exclude
+      // superseded`, prepare a fourth statement here.
       const rows = this._searchWithSnippet.all(sanitized, topK);
       return rows.map((r) => ({
         chunkId: r.chunkId,
@@ -66,7 +116,8 @@ export class FtsQueries {
         snippet: r.snippet,
       }));
     }
-    const rows = this._search.all(sanitized, topK);
+    const stmt = excludeSuperseded ? this._searchExclSup : this._search;
+    const rows = stmt.all(sanitized, topK);
     return rows.map((r) => ({ chunkId: r.chunkId, score: -r.score }));
   }
 
