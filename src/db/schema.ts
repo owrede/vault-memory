@@ -725,6 +725,115 @@ function runMigration011(db: BetterSqlite3Database, _ctx: MigrationContext): voi
   }
 }
 
+/**
+ * Migration 012 — Phase 4 / CR-01: widen `idx_edges_unique` so that
+ * legitimate non-duplicate edges no longer collide on `INSERT OR IGNORE`.
+ *
+ * The original migration-011 unique index was
+ *   `(source_doc, COALESCE(target_doc, -1), type, COALESCE(anchor, ''))`
+ * which silently dropped four classes of distinct rows:
+ *
+ *   1. Multiple broken wikilinks from the same source (different
+ *      `target_path` but both have `target_doc IS NULL` + `anchor IS NULL`).
+ *   2. Multiple hyperlinks from the same source (`target_doc IS NULL`,
+ *      `anchor IS NULL` — only one survives per source note).
+ *   3. Multiple `frontmatter-ref` edges from the same source to the same
+ *      target with different `rel` (e.g. `{owner: [[a]], assignee: [[a]]}`).
+ *   4. Multi-line `mention` edges to the same target (line_number was not
+ *      a disambiguator).
+ *
+ * The widened key includes `target_path`, `rel`, and `line_number` (with
+ * `COALESCE` defaults for nulls so SQLite's "every NULL is distinct"
+ * default does not re-introduce the dedup-failure on the inverse axis).
+ *
+ * Three steps inside the runner's outer transaction:
+ *   A) DROP idx_edges_unique. SQLite cannot alter a unique-index
+ *      definition in place — drop + recreate is the only path.
+ *   B) CREATE the widened idx_edges_unique. If a re-run finds the wider
+ *      index already exists (e.g. partial-replay against a DB that was
+ *      hand-fixed), `IF NOT EXISTS` keeps the migration idempotent.
+ *   C) Re-run the wikilink backfill from migration 011 (broken-link rows
+ *      were lost during the narrow-key window between 011 and 012). The
+ *      backfill uses `INSERT OR IGNORE` against the now-widened key so
+ *      the rows that already survived stay untouched and the rows that
+ *      were silently dropped are re-inserted.
+ *
+ * Cross-table FKs on `edges` are untouched. CHECK constraint on
+ * `edges.type` is untouched. Read paths (`getBacklinks`, `getForwardLinks`,
+ * `getAllForNodes`) are untouched — they SELECT, never INSERT.
+ *
+ * Adapter-seam discipline: no `fs`, `path`, `gray-matter`, or `chokidar`
+ * imports anywhere in this function.
+ */
+function runMigration012(db: BetterSqlite3Database, _ctx: MigrationContext): void {
+  // ── Step A: drop the narrow index ─────────────────────────────────────
+  db.exec(`DROP INDEX IF EXISTS idx_edges_unique`);
+
+  // ── Step B: create the widened index ──────────────────────────────────
+  //
+  // COALESCE defaults:
+  //   target_doc   → -1   (notes.id is AUTOINCREMENT from 1; -1 cannot
+  //                        collide with a real note id)
+  //   target_path  → ''   (real target_path values are non-empty strings)
+  //   rel          → ''   (real rel values are non-empty per ADR-003)
+  //   anchor       → ''   (Obsidian wikilink `[[note#]]` rejects empty)
+  //   line_number  → -1   (real line numbers are 1-based positive ints)
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_edges_unique
+      ON edges(
+        source_doc,
+        COALESCE(target_doc, -1),
+        COALESCE(target_path, ''),
+        type,
+        COALESCE(rel, ''),
+        COALESCE(anchor, ''),
+        COALESCE(line_number, -1)
+      );
+  `);
+
+  // ── Step C: re-run the wikilink → edges backfill ──────────────────────
+  //
+  // Broken-wikilink rows were lost during the narrow-key window because
+  // migration 011 used `INSERT OR IGNORE` against a key that collapsed
+  // every `(source_note, target_path=*, anchor=NULL)` row to a single
+  // edges row. The widened key now distinguishes broken targets by
+  // `target_path`. Re-running the same chunked copy with the same
+  // `INSERT OR IGNORE` guard is idempotent on the already-correct rows
+  // and refills the gaps.
+  //
+  // Mirrors runMigration011 Step C verbatim (chunked at 10k rows,
+  // pagination via wikilinks.id > @after_id ORDER BY id ASC LIMIT
+  // @chunk). The zero-row short-circuit also mirrors 011 — fresh DBs
+  // do not need the backfill scan.
+  const pending = db
+    .prepare<[], { c: number }>("SELECT COUNT(*) AS c FROM wikilinks")
+    .get();
+  if (!pending || pending.c === 0) return;
+
+  const CHUNK = 10_000;
+  const copy = db.prepare(`
+    INSERT OR IGNORE INTO edges
+      (source_doc, target_doc, target_path, type, rel, anchor, line_number, link_text)
+    SELECT source_note, target_note, target_path, 'wikilink', NULL, anchor, line_number, link_text
+      FROM wikilinks
+     WHERE id > @after_id
+     ORDER BY id ASC
+     LIMIT @chunk
+  `);
+  const nextLast = db.prepare<
+    [number, number],
+    { id: number }
+  >("SELECT id FROM wikilinks WHERE id > ? ORDER BY id ASC LIMIT 1 OFFSET ?");
+
+  let lastId = 0;
+  while (true) {
+    copy.run({ after_id: lastId, chunk: CHUNK });
+    const nxt = nextLast.get(lastId, CHUNK - 1);
+    if (!nxt) break;
+    lastId = nxt.id;
+  }
+}
+
 export const MIGRATIONS: readonly Migration[] = [
   {
     version: 1,
@@ -782,5 +891,11 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 11,
     description: "edges table + backfill from wikilinks (Phase 4 / 04-01 / GRA-04)",
     run: runMigration011,
+  },
+  {
+    version: 12,
+    description:
+      "widen idx_edges_unique to include target_path/rel/line_number; re-run wikilink backfill (CR-01)",
+    run: runMigration012,
   },
 ];

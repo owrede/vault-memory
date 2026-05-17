@@ -116,7 +116,10 @@ describe("EdgesQueries / migration 011", () => {
       }
     });
 
-    it("enforces UNIQUE(source_doc, target_doc, type, anchor)", () => {
+    it("enforces UNIQUE on the widened key (exact duplicate still rejected)", () => {
+      // Widened key (migration 012, CR-01) includes target_path/rel/
+      // line_number — but two rows whose ALL disambiguator columns match
+      // (all-NULL in this test) MUST still collide.
       const { a, b } = seedNotes(db);
       db.handle
         .prepare(
@@ -251,6 +254,182 @@ describe("EdgesQueries / migration 011", () => {
         .prepare<[], { c: number }>("SELECT COUNT(*) AS c FROM edges")
         .get()?.c;
       expect(after2).toBe(1);
+    });
+
+    // ── CR-01 / migration 012: widened idx_edges_unique ───────────────
+    //
+    // The narrow key originally shipped by migration 011 silently dropped
+    // legitimate non-duplicate rows. Migration 012 widens the key to
+    // include target_path, rel, and line_number (with COALESCE defaults
+    // for nulls). These regression tests pin the four scenarios that
+    // motivated the widening:
+    //
+    //   (a) two broken wikilinks from the same source to different
+    //       targets coexist
+    //   (b) two frontmatter-ref edges to the same target with different
+    //       `rel` values coexist
+    //   (c) two `mention` edges to the same target on different lines
+    //       coexist
+    //   (d) two hyperlinks from the same source with different URLs
+    //       coexist
+    //
+    // Each test asserts the row COUNT after INSERT OR IGNORE; a count of
+    // 2 means the widened key correctly distinguishes the rows. Under
+    // the old narrow key the count would have been 1 (silent drop).
+
+    it("CR-01: two broken wikilinks from same source to different targets coexist", () => {
+      const { a } = seedNotes(db);
+      db.edges.insertBatch(a, [
+        {
+          targetNoteId: null,
+          targetPath: "ghost1.md",
+          type: "wikilink",
+          rel: null,
+          anchor: null,
+          lineNumber: 1,
+          linkText: null,
+        },
+        {
+          targetNoteId: null,
+          targetPath: "ghost2.md",
+          type: "wikilink",
+          rel: null,
+          anchor: null,
+          lineNumber: 2,
+          linkText: null,
+        },
+      ]);
+      const broken = db.edges.resolveBrokenLinks();
+      expect(broken).toHaveLength(2);
+      const targets = broken.map((b) => b.targetPath).sort();
+      expect(targets).toEqual(["ghost1.md", "ghost2.md"]);
+    });
+
+    it("CR-01: two frontmatter-ref edges to same target with different `rel` coexist", () => {
+      const { a, b } = seedNotes(db);
+      db.edges.insertBatch(a, [
+        {
+          targetNoteId: b,
+          targetPath: "b.md",
+          type: "frontmatter-ref",
+          rel: "owner",
+          anchor: null,
+          lineNumber: null,
+          linkText: null,
+        },
+        {
+          targetNoteId: b,
+          targetPath: "b.md",
+          type: "frontmatter-ref",
+          rel: "assignee",
+          anchor: null,
+          lineNumber: null,
+          linkText: null,
+        },
+      ]);
+      const rows = db.handle
+        .prepare<[], { rel: string | null }>(
+          `SELECT rel FROM edges WHERE source_doc = ? AND target_doc = ? AND type = 'frontmatter-ref' ORDER BY rel`,
+        )
+        .all(a, b);
+      expect(rows).toHaveLength(2);
+      expect(rows.map((r) => r.rel)).toEqual(["assignee", "owner"]);
+    });
+
+    it("CR-01: two mention edges to same target on different lines coexist", () => {
+      const { a, b } = seedNotes(db);
+      db.edges.insertBatch(a, [
+        {
+          targetNoteId: b,
+          targetPath: null,
+          type: "mention",
+          rel: null,
+          anchor: null,
+          lineNumber: 5,
+          linkText: null,
+        },
+        {
+          targetNoteId: b,
+          targetPath: null,
+          type: "mention",
+          rel: null,
+          anchor: null,
+          lineNumber: 12,
+          linkText: null,
+        },
+      ]);
+      const rows = db.handle
+        .prepare<[], { line_number: number | null }>(
+          `SELECT line_number FROM edges WHERE source_doc = ? AND target_doc = ? AND type = 'mention' ORDER BY line_number`,
+        )
+        .all(a, b);
+      expect(rows).toHaveLength(2);
+      expect(rows.map((r) => r.line_number)).toEqual([5, 12]);
+    });
+
+    it("CR-01: two hyperlinks from same source with different URLs coexist", () => {
+      const { a } = seedNotes(db);
+      db.edges.insertBatch(a, [
+        {
+          targetNoteId: null,
+          targetPath: "https://example.com/one",
+          type: "hyperlink",
+          rel: null,
+          anchor: null,
+          lineNumber: 3,
+          linkText: null,
+        },
+        {
+          targetNoteId: null,
+          targetPath: "https://example.com/two",
+          type: "hyperlink",
+          rel: null,
+          anchor: null,
+          lineNumber: 4,
+          linkText: null,
+        },
+      ]);
+      const rows = db.handle
+        .prepare<[], { target_path: string | null }>(
+          `SELECT target_path FROM edges WHERE source_doc = ? AND type = 'hyperlink' ORDER BY target_path`,
+        )
+        .all(a);
+      expect(rows).toHaveLength(2);
+      expect(rows.map((r) => r.target_path)).toEqual([
+        "https://example.com/one",
+        "https://example.com/two",
+      ]);
+    });
+
+    it("CR-01 / migration 012: backfill from wikilinks recovers multiple broken targets from same source", () => {
+      const { a } = seedNotes(db);
+      // Seed TWO broken wikilinks from `a` directly into the v1 wikilinks
+      // table (the v1 UNIQUE(source_note, target_path, anchor) accepts
+      // them because target_path differs).
+      db.handle
+        .prepare(
+          `INSERT INTO wikilinks (source_note, target_path, target_note, link_text, anchor, line_number)
+           VALUES (?, ?, NULL, ?, NULL, ?)`,
+        )
+        .run(a, "ghost1.md", "Ghost1", 1);
+      db.handle
+        .prepare(
+          `INSERT INTO wikilinks (source_note, target_path, target_note, link_text, anchor, line_number)
+           VALUES (?, ?, NULL, ?, NULL, ?)`,
+        )
+        .run(a, "ghost2.md", "Ghost2", 2);
+      // Clear edges and rewind past migration 012 so migrate() replays it.
+      db.handle.exec("DELETE FROM edges");
+      db.handle.pragma("user_version = 11");
+      db.migrate();
+      // Both broken wikilinks must surface in edges — proves the widened
+      // key (target_path included) and the re-backfill step in 012 work.
+      const broken = db.edges.resolveBrokenLinks();
+      const targets = broken
+        .filter((b) => b.sourceNoteId === a)
+        .map((b) => b.targetPath)
+        .sort();
+      expect(targets).toEqual(["ghost1.md", "ghost2.md"]);
     });
 
     it("preserves broken wikilinks (target_path with target_doc IS NULL)", () => {

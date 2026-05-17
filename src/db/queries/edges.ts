@@ -13,8 +13,19 @@
  * this plan.
  *
  * UPSERT discipline mirrors `wikilinks.ts:52` — `INSERT OR IGNORE`
- * against `UNIQUE(source_doc, target_doc, type, anchor)` makes
- * re-extraction idempotent.
+ * against the widened UNIQUE index (migration 012) over
+ * `(source_doc, COALESCE(target_doc, -1), COALESCE(target_path, ''),
+ *   type, COALESCE(rel, ''), COALESCE(anchor, ''),
+ *   COALESCE(line_number, -1))` makes re-extraction idempotent.
+ *
+ * The narrow key originally shipped by migration 011 (just
+ * `source_doc, target_doc, type, anchor`) silently dropped legitimate
+ * non-duplicate rows: multiple broken wikilinks from the same source,
+ * multiple hyperlinks from the same source, multiple `frontmatter-ref`
+ * edges with different `rel`, and multi-line mentions all collided.
+ * Migration 012 widens the key to include the disambiguators and
+ * re-runs the wikilink backfill to recover rows lost during the
+ * narrow-key window.
  */
 
 import type BetterSqlite3 from "better-sqlite3";

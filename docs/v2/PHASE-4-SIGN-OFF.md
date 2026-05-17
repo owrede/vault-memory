@@ -118,11 +118,14 @@ Resolving slice: **04-05**.
 
 - Migration 011 (04-01) creates the `edges` table with `type TEXT`
   + `CHECK(type IN ('wikilink', 'mention', 'frontmatter-ref',
-  'hyperlink'))` + UNIQUE INDEX on
-  `(source_note_id, target_note_id, type, anchor, line_number)`
-  using `COALESCE` for proper NULL-as-distinct dedup. Chunked
-  backfill from v1 `wikilinks` table (10k-row chunks,
-  `INSERT OR IGNORE`, idempotent).
+  'hyperlink'))`. The unique index — widened by migration 012 (CR-01
+  fix) — is `(source_doc, COALESCE(target_doc, -1),
+  COALESCE(target_path, ''), type, COALESCE(rel, ''),
+  COALESCE(anchor, ''), COALESCE(line_number, -1))`. Migration 011 also
+  performs a chunked backfill from the v1 `wikilinks` table (10k-row
+  chunks, `INSERT OR IGNORE`, idempotent); migration 012 re-runs the
+  same backfill against the widened key to recover broken-link rows
+  that were silently dropped during the narrow-key window.
 - The unified `extractAllEdges(vault, parsed, resolver)` helper
   (04-02) extracts all four edge types in a single per-note parse
   pass. Both indexer write paths (`src/indexer/single.ts` body-hash
