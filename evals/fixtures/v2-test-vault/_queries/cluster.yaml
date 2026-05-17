@@ -1,0 +1,74 @@
+# Phase 4 / 04-06 / GRA-05 — `cluster()` Louvain determinism snapshot.
+#
+# Pins the EXACT Louvain partition produced by
+# `cluster({seed_doc_ids: [alice-chen, atlas-1], method: "edge-community"})`
+# over the Atlas Robotics live fixture. The integration test
+# `src/graph/cluster.integration.test.ts` loads this YAML and asserts
+# byte-equality between `clusters.map(c => {cluster_id, member_doc_ids})`
+# and the `expected_clusters` block below.
+#
+# Why this exists (D-12):
+#   Louvain is a stochastic algorithm — the partition depends on node
+#   insertion order AND the internal PRNG state. `cluster()` pins three
+#   determinism gates per D-12:
+#     1. Lex-sorted DocId insertion into graphology.
+#     2. `seedrandom("vault-memory-cluster-v1")` as Louvain's `rng`.
+#     3. cluster_id = smallest member DocId per community.
+#
+#   If a Node/V8 minor version flips Math.random under seedrandom, or
+#   if a graphology version bump changes node ordering inside the
+#   library, this snapshot FAILS LOUDLY. The maintainer then either:
+#     - re-pins the snapshot intentionally (acceptable when the
+#       partition shape is still meaningful), OR
+#     - chases the regression (A3 mitigation per RESEARCH).
+#
+# Snapshot capture date: 2026-05-17
+# Library versions: graphology ^0.26.0, graphology-communities-louvain
+#   ^2.0.2, seedrandom ^3.0.5 (per package.json).
+
+tool: cluster
+
+queries:
+  - id: alice-atlas-1-seeds
+    description: >
+      Cluster the union of seeds + their induced 1-hop neighborhood
+      from `[alice-chen, atlas-1]`. The total node count is 21 and
+      Louvain partitions them into three communities: a pilot/customer
+      cluster (rooted at the pilot-count-reduced memory observation),
+      a pivot/strategy cluster (rooted at the 2026-03-12 pivot
+      decision), and a perception/vendor cluster (rooted at the
+      2026-04-29 vendor risk review meeting).
+    input:
+      seed_doc_ids:
+        - obsidian-fs://v2-test-vault/people/alice-chen.md
+        - obsidian-fs://v2-test-vault/projects/atlas-1.md
+      method: edge-community
+    expected_node_count: 21
+    expected_clusters:
+      - cluster_id: obsidian-fs://v2-test-vault/_memory/observations/2026-04-16-atlas-1-pilot-count-reduced.md
+        member_doc_ids:
+          - obsidian-fs://v2-test-vault/_memory/observations/2026-04-16-atlas-1-pilot-count-reduced.md
+          - obsidian-fs://v2-test-vault/meetings/2026-04-23-pilot-onboarding-kickoff.md
+          - obsidian-fs://v2-test-vault/meetings/2026-05-04-dana-onboarding-kickoff.md
+          - obsidian-fs://v2-test-vault/people/alice-chen.md
+          - obsidian-fs://v2-test-vault/people/carlos-yim.md
+          - obsidian-fs://v2-test-vault/people/priya-rao.md
+          - obsidian-fs://v2-test-vault/people/quinn-vega.md
+          - obsidian-fs://v2-test-vault/references/customer-pilot-playbook.md
+      - cluster_id: obsidian-fs://v2-test-vault/decisions/2026-03-12-pivot-to-warehouse.md
+        member_doc_ids:
+          - obsidian-fs://v2-test-vault/decisions/2026-03-12-pivot-to-warehouse.md
+          - obsidian-fs://v2-test-vault/meetings/2026-04-15-q2-okr-review.md
+          - obsidian-fs://v2-test-vault/people/dana-park.md
+          - obsidian-fs://v2-test-vault/projects/atlas-1-warehouse-task-library.md
+          - obsidian-fs://v2-test-vault/projects/spire-fleet-orchestrator.md
+          - obsidian-fs://v2-test-vault/projects/spire.md
+          - obsidian-fs://v2-test-vault/references/spire-architecture.md
+      - cluster_id: obsidian-fs://v2-test-vault/meetings/2026-04-29-vendor-risk-review.md
+        member_doc_ids:
+          - obsidian-fs://v2-test-vault/meetings/2026-04-29-vendor-risk-review.md
+          - obsidian-fs://v2-test-vault/meetings/2026-05-06-perception-hire-debrief.md
+          - obsidian-fs://v2-test-vault/people/bob-martinez.md
+          - obsidian-fs://v2-test-vault/projects/atlas-1-perception-stack.md
+          - obsidian-fs://v2-test-vault/projects/atlas-1.md
+          - obsidian-fs://v2-test-vault/references/atlas-1-component-spec.md
