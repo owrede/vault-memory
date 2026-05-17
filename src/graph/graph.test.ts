@@ -31,6 +31,14 @@ function seed(db: Database): SeededIds {
   const b = mk("b.md", "B", "hb");
   const c = mk("c.md", "C", "hc");
 
+  // ── Phase 4 / 04-01 / GRA-04 (D-01, D-04) ──
+  //
+  // Seed BOTH `wikilinks` (v1 write path, kept in place per D-01) AND
+  // `edges` (Phase 4 read path). Plan 04-02 lands the unified extractor
+  // that writes to both in one helper. Until then, tests that exercise
+  // the post-migration read path must seed `edges` themselves — the
+  // migration-011 backfill only runs once at construction time.
+
   // A links to B, C, and NonExistent
   db.wikilinks.insertBatch(a, [
     {
@@ -55,6 +63,35 @@ function seed(db: Database): SeededIds {
       lineNumber: 3,
     },
   ]);
+  db.edges.insertBatch(a, [
+    {
+      targetNoteId: b,
+      targetPath: "b.md",
+      type: "wikilink",
+      rel: null,
+      anchor: null,
+      lineNumber: 1,
+      linkText: "B",
+    },
+    {
+      targetNoteId: c,
+      targetPath: "c.md",
+      type: "wikilink",
+      rel: null,
+      anchor: "section",
+      lineNumber: 2,
+      linkText: "C",
+    },
+    {
+      targetNoteId: null,
+      targetPath: "nonexistent.md",
+      type: "wikilink",
+      rel: null,
+      anchor: null,
+      lineNumber: 3,
+      linkText: "NonExistent",
+    },
+  ]);
 
   // B links to C
   db.wikilinks.insertBatch(b, [
@@ -64,6 +101,17 @@ function seed(db: Database): SeededIds {
       linkText: "C",
       anchor: null,
       lineNumber: 5,
+    },
+  ]);
+  db.edges.insertBatch(b, [
+    {
+      targetNoteId: c,
+      targetPath: "c.md",
+      type: "wikilink",
+      rel: null,
+      anchor: null,
+      lineNumber: 5,
+      linkText: "C",
     },
   ]);
 
@@ -104,6 +152,15 @@ describe("graph", () => {
     it("throws for unknown path", () => {
       expect(() => listBacklinks(vault, "ghost.md")).toThrow(/Note not found: ghost\.md/);
     });
+
+    // ── Phase 4 / 04-01 / GRA-04 (D-04): additive `type` field ──
+    it("each backlink result carries an additive `type` field (post-04-01 backfill: 'wikilink')", () => {
+      const result = listBacklinks(vault, "c.md");
+      expect(result).toHaveLength(2);
+      for (const row of result) {
+        expect(row.type).toBe("wikilink");
+      }
+    });
   });
 
   describe("listForwardLinks", () => {
@@ -130,6 +187,15 @@ describe("graph", () => {
     it("throws for unknown path", () => {
       expect(() => listForwardLinks(vault, "ghost.md")).toThrow(/Note not found/);
     });
+
+    // ── Phase 4 / 04-01 / GRA-04 (D-04): additive `type` field ──
+    it("each forward link result carries an additive `type` field", () => {
+      const result = listForwardLinks(vault, "a.md", true);
+      expect(result).toHaveLength(3);
+      for (const row of result) {
+        expect(row.type).toBe("wikilink");
+      }
+    });
   });
 
   describe("findBrokenLinks", () => {
@@ -141,6 +207,8 @@ describe("graph", () => {
       expect(result[0]?.targetPath).toBe("nonexistent.md");
       // lineNumber not provided by DB layer for broken links (documented).
       expect(result[0]?.lineNumber).toBeNull();
+      // ── Phase 4 / 04-01 / GRA-04 (D-04): additive `type` field ──
+      expect(result[0]?.type).toBe("wikilink");
     });
 
     it("returns empty when no broken links exist", () => {

@@ -91,6 +91,14 @@ async function buildLiveFixture(): Promise<{
 
   // Pass 2 — resolve wikilinks against the now-populated notes table
   // and insert wikilink rows. Mirrors the indexer's two-pass flow.
+  //
+  // ── Phase 4 / 04-01 / GRA-04 (D-01) ──
+  // Writes go to BOTH `wikilinks` (v1, kept in place) AND `edges` (Phase
+  // 4 read substrate). Plan 04-02 lands the unified extractor that
+  // collapses this dual-write into one helper. Until then, integration
+  // tests that exercise post-04-01 read paths must seed both tables
+  // (the migration-011 backfill only fires once at construction, when
+  // `wikilinks` is empty).
   const resolver = new WikilinkResolver(vault);
   for (const p of parsed) {
     const sourceId = noteIdByPath.get(p.relativePath);
@@ -107,6 +115,18 @@ async function buildLiveFixture(): Promise<{
       };
     });
     vault.db.wikilinks.insertBatch(sourceId, inputs);
+    vault.db.edges.insertBatch(
+      sourceId,
+      inputs.map((wl) => ({
+        targetNoteId: wl.targetNoteId,
+        targetPath: wl.targetPath,
+        type: "wikilink" as const,
+        rel: null,
+        anchor: wl.anchor,
+        lineNumber: wl.lineNumber,
+        linkText: wl.linkText,
+      })),
+    );
   }
 
   // Build the AdapterRegistry + SourceConnector resolver — the same

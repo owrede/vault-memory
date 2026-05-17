@@ -116,6 +116,8 @@ export async function indexNote(options: IndexNoteOptions): Promise<IndexNoteRes
     });
     vault.db.aliases.setForNote(upsert.id, extractAliases(parsed.frontmatter));
     vault.db.wikilinks.deleteByNote(upsert.id);
+    // Phase 4 / 04-01 (D-01): dual-write mirror — see insertWikilinks below.
+    vault.db.edges.deleteByNote(upsert.id);
     insertWikilinks(vault, upsert.id, parsed.wikilinks);
     return {
       status: "indexed",
@@ -159,6 +161,8 @@ export async function indexNote(options: IndexNoteOptions): Promise<IndexNoteRes
   // 7. Wipe derived layer for this note.
   vault.db.chunks.deleteByNote(upsert.id);
   vault.db.wikilinks.deleteByNote(upsert.id);
+  // Phase 4 / 04-01 (D-01): dual-write mirror — see insertWikilinks below.
+  vault.db.edges.deleteByNote(upsert.id);
 
   // 8. Chunk + embed + persist.
   const chunks = chunkNote(parsed.content);
@@ -323,4 +327,30 @@ function insertWikilinks(vault: Vault, sourceNoteId: number, wikilinks: ParsedWi
     };
   });
   vault.db.wikilinks.insertBatch(sourceNoteId, inputs);
+  // ── Phase 4 / 04-01 / GRA-04 (D-01): dual-write into `edges` ──
+  //
+  // Writes stay on `wikilinks` for backward compat with the v1 graph
+  // tools' write paths and `find_broken_links`. Plan 04-02 lands the
+  // unified extractor that collapses this dual-write into a single
+  // helper that also produces mention / frontmatter-ref / hyperlink
+  // edges in the same pass. Until then, every wikilink insert also
+  // lands a `type='wikilink'` row in `edges` so v1 graph-tool reads
+  // (Plan 04-01 Task 2) see live writes.
+  //
+  // Mirrored delete: callers above this helper already issue
+  // `vault.db.wikilinks.deleteByNote(noteId)` before re-inserting.
+  // The corresponding `vault.db.edges.deleteByNote(noteId)` is added
+  // at each call site (see indexer/single.ts:118/161 + indexer.ts).
+  vault.db.edges.insertBatch(
+    sourceNoteId,
+    inputs.map((wl) => ({
+      targetNoteId: wl.targetNoteId,
+      targetPath: wl.targetPath,
+      type: "wikilink" as const,
+      rel: null,
+      anchor: wl.anchor,
+      lineNumber: wl.lineNumber,
+      linkText: wl.linkText,
+    })),
+  );
 }

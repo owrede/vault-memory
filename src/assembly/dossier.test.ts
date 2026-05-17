@@ -118,14 +118,27 @@ function buildFixture(
   }
   for (const [sourcePath, group] of linksBySource) {
     const sourceId = idByPath.get(sourcePath) as number;
-    vault.db.wikilinks.insertBatch(
+    const wikilinkInputs = group.map((g, idx) => ({
+      targetPath: g.targetPath,
+      targetNoteId: idByPath.get(g.targetPath) ?? null,
+      linkText: g.targetPath,
+      anchor: null,
+      lineNumber: idx + 1,
+    }));
+    vault.db.wikilinks.insertBatch(sourceId, wikilinkInputs);
+    // Phase 4 / 04-01 (D-01): dual-write into `edges` so graph reads
+    // (post-04-01) see the same rows. Plan 04-02 collapses this into
+    // a single helper.
+    vault.db.edges.insertBatch(
       sourceId,
-      group.map((g, idx) => ({
-        targetPath: g.targetPath,
-        targetNoteId: idByPath.get(g.targetPath) ?? null,
-        linkText: g.targetPath,
-        anchor: null,
-        lineNumber: idx + 1,
+      wikilinkInputs.map((wl) => ({
+        targetNoteId: wl.targetNoteId,
+        targetPath: wl.targetPath,
+        type: "wikilink" as const,
+        rel: null,
+        anchor: wl.anchor,
+        lineNumber: wl.lineNumber,
+        linkText: wl.linkText,
       })),
     );
   }

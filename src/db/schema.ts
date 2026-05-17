@@ -595,6 +595,136 @@ function runMigration010(db: BetterSqlite3Database, _ctx: MigrationContext): voi
   backfillSectionsFromChunks(db);
 }
 
+/**
+ * Migration 011 — Phase 4 / 04-01 / GRA-04 (D-01): `edges` table substrate.
+ *
+ * Lands the typed-edge graph storage that every Phase 4 surface
+ * (`expand`, `cluster`, `search_hybrid({expand})`, the widened v1 graph
+ * tools, bundle/dossier link entries) reads from. Mirrors the
+ * established function-style backfill pattern from `runMigration008`
+ * (lines 443–464) and the multi-step DDL+helper pattern from
+ * `runMigration010` (lines 531–596).
+ *
+ * Three steps inside ONE transaction (the runner's outer transaction
+ * from `database.ts:118`):
+ *
+ *   A) DDL — `edges` table + 3 indexes. Idempotent (`IF NOT EXISTS`).
+ *      Columns match D-01 and `Edge.type` union from `src/types.ts:470`:
+ *      `(id, source_doc, target_doc, target_path, type, rel, anchor,
+ *       line_number)` with `UNIQUE(source_doc, target_doc, type,
+ *       anchor)` for `INSERT OR IGNORE` idempotency.
+ *      FKs: `source_doc REFERENCES notes(id) ON DELETE CASCADE`,
+ *           `target_doc REFERENCES notes(id) ON DELETE SET NULL`.
+ *      CHECK constraint on `type` mirrors `Edge.type` verbatim.
+ *
+ *   B) Zero-row short-circuit (mirrors `runMigration008` lines 444–448):
+ *      if `wikilinks` is empty, skip backfill scan entirely. Keeps fresh
+ *      `:memory:` test fixtures fast and avoids needless work on
+ *      vaults that have no v1 wikilinks to migrate.
+ *
+ *   C) Chunked backfill — copies every row from `wikilinks` into
+ *      `edges` with `type='wikilink'`. Chunked at 10,000 rows per
+ *      batch (per RESEARCH §Pattern 1 / Pitfall 5). better-sqlite3
+ *      is synchronous, so a multi-second backfill of a 100k+ wikilink
+ *      vault must not block the event loop in one statement —
+ *      chunking keeps each statement bounded. Pagination via
+ *      `wikilinks.id > @after_id` + `LIMIT @chunk` (Pattern 1).
+ *      `INSERT OR IGNORE` + the UNIQUE constraint make the backfill
+ *      idempotent across partial-migration replays.
+ *
+ * Storage cost: ~doubling on the wikilink subset until v3 cleanup
+ * drops the `wikilinks` table. Acceptable per D-01.
+ *
+ * No `fs`, `path.join`, or `gray-matter` imports anywhere in this
+ * function (adapter-seam discipline, ADR-002).
+ */
+function runMigration011(db: BetterSqlite3Database, _ctx: MigrationContext): void {
+  // ── Step A: DDL ──────────────────────────────────────────────────────
+  //
+  // D-01 names UNIQUE(source_doc, target_doc, type, anchor) but `target_doc`
+  // and `anchor` are both nullable, and SQLite's standard UNIQUE constraint
+  // treats every NULL as distinct (per the SQL spec the codebase already
+  // relies on at `notes(path)` etc.). Without further accommodation,
+  // INSERT OR IGNORE would fail to dedupe broken edges (target_doc IS NULL,
+  // anchor IS NULL — two rows with the same source+type would both insert).
+  //
+  // The fix: a UNIQUE INDEX with COALESCE on the nullable columns. This is
+  // the standard SQLite idiom for "treat NULL as equal for dedup" and is
+  // semantically identical to D-01's intent.
+  //
+  //   COALESCE(target_doc, -1) — `-1` is safe because `notes.id` is
+  //   AUTOINCREMENT starting at 1; no real note id can collide.
+  //   COALESCE(anchor, '')    — empty string acts as the "no anchor" key;
+  //   real anchors are non-empty strings (Obsidian wikilink syntax
+  //   `[[note#section]]` rejects empty `#`).
+  //
+  // INSERT OR IGNORE consults the unique index for conflict resolution
+  // (`ON CONFLICT IGNORE` semantics propagate from any unique constraint
+  // or unique index — per SQLite docs §"INSERT ... OR IGNORE").
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS edges (
+      id           INTEGER PRIMARY KEY AUTOINCREMENT,
+      source_doc   INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+      target_doc   INTEGER REFERENCES notes(id) ON DELETE SET NULL,
+      target_path  TEXT,
+      type         TEXT NOT NULL CHECK (type IN ('wikilink','mention','frontmatter-ref','hyperlink')),
+      rel          TEXT,
+      anchor       TEXT,
+      line_number  INTEGER,
+      link_text    TEXT
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_edges_unique
+      ON edges(source_doc, COALESCE(target_doc, -1), type, COALESCE(anchor, ''));
+    CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_doc);
+    CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_doc);
+    CREATE INDEX IF NOT EXISTS idx_edges_type   ON edges(type);
+  `);
+
+  // ── Step B: zero-row short-circuit ───────────────────────────────────
+  // Mirrors runMigration008 lines 444–448. Fresh DBs have no wikilinks
+  // to backfill; skip the scan entirely.
+  const pending = db
+    .prepare<[], { c: number }>("SELECT COUNT(*) AS c FROM wikilinks")
+    .get();
+  if (!pending || pending.c === 0) return;
+
+  // ── Step C: chunked backfill from wikilinks → edges ──────────────────
+  // Chunked at 10k rows (RESEARCH §Pattern 1). Pagination via
+  // `wikilinks.id > @after_id ORDER BY id ASC LIMIT @chunk`. INSERT OR
+  // IGNORE + UNIQUE(source_doc, target_doc, type, anchor) is idempotent
+  // across replays.
+  //
+  // NOTE: wikilink rows can have `target_path` IS NOT NULL while
+  // `target_note` IS NULL (broken wikilinks). Those land in `edges`
+  // with `target_doc IS NULL` and `target_path` preserved — `edges`
+  // mirrors the unresolved-target convention from `wikilinks`.
+  const CHUNK = 10_000;
+  const copy = db.prepare(`
+    INSERT OR IGNORE INTO edges
+      (source_doc, target_doc, target_path, type, rel, anchor, line_number, link_text)
+    SELECT source_note, target_note, target_path, 'wikilink', NULL, anchor, line_number, link_text
+      FROM wikilinks
+     WHERE id > @after_id
+     ORDER BY id ASC
+     LIMIT @chunk
+  `);
+  // `nextLastIdAfter(@after_id, @chunk)` returns the wikilinks.id at
+  // position @chunk-th row past @after_id, OR undefined if fewer than
+  // @chunk rows remain — which signals the final partial chunk.
+  const nextLast = db.prepare<
+    [number, number],
+    { id: number }
+  >("SELECT id FROM wikilinks WHERE id > ? ORDER BY id ASC LIMIT 1 OFFSET ?");
+
+  let lastId = 0;
+  while (true) {
+    copy.run({ after_id: lastId, chunk: CHUNK });
+    const nxt = nextLast.get(lastId, CHUNK - 1);
+    if (!nxt) break;
+    lastId = nxt.id;
+  }
+}
+
 export const MIGRATIONS: readonly Migration[] = [
   {
     version: 1,
@@ -647,5 +777,10 @@ export const MIGRATIONS: readonly Migration[] = [
     description:
       "sections table + notes.status denormalization + one-time section backfill (Phase 3 / 03-01)",
     run: runMigration010,
+  },
+  {
+    version: 11,
+    description: "edges table + backfill from wikilinks (Phase 4 / 04-01 / GRA-04)",
+    run: runMigration011,
   },
 ];
