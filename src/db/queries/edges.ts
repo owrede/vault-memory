@@ -158,8 +158,46 @@ export class EdgesQueries {
     return this._deleteByNote.run(noteId).changes;
   }
 
-  getBacklinks(noteId: number): EdgeBacklinkRow[] {
-    return this._backlinks.all(noteId).map((r) => ({
+  /**
+   * Get inbound edges where `target_doc = noteId`.
+   *
+   * Phase 4 / 04-03 (GRA-01 / D-08): the optional `edgeTypes` filter
+   * narrows the result to rows matching one of the listed types. The
+   * filter is passed through as parameterized placeholders in an
+   * `IN (?, ?, …)` clause; `EdgeType` is a closed Zod-validated union
+   * (4 strings), so SQL injection is not a vector. When `edgeTypes` is
+   * `undefined` or empty, the unfiltered prepared statement is used (no
+   * per-call prepare cost — matches the v1 behavior).
+   */
+  getBacklinks(noteId: number, edgeTypes?: readonly EdgeType[]): EdgeBacklinkRow[] {
+    if (!edgeTypes || edgeTypes.length === 0) {
+      return this._backlinks.all(noteId).map((r) => ({
+        sourceNoteId: r.source_doc,
+        type: r.type,
+        anchor: r.anchor,
+        lineNumber: r.line_number,
+        linkText: r.link_text,
+      }));
+    }
+    // Dynamic IN-clause; EdgeType is a closed union, so the placeholder
+    // count is bounded and the parameters are bound — no string concat
+    // of user data. T-04-03-04 mitigation.
+    const placeholders = edgeTypes.map(() => "?").join(", ");
+    const stmt = this.db.prepare<
+      [number, ...EdgeType[]],
+      {
+        source_doc: number;
+        type: EdgeType;
+        anchor: string | null;
+        line_number: number | null;
+        link_text: string | null;
+      }
+    >(
+      `SELECT source_doc, type, anchor, line_number, link_text
+       FROM edges
+       WHERE target_doc = ? AND type IN (${placeholders})`,
+    );
+    return stmt.all(noteId, ...edgeTypes).map((r) => ({
       sourceNoteId: r.source_doc,
       type: r.type,
       anchor: r.anchor,
@@ -168,8 +206,43 @@ export class EdgesQueries {
     }));
   }
 
-  getForwardLinks(noteId: number): EdgeForwardLinkRow[] {
-    return this._forward.all(noteId).map((r) => ({
+  /**
+   * Get outbound edges where `source_doc = noteId`.
+   *
+   * Phase 4 / 04-03 (GRA-01 / D-08): optional `edgeTypes` filter — see
+   * `getBacklinks` for the SQL injection / closed-union rationale.
+   * Hyperlink rows return `target_doc=null` + raw URL in `target_path`;
+   * callers iterating for BFS traversal SKIP those (Phase 4 BFS only
+   * traverses resolved edges).
+   */
+  getForwardLinks(noteId: number, edgeTypes?: readonly EdgeType[]): EdgeForwardLinkRow[] {
+    if (!edgeTypes || edgeTypes.length === 0) {
+      return this._forward.all(noteId).map((r) => ({
+        targetPath: r.target_path,
+        targetNoteId: r.target_doc,
+        type: r.type,
+        anchor: r.anchor,
+        lineNumber: r.line_number,
+        linkText: r.link_text,
+      }));
+    }
+    const placeholders = edgeTypes.map(() => "?").join(", ");
+    const stmt = this.db.prepare<
+      [number, ...EdgeType[]],
+      {
+        target_doc: number | null;
+        target_path: string | null;
+        type: EdgeType;
+        anchor: string | null;
+        line_number: number | null;
+        link_text: string | null;
+      }
+    >(
+      `SELECT target_doc, target_path, type, anchor, line_number, link_text
+       FROM edges
+       WHERE source_doc = ? AND type IN (${placeholders})`,
+    );
+    return stmt.all(noteId, ...edgeTypes).map((r) => ({
       targetPath: r.target_path,
       targetNoteId: r.target_doc,
       type: r.type,
