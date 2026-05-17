@@ -10,7 +10,8 @@
     "branching_strategy": "none",
     "phase_branch_template": "gsd/phase-{phase}-{slug}",
     "milestone_branch_template": "gsd/{milestone}-{slug}",
-    "quick_branch_template": null
+    "quick_branch_template": null,
+    "create_tag": true
   },
   "workflow": {
     "research": true,
@@ -28,7 +29,12 @@
     "skip_discuss": false,
     "code_review": true,
     "code_review_depth": "standard",
-    "_auto_chain_active": false
+    "_auto_chain_active": false,
+    "pattern_mapper": true,
+    "ai_integration_phase": true,
+    "tdd_mode": false,
+    "ui_review": false,
+    "use_worktrees": true
   },
   "hooks": {
     "context_warnings": true
@@ -39,5 +45,11 @@
   "features": {},
   "resolve_model_ids": "omit",
   "mode": "yolo",
-  "granularity": "standard"
+  "granularity": "standard",
+  "intel": {
+    "enabled": false
+  },
+  "graphify": {
+    "enabled": false
+  }
 }

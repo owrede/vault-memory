@@ -27,10 +27,10 @@ import { z } from "zod";
 function configPath() {
   return join(homedir(), ".vault-memory", "config.toml");
 }
-async function loadConfig(path5 = configPath()) {
+async function loadConfig(path7 = configPath()) {
   let raw;
   try {
-    raw = await readFile(path5, "utf-8");
+    raw = await readFile(path7, "utf-8");
   } catch (err) {
     const code = err.code;
     if (code === "ENOENT") {
@@ -42,9 +42,7 @@ async function loadConfig(path5 = configPath()) {
   try {
     parsed = parseToml(raw);
   } catch (err) {
-    throw new Error(
-      `Failed to parse TOML at ${path5}: ${err.message}`
-    );
+    throw new Error(`Failed to parse TOML at ${path7}: ${err.message}`);
   }
   const validated = AppConfigSchema.parse(parsed);
   return {
@@ -52,10 +50,12 @@ async function loadConfig(path5 = configPath()) {
       ...DEFAULT_CONFIG.server,
       ...validated.server
     },
-    vaults: validated.vaults
+    vaults: validated.vaults,
+    memory: validated.memory,
+    memory_sinks: validated.memory_sinks
   };
 }
-var ServerConfigSchema, VaultConfigSchema, AppConfigSchema, DEFAULT_CONFIG;
+var ServerConfigSchema, VaultConfigSchema, MemorySinkConfigSchema, MemoryConfigSchema, AppConfigSchema, DEFAULT_CONFIG;
 var init_loader = __esm({
   "src/config/loader.ts"() {
     "use strict";
@@ -76,9 +76,19 @@ var init_loader = __esm({
       write_enabled: z.boolean().optional(),
       exclude_globs: z.array(z.string()).optional()
     });
+    MemorySinkConfigSchema = z.object({
+      name: z.string().min(1),
+      handle: z.string().min(1),
+      contract: z.string().min(1).default("default-memory-v1")
+    });
+    MemoryConfigSchema = z.object({
+      default_sink: z.string().min(1).optional()
+    });
     AppConfigSchema = z.object({
       server: ServerConfigSchema.optional().default({}),
-      vaults: z.array(VaultConfigSchema).optional().default([])
+      vaults: z.array(VaultConfigSchema).optional().default([]),
+      memory: MemoryConfigSchema.optional(),
+      memory_sinks: z.array(MemorySinkConfigSchema).optional().default([])
     });
     DEFAULT_CONFIG = {
       server: {
@@ -86,7 +96,8 @@ var init_loader = __esm({
         ollama_endpoint: "http://localhost:11434",
         default_embedding_model: "qwen3-embedding"
       },
-      vaults: []
+      vaults: [],
+      memory_sinks: []
     };
   }
 });
@@ -123,9 +134,7 @@ async function addVault(opts) {
   }
   const existing = await loadConfig(cfgFile);
   const sameName = existing.vaults.find((v) => v.name === proposedName);
-  const samePath = existing.vaults.find(
-    (v) => resolve(v.path) === resolvedPath
-  );
+  const samePath = existing.vaults.find((v) => resolve(v.path) === resolvedPath);
   if (samePath) {
     steps.push({
       kind: "config-already-registered",
@@ -174,16 +183,16 @@ function renderVaultBlock(input) {
   ];
   return lines.join("\n");
 }
-async function ensureFileExists(path5) {
+async function ensureFileExists(path7) {
   try {
-    await fs.access(path5);
+    await fs.access(path7);
   } catch {
     await fs.mkdir(join2(homedir2(), ".vault-memory"), { recursive: true });
-    await fs.writeFile(path5, "# vault-memory configuration\n", "utf-8");
+    await fs.writeFile(path7, "# vault-memory configuration\n", "utf-8");
   }
 }
-async function appendToFile(path5, content) {
-  await fs.appendFile(path5, content, "utf-8");
+async function appendToFile(path7, content) {
+  await fs.appendFile(path7, content, "utf-8");
 }
 async function writeOrMergeMcpJson(mcpPath, vaultName, binary) {
   const desiredEntry = {
@@ -199,9 +208,7 @@ async function writeOrMergeMcpJson(mcpPath, vaultName, binary) {
   } catch (err) {
     const code = err.code;
     if (code !== "ENOENT") {
-      throw new Error(
-        `Failed to read existing .mcp.json at ${mcpPath}: ${err.message}`
-      );
+      throw new Error(`Failed to read existing .mcp.json at ${mcpPath}: ${err.message}`);
     }
   }
   if (existing === null) {
@@ -236,6 +243,7 @@ var init_add_vault = __esm({
       ".trash/**",
       "Trash/**",
       ".claude/**",
+      // vault-memory:claude-ok — `.claude/` is the literal Obsidian-side directory name for any MCP host integration; not a Claude-only path.
       ".smart-connections/**",
       ".smart-env/**",
       ".systemsculpt/**",
@@ -262,19 +270,15 @@ var init_config = __esm({
 });
 
 // src/db/schema.ts
-function runMigration005(db) {
-  const rows = db.prepare(
-    "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'embeddings\\_%' ESCAPE '\\'"
-  ).all();
+function runMigration005(db, _ctx) {
+  const rows = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'embeddings\\_%' ESCAPE '\\'").all();
   const legacyTables = [];
   for (const r of rows) {
     const m = /^embeddings_(\d+)$/.exec(r.name);
     if (m && m[1]) legacyTables.push({ name: r.name, dim: Number(m[1]) });
   }
   for (const { name, dim } of legacyTables) {
-    const rows2 = db.prepare(
-      `SELECT chunk_id, model_id, vector FROM ${name}`
-    ).all();
+    const rows2 = db.prepare(`SELECT chunk_id, model_id, vector FROM ${name}`).all();
     db.exec(`DROP TABLE ${name}`);
     const byModel = /* @__PURE__ */ new Map();
     for (const row of rows2) {
@@ -293,16 +297,44 @@ function runMigration005(db) {
            vector   FLOAT[${dim}]
          )`
       );
-      const insert = db.prepare(
-        `INSERT INTO ${newName} (chunk_id, vector) VALUES (?, ?)`
-      );
+      const insert = db.prepare(`INSERT INTO ${newName} (chunk_id, vector) VALUES (?, ?)`);
       for (const row of bucket) {
         insert.run(BigInt(row.chunk_id), row.vector);
       }
     }
   }
 }
-var INITIAL_SCHEMA, MIGRATION_002_ALIASES, MIGRATION_003_FIX_DELETE_FKS, MIGRATION_004_VARIABLE_DIMS, MIGRATION_006_BODY_HASH, MIGRATIONS;
+function runMigration008(db, ctx) {
+  const pending = db.prepare("SELECT COUNT(*) AS c FROM notes WHERE doc_uri IS NULL").get();
+  if (!pending || pending.c === 0) return;
+  if (!ctx.vaultName) {
+    throw new Error(
+      "runMigration008 requires vaultName context to backfill doc_uri on existing notes (Database constructor must be called with the vault name; check src/vault/manager.ts)."
+    );
+  }
+  const prefix = `obsidian-fs://${ctx.vaultName}/`;
+  const update = db.prepare(`
+    UPDATE notes
+       SET doc_uri = @prefix || path
+     WHERE doc_uri IS NULL
+  `);
+  update.run({ prefix });
+}
+function runMigration009(db, _ctx) {
+  const cols = db.prepare("PRAGMA table_info(write_audit)").all();
+  const hasColumn = cols.some((c) => c.name === "is_memory_sink_write");
+  if (!hasColumn) {
+    db.exec(
+      "ALTER TABLE write_audit ADD COLUMN is_memory_sink_write INTEGER NOT NULL DEFAULT 0"
+    );
+  }
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_write_audit_memory
+      ON write_audit(is_memory_sink_write, at DESC)
+      WHERE is_memory_sink_write = 1
+  `);
+}
+var INITIAL_SCHEMA, MIGRATION_002_ALIASES, MIGRATION_003_FIX_DELETE_FKS, MIGRATION_004_VARIABLE_DIMS, MIGRATION_006_BODY_HASH, MIGRATION_007_DOC_URI_ADD, MIGRATIONS;
 var init_schema = __esm({
   "src/db/schema.ts"() {
     "use strict";
@@ -501,6 +533,10 @@ DROP TABLE embeddings;
 ALTER TABLE notes ADD COLUMN body_hash TEXT;
 CREATE INDEX IF NOT EXISTS idx_notes_body_hash ON notes(body_hash);
 `;
+    MIGRATION_007_DOC_URI_ADD = `
+ALTER TABLE notes ADD COLUMN doc_uri TEXT;
+CREATE INDEX IF NOT EXISTS idx_notes_doc_uri ON notes(doc_uri);
+`;
     MIGRATIONS = [
       {
         version: 1,
@@ -531,12 +567,30 @@ CREATE INDEX IF NOT EXISTS idx_notes_body_hash ON notes(body_hash);
         version: 6,
         description: "add body_hash for frontmatter-only-change short-circuit",
         sql: MIGRATION_006_BODY_HASH
+      },
+      {
+        version: 7,
+        description: "add doc_uri column to notes (Strategy A, additive)",
+        sql: MIGRATION_007_DOC_URI_ADD
+      },
+      {
+        version: 8,
+        description: "backfill doc_uri from <vault-name>/path",
+        run: runMigration008
+      },
+      {
+        version: 9,
+        description: "audit discriminator \u2014 is_memory_sink_write column + partial index (MEM-08, Plan 02-06)",
+        run: runMigration009
       }
     ];
   }
 });
 
 // src/db/queries/notes.ts
+function escapeLikePrefix(prefix) {
+  return prefix.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+}
 var NotesQueries;
 var init_notes = __esm({
   "src/db/queries/notes.ts"() {
@@ -545,15 +599,11 @@ var init_notes = __esm({
     NotesQueries = class {
       constructor(db) {
         this.db = db;
-        this._selectByPath = db.prepare(
-          "SELECT * FROM notes WHERE path = ?"
-        );
-        this._selectById = db.prepare(
-          "SELECT * FROM notes WHERE id = ?"
-        );
+        this._selectByPath = db.prepare("SELECT * FROM notes WHERE path = ?");
+        this._selectById = db.prepare("SELECT * FROM notes WHERE id = ?");
         this._insert = db.prepare(`
-      INSERT INTO notes (path, content, frontmatter, title, hash, body_hash, mtime, word_count, created_at, updated_at)
-      VALUES (@path, @content, @frontmatter, @title, @hash, @body_hash, @mtime, @word_count, @now, @now)
+      INSERT INTO notes (path, content, frontmatter, title, hash, body_hash, doc_uri, mtime, word_count, created_at, updated_at)
+      VALUES (@path, @content, @frontmatter, @title, @hash, @body_hash, @doc_uri, @mtime, @word_count, @now, @now)
     `);
         this._update = db.prepare(`
       UPDATE notes
@@ -562,6 +612,7 @@ var init_notes = __esm({
           title = @title,
           hash = @hash,
           body_hash = @body_hash,
+          doc_uri = COALESCE(@doc_uri, doc_uri),
           mtime = @mtime,
           word_count = @word_count,
           updated_at = @now
@@ -571,9 +622,7 @@ var init_notes = __esm({
         this._listAll = db.prepare(
           "SELECT * FROM notes ORDER BY id LIMIT ? OFFSET ?"
         );
-        this._count = db.prepare(
-          "SELECT COUNT(*) AS c FROM notes"
-        );
+        this._count = db.prepare("SELECT COUNT(*) AS c FROM notes");
       }
       db;
       _selectByPath;
@@ -586,6 +635,7 @@ var init_notes = __esm({
       upsertByPath(input) {
         const existing = this._selectByPath.get(input.path);
         const now = Date.now();
+        const docUri = input.docUri ?? (input.vaultName !== void 0 ? `obsidian-fs://${input.vaultName}/${input.path}` : null);
         if (existing) {
           if (existing.hash === input.hash) {
             return { id: existing.id, isNew: false };
@@ -597,6 +647,9 @@ var init_notes = __esm({
             title: input.title,
             hash: input.hash,
             body_hash: input.bodyHash,
+            // Pass null when the caller didn't compute one — COALESCE in the
+            // UPDATE statement keeps the existing doc_uri intact.
+            doc_uri: docUri,
             mtime: input.mtime,
             word_count: input.wordCount,
             now
@@ -610,6 +663,7 @@ var init_notes = __esm({
           title: input.title,
           hash: input.hash,
           body_hash: input.bodyHash,
+          doc_uri: docUri,
           mtime: input.mtime,
           word_count: input.wordCount,
           now
@@ -619,11 +673,11 @@ var init_notes = __esm({
       getById(id) {
         return this._selectById.get(id) ?? null;
       }
-      getByPath(path5) {
-        return this._selectByPath.get(path5) ?? null;
+      getByPath(path7) {
+        return this._selectByPath.get(path7) ?? null;
       }
-      deleteByPath(path5) {
-        const info = this._delete.run(path5);
+      deleteByPath(path7) {
+        const info = this._delete.run(path7);
         return info.changes > 0;
       }
       listAll(limit = 1e3, offset = 0) {
@@ -632,6 +686,32 @@ var init_notes = __esm({
       countAll() {
         const row = this._count.get();
         return row?.c ?? 0;
+      }
+      /**
+       * Plan 02-06 (MEM-09): count rows whose `path` begins with the given
+       * prefix. Used by the `memory-stats` MCP Resource to count documents
+       * inside a `MemorySink` (the sink's `resolveToRelativePath` is the
+       * prefix, with trailing slash). The path is bound as a parameter; the
+       * `prefix` value MUST end with `/` to keep the match well-defined.
+       */
+      countByPathPrefix(prefix) {
+        const row = this.db.prepare(
+          "SELECT COUNT(*) AS c FROM notes WHERE path LIKE ? ESCAPE '\\'"
+        ).get(escapeLikePrefix(prefix) + "%");
+        return row?.c ?? 0;
+      }
+      /**
+       * Plan 02-06 (MEM-09): list rows whose `path` begins with the given
+       * prefix. Used by the `memory-stats` MCP Resource to aggregate
+       * `by_type` / `by_status` counts from the stored frontmatter JSON.
+       * Default limit is intentionally generous (10_000) — sinks are user-
+       * scoped and typically hold tens of documents in v2.0.0; the cap
+       * exists only as a hedge against pathological sinks.
+       */
+      listByPathPrefix(prefix, limit = 1e4) {
+        return this.db.prepare(
+          "SELECT * FROM notes WHERE path LIKE ? ESCAPE '\\' ORDER BY path LIMIT ?"
+        ).all(escapeLikePrefix(prefix) + "%", limit);
       }
     };
   }
@@ -654,9 +734,7 @@ var init_chunks = __esm({
         this._getByNote = db.prepare(
           "SELECT * FROM chunks WHERE note_id = ? ORDER BY idx"
         );
-        this._getById = db.prepare(
-          "SELECT * FROM chunks WHERE id = ?"
-        );
+        this._getById = db.prepare("SELECT * FROM chunks WHERE id = ?");
       }
       db;
       _insert;
@@ -738,9 +816,7 @@ var init_embeddings = __esm({
       dimForModel(modelId) {
         const row = this.models.getById(modelId);
         if (!row) {
-          throw new Error(
-            `EmbeddingsQueries: model_id ${modelId} not found in models table`
-          );
+          throw new Error(`EmbeddingsQueries: model_id ${modelId} not found in models table`);
         }
         return row.dim;
       }
@@ -751,12 +827,8 @@ var init_embeddings = __esm({
         this.ensureTableForModel(modelId, dim);
         const table = this.tableName(modelId, dim);
         const stmts = {
-          insert: this.db.prepare(
-            `INSERT INTO ${table} (chunk_id, vector) VALUES (?, ?)`
-          ),
-          deleteByChunk: this.db.prepare(
-            `DELETE FROM ${table} WHERE chunk_id = ?`
-          ),
+          insert: this.db.prepare(`INSERT INTO ${table} (chunk_id, vector) VALUES (?, ?)`),
+          deleteByChunk: this.db.prepare(`DELETE FROM ${table} WHERE chunk_id = ?`),
           deleteAll: this.db.prepare(`DELETE FROM ${table}`),
           search: this.db.prepare(
             `SELECT chunk_id, distance
@@ -844,9 +916,7 @@ var init_wikilinks = __esm({
         (source_note, target_path, target_note, link_text, anchor, line_number)
       VALUES (@source_note, @target_path, @target_note, @link_text, @anchor, @line_number)
     `);
-        this._deleteByNote = db.prepare(
-          "DELETE FROM wikilinks WHERE source_note = ?"
-        );
+        this._deleteByNote = db.prepare("DELETE FROM wikilinks WHERE source_note = ?");
         this._backlinks = db.prepare(
           `SELECT source_note, line_number, link_text
        FROM wikilinks
@@ -913,6 +983,9 @@ var init_wikilinks = __esm({
 });
 
 // src/db/queries/audit.ts
+function escapeAuditLikePrefix(prefix) {
+  return prefix.replace(/\\/g, "\\\\").replace(/%/g, "\\%").replace(/_/g, "\\_");
+}
 var AuditQueries;
 var init_audit = __esm({
   "src/db/queries/audit.ts"() {
@@ -942,8 +1015,8 @@ var init_audit = __esm({
           "SELECT COUNT(*) AS c FROM index_runs WHERE finished_at IS NULL"
         );
         this._recordWrite = db.prepare(`
-      INSERT INTO write_audit (note_id, op, previous_hash, new_hash, expected_hash, client_id, diff_summary, at)
-      VALUES (@note_id, @op, @previous_hash, @new_hash, @expected_hash, @client_id, @diff_summary, @at)
+      INSERT INTO write_audit (note_id, op, previous_hash, new_hash, expected_hash, client_id, diff_summary, at, is_memory_sink_write)
+      VALUES (@note_id, @op, @previous_hash, @new_hash, @expected_hash, @client_id, @diff_summary, @at, @is_memory_sink_write)
     `);
       }
       db;
@@ -989,7 +1062,12 @@ var init_audit = __esm({
           expected_hash: input.expectedHash,
           client_id: input.clientId,
           diff_summary: input.diffSummary,
-          at: Date.now()
+          at: Date.now(),
+          // Phase 1 call sites that have not been threaded with the flag default
+          // to 0 (non-memory write) — backwards-compatible with migration 009's
+          // ALTER default. Memory-routed writes (record_observation, supersede)
+          // pass `isMemorySinkWrite: true`.
+          is_memory_sink_write: input.isMemorySinkWrite ? 1 : 0
         });
       }
       listWrites(filter = {}) {
@@ -1007,11 +1085,37 @@ var init_audit = __esm({
           where.push("at >= ?");
           params.push(filter.since);
         }
+        if (filter.isMemorySinkWrite !== void 0) {
+          where.push("is_memory_sink_write = ?");
+          params.push(filter.isMemorySinkWrite ? 1 : 0);
+        }
         const limit = filter.limit ?? 100;
         const whereSql = where.length > 0 ? `WHERE ${where.join(" AND ")}` : "";
         const sql = `SELECT * FROM write_audit ${whereSql} ORDER BY id DESC LIMIT ?`;
         params.push(limit);
         return this.db.prepare(sql).all(...params);
+      }
+      /**
+       * Plan 02-06 (MEM-09): epoch-ms timestamp of the most recent memory-sink
+       * write to a note whose path begins with `pathPrefix`, or `null` if no
+       * such row exists. Backed by the `idx_write_audit_memory` partial index
+       * (migration 009).
+       *
+       * Looks up via the `notes.path` value joined to `write_audit.note_id`.
+       * Returns null when the note row was hard-deleted (FK SET NULL) or
+       * when no audit row matches.
+       */
+      lastMemoryWriteAtForPathPrefix(pathPrefix) {
+        const row = this.db.prepare(
+          `SELECT wa.at AS at
+           FROM write_audit AS wa
+           JOIN notes AS n ON n.id = wa.note_id
+          WHERE wa.is_memory_sink_write = 1
+            AND n.path LIKE ? ESCAPE '\\'
+          ORDER BY wa.at DESC
+          LIMIT 1`
+        ).get(escapeAuditLikePrefix(pathPrefix) + "%");
+        return row?.at ?? null;
       }
     };
   }
@@ -1026,26 +1130,18 @@ var init_models = __esm({
     ModelsQueries = class {
       constructor(db) {
         this.db = db;
-        this._selectByName = db.prepare(
-          "SELECT * FROM models WHERE name = ?"
-        );
+        this._selectByName = db.prepare("SELECT * FROM models WHERE name = ?");
         this._selectActive = db.prepare(
           "SELECT * FROM models WHERE active = 1 ORDER BY id DESC LIMIT 1"
         );
-        this._selectById = db.prepare(
-          "SELECT * FROM models WHERE id = ?"
-        );
+        this._selectById = db.prepare("SELECT * FROM models WHERE id = ?");
         this._insert = db.prepare(`
       INSERT INTO models (name, provider, dim, created_at, active)
       VALUES (@name, @provider, @dim, @created_at, @active)
     `);
         this._deactivateAll = db.prepare("UPDATE models SET active = 0");
-        this._activate = db.prepare(
-          "UPDATE models SET active = 1 WHERE id = ?"
-        );
-        this._listAll = db.prepare(
-          "SELECT * FROM models ORDER BY id"
-        );
+        this._activate = db.prepare("UPDATE models SET active = 1 WHERE id = ?");
+        this._listAll = db.prepare("SELECT * FROM models ORDER BY id");
       }
       db;
       _selectByName;
@@ -1220,9 +1316,7 @@ var init_aliases = __esm({
           `INSERT OR IGNORE INTO note_aliases (note_id, alias, alias_norm)
        VALUES (?, ?, ?)`
         );
-        this.deleteStmt = db.prepare(
-          `DELETE FROM note_aliases WHERE note_id = ?`
-        );
+        this.deleteStmt = db.prepare(`DELETE FROM note_aliases WHERE note_id = ?`);
         this.listForNoteStmt = db.prepare(
           `SELECT alias FROM note_aliases WHERE note_id = ? ORDER BY id ASC`
         );
@@ -1271,6 +1365,16 @@ var init_aliases = __esm({
 // src/db/database.ts
 import BetterSqlite3 from "better-sqlite3";
 import * as sqliteVec from "sqlite-vec";
+function deriveVaultNameFromPath(dbPath) {
+  if (!dbPath || dbPath === ":memory:") return void 0;
+  const segs = dbPath.split(/[\\/]/);
+  const base = segs[segs.length - 1];
+  if (!base) return void 0;
+  if (!base.endsWith(".db")) return void 0;
+  const name = base.slice(0, -3);
+  if (!name) return void 0;
+  return name;
+}
 function loadSqliteVec(db) {
   try {
     sqliteVec.load(db);
@@ -1306,7 +1410,16 @@ var init_database = __esm({
       models;
       fts;
       aliases;
-      constructor(dbPath) {
+      /**
+       * Name of the vault this DB belongs to, or `undefined` for `:memory:` /
+       * unrecognised paths. Threaded into function-style migrations as
+       * `MigrationContext.vaultName` so migration 008 can derive
+       * `obsidian-fs://<vaultName>/<path>` (RESEARCH §doc_uri Dual-Column Migration,
+       * plan 01-02).
+       */
+      vaultName;
+      constructor(dbPath, vaultName) {
+        this.vaultName = vaultName ?? deriveVaultNameFromPath(dbPath);
         this.handle = new BetterSqlite3(dbPath);
         if (dbPath !== ":memory:") {
           this.handle.pragma("journal_mode = WAL");
@@ -1324,8 +1437,8 @@ var init_database = __esm({
         this.fts = new FtsQueries(this.handle);
         this.aliases = new AliasesQueries(this.handle);
       }
-      static async open(dbPath) {
-        return new _Database(dbPath);
+      static async open(dbPath, vaultName) {
+        return new _Database(dbPath, vaultName);
       }
       close() {
         this.handle.close();
@@ -1350,13 +1463,14 @@ var init_database = __esm({
         const fkWasOn = this.handle.pragma("foreign_keys", { simple: true }) === 1;
         if (fkWasOn) this.handle.pragma("foreign_keys = OFF");
         let highest = current;
+        const ctx = { vaultName: this.vaultName };
         try {
           const tx = this.handle.transaction(() => {
             for (const m of pending) {
               if ("sql" in m) {
                 this.handle.exec(m.sql);
               } else {
-                m.run(this.handle);
+                m.run(this.handle, ctx);
               }
               highest = m.version;
             }
@@ -1425,7 +1539,7 @@ var init_manager = __esm({
         for (const cfg of configs) {
           if (this.vaults.has(cfg.name)) continue;
           const dbPath = _VaultManager.dbPathFor(cfg.name);
-          const db = new Database(dbPath);
+          const db = new Database(dbPath, cfg.name);
           db.migrate();
           this.vaults.set(cfg.name, { config: cfg, db, dbPath });
         }
@@ -1440,9 +1554,7 @@ var init_manager = __esm({
         const v = this.vaults.get(name);
         if (!v) {
           const known = [...this.vaults.keys()].join(", ") || "(none)";
-          throw new Error(
-            `Unknown vault: "${name}". Configured vaults: ${known}`
-          );
+          throw new Error(`Unknown vault: "${name}". Configured vaults: ${known}`);
         }
         return v;
       }
@@ -1474,7 +1586,7 @@ var init_vault = __esm({
 
 // src/ollama/retry.ts
 function sleep(ms) {
-  return new Promise((resolve6) => setTimeout(resolve6, ms));
+  return new Promise((resolve7) => setTimeout(resolve7, ms));
 }
 function computeDelay(attempt, baseDelayMs, maxDelayMs) {
   const exp = baseDelayMs * Math.pow(2, attempt);
@@ -1579,9 +1691,7 @@ var init_client = __esm({
         for (let i = 0; i < texts.length; i += this.batchSize) {
           batches.push(texts.slice(i, i + this.batchSize));
         }
-        const results = await Promise.all(
-          batches.map((batch) => this.embedBatch(model, batch))
-        );
+        const results = await Promise.all(batches.map((batch) => this.embedBatch(model, batch)));
         const vectors = [];
         let confirmedModel = model;
         for (const res of results) {
@@ -1599,14 +1709,11 @@ var init_client = __esm({
         return withRetry(
           async () => {
             const body = JSON.stringify({ model, input: texts });
-            const response = await this.fetchWithTimeout(
-              `${this.endpoint}/api/embed`,
-              {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body
-              }
-            );
+            const response = await this.fetchWithTimeout(`${this.endpoint}/api/embed`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body
+            });
             if (!response.ok) {
               const text = await response.text().catch(() => "");
               throw new OllamaHttpError(
@@ -1626,10 +1733,7 @@ var init_client = __esm({
        */
       async healthCheck() {
         try {
-          const response = await this.fetchWithTimeout(
-            `${this.endpoint}/api/tags`,
-            { method: "GET" }
-          );
+          const response = await this.fetchWithTimeout(`${this.endpoint}/api/tags`, { method: "GET" });
           if (!response.ok) {
             return {
               ok: false,
@@ -1702,9 +1806,7 @@ function rrfMerge(rankings, k = DEFAULT_RRF_K) {
         existing.rrf += contribution;
         existing.ranks[listIdx] = rank;
       } else {
-        const ranks = new Array(rankings.length).fill(
-          void 0
-        );
+        const ranks = new Array(rankings.length).fill(void 0);
         ranks[listIdx] = rank;
         scores.set(item, { rrf: contribution, ranks });
       }
@@ -1755,14 +1857,7 @@ async function hybridSearch(opts) {
   const perVaultTopN = opts.reranker ? topK * rerankFanOut : topK;
   const perVault = await Promise.all(
     opts.vaults.map(
-      (vault) => searchOneVault(
-        vault,
-        query,
-        opts.embeddingModel,
-        rrfK,
-        perVaultTopN,
-        getQueryVector
-      )
+      (vault) => searchOneVault(vault, query, opts.embeddingModel, rrfK, perVaultTopN, getQueryVector)
     )
   );
   const flat = perVault.flat();
@@ -1786,30 +1881,29 @@ async function hybridSearch(opts) {
     }
     if (indexed.length === 0) {
       winners = flat.slice(0, topK);
-    } else try {
-      const scores = await opts.reranker.score(query, texts);
-      if (scores.length !== indexed.length) {
-        throw new Error(
-          `reranker returned ${scores.length} scores for ${indexed.length} chunks`
-        );
+    } else
+      try {
+        const scores = await opts.reranker.score(query, texts);
+        if (scores.length !== indexed.length) {
+          throw new Error(`reranker returned ${scores.length} scores for ${indexed.length} chunks`);
+        }
+        for (let i = 0; i < indexed.length; i++) {
+          const entry = indexed[i];
+          const s = scores[i];
+          entry.hit.rerankScore = s;
+        }
+        const reranked = indexed.map((e) => e.hit);
+        reranked.sort((a, b) => {
+          const ra = a.rerankScore ?? Number.NEGATIVE_INFINITY;
+          const rb = b.rerankScore ?? Number.NEGATIVE_INFINITY;
+          if (rb !== ra) return rb - ra;
+          return b.rrf - a.rrf;
+        });
+        winners = reranked.slice(0, topK);
+      } catch {
+        for (const h of pool) delete h.rerankScore;
+        winners = flat.slice(0, topK);
       }
-      for (let i = 0; i < indexed.length; i++) {
-        const entry = indexed[i];
-        const s = scores[i];
-        entry.hit.rerankScore = s;
-      }
-      const reranked = indexed.map((e) => e.hit);
-      reranked.sort((a, b) => {
-        const ra = a.rerankScore ?? Number.NEGATIVE_INFINITY;
-        const rb = b.rerankScore ?? Number.NEGATIVE_INFINITY;
-        if (rb !== ra) return rb - ra;
-        return b.rrf - a.rrf;
-      });
-      winners = reranked.slice(0, topK);
-    } catch {
-      for (const h of pool) delete h.rerankScore;
-      winners = flat.slice(0, topK);
-    }
   } else {
     winners = flat.slice(0, topK);
   }
@@ -1855,11 +1949,7 @@ async function searchOneVault(vault, query, embeddingModelName, rrfK, topK, getQ
   const semanticPromise = canRunSemantic ? (async () => {
     const vec = await getQueryVector(queryModelName);
     if (!vec) return null;
-    const hits = vault.db.embeddings.searchSemantic(
-      activeModel.id,
-      vec,
-      fanK
-    );
+    const hits = vault.db.embeddings.searchSemantic(activeModel.id, vec, fanK);
     const distances = /* @__PURE__ */ new Map();
     const chunkIds = [];
     for (const h of hits) {
@@ -1944,9 +2034,9 @@ function compile(pattern) {
   cache.set(pattern, compiled);
   return compiled;
 }
-function matchesAnyGlob(path5, patterns) {
+function matchesAnyGlob(path7, patterns) {
   for (const p of patterns) {
-    if (compile(p).test(path5)) return true;
+    if (compile(p).test(path7)) return true;
   }
   return false;
 }
@@ -1999,9 +2089,7 @@ var init_reranker = __esm({
         const inputs = chunks.map((c) => formatPair(query, c));
         const res = await this.ollama.embed({ model: this.model, texts: inputs });
         if (res.vectors.length !== chunks.length) {
-          throw new Error(
-            `Reranker: expected ${chunks.length} vectors, got ${res.vectors.length}`
-          );
+          throw new Error(`Reranker: expected ${chunks.length} vectors, got ${res.vectors.length}`);
         }
         return res.vectors.map((v) => -l2Norm(v));
       }
@@ -2288,41 +2376,104 @@ var init_query = __esm({
   }
 });
 
-// src/reader/hash.ts
-import { createHash } from "crypto";
-function sha256(input) {
-  return createHash("sha256").update(input, "utf8").digest("hex");
+// src/adapters/registry.ts
+function formatDocId(scheme, authority, resource) {
+  return parseDocId(`${scheme}://${authority}/${resource}`);
 }
-function canonicalJsonStringify(value) {
-  if (value === null || value === void 0) return "null";
-  if (Array.isArray(value)) {
-    return "[" + value.map((v) => canonicalJsonStringify(v)).join(",") + "]";
-  }
-  if (typeof value === "object") {
-    const obj = value;
-    const keys = Object.keys(obj).sort();
-    const parts = keys.map(
-      (k) => JSON.stringify(k) + ":" + canonicalJsonStringify(obj[k])
+function decomposeDocId(docId) {
+  parseDocId(docId);
+  const schemeEnd = docId.indexOf("://");
+  const scheme = docId.slice(0, schemeEnd);
+  const rest = docId.slice(schemeEnd + 3);
+  const authoritySlash = rest.indexOf("/");
+  const authority = rest.slice(0, authoritySlash);
+  const resource = rest.slice(authoritySlash + 1);
+  return { scheme, authority, resource };
+}
+function parseSourceHandle(s) {
+  if (!SOURCE_HANDLE_PATTERN.test(s)) {
+    throw new Error(
+      `Invalid SourceHandle: ${JSON.stringify(s)}. Expected <scheme>://<authority> with no resource path or trailing slash.`
     );
-    return "{" + parts.join(",") + "}";
   }
-  const s = JSON.stringify(value);
-  return s === void 0 ? "null" : s;
+  return s;
 }
-function computeNoteHash(content, frontmatter) {
-  return sha256(content + canonicalJsonStringify(frontmatter ?? {}));
-}
-function computeBodyHash(content) {
-  return sha256(content);
-}
-var init_hash = __esm({
-  "src/reader/hash.ts"() {
+var DOC_ID_PATTERN, SOURCE_HANDLE_PATTERN, parseDocId, AdapterRegistry;
+var init_registry = __esm({
+  "src/adapters/registry.ts"() {
     "use strict";
     init_esm_shims();
+    DOC_ID_PATTERN = /^[a-z][a-z0-9-]*:\/\/[^/]+\/.+$/;
+    SOURCE_HANDLE_PATTERN = /^[a-z][a-z0-9-]*:\/\/[^/]+$/;
+    ({ parseDocId } = /* @__PURE__ */ (() => {
+      const mint = (s) => s;
+      const parse = (s) => {
+        if (!DOC_ID_PATTERN.test(s)) {
+          throw new Error(
+            `Invalid DocId: ${JSON.stringify(s)}. Expected <scheme>://<authority>/<resource> (scheme: lowercase letter + alnum/dashes; authority: non-slash; resource: non-empty).`
+          );
+        }
+        return mint(s);
+      };
+      return { parseDocId: parse };
+    })());
+    AdapterRegistry = class {
+      sources = /* @__PURE__ */ new Map();
+      deliveries = /* @__PURE__ */ new Map();
+      changeFeeds = /* @__PURE__ */ new Map();
+      // ── source ────────────────────────────────────────────────────────────────
+      /** Register a source. Overwrites any prior registration under the same handle. */
+      registerSource(handle, adapter) {
+        this.sources.set(handle, adapter);
+      }
+      /** Resolve a source. Throws with a helpful message on miss. */
+      resolveSource(handle) {
+        const a = this.sources.get(handle);
+        if (!a) {
+          const known = [...this.sources.keys()].join(", ") || "(none)";
+          throw new Error(`Unknown source handle: "${handle}". Registered sources: ${known}`);
+        }
+        return a;
+      }
+      /** List registered source handles. */
+      listSources() {
+        return [...this.sources.keys()];
+      }
+      // ── delivery ──────────────────────────────────────────────────────────────
+      registerDelivery(handle, adapter) {
+        this.deliveries.set(handle, adapter);
+      }
+      resolveDelivery(handle) {
+        const a = this.deliveries.get(handle);
+        if (!a) {
+          const known = [...this.deliveries.keys()].join(", ") || "(none)";
+          throw new Error(`Unknown delivery handle: "${handle}". Registered deliveries: ${known}`);
+        }
+        return a;
+      }
+      listDeliveries() {
+        return [...this.deliveries.keys()];
+      }
+      // ── change-feed ───────────────────────────────────────────────────────────
+      registerChangeFeed(handle, feed) {
+        this.changeFeeds.set(handle, feed);
+      }
+      resolveChangeFeed(handle) {
+        const f = this.changeFeeds.get(handle);
+        if (!f) {
+          const known = [...this.changeFeeds.keys()].join(", ") || "(none)";
+          throw new Error(`Unknown change-feed handle: "${handle}". Registered feeds: ${known}`);
+        }
+        return f;
+      }
+      listChangeFeeds() {
+        return [...this.changeFeeds.keys()];
+      }
+    };
   }
 });
 
-// src/reader/scanner.ts
+// src/adapters/source/obsidian-fs/scanner.ts
 import { promises as fs2 } from "fs";
 import * as path2 from "path";
 async function scanVault(rootPath, options) {
@@ -2396,14 +2547,14 @@ function compileGlob(glob) {
 }
 var DEFAULT_EXCLUDES;
 var init_scanner = __esm({
-  "src/reader/scanner.ts"() {
+  "src/adapters/source/obsidian-fs/scanner.ts"() {
     "use strict";
     init_esm_shims();
     DEFAULT_EXCLUDES = [".obsidian/**", ".trash/**", "node_modules/**"];
   }
 });
 
-// src/reader/wikilinks.ts
+// src/adapters/source/obsidian-fs/wikilinks.ts
 function extractWikilinks(content) {
   const masked = maskFencedCodeBlocks(content);
   const results = [];
@@ -2533,7 +2684,7 @@ function collectFromString(s, out) {
 }
 var WIKILINK_RE, FRONTMATTER_WIKILINK_RE;
 var init_wikilinks2 = __esm({
-  "src/reader/wikilinks.ts"() {
+  "src/adapters/source/obsidian-fs/wikilinks.ts"() {
     "use strict";
     init_esm_shims();
     WIKILINK_RE = /(^|[^!])\[\[([^\[\]\n]+?)\]\]/g;
@@ -2541,7 +2692,39 @@ var init_wikilinks2 = __esm({
   }
 });
 
-// src/reader/parser.ts
+// src/adapters/source/obsidian-fs/hash.ts
+import { createHash } from "crypto";
+function sha256(input) {
+  return createHash("sha256").update(input, "utf8").digest("hex");
+}
+function canonicalJsonStringify(value) {
+  if (value === null || value === void 0) return "null";
+  if (Array.isArray(value)) {
+    return "[" + value.map((v) => canonicalJsonStringify(v)).join(",") + "]";
+  }
+  if (typeof value === "object") {
+    const obj = value;
+    const keys = Object.keys(obj).sort();
+    const parts = keys.map((k) => JSON.stringify(k) + ":" + canonicalJsonStringify(obj[k]));
+    return "{" + parts.join(",") + "}";
+  }
+  const s = JSON.stringify(value);
+  return s === void 0 ? "null" : s;
+}
+function computeNoteHash(content, frontmatter) {
+  return sha256(content + canonicalJsonStringify(frontmatter ?? {}));
+}
+function computeBodyHash(content) {
+  return sha256(content);
+}
+var init_hash = __esm({
+  "src/adapters/source/obsidian-fs/hash.ts"() {
+    "use strict";
+    init_esm_shims();
+  }
+});
+
+// src/adapters/source/obsidian-fs/parser.ts
 import { promises as fs3 } from "fs";
 import * as path3 from "path";
 import matter from "gray-matter";
@@ -2560,9 +2743,7 @@ async function parseNote(absolutePath, vaultRoot) {
   const frontmatterLinks = extractFrontmatterWikilinks(frontmatter);
   const wikilinks = frontmatterLinks.length === 0 ? bodyLinks : mergeFrontmatterIntoBody(bodyLinks, frontmatterLinks);
   const wordCount = countWords(content);
-  const relativePath = toPosix2(
-    path3.relative(path3.resolve(vaultRoot), path3.resolve(absolutePath))
-  );
+  const relativePath = toPosix2(path3.relative(path3.resolve(vaultRoot), path3.resolve(absolutePath)));
   return {
     relativePath,
     content,
@@ -2605,7 +2786,7 @@ function toPosix2(p) {
   return p.split(path3.sep).join("/");
 }
 var init_parser = __esm({
-  "src/reader/parser.ts"() {
+  "src/adapters/source/obsidian-fs/parser.ts"() {
     "use strict";
     init_esm_shims();
     init_wikilinks2();
@@ -2613,15 +2794,151 @@ var init_parser = __esm({
   }
 });
 
-// src/reader/index.ts
-var init_reader = __esm({
-  "src/reader/index.ts"() {
+// src/adapters/source/obsidian-fs/index.ts
+var obsidian_fs_exports = {};
+__export(obsidian_fs_exports, {
+  ObsidianFsSource: () => ObsidianFsSource
+});
+import { promises as fs4 } from "fs";
+import * as path4 from "path";
+var SCHEME, ObsidianFsSource;
+var init_obsidian_fs = __esm({
+  "src/adapters/source/obsidian-fs/index.ts"() {
     "use strict";
     init_esm_shims();
+    init_registry();
     init_scanner();
     init_parser();
-    init_wikilinks2();
     init_hash();
+    SCHEME = "obsidian-fs";
+    ObsidianFsSource = class {
+      constructor(vault) {
+        this.vault = vault;
+        this.handle = parseSourceHandle(`${SCHEME}://${vault.name}`);
+      }
+      vault;
+      handle;
+      capabilities = {
+        bodyShape: "flat-text",
+        properties: "untyped",
+        linkTypes: ["wikilink"],
+        identityStable: false,
+        permissions: false,
+        contentHashStable: true,
+        refHashKind: "content",
+        watch: "push"
+      };
+      // ── enumeration ────────────────────────────────────────────────────────────
+      async *listDocuments(opts) {
+        const excludeOverlay = opts?.excludeGlobs;
+        const files = await scanVault(this.vault.path, {
+          ...excludeOverlay ? { excludeGlobs: excludeOverlay } : {}
+        });
+        const since = opts?.since;
+        const limit = opts?.limit;
+        let yielded = 0;
+        for (const abs of files) {
+          if (limit !== void 0 && yielded >= limit) break;
+          const rel = this.toPosix(path4.relative(path4.resolve(this.vault.path), abs));
+          const stat = await fs4.stat(abs);
+          const mtime = Math.floor(stat.mtimeMs);
+          if (since !== void 0 && mtime < since) continue;
+          const body = await fs4.readFile(abs, "utf-8");
+          const hash = computeBodyHash(body);
+          yield { id: this.pathToDocId(rel), mtime, hash };
+          yielded++;
+        }
+      }
+      // ── single-doc reads ───────────────────────────────────────────────────────
+      async readDocument(id) {
+        const rel = this.docIdToPath(id);
+        const abs = this.absPath(rel);
+        const parsed = await parseNote(abs, this.vault.path);
+        const wikilinks = parsed.wikilinks.map((w) => {
+          const ref = { target: w.normalizedTarget };
+          if (w.alias !== null) ref.alias = w.alias;
+          if (w.anchor !== null) ref.section = w.anchor;
+          return ref;
+        });
+        const properties = {
+          ...parsed.frontmatter ?? {},
+          wikilinks
+        };
+        return {
+          id,
+          source: this.handle,
+          title: parsed.title,
+          blocks: [{ kind: "paragraph", text: parsed.content }],
+          properties,
+          links: [],
+          mtime: parsed.mtime,
+          hash: parsed.hash,
+          display_url: this.formatDisplayUrl(id)
+        };
+      }
+      async hash(id) {
+        const rel = this.docIdToPath(id);
+        const abs = this.absPath(rel);
+        const body = await fs4.readFile(abs, "utf-8");
+        return computeBodyHash(body);
+      }
+      async exists(id) {
+        try {
+          const rel = this.docIdToPath(id);
+          const abs = this.absPath(rel);
+          await fs4.stat(abs);
+          return true;
+        } catch {
+          return false;
+        }
+      }
+      // ── display ────────────────────────────────────────────────────────────────
+      formatDisplayUrl(id) {
+        const rel = this.docIdToPath(id);
+        const vault = encodeURIComponent(this.vault.name);
+        const file = encodeURIComponent(rel);
+        return `obsidian://open?vault=${vault}&file=${file}`;
+      }
+      // ── helpers ────────────────────────────────────────────────────────────────
+      /**
+       * Parse the URI authority + resource off a DocId. Asserts the authority
+       * matches `this.vault.name` — prevents one vault's adapter from reading
+       * another vault's file via a forged DocId (T-01-03-02 in the plan's
+       * threat model).
+       */
+      docIdToPath(id) {
+        const prefix = `${SCHEME}://`;
+        if (!id.startsWith(prefix)) {
+          throw new Error(`DocId scheme mismatch: expected "${SCHEME}://\u2026", got ${JSON.stringify(id)}`);
+        }
+        const rest = id.slice(prefix.length);
+        const slash = rest.indexOf("/");
+        if (slash < 0) {
+          throw new Error(`Invalid DocId shape: missing resource path in ${JSON.stringify(id)}`);
+        }
+        const authority = rest.slice(0, slash);
+        const resource = rest.slice(slash + 1);
+        if (authority !== this.vault.name) {
+          throw new Error(
+            `DocId vault mismatch: id authority "${authority}" does not match this adapter's configured vault "${this.vault.name}"`
+          );
+        }
+        if (resource.length === 0) {
+          throw new Error(`Invalid DocId: empty resource path in ${JSON.stringify(id)}`);
+        }
+        return resource;
+      }
+      pathToDocId(rel) {
+        const posix2 = this.toPosix(rel);
+        return formatDocId(SCHEME, this.vault.name, posix2);
+      }
+      absPath(rel) {
+        return path4.resolve(this.vault.path, rel);
+      }
+      toPosix(p) {
+        return p.split(path4.sep).join("/");
+      }
+    };
   }
 });
 
@@ -3097,9 +3414,7 @@ async function indexVault(vault, options) {
         texts: chunks.map((c) => c.text)
       });
       if (embedResult.dim !== dim) {
-        throw new Error(
-          `Embedding dimension mismatch: expected ${dim}, got ${embedResult.dim}`
-        );
+        throw new Error(`Embedding dimension mismatch: expected ${dim}, got ${embedResult.dim}`);
       }
       const embeddingInputs = chunkIds.map((chunkId, i) => ({
         chunkId,
@@ -3235,31 +3550,531 @@ var init_indexer = __esm({
   "src/indexer/indexer.ts"() {
     "use strict";
     init_esm_shims();
-    init_reader();
+    init_scanner();
+    init_parser();
     init_chunker2();
     init_ollama();
     init_resolver();
   }
 });
 
-// src/write/fs.ts
-import { promises as fs4 } from "fs";
-import { dirname, isAbsolute, resolve as resolve4, sep as sep3 } from "path";
+// src/indexer/single.ts
+import * as path5 from "path";
+async function indexNote(options) {
+  const { vault, absolutePath, embeddingModel, ollama } = options;
+  const secondaryName = options.secondaryEmbeddingModel;
+  if (!isInsideVault(absolutePath, vault.config.path)) {
+    return emptyResult("outside_vault");
+  }
+  let parsed;
+  try {
+    parsed = await parseNote(absolutePath, vault.config.path);
+  } catch (err) {
+    if (isENOENT(err)) {
+      return emptyResult("missing");
+    }
+    return emptyResult("parse_error");
+  }
+  const existing = vault.db.notes.getByPath(parsed.relativePath);
+  if (existing && existing.hash === parsed.hash) {
+    vault.db.aliases.setForNote(existing.id, extractAliases(parsed.frontmatter));
+    return {
+      status: "unchanged",
+      notePath: parsed.relativePath,
+      noteId: existing.id,
+      chunksCreated: 0,
+      isNew: false
+    };
+  }
+  if (existing && existing.body_hash && existing.body_hash === parsed.bodyHash) {
+    const upsert2 = vault.db.notes.upsertByPath({
+      path: parsed.relativePath,
+      content: parsed.content,
+      frontmatter: parsed.frontmatter ? JSON.stringify(parsed.frontmatter) : null,
+      title: parsed.title,
+      hash: parsed.hash,
+      bodyHash: parsed.bodyHash,
+      mtime: parsed.mtime,
+      wordCount: parsed.wordCount
+    });
+    vault.db.aliases.setForNote(upsert2.id, extractAliases(parsed.frontmatter));
+    vault.db.wikilinks.deleteByNote(upsert2.id);
+    insertWikilinks2(vault, upsert2.id, parsed.wikilinks);
+    return {
+      status: "indexed",
+      notePath: parsed.relativePath,
+      noteId: upsert2.id,
+      chunksCreated: 0,
+      isNew: false
+    };
+  }
+  const activeModel = vault.db.models.getActive();
+  if (!activeModel) {
+    throw new Error(
+      `single-indexer: no active embedding model in DB. Run a full index first to register "${embeddingModel}".`
+    );
+  }
+  if (activeModel.name !== embeddingModel) {
+    throw new Error(
+      `single-indexer: active model "${activeModel.name}" does not match requested "${embeddingModel}". Run a full re-index to switch models.`
+    );
+  }
+  const upsert = vault.db.notes.upsertByPath({
+    path: parsed.relativePath,
+    content: parsed.content,
+    frontmatter: parsed.frontmatter ? JSON.stringify(parsed.frontmatter) : null,
+    title: parsed.title,
+    hash: parsed.hash,
+    bodyHash: parsed.bodyHash,
+    mtime: parsed.mtime,
+    wordCount: parsed.wordCount
+  });
+  vault.db.aliases.setForNote(upsert.id, extractAliases(parsed.frontmatter));
+  vault.db.chunks.deleteByNote(upsert.id);
+  vault.db.wikilinks.deleteByNote(upsert.id);
+  const chunks = chunkNote(parsed.content);
+  if (chunks.length === 0) {
+    insertWikilinks2(vault, upsert.id, parsed.wikilinks);
+    return {
+      status: "indexed",
+      notePath: parsed.relativePath,
+      noteId: upsert.id,
+      chunksCreated: 0,
+      isNew: upsert.isNew
+    };
+  }
+  const chunkIds = vault.db.chunks.insertBatch(
+    upsert.id,
+    chunks.map((c) => ({
+      idx: c.idx,
+      text: c.text,
+      headingPath: c.headingPath,
+      startOffset: c.startOffset,
+      endOffset: c.endOffset,
+      tokenCount: c.tokenCount
+    }))
+  );
+  const embedResult = await ollama.embed({
+    model: embeddingModel,
+    texts: chunks.map((c) => c.text)
+  });
+  if (embedResult.dim !== activeModel.dim) {
+    throw new Error(
+      `single-indexer: embedding dim ${embedResult.dim} does not match registered dim ${activeModel.dim} for model "${embeddingModel}".`
+    );
+  }
+  vault.db.embeddings.insertBatch(
+    chunkIds.map((chunkId, i) => ({
+      chunkId,
+      modelId: activeModel.id,
+      vector: embedResult.vectors[i]
+    }))
+  );
+  if (secondaryName) {
+    const secondaryModel = vault.db.models.getByName(secondaryName);
+    if (secondaryModel && secondaryModel.id !== activeModel.id) {
+      const secEmbed = await ollama.embed({
+        model: secondaryName,
+        texts: chunks.map((c) => c.text)
+      });
+      if (secEmbed.dim !== secondaryModel.dim) {
+        throw new Error(
+          `single-indexer: shadow embedding dim ${secEmbed.dim} does not match registered dim ${secondaryModel.dim} for "${secondaryName}".`
+        );
+      }
+      vault.db.embeddings.insertBatch(
+        chunkIds.map((chunkId, i) => ({
+          chunkId,
+          modelId: secondaryModel.id,
+          vector: secEmbed.vectors[i]
+        }))
+      );
+    }
+  }
+  insertWikilinks2(vault, upsert.id, parsed.wikilinks);
+  return {
+    status: "indexed",
+    notePath: parsed.relativePath,
+    noteId: upsert.id,
+    chunksCreated: chunks.length,
+    isNew: upsert.isNew
+  };
+}
+function removeNote(vault, absolutePath) {
+  if (!isInsideVault(absolutePath, vault.config.path)) {
+    return { removed: false, notePath: null };
+  }
+  const relativePath = toRelativePosix(absolutePath, vault.config.path);
+  const existing = vault.db.notes.getByPath(relativePath);
+  if (!existing) {
+    return { removed: false, notePath: null };
+  }
+  vault.db.notes.deleteByPath(relativePath);
+  return { removed: true, notePath: relativePath };
+}
+function emptyResult(status) {
+  return {
+    status,
+    notePath: null,
+    noteId: null,
+    chunksCreated: 0,
+    isNew: false
+  };
+}
+function isInsideVault(absolutePath, vaultRoot) {
+  const absResolved = path5.resolve(absolutePath);
+  const rootResolved = path5.resolve(vaultRoot);
+  const absPosix = absResolved.split(path5.sep).join("/");
+  const rootPosix = rootResolved.split(path5.sep).join("/");
+  const rootWithSep = rootPosix.endsWith("/") ? rootPosix : `${rootPosix}/`;
+  return absPosix === rootPosix || absPosix.startsWith(rootWithSep);
+}
+function toRelativePosix(absolutePath, vaultRoot) {
+  return path5.relative(path5.resolve(vaultRoot), path5.resolve(absolutePath)).split(path5.sep).join("/");
+}
+function isENOENT(err) {
+  return typeof err === "object" && err !== null && "code" in err && err.code === "ENOENT";
+}
+function insertWikilinks2(vault, sourceNoteId, wikilinks) {
+  if (wikilinks.length === 0) return;
+  const inputs = wikilinks.map((wl) => {
+    const target = resolveWikilinkTarget(vault, wl.normalizedTarget);
+    return {
+      targetPath: wl.normalizedTarget,
+      targetNoteId: target?.id ?? null,
+      linkText: wl.alias,
+      anchor: wl.anchor,
+      lineNumber: wl.line
+    };
+  });
+  vault.db.wikilinks.insertBatch(sourceNoteId, inputs);
+}
+var init_single = __esm({
+  "src/indexer/single.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_parser();
+    init_chunker2();
+    init_indexer();
+  }
+});
+
+// src/indexer/catchup.ts
+async function catchupVault(options) {
+  const started = Date.now();
+  const log = options.log ?? (() => {
+  });
+  const { vault } = options;
+  const files = await scanVault(vault.config.path, {
+    excludeGlobs: vault.config.exclude_globs
+  });
+  let reindexed = 0;
+  const knownPaths = /* @__PURE__ */ new Set();
+  for (const file of files) {
+    const parsed = await parseNote(file, vault.config.path).catch(() => null);
+    if (!parsed) continue;
+    knownPaths.add(parsed.relativePath);
+    const dbRow = vault.db.notes.getByPath(parsed.relativePath);
+    if (dbRow && dbRow.hash === parsed.hash) {
+      continue;
+    }
+    const result = await indexNote({
+      vault,
+      absolutePath: file,
+      embeddingModel: options.embeddingModel,
+      ollama: options.ollama
+    });
+    if (result.status === "indexed") {
+      reindexed++;
+      log(`catch-up indexed ${parsed.relativePath} (${result.isNew ? "new" : "updated"})`);
+    }
+  }
+  let removed = 0;
+  for (const row of vault.db.notes.listAll()) {
+    if (!knownPaths.has(row.path)) {
+      const result = removeNote(vault, joinAbs(vault.config.path, row.path));
+      if (result.removed) {
+        removed++;
+        log(`catch-up removed ${row.path}`);
+      }
+    }
+  }
+  return {
+    scanned: files.length,
+    reindexed,
+    removed,
+    durationMs: Date.now() - started
+  };
+}
+function joinAbs(root, relative5) {
+  if (root.endsWith("/")) return `${root}${relative5}`;
+  return `${root}/${relative5}`;
+}
+var init_catchup = __esm({
+  "src/indexer/catchup.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_scanner();
+    init_parser();
+    init_single();
+  }
+});
+
+// src/indexer/shadow.ts
+import { randomUUID as randomUUID2 } from "crypto";
+async function startShadowIndex(options) {
+  const { vault, model, ollama } = options;
+  const log = options.log ?? (() => {
+  });
+  const batchSize = options.batchSize ?? 16;
+  const runId = randomUUID2();
+  const started = Date.now();
+  if (!await ollama.modelExists(model)) {
+    throw new Error(`Shadow model "${model}" not found in Ollama. Run: ollama pull ${model}`);
+  }
+  const probe = await ollama.embed({ model, texts: ["probe"] });
+  const dim = probe.dim;
+  const modelRow = vault.db.models.upsert({
+    name: model,
+    provider: "ollama",
+    dim,
+    active: false
+  });
+  vault.db.embeddings.ensureTableForModel(modelRow.id, dim);
+  vault.db.audit.startRun({
+    runId,
+    vaultName: vault.config.name,
+    modelId: modelRow.id,
+    trigger: "shadow"
+  });
+  const embTable = `embeddings_m${modelRow.id}_d${dim}`;
+  const pendingSql = `
+    SELECT c.id AS id, c.text AS text
+    FROM chunks c
+    LEFT JOIN ${embTable} e ON e.chunk_id = c.id
+    WHERE e.chunk_id IS NULL
+    ORDER BY c.id
+  `;
+  const totalSql = `SELECT COUNT(*) AS c FROM chunks`;
+  const pending = vault.db.handle.prepare(pendingSql).all();
+  const totalRow = vault.db.handle.prepare(totalSql).get();
+  const chunksTotal = totalRow?.c ?? 0;
+  const chunksSkipped = chunksTotal - pending.length;
+  log(
+    `shadow-index "${model}" (dim=${dim}): ${pending.length} pending, ${chunksSkipped} already embedded`
+  );
+  let chunksEmbedded = 0;
+  try {
+    for (let i = 0; i < pending.length; i += batchSize) {
+      const batch = pending.slice(i, i + batchSize);
+      const embedResp = await ollama.embed({
+        model,
+        texts: batch.map((c) => c.text)
+      });
+      if (embedResp.dim !== dim) {
+        throw new Error(
+          `Shadow embedding dim mismatch mid-run: expected ${dim}, got ${embedResp.dim} on batch starting chunk_id ${batch[0]?.id}`
+        );
+      }
+      vault.db.embeddings.insertBatch(
+        batch.map((row, j) => ({
+          chunkId: row.id,
+          modelId: modelRow.id,
+          vector: embedResp.vectors[j]
+        }))
+      );
+      chunksEmbedded += batch.length;
+      if (i % (batchSize * 8) === 0) {
+        log(`  ${chunksEmbedded}/${pending.length}\u2026`);
+      }
+    }
+    vault.db.audit.finishRun(runId, {
+      notesIndexed: 0,
+      chunksCreated: chunksEmbedded,
+      notesUpdated: 0,
+      notesDeleted: 0
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    vault.db.audit.finishRun(runId, {
+      notesIndexed: 0,
+      chunksCreated: chunksEmbedded,
+      notesUpdated: 0,
+      notesDeleted: 0,
+      error: message
+    });
+    throw err;
+  }
+  return {
+    runId,
+    modelId: modelRow.id,
+    modelName: model,
+    dim,
+    chunksTotal,
+    chunksEmbedded,
+    chunksSkipped,
+    durationMs: Date.now() - started
+  };
+}
+function listModels(vault) {
+  const rows = vault.db.models.listAll();
+  return rows.map((m) => {
+    let count = 0;
+    try {
+      vault.db.embeddings.ensureTableForModel(m.id, m.dim);
+      const row = vault.db.handle.prepare(`SELECT COUNT(*) AS c FROM embeddings_m${m.id}_d${m.dim}`).get();
+      count = row?.c ?? 0;
+    } catch {
+      count = 0;
+    }
+    return {
+      id: m.id,
+      name: m.name,
+      provider: m.provider,
+      dim: m.dim,
+      active: m.active === 1,
+      embedded_chunk_count: count
+    };
+  });
+}
+function switchActiveModel(vault, targetModelName) {
+  const target = vault.db.models.getByName(targetModelName);
+  if (!target) {
+    return { ok: false, reason: "unknown_model" };
+  }
+  const current = vault.db.models.getActive();
+  if (current && current.id === target.id) {
+    return {
+      ok: false,
+      reason: "already_active",
+      switched_from: current.name,
+      switched_to: target.name
+    };
+  }
+  vault.db.embeddings.ensureTableForModel(target.id, target.dim);
+  const embTable = `embeddings_m${target.id}_d${target.dim}`;
+  const missingRow = vault.db.handle.prepare(
+    `SELECT COUNT(*) AS c
+       FROM chunks c
+       LEFT JOIN ${embTable} e ON e.chunk_id = c.id
+       WHERE e.chunk_id IS NULL`
+  ).get();
+  const missing = missingRow?.c ?? 0;
+  if (missing > 0) {
+    return {
+      ok: false,
+      reason: "incomplete",
+      missing_chunks: missing,
+      switched_from: current?.name,
+      switched_to: target.name
+    };
+  }
+  vault.db.models.setActive(target.id);
+  return {
+    ok: true,
+    switched_from: current?.name,
+    switched_to: target.name
+  };
+}
+var init_shadow = __esm({
+  "src/indexer/shadow.ts"() {
+    "use strict";
+    init_esm_shims();
+  }
+});
+
+// src/indexer/vacuum.ts
+function vacuumEmbeddings(vault) {
+  const startedAt = Date.now();
+  const models = vault.db.models.listAll();
+  const per_model = [];
+  let total_removed = 0;
+  vault.db.transaction(() => {
+    for (const m of models) {
+      vault.db.embeddings.ensureTableForModel(m.id, m.dim);
+      const table = `embeddings_m${m.id}_d${m.dim}`;
+      const beforeRow = vault.db.handle.prepare(`SELECT COUNT(*) AS c FROM ${table}`).get();
+      const before = beforeRow?.c ?? 0;
+      const orphans = vault.db.handle.prepare(
+        `SELECT chunk_id FROM ${table}
+           WHERE chunk_id NOT IN (SELECT id FROM chunks)`
+      ).all();
+      if (orphans.length > 0) {
+        const stmt = vault.db.handle.prepare(`DELETE FROM ${table} WHERE chunk_id = ?`);
+        for (const o of orphans) {
+          stmt.run(BigInt(o.chunk_id));
+        }
+      }
+      const removed = orphans.length;
+      const kept = before - removed;
+      total_removed += removed;
+      per_model.push({
+        model_id: m.id,
+        model_name: m.name,
+        dim: m.dim,
+        table,
+        removed,
+        kept
+      });
+    }
+  });
+  return {
+    total_removed,
+    per_model,
+    duration_ms: Date.now() - startedAt
+  };
+}
+var init_vacuum = __esm({
+  "src/indexer/vacuum.ts"() {
+    "use strict";
+    init_esm_shims();
+  }
+});
+
+// src/indexer/index.ts
+var indexer_exports = {};
+__export(indexer_exports, {
+  catchupVault: () => catchupVault,
+  extractAliases: () => extractAliases,
+  indexNote: () => indexNote,
+  indexVault: () => indexVault,
+  listModels: () => listModels,
+  removeNote: () => removeNote,
+  resolveWikilinkTarget: () => resolveWikilinkTarget,
+  startShadowIndex: () => startShadowIndex,
+  switchActiveModel: () => switchActiveModel,
+  vacuumEmbeddings: () => vacuumEmbeddings
+});
+var init_indexer2 = __esm({
+  "src/indexer/index.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_indexer();
+    init_single();
+    init_catchup();
+    init_shadow();
+    init_vacuum();
+  }
+});
+
+// src/adapters/delivery/obsidian-fs/fs.ts
+import { promises as fs5 } from "fs";
+import { dirname, isAbsolute, resolve as resolve6, sep as sep5 } from "path";
 import { randomBytes } from "crypto";
 async function atomicWriteFile(absPath, content) {
   if (!isAbsolute(absPath)) {
     throw new Error(`atomicWriteFile requires an absolute path: ${absPath}`);
   }
   const parent = dirname(absPath);
-  await fs4.mkdir(parent, { recursive: true });
+  await fs5.mkdir(parent, { recursive: true });
   const suffix = randomBytes(8).toString("hex");
   const tmpPath = `${absPath}.tmp.${suffix}`;
   try {
-    await fs4.writeFile(tmpPath, content, "utf-8");
-    await fs4.rename(tmpPath, absPath);
+    await fs5.writeFile(tmpPath, content, "utf-8");
+    await fs5.rename(tmpPath, absPath);
   } catch (err) {
     try {
-      await fs4.unlink(tmpPath);
+      await fs5.unlink(tmpPath);
     } catch {
     }
     throw err;
@@ -3272,9 +4087,9 @@ async function safeJoinInsideVault(vaultRoot, relativePath) {
   if (isAbsolute(relativePath)) {
     throw new OutsideVaultError(relativePath, vaultRoot);
   }
-  const root = resolve4(vaultRoot);
-  const target = resolve4(root, relativePath);
-  const rootWithSep = root.endsWith(sep3) ? root : root + sep3;
+  const root = resolve6(vaultRoot);
+  const target = resolve6(root, relativePath);
+  const rootWithSep = root.endsWith(sep5) ? root : root + sep5;
   if (target !== root && !target.startsWith(rootWithSep)) {
     throw new OutsideVaultError(relativePath, vaultRoot);
   }
@@ -3283,12 +4098,12 @@ async function safeJoinInsideVault(vaultRoot, relativePath) {
   }
   let realRoot;
   try {
-    realRoot = await fs4.realpath(root);
+    realRoot = await fs5.realpath(root);
   } catch {
     throw new OutsideVaultError(relativePath, vaultRoot);
   }
   const realTarget = await resolveExistingAncestor(target);
-  const realRootWithSep = realRoot.endsWith(sep3) ? realRoot : realRoot + sep3;
+  const realRootWithSep = realRoot.endsWith(sep5) ? realRoot : realRoot + sep5;
   if (realTarget !== realRoot && !realTarget.startsWith(realRootWithSep)) {
     throw new OutsideVaultError(relativePath, vaultRoot);
   }
@@ -3299,8 +4114,8 @@ async function resolveExistingAncestor(absPath) {
   const trailing = [];
   while (true) {
     try {
-      const real = await fs4.realpath(current);
-      return trailing.length === 0 ? real : resolve4(real, ...trailing.reverse());
+      const real = await fs5.realpath(current);
+      return trailing.length === 0 ? real : resolve6(real, ...trailing.reverse());
     } catch (err) {
       const code = err?.code;
       if (code !== "ENOENT" && code !== "ENOTDIR") {
@@ -3317,7 +4132,7 @@ async function resolveExistingAncestor(absPath) {
 }
 var OutsideVaultError;
 var init_fs = __esm({
-  "src/write/fs.ts"() {
+  "src/adapters/delivery/obsidian-fs/fs.ts"() {
     "use strict";
     init_esm_shims();
     OutsideVaultError = class extends Error {
@@ -3331,9 +4146,903 @@ var init_fs = __esm({
   }
 });
 
-// src/frontmatter/update.ts
-import { promises as fs5 } from "fs";
+// src/adapters/delivery/obsidian-fs/write.ts
+import { promises as fs6 } from "fs";
+import { basename as basename3 } from "path";
 import matter2 from "gray-matter";
+function permissionDenied(vaultName) {
+  return {
+    ok: false,
+    reason: "permission_denied",
+    message: `Vault "${vaultName}" is read-only (write_enabled=false in config.toml)`
+  };
+}
+function computeHash(content, frontmatter) {
+  return computeNoteHash(content, frontmatter);
+}
+function extractTitle2(content, relativePath) {
+  for (const line of content.split("\n")) {
+    const m = /^#\s+(.+?)\s*$/.exec(line);
+    if (m !== null && m[1] !== void 0) return m[1].trim();
+  }
+  return basename3(relativePath, ".md");
+}
+function countWords2(content) {
+  if (content.length === 0) return 0;
+  return content.split(/\s+/).filter((s) => s.length > 0).length;
+}
+async function readExistingFile(absPath) {
+  let raw;
+  try {
+    raw = await fs6.readFile(absPath, "utf-8");
+  } catch (err) {
+    if (typeof err === "object" && err !== null && err.code === "ENOENT") {
+      return null;
+    }
+    throw err;
+  }
+  const parsed = matter2(raw);
+  const fmData = parsed.data;
+  const frontmatter = fmData !== void 0 && Object.keys(fmData).length > 0 ? fmData : null;
+  const hash = computeHash(parsed.content, frontmatter);
+  return { raw, content: parsed.content, frontmatter, hash };
+}
+async function writeNote(input) {
+  const { vault, relativePath, content, registry } = input;
+  const frontmatter = input.frontmatter ?? null;
+  const clientId = input.clientId ?? UNKNOWN_CLIENT_ID;
+  if (registry) {
+    const docId = formatDocId("obsidian-fs", vault.config.name, relativePath);
+    const sink = registry.findSinkContaining(docId);
+    if (sink !== null) {
+      return {
+        ok: false,
+        reason: "sink_write_blocked",
+        sinkName: sink.name,
+        message: `Target ${relativePath} resolves into MemorySink "${sink.name}". v1 write_note is refused for memory-sink targets.`,
+        suggestion: `Use record_observation for sink '${sink.name}'.`
+      };
+    }
+  }
+  if (vault.config.write_enabled !== true) {
+    return permissionDenied(vault.config.name);
+  }
+  const absPath = await safeJoinInsideVault(vault.config.path, relativePath);
+  const existing = await readExistingFile(absPath);
+  const created = existing === null;
+  if (existing !== null) {
+    if (input.expectedHash === void 0) {
+      return {
+        ok: false,
+        reason: "hash_mismatch",
+        currentHash: existing.hash,
+        currentContent: existing.raw,
+        message: `File "${relativePath}" already exists. Pass expectedHash="${existing.hash}" to overwrite intentionally.`
+      };
+    }
+    if (input.expectedHash !== existing.hash) {
+      return {
+        ok: false,
+        reason: "hash_mismatch",
+        currentHash: existing.hash,
+        currentContent: existing.raw,
+        message: `Hash mismatch for "${relativePath}": expected ${input.expectedHash}, got ${existing.hash}. The file was modified externally \u2014 re-read and retry.`
+      };
+    }
+  }
+  const fileText = frontmatter !== null && Object.keys(frontmatter).length > 0 ? matter2.stringify(content, frontmatter) : content;
+  input.onBeforeFsWrite?.();
+  await atomicWriteFile(absPath, fileText);
+  const written = await readExistingFile(absPath);
+  if (written === null) {
+    throw new Error(`Internal error: file disappeared after write: ${relativePath}`);
+  }
+  const stat = await fs6.stat(absPath);
+  const previousNote = vault.db.notes.getByPath(relativePath);
+  const previousHash = previousNote?.hash ?? null;
+  const title = extractTitle2(written.content, relativePath);
+  let upsertId;
+  try {
+    upsertId = vault.db.transaction(() => {
+      const up = vault.db.notes.upsertByPath({
+        path: relativePath,
+        content: written.content,
+        frontmatter: written.frontmatter ? JSON.stringify(written.frontmatter) : null,
+        title,
+        hash: written.hash,
+        bodyHash: computeBodyHash(written.content),
+        mtime: Math.floor(stat.mtimeMs),
+        wordCount: countWords2(written.content)
+      });
+      vault.db.aliases.setForNote(up.id, extractAliases(written.frontmatter));
+      vault.db.audit.recordWrite({
+        noteId: up.id,
+        op: created ? "create" : "update",
+        previousHash,
+        newHash: written.hash,
+        expectedHash: input.expectedHash ?? null,
+        clientId,
+        diffSummary: null,
+        // Plan 02-06 (MEM-08): stamp the audit row with the sink-routing
+        // flag the facade derived from `opts.sink !== undefined`. v1 call
+        // sites that haven't been threaded leave the field undefined →
+        // recordWrite defaults to 0 (non-memory).
+        isMemorySinkWrite: input.isMemorySinkWrite ?? false
+      });
+      return up.id;
+    });
+  } catch (dbErr) {
+    input.onBeforeFsWrite?.();
+    try {
+      if (created) {
+        await fs6.unlink(absPath);
+      } else if (existing !== null) {
+        await atomicWriteFile(absPath, existing.raw);
+      }
+    } catch {
+    }
+    throw dbErr;
+  }
+  return {
+    ok: true,
+    newHash: written.hash,
+    noteId: upsertId,
+    created
+  };
+}
+async function deleteNote(input) {
+  const { vault, relativePath, expectedHash, registry } = input;
+  const clientId = input.clientId ?? UNKNOWN_CLIENT_ID;
+  if (registry) {
+    const docId = formatDocId("obsidian-fs", vault.config.name, relativePath);
+    const sink = registry.findSinkContaining(docId);
+    if (sink !== null) {
+      return {
+        ok: false,
+        reason: "sink_write_blocked",
+        sinkName: sink.name,
+        message: `Target ${relativePath} resolves into MemorySink "${sink.name}". Hard deletion of memory documents is not permitted in v2.0.0.`,
+        suggestion: "Use supersede to retire memory documents. Hard deletion is not yet supported in v2.0.0."
+      };
+    }
+  }
+  if (vault.config.write_enabled !== true) {
+    return permissionDenied(vault.config.name);
+  }
+  const absPath = await safeJoinInsideVault(vault.config.path, relativePath);
+  const existing = await readExistingFile(absPath);
+  if (existing === null) {
+    return {
+      ok: false,
+      reason: "hash_mismatch",
+      message: `File "${relativePath}" does not exist \u2014 nothing to delete.`
+    };
+  }
+  if (existing.hash !== expectedHash) {
+    return {
+      ok: false,
+      reason: "hash_mismatch",
+      currentHash: existing.hash,
+      currentContent: existing.raw,
+      message: `Hash mismatch for "${relativePath}": expected ${expectedHash}, got ${existing.hash}. The file was modified externally \u2014 re-read and retry.`
+    };
+  }
+  const previousNote = vault.db.notes.getByPath(relativePath);
+  const previousHash = previousNote?.hash ?? existing.hash;
+  input.onBeforeFsWrite?.();
+  await fs6.unlink(absPath);
+  if (previousNote !== null) {
+    vault.db.transaction(() => {
+      vault.db.audit.recordWrite({
+        noteId: previousNote.id,
+        op: "delete",
+        previousHash,
+        newHash: null,
+        expectedHash,
+        clientId,
+        diffSummary: null,
+        // Plan 02-06 (MEM-08): symmetric stamp on delete. Production
+        // deletes targeting a sink are refused by the entry-point Guard
+        // and the facade — so this flag is normally `false` on delete
+        // rows. Pass-through retained for symmetry / future admin paths.
+        isMemorySinkWrite: input.isMemorySinkWrite ?? false
+      });
+      vault.db.notes.deleteByPath(relativePath);
+    });
+    return {
+      ok: true,
+      newHash: existing.hash,
+      noteId: previousNote.id,
+      created: false
+    };
+  }
+  return {
+    ok: true,
+    newHash: existing.hash,
+    noteId: 0,
+    created: false
+  };
+}
+var UNKNOWN_CLIENT_ID;
+var init_write = __esm({
+  "src/adapters/delivery/obsidian-fs/write.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_hash();
+    init_indexer2();
+    init_fs();
+    init_registry();
+    UNKNOWN_CLIENT_ID = "unknown";
+  }
+});
+
+// src/memory/validator.ts
+function getAt(props, key) {
+  if (!props || typeof props !== "object") return void 0;
+  return props[key];
+}
+function validateAgentWrite(id, doc, sink, contract) {
+  const props = doc.properties;
+  const source = getAt(props, "source");
+  if (source === "agent" && sink === null) {
+    return {
+      ok: false,
+      reason: "agent_write_outside_sink",
+      message: `source:"agent" writes are only permitted under a configured MemorySink. Target ${id} does not resolve into any sink.`,
+      suggestion: "Use record_observation for memory writes; or change source to 'user' / 'imported'."
+    };
+  }
+  if (source !== void 0 && source !== "agent" && sink !== null) {
+    return {
+      ok: false,
+      reason: "non_agent_write_inside_sink",
+      sinkName: sink.name,
+      message: `source:"${String(source)}" writes are not permitted into MemorySink "${sink.name}".`,
+      suggestion: "Memory sinks accept source:'agent' writes only. User notes belong in the surrounding vault."
+    };
+  }
+  if (sink !== null && contract !== null) {
+    const result = contract.propertiesSchema.safeParse(props ?? {});
+    if (!result.success) {
+      const issue = result.error.issues[0];
+      if (!issue) return null;
+      const pathHead = issue.path[0];
+      const key = typeof pathHead === "string" ? pathHead : void 0;
+      if (key === "superseded_reason" || key === "superseded_by") {
+        return {
+          ok: false,
+          reason: "supersede_mismatch",
+          sinkName: sink.name,
+          ...key !== void 0 ? { key } : {},
+          message: `Cross-field rule failed at "${key}": ${issue.message}`,
+          suggestion: "When status is 'superseded', set both superseded_by (DocId) and superseded_reason (non-empty string)."
+        };
+      }
+      const observed = key !== void 0 ? getAt(props, key) : void 0;
+      if (observed === void 0) {
+        return {
+          ok: false,
+          reason: "missing_provenance",
+          sinkName: sink.name,
+          ...key !== void 0 ? { key } : {},
+          message: `Required property "${key ?? "(unknown)"}" is missing for writes into MemorySink "${sink.name}".`,
+          suggestion: `Set properties.${key ?? "<key>"} before retrying. See contract "${contract.name}" required keys: ${contract.requiredKeys.join(", ")}.`
+        };
+      }
+      return {
+        ok: false,
+        reason: "invalid_provenance",
+        sinkName: sink.name,
+        ...key !== void 0 ? { key } : {},
+        observedValue: observed,
+        message: `Property "${key ?? "(unknown)"}" failed validation: ${issue.message}`,
+        suggestion: `See contract "${contract.name}" for valid values.`
+      };
+    }
+  }
+  return null;
+}
+var init_validator = __esm({
+  "src/memory/validator.ts"() {
+    "use strict";
+    init_esm_shims();
+  }
+});
+
+// src/memory/contract/default-v1.ts
+import { z as z3 } from "zod";
+var requiredKeys, baseShape, DEFAULT_MEMORY_V1;
+var init_default_v1 = __esm({
+  "src/memory/contract/default-v1.ts"() {
+    "use strict";
+    init_esm_shims();
+    requiredKeys = [
+      "source",
+      "confidence",
+      "evidence",
+      "status",
+      "observed_at",
+      "superseded_by",
+      "type"
+    ];
+    baseShape = z3.object({
+      source: z3.enum(["agent", "user", "imported"]),
+      confidence: z3.enum(["direct", "inferred", "uncertain"]),
+      evidence: z3.array(z3.string()),
+      status: z3.enum(["active", "superseded", "archived"]).default("active"),
+      observed_at: z3.string().datetime({ offset: true }),
+      superseded_by: z3.string().nullable().default(null),
+      type: z3.string().min(1),
+      superseded_reason: z3.string().optional()
+    }).passthrough().superRefine((data, ctx) => {
+      if (data.status === "superseded") {
+        if (data.superseded_by === null || data.superseded_by === void 0) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["superseded_by"],
+            message: "Required (non-null DocId) when status is 'superseded'"
+          });
+        }
+        if (typeof data.superseded_reason !== "string" || data.superseded_reason.length === 0) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["superseded_reason"],
+            message: "Required (non-empty string) when status is 'superseded'"
+          });
+        }
+      }
+    });
+    DEFAULT_MEMORY_V1 = {
+      name: "default-memory-v1",
+      version: "1.0",
+      propertiesSchema: baseShape,
+      requiredKeys,
+      naming: {
+        strategy: "date-slug",
+        pattern: "{observed_at:YYYY-MM-DD}-{slug}.md"
+      }
+    };
+  }
+});
+
+// src/adapters/delivery/obsidian-fs/path.ts
+import path6 from "path";
+function pathInSink(vaultAbsolutePath, sink, relativeSubpath = "") {
+  return path6.join(vaultAbsolutePath, sink.resolveToRelativePath, relativeSubpath);
+}
+var init_path = __esm({
+  "src/adapters/delivery/obsidian-fs/path.ts"() {
+    "use strict";
+    init_esm_shims();
+  }
+});
+
+// src/adapters/delivery/obsidian-fs/contract-yaml-read.ts
+import { readFile as readFile3 } from "fs/promises";
+var init_contract_yaml_read = __esm({
+  "src/adapters/delivery/obsidian-fs/contract-yaml-read.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_path();
+  }
+});
+
+// src/memory/contract/schema.ts
+import { z as z4 } from "zod";
+var PropertyRuleSchema, CrossFieldRuleSchema, MemoryContractYamlSchema;
+var init_schema2 = __esm({
+  "src/memory/contract/schema.ts"() {
+    "use strict";
+    init_esm_shims();
+    PropertyRuleSchema = z4.object({
+      type: z4.enum(["string", "datetime", "array", "doc_id", "number", "boolean", "reference", "date"]),
+      allowed: z4.array(z4.string()).optional(),
+      default: z4.unknown().optional(),
+      items: z4.object({ type: z4.string() }).optional(),
+      min_length: z4.number().optional(),
+      /** When true, the property accepts `null` as a sentinel value (in
+       *  addition to whatever `type` says). Used for required-but-null-by-
+       *  default properties like `superseded_by` on active observations. */
+      nullable: z4.boolean().optional()
+    });
+    CrossFieldRuleSchema = z4.object({
+      when: z4.string(),
+      require: z4.string()
+    });
+    MemoryContractYamlSchema = z4.object({
+      name: z4.string().min(1),
+      version: z4.string().default("1.0"),
+      required_properties: z4.record(z4.string(), PropertyRuleSchema),
+      optional_properties: z4.record(z4.string(), PropertyRuleSchema).default({}),
+      cross_field_rules: z4.array(CrossFieldRuleSchema).default([]),
+      naming: z4.object({
+        strategy: z4.enum(["caller-provided", "date-slug", "adapter-assigned"]),
+        pattern: z4.string().optional()
+      })
+    });
+  }
+});
+
+// src/memory/contract/loader.ts
+import { parse as parseYaml } from "yaml";
+import { z as z5 } from "zod";
+function __cacheContract(name, contract) {
+  contractCache.set(name, contract);
+}
+function __getCachedContract(name) {
+  return contractCache.get(name);
+}
+var contractCache;
+var init_loader2 = __esm({
+  "src/memory/contract/loader.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_contract_yaml_read();
+    init_schema2();
+    contractCache = /* @__PURE__ */ new Map();
+  }
+});
+
+// src/memory/contract/index.ts
+function getContract(name) {
+  const cached = __getCachedContract(name);
+  if (cached) return cached;
+  throw new Error(
+    `Unknown memory contract: "${name}". Known contracts: default-memory-v1${otherCachedNames(name)}. Call loadContractFromDisk(name, vaultPath) first to register a contract.`
+  );
+}
+function otherCachedNames(excluding) {
+  const names = [];
+  for (const candidate of ["default-memory-v1"]) {
+    if (candidate === excluding) continue;
+    if (__getCachedContract(candidate)) names.push(candidate);
+  }
+  return names.length > 0 ? `, ${names.join(", ")}` : "";
+}
+var init_contract = __esm({
+  "src/memory/contract/index.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_default_v1();
+    init_loader2();
+    __cacheContract("default-memory-v1", DEFAULT_MEMORY_V1);
+  }
+});
+
+// src/memory/sink.ts
+var MEMORY_SINK_HANDLE_PATTERN, parseMemorySinkHandle, SENTINEL_FILENAME;
+var init_sink = __esm({
+  "src/memory/sink.ts"() {
+    "use strict";
+    init_esm_shims();
+    MEMORY_SINK_HANDLE_PATTERN = /^obsidian-fs:\/\/[a-z0-9][a-z0-9-]*\/[^\s]+\/$/;
+    ({ parseMemorySinkHandle } = /* @__PURE__ */ (() => {
+      const mint = (s) => s;
+      const parse = (s) => {
+        if (!MEMORY_SINK_HANDLE_PATTERN.test(s)) {
+          throw new Error(
+            `Invalid MemorySinkHandle: ${JSON.stringify(s)}. Expected obsidian-fs://<vault>/<path>/ (trailing slash required).`
+          );
+        }
+        return mint(s);
+      };
+      return { parseMemorySinkHandle: parse };
+    })());
+    SENTINEL_FILENAME = ".memory-sink";
+  }
+});
+
+// src/adapters/delivery/obsidian-fs/sentinel.ts
+import { promises as fs7 } from "fs";
+function isExpectedSinkContent(entry) {
+  if (entry === SENTINEL_FILENAME2) return true;
+  if (entry === "observations" || entry === "_briefs" || entry === "status-updates") {
+    return true;
+  }
+  if (entry.endsWith(".md")) return true;
+  return false;
+}
+function formatSentinelContent(args2) {
+  const ts = (/* @__PURE__ */ new Date()).toISOString();
+  return [
+    `created_at: ${ts}`,
+    `sink_name: ${args2.sinkName}`,
+    `vault_memory_version: ${args2.version}`,
+    ""
+  ].join("\n");
+}
+async function provisionSink(sink, vaultAbsolutePath, opts) {
+  const folder = pathInSink(vaultAbsolutePath, sink);
+  const sentinelPath = pathInSink(vaultAbsolutePath, sink, SENTINEL_FILENAME2);
+  try {
+    await fs7.access(sentinelPath);
+    return;
+  } catch {
+  }
+  let folderExists = true;
+  let entries = [];
+  try {
+    entries = await fs7.readdir(folder);
+  } catch (err) {
+    const code = err.code;
+    if (code === "ENOENT") {
+      folderExists = false;
+    } else {
+      throw err;
+    }
+  }
+  if (!folderExists) {
+    await fs7.mkdir(folder, { recursive: true });
+    await fs7.writeFile(
+      sentinelPath,
+      formatSentinelContent({ sinkName: sink.name, version: opts.version }),
+      "utf-8"
+    );
+    return;
+  }
+  const foreign = entries.filter((e) => !isExpectedSinkContent(e));
+  if (foreign.length > 0) {
+    throw new SinkProvisioningError(sink.name, folder, foreign);
+  }
+  await fs7.writeFile(
+    sentinelPath,
+    formatSentinelContent({ sinkName: sink.name, version: opts.version }),
+    "utf-8"
+  );
+}
+async function assertSentinelExists(sink, vaultAbsolutePath) {
+  const sentinelPath = pathInSink(vaultAbsolutePath, sink, SENTINEL_FILENAME2);
+  try {
+    await fs7.access(sentinelPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function sentinelExistsAt(vaultRoot, relPath) {
+  const probe = `${vaultRoot.endsWith("/") ? vaultRoot.slice(0, -1) : vaultRoot}/${relPath.replace(/^\//, "")}/${SENTINEL_FILENAME2}`;
+  try {
+    await fs7.access(probe);
+    return true;
+  } catch {
+    return false;
+  }
+}
+var SENTINEL_FILENAME2, SinkProvisioningError;
+var init_sentinel = __esm({
+  "src/adapters/delivery/obsidian-fs/sentinel.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_sink();
+    init_path();
+    SENTINEL_FILENAME2 = SENTINEL_FILENAME;
+    SinkProvisioningError = class extends Error {
+      constructor(sinkName, absoluteFolderPath, offendingEntries) {
+        super(
+          `Memory sink "${sinkName}" target folder ${absoluteFolderPath} contains unrelated user content (${offendingEntries.join(", ")}). Refusing to label as a sink. Move user content out, or change the [[memory_sinks]] handle.`
+        );
+        this.sinkName = sinkName;
+        this.absoluteFolderPath = absoluteFolderPath;
+        this.offendingEntries = offendingEntries;
+      }
+      sinkName;
+      absoluteFolderPath;
+      offendingEntries;
+      name = "SinkProvisioningError";
+      code = "SINK_PROVISION_UNSAFE";
+    };
+  }
+});
+
+// src/adapters/delivery/obsidian-fs/index.ts
+var obsidian_fs_exports2 = {};
+__export(obsidian_fs_exports2, {
+  ObsidianFsDelivery: () => ObsidianFsDelivery,
+  OutsideVaultError: () => OutsideVaultError,
+  atomicWriteFile: () => atomicWriteFile,
+  deleteNote: () => deleteNote,
+  safeJoinInsideVault: () => safeJoinInsideVault,
+  writeNote: () => writeNote
+});
+import { promises as fs8 } from "fs";
+import matter3 from "gray-matter";
+function v1ToV2WriteResult(id, v1) {
+  if (!v1.ok) {
+    return v1.currentHash !== void 0 ? { ok: false, reason: v1.reason, currentHash: v1.currentHash, message: v1.message } : { ok: false, reason: v1.reason, message: v1.message };
+  }
+  return { ok: true, doc_id: id, newHash: v1.newHash, created: v1.created };
+}
+function v1ToV2UpdateResult(id, v1) {
+  if (!v1.ok) {
+    return v1.currentHash !== void 0 ? { ok: false, reason: v1.reason, currentHash: v1.currentHash, message: v1.message } : { ok: false, reason: v1.reason, message: v1.message };
+  }
+  return { ok: true, doc_id: id, newHash: v1.newHash };
+}
+function stripWikilinks(props) {
+  const { wikilinks: _w, ...rest } = props;
+  return rest;
+}
+function extractBodyAndFrontmatter(doc) {
+  const body = (doc.blocks ?? []).map((b) => b.kind === "paragraph" ? b.text : "").filter((s) => s.length > 0).join("\n\n");
+  const props = doc.properties;
+  if (props === void 0 || props === null) {
+    return { body, frontmatter: null };
+  }
+  const stripped = stripWikilinks(props);
+  return {
+    body,
+    frontmatter: Object.keys(stripped).length > 0 ? stripped : null
+  };
+}
+var SCHEME2, ObsidianFsDelivery;
+var init_obsidian_fs2 = __esm({
+  "src/adapters/delivery/obsidian-fs/index.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_registry();
+    init_write();
+    init_fs();
+    init_hash();
+    init_validator();
+    init_contract();
+    init_sentinel();
+    init_write();
+    init_fs();
+    SCHEME2 = "obsidian-fs";
+    ObsidianFsDelivery = class {
+      /**
+       * @param vault The Vault unit-of-access (config + db handle).
+       * @param clientId Default audit-log attribution. Per D-02, captured from
+       *  MCP InitializeRequest.params.clientInfo (via the SDK's
+       *  `Server.getClientVersion()?.name`) at server bootstrap. May be a static
+       *  string OR a lazy getter — the getter form lets the server construct
+       *  deliveries BEFORE the initialize handshake completes and have the
+       *  handshake value flow through automatically on the first write.
+       *  Falls back to "unknown" at the call site if no value is supplied at
+       *  any level (per RESEARCH Pitfall 4: clientInfo is OPTIONAL in the MCP
+       *  spec, so older or non-conformant clients may not send it).
+       * @param memorySinkRegistry Optional Phase 2 sink registry. When supplied,
+       *  the adapter runs Guards A/B + sentinel check at the entry of
+       *  `write` / `update` / `delete` per ADR-002 §DeliveryAdapter. When
+       *  omitted (Phase 1 fixture tests + back-compat), the validator is
+       *  silently skipped — production paths in Plan 02-03b's server
+       *  bootstrap always pass the registry, so production is always
+       *  guarded.
+       */
+      constructor(vault, clientIdSource, memorySinkRegistry) {
+        this.vault = vault;
+        this.clientIdSource = clientIdSource;
+        this.memorySinkRegistry = memorySinkRegistry;
+        this.handle = parseSourceHandle(`${SCHEME2}://${vault.config.name}`);
+      }
+      vault;
+      clientIdSource;
+      memorySinkRegistry;
+      handle;
+      capabilities = {
+        atomic: true,
+        hashProtected: "strong",
+        enforcedSchema: false,
+        naming: "caller-provided"
+      };
+      get clientId() {
+        return typeof this.clientIdSource === "function" ? this.clientIdSource() : this.clientIdSource;
+      }
+      /**
+       * Resolve the sink that "owns" a write target.
+       *
+       * Resolution order (per ADR-004 §Resolution + Plan 02-03 <action>):
+       *   1. If `opts.sink` is supplied AND the registry knows it, use it.
+       *      The caller explicitly routed the write under that sink.
+       *   2. Else, ask the registry `findSinkContaining(id)` — for DocIds
+       *      whose vault-relative path lies inside a registered sink, this
+       *      returns the enclosing sink. Used for guarding writes that
+       *      target memory paths WITHOUT an explicit `opts.sink` (e.g. v1
+       *      `writeNote` against `_memory/...`).
+       *   3. Else, the target is outside every sink — return `null`.
+       *
+       * Returns `null` when no registry is configured (Phase 1 fixture
+       * tests + back-compat). The validator then silently passes.
+       */
+      resolveTargetSink(id, opts) {
+        const registry = this.memorySinkRegistry;
+        if (!registry) return null;
+        if (opts?.sink !== void 0) {
+          try {
+            return registry.resolveMemorySink(opts.sink);
+          } catch {
+          }
+        }
+        return registry.findSinkContaining(id);
+      }
+      /**
+       * Run Guards A/B + sentinel for a write or update. Returns the
+       * conflict to short-circuit on, or `null` to proceed.
+       *
+       * Order: Guard B (cheap) → sentinel (fail-closed) → Guard A.
+       * The sentinel check is filesystem-specific and intentionally lives
+       * here, not in the validator.
+       */
+      async preflight(id, doc, opts) {
+        if (!this.memorySinkRegistry) return null;
+        const sink = this.resolveTargetSink(id, opts);
+        const contract = sink ? getContract(sink.contractName) : null;
+        const sourceCheck = validateAgentWrite(id, doc, sink, null);
+        if (sourceCheck) return sourceCheck;
+        if (sink !== null) {
+          const ok2 = await assertSentinelExists(sink, this.vault.config.path);
+          if (!ok2) {
+            return {
+              ok: false,
+              reason: "sentinel_missing",
+              sinkName: sink.name,
+              message: `MemorySink "${sink.name}" refuses to resolve: '.memory-sink' sentinel file is missing under ${this.vault.config.name}/${sink.resolveToRelativePath}.`,
+              suggestion: "Restart the server (it re-provisions automatically) or restore .memory-sink manually."
+            };
+          }
+        }
+        if (sink !== null && contract !== null) {
+          const guardA = validateAgentWrite(id, doc, sink, contract);
+          if (guardA) return guardA;
+        }
+        return null;
+      }
+      async write(id, doc, opts) {
+        const guard = await this.preflight(id, doc, opts);
+        if (guard) return guard;
+        const path7 = this.docIdToPath(id);
+        const { body, frontmatter } = extractBodyAndFrontmatter(doc);
+        const effectiveClientId = opts?.clientId ?? this.clientId;
+        const v1 = await writeNote({
+          vault: this.vault,
+          relativePath: path7,
+          content: body,
+          frontmatter,
+          ...opts?.expectedHash !== void 0 ? { expectedHash: opts.expectedHash } : {},
+          clientId: effectiveClientId,
+          isMemorySinkWrite: opts?.sink !== void 0
+        });
+        return v1ToV2WriteResult(id, v1);
+      }
+      /**
+       * Replace-or-merge update. Reads current document via the filesystem,
+       * applies `patch.properties` (shallow-merged into existing frontmatter)
+       * and/or `patch.blocks` (replaces body), then writes via writeNote with
+       * the OCC token.
+       *
+       * Returns `{ ok: false, reason: "not_found" }` when the file is absent
+       * (matches DeliveryAdapter contract — no implicit create on update).
+       *
+       * The v1 MCP `update_frontmatter` handler continues to route through
+       * `src/frontmatter/update.ts` (merge-DSL semantics + diff emission). This
+       * `update()` path exists primarily for conformance and for non-merge-DSL
+       * callers (Phase 2+).
+       */
+      async update(id, patch, opts) {
+        const guard = await this.preflight(id, patch, opts);
+        if (guard) return guard;
+        const path7 = this.docIdToPath(id);
+        const abs = await safeJoinInsideVault(this.vault.config.path, path7);
+        let raw;
+        try {
+          raw = await fs8.readFile(abs, "utf-8");
+        } catch (err) {
+          if (typeof err === "object" && err !== null && err.code === "ENOENT") {
+            return {
+              ok: false,
+              reason: "not_found",
+              message: `Document not found: ${id}`
+            };
+          }
+          throw err;
+        }
+        const parsed = matter3(raw);
+        const existingFm = parsed.data ?? {};
+        const existingBody = parsed.content;
+        const patchProps = patch.properties;
+        const nextFm = patchProps !== void 0 ? { ...existingFm, ...stripWikilinks(patchProps) } : existingFm;
+        const nextBody = patch.blocks !== void 0 ? patch.blocks.map((b) => b.kind === "paragraph" ? b.text : "").filter((s) => s.length > 0).join("\n\n") : existingBody;
+        const existingHash = computeNoteHash(
+          existingBody,
+          Object.keys(existingFm).length > 0 ? existingFm : null
+        );
+        const effectiveExpectedHash = opts?.expectedHash ?? existingHash;
+        const effectiveClientId = opts?.clientId ?? this.clientId;
+        const v1 = await writeNote({
+          vault: this.vault,
+          relativePath: path7,
+          content: nextBody,
+          frontmatter: Object.keys(nextFm).length > 0 ? nextFm : null,
+          expectedHash: effectiveExpectedHash,
+          clientId: effectiveClientId,
+          isMemorySinkWrite: opts?.sink !== void 0
+        });
+        return v1ToV2UpdateResult(id, v1);
+      }
+      async delete(id, opts) {
+        if (this.memorySinkRegistry) {
+          const enclosing = this.memorySinkRegistry.findSinkContaining(id);
+          if (enclosing !== null) {
+            return {
+              ok: false,
+              reason: "sink_write_blocked",
+              sinkName: enclosing.name,
+              message: `Hard deletion of MemorySink "${enclosing.name}" documents is not permitted in v2.0.0.`,
+              suggestion: "Use supersede to retire memory documents. Hard deletion is not yet supported in v2.0.0."
+            };
+          }
+        }
+        const path7 = this.docIdToPath(id);
+        if (opts?.expectedHash === void 0) {
+          try {
+            const abs = await safeJoinInsideVault(this.vault.config.path, path7);
+            await fs8.stat(abs);
+          } catch {
+            return {
+              ok: false,
+              reason: "not_found",
+              message: `Document not found: ${id}`
+            };
+          }
+          return {
+            ok: false,
+            reason: "hash_mismatch",
+            message: `delete() requires opts.expectedHash for hashProtected="strong" adapters`
+          };
+        }
+        const effectiveClientId = opts?.clientId ?? this.clientId;
+        const v1 = await deleteNote({
+          vault: this.vault,
+          relativePath: path7,
+          expectedHash: opts.expectedHash,
+          clientId: effectiveClientId,
+          isMemorySinkWrite: opts?.sink !== void 0
+        });
+        if (!v1.ok) {
+          if (v1.reason === "hash_mismatch" && v1.currentHash === void 0) {
+            return {
+              ok: false,
+              reason: "not_found",
+              message: v1.message
+            };
+          }
+          return v1.currentHash !== void 0 ? { ok: false, reason: v1.reason, currentHash: v1.currentHash, message: v1.message } : { ok: false, reason: v1.reason, message: v1.message };
+        }
+        return { ok: true, doc_id: id };
+      }
+      // ── helpers ───────────────────────────────────────────────────────────────
+      /**
+       * Parse the URI authority + resource off a DocId. Asserts the authority
+       * matches the configured vault name — mirrors ObsidianFsSource.docIdToPath
+       * to prevent cross-vault forgery.
+       */
+      docIdToPath(id) {
+        const prefix = `${SCHEME2}://`;
+        if (!id.startsWith(prefix)) {
+          throw new Error(`DocId scheme mismatch: expected "${SCHEME2}://\u2026", got ${JSON.stringify(id)}`);
+        }
+        const rest = id.slice(prefix.length);
+        const slash = rest.indexOf("/");
+        if (slash < 0) {
+          throw new Error(`Invalid DocId shape: missing resource path in ${JSON.stringify(id)}`);
+        }
+        const authority = rest.slice(0, slash);
+        const resource = rest.slice(slash + 1);
+        if (authority !== this.vault.config.name) {
+          throw new Error(
+            `DocId vault mismatch: id authority "${authority}" does not match this adapter's configured vault "${this.vault.config.name}"`
+          );
+        }
+        if (resource.length === 0) {
+          throw new Error(`Invalid DocId: empty resource path in ${JSON.stringify(id)}`);
+        }
+        return resource;
+      }
+    };
+  }
+});
+
+// src/frontmatter/update.ts
 function isPlainObject2(v) {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
@@ -3425,27 +5134,37 @@ function applyMerge(data, merge) {
   }
   return { next, diff };
 }
-function computeHash(content, data) {
-  const fmForHash = Object.keys(data).length > 0 ? data : {};
-  return computeNoteHash(content, fmForHash);
+function stripWikilinks2(props) {
+  const { wikilinks: _w, ...rest } = props;
+  return rest;
 }
-function countWords2(content) {
-  if (content.length === 0) return 0;
-  return content.split(/\s+/).filter((s) => s.length > 0).length;
-}
-function extractTitle2(content, fallback) {
-  for (const line of content.split("\n")) {
-    const m = /^#\s+(.+?)\s*$/.exec(line);
-    if (m !== null && m[1] !== void 0) return m[1].trim();
-  }
-  return fallback;
-}
-function basenameNoMd(relativePath) {
-  const base = relativePath.split("/").pop() ?? relativePath;
-  return base.endsWith(".md") ? base.slice(0, -3) : base;
+function blocksToBody(doc) {
+  return doc.blocks.map((b) => b.kind === "paragraph" ? b.text : "").filter((s) => s.length > 0).join("\n\n");
 }
 async function updateFrontmatter(input) {
-  const { vault, relativePath, merge, expectedHash, clientId } = input;
+  const {
+    vault,
+    relativePath,
+    merge,
+    expectedHash,
+    clientId,
+    registry,
+    memorySinkRegistry,
+    onBeforeFsWrite
+  } = input;
+  if (memorySinkRegistry) {
+    const docId2 = formatDocId("obsidian-fs", vault.config.name, relativePath);
+    const sink = memorySinkRegistry.findSinkContaining(docId2);
+    if (sink !== null) {
+      return {
+        ok: false,
+        reason: "sink_write_blocked",
+        sinkName: sink.name,
+        message: `Target ${relativePath} resolves into MemorySink "${sink.name}". v1 update_frontmatter is refused for memory-sink targets.`,
+        suggestion: "Use record_observation + supersede for memory updates."
+      };
+    }
+  }
   if (vault.config.write_enabled !== true) {
     return {
       ok: false,
@@ -3461,22 +5180,24 @@ async function updateFrontmatter(input) {
       message: `No indexed note at path: ${relativePath}`
     };
   }
-  const absPath = await safeJoinInsideVault(vault.config.path, relativePath);
-  let raw;
+  const { source, delivery } = await resolveAdapters(vault, registry);
+  const handle = parseSourceHandle(`obsidian-fs://${vault.config.name}`);
+  void handle;
+  const docId = formatDocId("obsidian-fs", vault.config.name, relativePath);
+  let doc;
   try {
-    raw = await fs5.readFile(absPath, "utf8");
+    doc = await source.readDocument(docId);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     return {
       ok: false,
       reason: "note_not_found",
-      message: `Failed to read file: ${msg}`
+      message: `Failed to read document: ${msg}`
     };
   }
-  const parsed = matter2(raw);
-  const content = parsed.content;
-  const data = parsed.data ?? {};
-  const currentHash = computeHash(content, data);
+  const body = blocksToBody(doc);
+  const existingFm = stripWikilinks2(doc.properties);
+  const currentHash = doc.hash;
   if (expectedHash !== void 0 && expectedHash !== currentHash) {
     return {
       ok: false,
@@ -3493,7 +5214,7 @@ async function updateFrontmatter(input) {
       diff: []
     };
   }
-  const { next, diff } = applyMerge(data, merge);
+  const { next, diff } = applyMerge(existingFm, merge);
   if (diff.length === 0) {
     return {
       ok: true,
@@ -3502,64 +5223,58 @@ async function updateFrontmatter(input) {
       diff: []
     };
   }
-  const fullText = Object.keys(next).length === 0 ? content : matter2.stringify(content, next);
-  input.onBeforeFsWrite?.();
-  await atomicWriteFile(absPath, fullText);
-  const stat = await fs5.stat(absPath);
-  const newHash = computeHash(content, next);
-  const title = extractTitle2(content, basenameNoMd(relativePath));
-  const wordCount = countWords2(content);
-  const fmJson = Object.keys(next).length > 0 ? JSON.stringify(next) : null;
-  const aliasKeyTouched = "aliases" in merge || "alias" in merge;
-  let upsertId;
-  try {
-    upsertId = vault.db.transaction(() => {
-      const up = vault.db.notes.upsertByPath({
-        path: relativePath,
-        content,
-        frontmatter: fmJson,
-        title,
-        hash: newHash,
-        bodyHash: computeBodyHash(content),
-        mtime: Math.floor(stat.mtimeMs),
-        wordCount
-      });
-      if (aliasKeyTouched) {
-        vault.db.aliases.setForNote(up.id, extractAliases(next));
-      }
-      vault.db.audit.recordWrite({
-        noteId: up.id,
-        op: "update",
-        previousHash: currentHash,
-        newHash,
-        expectedHash: expectedHash ?? null,
-        clientId: clientId ?? null,
-        diffSummary: JSON.stringify(diff)
-      });
-      return up.id;
-    });
-  } catch (dbErr) {
-    input.onBeforeFsWrite?.();
-    try {
-      await atomicWriteFile(absPath, raw);
-    } catch {
+  onBeforeFsWrite?.();
+  const partial = {
+    blocks: [{ kind: "paragraph", text: body }],
+    properties: Object.keys(next).length > 0 ? next : {}
+  };
+  const writeOpts = {
+    expectedHash: currentHash
+  };
+  if (clientId !== void 0) writeOpts.clientId = clientId;
+  const writeRes = await delivery.write(docId, partial, writeOpts);
+  if (!writeRes.ok) {
+    if (writeRes.reason === "permission_denied") {
+      return {
+        ok: false,
+        reason: "permission_denied",
+        message: writeRes.message ?? "Write rejected by delivery adapter."
+      };
     }
-    throw dbErr;
+    return {
+      ok: false,
+      reason: "hash_mismatch",
+      ...writeRes.currentHash !== void 0 ? { currentHash: writeRes.currentHash } : {},
+      message: writeRes.message ?? "Write conflict."
+    };
   }
   return {
     ok: true,
-    newHash,
-    noteId: upsertId,
+    newHash: writeRes.newHash,
+    noteId: noteRow.id,
     diff
+  };
+}
+async function resolveAdapters(vault, registry) {
+  const handle = parseSourceHandle(`obsidian-fs://${vault.config.name}`);
+  if (registry !== void 0) {
+    return {
+      source: registry.resolveSource(handle),
+      delivery: registry.resolveDelivery(handle)
+    };
+  }
+  const { ObsidianFsSource: ObsidianFsSource2 } = await Promise.resolve().then(() => (init_obsidian_fs(), obsidian_fs_exports));
+  const { ObsidianFsDelivery: ObsidianFsDelivery2 } = await Promise.resolve().then(() => (init_obsidian_fs2(), obsidian_fs_exports2));
+  return {
+    source: new ObsidianFsSource2(vault.config),
+    delivery: new ObsidianFsDelivery2(vault, "unknown")
   };
 }
 var init_update = __esm({
   "src/frontmatter/update.ts"() {
     "use strict";
     init_esm_shims();
-    init_hash();
-    init_indexer();
-    init_fs();
+    init_registry();
   }
 });
 
@@ -3588,26 +5303,18 @@ function parentFolder(folder) {
 function countSiblings(vault, folder, excludePath) {
   const handle = vault.db.handle;
   if (folder === "") {
-    const row2 = handle.prepare(
-      "SELECT COUNT(*) AS c FROM notes WHERE instr(path, '/') = 0 AND path != COALESCE(?, '')"
-    ).get(excludePath);
+    const row2 = handle.prepare("SELECT COUNT(*) AS c FROM notes WHERE instr(path, '/') = 0 AND path != COALESCE(?, '')").get(excludePath);
     return row2?.c ?? 0;
   }
-  const row = handle.prepare(
-    "SELECT COUNT(*) AS c FROM notes WHERE path LIKE ? || '%' AND path != COALESCE(?, '')"
-  ).get(folder, excludePath);
+  const row = handle.prepare("SELECT COUNT(*) AS c FROM notes WHERE path LIKE ? || '%' AND path != COALESCE(?, '')").get(folder, excludePath);
   return row?.c ?? 0;
 }
 function fetchSiblings(vault, folder, excludePath) {
   const handle = vault.db.handle;
   if (folder === "") {
-    return handle.prepare(
-      "SELECT path, frontmatter FROM notes WHERE instr(path, '/') = 0 AND path != COALESCE(?, '')"
-    ).all(excludePath);
+    return handle.prepare("SELECT path, frontmatter FROM notes WHERE instr(path, '/') = 0 AND path != COALESCE(?, '')").all(excludePath);
   }
-  return handle.prepare(
-    "SELECT path, frontmatter FROM notes WHERE path LIKE ? || '%' AND path != COALESCE(?, '')"
-  ).all(folder, excludePath);
+  return handle.prepare("SELECT path, frontmatter FROM notes WHERE path LIKE ? || '%' AND path != COALESCE(?, '')").all(folder, excludePath);
 }
 function resolveInferenceFolder(vault, notePath, excludePath = notePath) {
   const start = folderOf(notePath);
@@ -3808,11 +5515,7 @@ function safeParse2(s) {
   }
 }
 function inferFromNeighbors(vault, notePath, additionalForwardTargets = []) {
-  const neighbors = gatherNeighbors(
-    vault,
-    notePath,
-    additionalForwardTargets
-  );
+  const neighbors = gatherNeighbors(vault, notePath, additionalForwardTargets);
   const note = vault.db.notes.getByPath(notePath);
   let forwardCount = 0;
   let backwardCount = 0;
@@ -3921,9 +5624,7 @@ var init_content_heuristics = __esm({
         const trimmed = fullBody.trim();
         if (trimmed.length === 0 || trimmed.length > 150) return [];
         if (/\n\s*\n/.test(trimmed)) return [];
-        return [
-          { key: "class", value: "Fact", confidence: WEAK_CONFIDENCE }
-        ];
+        return [{ key: "class", value: "Fact", confidence: WEAK_CONFIDENCE }];
       }
     };
     dateInTitleRule = {
@@ -3932,9 +5633,7 @@ var init_content_heuristics = __esm({
         const m = title.match(/^(\d{4})-(\d{2})-(\d{2})/);
         if (!m) return [];
         const iso = `${m[1]}-${m[2]}-${m[3]}`;
-        return [
-          { key: "created", value: iso, confidence: STRONG_CONFIDENCE }
-        ];
+        return [{ key: "created", value: iso, confidence: STRONG_CONFIDENCE }];
       }
     };
     RULES = [
@@ -3966,11 +5665,7 @@ function suggestFrontmatter(input) {
   const folder = inferFromFolder(input.vault, input.path, {
     excludePath: input.excludePath ?? input.path
   });
-  const neighbor = inferFromNeighbors(
-    input.vault,
-    input.path,
-    input.draftWikilinkTargets ?? []
-  );
+  const neighbor = inferFromNeighbors(input.vault, input.path, input.draftWikilinkTargets ?? []);
   const content = input.content !== void 0 ? inferFromContent({ title, body: input.content }) : { entries: [], matchedRules: [] };
   return combineSuggestions({
     existingFrontmatter: input.existingFrontmatter ?? null,
@@ -3979,8 +5674,8 @@ function suggestFrontmatter(input) {
     content
   });
 }
-function defaultTitleFromPath(path5) {
-  const base = path5.split("/").pop() ?? path5;
+function defaultTitleFromPath(path7) {
+  const base = path7.split("/").pop() ?? path7;
   return base.replace(/\.md$/i, "");
 }
 function combineSuggestions(args2) {
@@ -4020,10 +5715,7 @@ function combineSuggestions(args2) {
   const conflicts = [];
   const fm = existingFrontmatter ?? {};
   const existingKeys = new Set(Object.keys(fm));
-  const allKeys = /* @__PURE__ */ new Set([
-    ...candidates.keys(),
-    ...existingKeys
-  ]);
+  const allKeys = /* @__PURE__ */ new Set([...candidates.keys(), ...existingKeys]);
   for (const key of allKeys) {
     const cands = candidates.get(key) ?? [];
     const existingValue = existingKeys.has(key) ? fm[key] : void 0;
@@ -4041,17 +5733,13 @@ function combineSuggestions(args2) {
         byValue.get(k).push(c);
       }
     }
-    const distinctValueCount = Array.from(byValue.keys()).filter(
-      (k) => k !== "__keyonly__"
-    ).length;
+    const distinctValueCount = Array.from(byValue.keys()).filter((k) => k !== "__keyonly__").length;
     if (hasExisting) {
       const agreeingBucket = byValue.get(existingValueKey);
       if (agreeingBucket) {
         byValue.delete(existingValueKey);
       }
-      const disagreeingValues = Array.from(byValue.entries()).filter(
-        ([k]) => k !== "__keyonly__"
-      );
+      const disagreeingValues = Array.from(byValue.entries()).filter(([k]) => k !== "__keyonly__");
       if (disagreeingValues.length === 0) {
         existing.push({ key, value: existingValue });
       } else {
@@ -4162,7 +5850,7 @@ var init_combiner = __esm({
 });
 
 // src/schema/index.ts
-var init_schema2 = __esm({
+var init_schema3 = __esm({
   "src/schema/index.ts"() {
     "use strict";
     init_esm_shims();
@@ -4173,723 +5861,516 @@ var init_schema2 = __esm({
   }
 });
 
-// src/indexer/single.ts
-import * as path4 from "path";
-async function indexNote(options) {
-  const { vault, absolutePath, embeddingModel, ollama } = options;
-  const secondaryName = options.secondaryEmbeddingModel;
-  if (!isInsideVault(absolutePath, vault.config.path)) {
-    return emptyResult("outside_vault");
-  }
-  let parsed;
-  try {
-    parsed = await parseNote(absolutePath, vault.config.path);
-  } catch (err) {
-    if (isENOENT(err)) {
-      return emptyResult("missing");
-    }
-    return emptyResult("parse_error");
-  }
-  const existing = vault.db.notes.getByPath(parsed.relativePath);
-  if (existing && existing.hash === parsed.hash) {
-    vault.db.aliases.setForNote(
-      existing.id,
-      extractAliases(parsed.frontmatter)
-    );
-    return {
-      status: "unchanged",
-      notePath: parsed.relativePath,
-      noteId: existing.id,
-      chunksCreated: 0,
-      isNew: false
-    };
-  }
-  if (existing && existing.body_hash && existing.body_hash === parsed.bodyHash) {
-    const upsert2 = vault.db.notes.upsertByPath({
-      path: parsed.relativePath,
-      content: parsed.content,
-      frontmatter: parsed.frontmatter ? JSON.stringify(parsed.frontmatter) : null,
-      title: parsed.title,
-      hash: parsed.hash,
-      bodyHash: parsed.bodyHash,
-      mtime: parsed.mtime,
-      wordCount: parsed.wordCount
-    });
-    vault.db.aliases.setForNote(
-      upsert2.id,
-      extractAliases(parsed.frontmatter)
-    );
-    vault.db.wikilinks.deleteByNote(upsert2.id);
-    insertWikilinks2(vault, upsert2.id, parsed.wikilinks);
-    return {
-      status: "indexed",
-      notePath: parsed.relativePath,
-      noteId: upsert2.id,
-      chunksCreated: 0,
-      isNew: false
-    };
-  }
-  const activeModel = vault.db.models.getActive();
-  if (!activeModel) {
-    throw new Error(
-      `single-indexer: no active embedding model in DB. Run a full index first to register "${embeddingModel}".`
-    );
-  }
-  if (activeModel.name !== embeddingModel) {
-    throw new Error(
-      `single-indexer: active model "${activeModel.name}" does not match requested "${embeddingModel}". Run a full re-index to switch models.`
-    );
-  }
-  const upsert = vault.db.notes.upsertByPath({
-    path: parsed.relativePath,
-    content: parsed.content,
-    frontmatter: parsed.frontmatter ? JSON.stringify(parsed.frontmatter) : null,
-    title: parsed.title,
-    hash: parsed.hash,
-    bodyHash: parsed.bodyHash,
-    mtime: parsed.mtime,
-    wordCount: parsed.wordCount
-  });
-  vault.db.aliases.setForNote(
-    upsert.id,
-    extractAliases(parsed.frontmatter)
-  );
-  vault.db.chunks.deleteByNote(upsert.id);
-  vault.db.wikilinks.deleteByNote(upsert.id);
-  const chunks = chunkNote(parsed.content);
-  if (chunks.length === 0) {
-    insertWikilinks2(vault, upsert.id, parsed.wikilinks);
-    return {
-      status: "indexed",
-      notePath: parsed.relativePath,
-      noteId: upsert.id,
-      chunksCreated: 0,
-      isNew: upsert.isNew
-    };
-  }
-  const chunkIds = vault.db.chunks.insertBatch(
-    upsert.id,
-    chunks.map((c) => ({
-      idx: c.idx,
-      text: c.text,
-      headingPath: c.headingPath,
-      startOffset: c.startOffset,
-      endOffset: c.endOffset,
-      tokenCount: c.tokenCount
-    }))
-  );
-  const embedResult = await ollama.embed({
-    model: embeddingModel,
-    texts: chunks.map((c) => c.text)
-  });
-  if (embedResult.dim !== activeModel.dim) {
-    throw new Error(
-      `single-indexer: embedding dim ${embedResult.dim} does not match registered dim ${activeModel.dim} for model "${embeddingModel}".`
-    );
-  }
-  vault.db.embeddings.insertBatch(
-    chunkIds.map((chunkId, i) => ({
-      chunkId,
-      modelId: activeModel.id,
-      vector: embedResult.vectors[i]
-    }))
-  );
-  if (secondaryName) {
-    const secondaryModel = vault.db.models.getByName(secondaryName);
-    if (secondaryModel && secondaryModel.id !== activeModel.id) {
-      const secEmbed = await ollama.embed({
-        model: secondaryName,
-        texts: chunks.map((c) => c.text)
-      });
-      if (secEmbed.dim !== secondaryModel.dim) {
-        throw new Error(
-          `single-indexer: shadow embedding dim ${secEmbed.dim} does not match registered dim ${secondaryModel.dim} for "${secondaryName}".`
-        );
-      }
-      vault.db.embeddings.insertBatch(
-        chunkIds.map((chunkId, i) => ({
-          chunkId,
-          modelId: secondaryModel.id,
-          vector: secEmbed.vectors[i]
-        }))
-      );
-    }
-  }
-  insertWikilinks2(vault, upsert.id, parsed.wikilinks);
-  return {
-    status: "indexed",
-    notePath: parsed.relativePath,
-    noteId: upsert.id,
-    chunksCreated: chunks.length,
-    isNew: upsert.isNew
-  };
+// src/memory/registry.ts
+function decomposeMemorySinkHandle(handle) {
+  const schemeEnd = handle.indexOf("://");
+  const scheme = handle.slice(0, schemeEnd);
+  const rest = handle.slice(schemeEnd + 3);
+  const authoritySlash = rest.indexOf("/");
+  const authority = rest.slice(0, authoritySlash);
+  const resource = rest.slice(authoritySlash + 1);
+  return { scheme, authority, resource };
 }
-function removeNote(vault, absolutePath) {
-  if (!isInsideVault(absolutePath, vault.config.path)) {
-    return { removed: false, notePath: null };
-  }
-  const relativePath = toRelativePosix(absolutePath, vault.config.path);
-  const existing = vault.db.notes.getByPath(relativePath);
-  if (!existing) {
-    return { removed: false, notePath: null };
-  }
-  vault.db.notes.deleteByPath(relativePath);
-  return { removed: true, notePath: relativePath };
-}
-function emptyResult(status) {
-  return {
-    status,
-    notePath: null,
-    noteId: null,
-    chunksCreated: 0,
-    isNew: false
-  };
-}
-function isInsideVault(absolutePath, vaultRoot) {
-  const absResolved = path4.resolve(absolutePath);
-  const rootResolved = path4.resolve(vaultRoot);
-  const absPosix = absResolved.split(path4.sep).join("/");
-  const rootPosix = rootResolved.split(path4.sep).join("/");
-  const rootWithSep = rootPosix.endsWith("/") ? rootPosix : `${rootPosix}/`;
-  return absPosix === rootPosix || absPosix.startsWith(rootWithSep);
-}
-function toRelativePosix(absolutePath, vaultRoot) {
-  return path4.relative(path4.resolve(vaultRoot), path4.resolve(absolutePath)).split(path4.sep).join("/");
-}
-function isENOENT(err) {
-  return typeof err === "object" && err !== null && "code" in err && err.code === "ENOENT";
-}
-function insertWikilinks2(vault, sourceNoteId, wikilinks) {
-  if (wikilinks.length === 0) return;
-  const inputs = wikilinks.map((wl) => {
-    const target = resolveWikilinkTarget(vault, wl.normalizedTarget);
-    return {
-      targetPath: wl.normalizedTarget,
-      targetNoteId: target?.id ?? null,
-      linkText: wl.alias,
-      anchor: wl.anchor,
-      lineNumber: wl.line
-    };
-  });
-  vault.db.wikilinks.insertBatch(sourceNoteId, inputs);
-}
-var init_single = __esm({
-  "src/indexer/single.ts"() {
+var MemorySinkRegistry;
+var init_registry2 = __esm({
+  "src/memory/registry.ts"() {
     "use strict";
     init_esm_shims();
-    init_reader();
-    init_chunker2();
-    init_indexer();
-  }
-});
-
-// src/indexer/catchup.ts
-async function catchupVault(options) {
-  const started = Date.now();
-  const log = options.log ?? (() => {
-  });
-  const { vault } = options;
-  const files = await scanVault(vault.config.path, {
-    excludeGlobs: vault.config.exclude_globs
-  });
-  let reindexed = 0;
-  const knownPaths = /* @__PURE__ */ new Set();
-  for (const file of files) {
-    const parsed = await parseNote(file, vault.config.path).catch(() => null);
-    if (!parsed) continue;
-    knownPaths.add(parsed.relativePath);
-    const dbRow = vault.db.notes.getByPath(parsed.relativePath);
-    if (dbRow && dbRow.hash === parsed.hash) {
-      continue;
-    }
-    const result = await indexNote({
-      vault,
-      absolutePath: file,
-      embeddingModel: options.embeddingModel,
-      ollama: options.ollama
-    });
-    if (result.status === "indexed") {
-      reindexed++;
-      log(
-        `catch-up indexed ${parsed.relativePath} (${result.isNew ? "new" : "updated"})`
-      );
-    }
-  }
-  let removed = 0;
-  for (const row of vault.db.notes.listAll()) {
-    if (!knownPaths.has(row.path)) {
-      const result = removeNote(vault, joinAbs(vault.config.path, row.path));
-      if (result.removed) {
-        removed++;
-        log(`catch-up removed ${row.path}`);
-      }
-    }
-  }
-  return {
-    scanned: files.length,
-    reindexed,
-    removed,
-    durationMs: Date.now() - started
-  };
-}
-function joinAbs(root, relative4) {
-  if (root.endsWith("/")) return `${root}${relative4}`;
-  return `${root}/${relative4}`;
-}
-var init_catchup = __esm({
-  "src/indexer/catchup.ts"() {
-    "use strict";
-    init_esm_shims();
-    init_reader();
-    init_single();
-  }
-});
-
-// src/indexer/shadow.ts
-import { randomUUID as randomUUID2 } from "crypto";
-async function startShadowIndex(options) {
-  const { vault, model, ollama } = options;
-  const log = options.log ?? (() => {
-  });
-  const batchSize = options.batchSize ?? 16;
-  const runId = randomUUID2();
-  const started = Date.now();
-  if (!await ollama.modelExists(model)) {
-    throw new Error(
-      `Shadow model "${model}" not found in Ollama. Run: ollama pull ${model}`
-    );
-  }
-  const probe = await ollama.embed({ model, texts: ["probe"] });
-  const dim = probe.dim;
-  const modelRow = vault.db.models.upsert({
-    name: model,
-    provider: "ollama",
-    dim,
-    active: false
-  });
-  vault.db.embeddings.ensureTableForModel(modelRow.id, dim);
-  vault.db.audit.startRun({
-    runId,
-    vaultName: vault.config.name,
-    modelId: modelRow.id,
-    trigger: "shadow"
-  });
-  const embTable = `embeddings_m${modelRow.id}_d${dim}`;
-  const pendingSql = `
-    SELECT c.id AS id, c.text AS text
-    FROM chunks c
-    LEFT JOIN ${embTable} e ON e.chunk_id = c.id
-    WHERE e.chunk_id IS NULL
-    ORDER BY c.id
-  `;
-  const totalSql = `SELECT COUNT(*) AS c FROM chunks`;
-  const pending = vault.db.handle.prepare(pendingSql).all();
-  const totalRow = vault.db.handle.prepare(totalSql).get();
-  const chunksTotal = totalRow?.c ?? 0;
-  const chunksSkipped = chunksTotal - pending.length;
-  log(
-    `shadow-index "${model}" (dim=${dim}): ${pending.length} pending, ${chunksSkipped} already embedded`
-  );
-  let chunksEmbedded = 0;
-  try {
-    for (let i = 0; i < pending.length; i += batchSize) {
-      const batch = pending.slice(i, i + batchSize);
-      const embedResp = await ollama.embed({
-        model,
-        texts: batch.map((c) => c.text)
-      });
-      if (embedResp.dim !== dim) {
-        throw new Error(
-          `Shadow embedding dim mismatch mid-run: expected ${dim}, got ${embedResp.dim} on batch starting chunk_id ${batch[0]?.id}`
-        );
-      }
-      vault.db.embeddings.insertBatch(
-        batch.map((row, j) => ({
-          chunkId: row.id,
-          modelId: modelRow.id,
-          vector: embedResp.vectors[j]
-        }))
-      );
-      chunksEmbedded += batch.length;
-      if (i % (batchSize * 8) === 0) {
-        log(`  ${chunksEmbedded}/${pending.length}\u2026`);
-      }
-    }
-    vault.db.audit.finishRun(runId, {
-      notesIndexed: 0,
-      chunksCreated: chunksEmbedded,
-      notesUpdated: 0,
-      notesDeleted: 0
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    vault.db.audit.finishRun(runId, {
-      notesIndexed: 0,
-      chunksCreated: chunksEmbedded,
-      notesUpdated: 0,
-      notesDeleted: 0,
-      error: message
-    });
-    throw err;
-  }
-  return {
-    runId,
-    modelId: modelRow.id,
-    modelName: model,
-    dim,
-    chunksTotal,
-    chunksEmbedded,
-    chunksSkipped,
-    durationMs: Date.now() - started
-  };
-}
-function listModels(vault) {
-  const rows = vault.db.models.listAll();
-  return rows.map((m) => {
-    let count = 0;
-    try {
-      vault.db.embeddings.ensureTableForModel(m.id, m.dim);
-      const row = vault.db.handle.prepare(
-        `SELECT COUNT(*) AS c FROM embeddings_m${m.id}_d${m.dim}`
-      ).get();
-      count = row?.c ?? 0;
-    } catch {
-      count = 0;
-    }
-    return {
-      id: m.id,
-      name: m.name,
-      provider: m.provider,
-      dim: m.dim,
-      active: m.active === 1,
-      embedded_chunk_count: count
-    };
-  });
-}
-function switchActiveModel(vault, targetModelName) {
-  const target = vault.db.models.getByName(targetModelName);
-  if (!target) {
-    return { ok: false, reason: "unknown_model" };
-  }
-  const current = vault.db.models.getActive();
-  if (current && current.id === target.id) {
-    return {
-      ok: false,
-      reason: "already_active",
-      switched_from: current.name,
-      switched_to: target.name
-    };
-  }
-  vault.db.embeddings.ensureTableForModel(target.id, target.dim);
-  const embTable = `embeddings_m${target.id}_d${target.dim}`;
-  const missingRow = vault.db.handle.prepare(
-    `SELECT COUNT(*) AS c
-       FROM chunks c
-       LEFT JOIN ${embTable} e ON e.chunk_id = c.id
-       WHERE e.chunk_id IS NULL`
-  ).get();
-  const missing = missingRow?.c ?? 0;
-  if (missing > 0) {
-    return {
-      ok: false,
-      reason: "incomplete",
-      missing_chunks: missing,
-      switched_from: current?.name,
-      switched_to: target.name
-    };
-  }
-  vault.db.models.setActive(target.id);
-  return {
-    ok: true,
-    switched_from: current?.name,
-    switched_to: target.name
-  };
-}
-var init_shadow = __esm({
-  "src/indexer/shadow.ts"() {
-    "use strict";
-    init_esm_shims();
-  }
-});
-
-// src/indexer/vacuum.ts
-function vacuumEmbeddings(vault) {
-  const startedAt = Date.now();
-  const models = vault.db.models.listAll();
-  const per_model = [];
-  let total_removed = 0;
-  vault.db.transaction(() => {
-    for (const m of models) {
-      vault.db.embeddings.ensureTableForModel(m.id, m.dim);
-      const table = `embeddings_m${m.id}_d${m.dim}`;
-      const beforeRow = vault.db.handle.prepare(`SELECT COUNT(*) AS c FROM ${table}`).get();
-      const before = beforeRow?.c ?? 0;
-      const orphans = vault.db.handle.prepare(
-        `SELECT chunk_id FROM ${table}
-           WHERE chunk_id NOT IN (SELECT id FROM chunks)`
-      ).all();
-      if (orphans.length > 0) {
-        const stmt = vault.db.handle.prepare(
-          `DELETE FROM ${table} WHERE chunk_id = ?`
-        );
-        for (const o of orphans) {
-          stmt.run(BigInt(o.chunk_id));
+    init_registry();
+    init_contract();
+    init_sink();
+    MemorySinkRegistry = class {
+      sinks = /* @__PURE__ */ new Map();
+      /** Insertion order — used for the "first registered" default fallback. */
+      order = [];
+      defaultHandle = null;
+      /**
+       * Register a batch of configured sinks. Validates each handle, looks
+       * up the named contract, invokes the provisioner, and stores the
+       * resolved `MemorySink` record.
+       *
+       * Throws on the first failure — server bootstrap should treat any
+       * registration error as fatal per ADR-004 §Provisioning fail-fast.
+       */
+      async registerMemorySinks(configs, opts) {
+        const getC = opts.contractGetter ?? getContract;
+        for (const cfg of configs) {
+          const handle = parseMemorySinkHandle(cfg.handle);
+          const parts = decomposeMemorySinkHandle(handle);
+          if (parts.scheme !== "obsidian-fs") {
+            throw new Error(
+              `MemorySink "${cfg.name}" has unsupported scheme "${parts.scheme}". Phase 2 supports only obsidian-fs sinks.`
+            );
+          }
+          const vaultName = parts.authority;
+          const resolveToRelativePath = parts.resource;
+          const contract = getC(cfg.contract);
+          const isFirst = this.sinks.size === 0;
+          const isExplicitDefault = opts.defaultSinkName === cfg.name;
+          const isDefault = isExplicitDefault || opts.defaultSinkName === void 0 && isFirst;
+          const sink = {
+            name: cfg.name,
+            handle,
+            vault: vaultName,
+            resolveToRelativePath,
+            contractName: contract.name,
+            isDefault
+          };
+          await opts.provisioner(sink, opts.resolveVaultAbsolutePath(vaultName));
+          this.sinks.set(handle, sink);
+          this.order.push(handle);
+          if (isDefault) this.defaultHandle = handle;
         }
       }
-      const removed = orphans.length;
-      const kept = before - removed;
-      total_removed += removed;
-      per_model.push({
-        model_id: m.id,
-        model_name: m.name,
-        dim: m.dim,
-        table,
-        removed,
-        kept
-      });
-    }
-  });
+      /** Return all registered sinks in insertion order. */
+      listMemorySinks() {
+        const out = [];
+        for (const handle of this.order) {
+          const s = this.sinks.get(handle);
+          if (s) out.push(s);
+        }
+        return out;
+      }
+      /**
+       * Resolve a sink by EITHER its short `name` OR its full handle
+       * string. Throws with a helpful diagnostic on miss — mirrors the
+       * `AdapterRegistry.resolveSource` message style.
+       */
+      resolveMemorySink(nameOrHandle) {
+        for (const handle of this.order) {
+          const s = this.sinks.get(handle);
+          if (s && s.name === nameOrHandle) return s;
+        }
+        for (const handle of this.order) {
+          if (handle === nameOrHandle) {
+            const s = this.sinks.get(handle);
+            if (s) return s;
+          }
+        }
+        const known = this.order.map((h) => this.sinks.get(h)?.name).filter(Boolean).join(", ") || "(none)";
+        throw new Error(
+          `Unknown memory sink: "${nameOrHandle}". Registered sinks: ${known}`
+        );
+      }
+      /** Return the default sink. Throws if no sinks are registered. */
+      getDefaultMemorySink() {
+        if (this.defaultHandle === null) {
+          throw new Error(
+            "No memory sinks are registered; cannot resolve the default sink. Configure [[memory_sinks]] in config.toml."
+          );
+        }
+        const sink = this.sinks.get(this.defaultHandle);
+        if (!sink) {
+          throw new Error(
+            `Internal error: default memory sink handle "${this.defaultHandle}" not found in registry.`
+          );
+        }
+        return sink;
+      }
+      /**
+       * Find the sink that encloses a given `DocId`, or `null` if the
+       * DocId is outside every configured sink. Used by v1 write tools
+       * (MEM-07) for entry-point Guard A refusals.
+       *
+       * Match policy: the DocId's authority must equal the sink's vault,
+       * and the DocId's resource must start with the sink's
+       * `resolveToRelativePath` (which includes its trailing slash, so
+       * `_memory/observations/foo.md` matches sink `_memory/` but
+       * `_memory-staging/...` does not).
+       */
+      findSinkContaining(docId) {
+        const { scheme, authority, resource } = decomposeDocId(docId);
+        if (scheme !== "obsidian-fs") return null;
+        for (const handle of this.order) {
+          const sink = this.sinks.get(handle);
+          if (!sink) continue;
+          if (sink.vault !== authority) continue;
+          if (resource.startsWith(sink.resolveToRelativePath)) {
+            return sink;
+          }
+        }
+        return null;
+      }
+    };
+  }
+});
+
+// src/memory/citation-packet.ts
+function toCitationPacket(doc, displayUrl2) {
   return {
-    total_removed,
-    per_model,
-    duration_ms: Date.now() - startedAt
+    doc_id: doc.id,
+    source_handle: doc.source,
+    title: doc.title,
+    heading_path: doc.heading_path ? [...doc.heading_path] : [],
+    mtime: doc.mtime,
+    hash: doc.hash,
+    display_url: displayUrl2,
+    properties: { ...doc.properties }
   };
 }
-var init_vacuum = __esm({
-  "src/indexer/vacuum.ts"() {
+function displayUrlFor(docId, source) {
+  return source.formatDisplayUrl?.(docId) ?? docId;
+}
+var init_citation_packet = __esm({
+  "src/memory/citation-packet.ts"() {
     "use strict";
     init_esm_shims();
   }
 });
 
-// src/indexer/index.ts
-var indexer_exports = {};
-__export(indexer_exports, {
-  catchupVault: () => catchupVault,
-  extractAliases: () => extractAliases,
-  indexNote: () => indexNote,
-  indexVault: () => indexVault,
-  listModels: () => listModels,
-  removeNote: () => removeNote,
-  resolveWikilinkTarget: () => resolveWikilinkTarget,
-  startShadowIndex: () => startShadowIndex,
-  switchActiveModel: () => switchActiveModel,
-  vacuumEmbeddings: () => vacuumEmbeddings
-});
-var init_indexer2 = __esm({
-  "src/indexer/index.ts"() {
+// src/memory/resources/list-sinks.ts
+function readListSinks(registry) {
+  const sinks = registry.listMemorySinks();
+  return {
+    total: sinks.length,
+    sinks: sinks.map((s) => ({
+      name: s.name,
+      handle: s.handle,
+      vault: s.vault,
+      contract: s.contractName,
+      default: s.isDefault,
+      resolves_to: s.resolveToRelativePath
+    }))
+  };
+}
+var init_list_sinks = __esm({
+  "src/memory/resources/list-sinks.ts"() {
     "use strict";
     init_esm_shims();
-    init_indexer();
-    init_single();
-    init_catchup();
-    init_shadow();
-    init_vacuum();
   }
 });
 
-// src/write/write.ts
-import { promises as fs6 } from "fs";
-import { basename as basename3 } from "path";
-import matter3 from "gray-matter";
-function permissionDenied(vaultName) {
+// src/memory/resources/memory-stats.ts
+function readMemoryStats(registry, manager) {
+  const sinks = registry.listMemorySinks();
+  let totalDocs = 0;
+  const entries = [];
+  for (const sink of sinks) {
+    let vault;
+    try {
+      vault = manager.require(sink.vault);
+    } catch {
+      entries.push({
+        name: sink.name,
+        vault: sink.vault,
+        handle: sink.handle,
+        doc_count: 0,
+        by_type: {},
+        by_status: {},
+        last_write_at: null
+      });
+      continue;
+    }
+    const prefix = sink.resolveToRelativePath;
+    const doc_count = vault.db.notes.countByPathPrefix(prefix);
+    totalDocs += doc_count;
+    const by_type = {};
+    const by_status = {};
+    for (const row of vault.db.notes.listByPathPrefix(prefix)) {
+      const fm = parseFrontmatter(row.frontmatter);
+      const type = stringField(fm, "type");
+      const status = stringField(fm, "status");
+      if (type !== null) by_type[type] = (by_type[type] ?? 0) + 1;
+      if (status !== null) by_status[status] = (by_status[status] ?? 0) + 1;
+    }
+    const last_write_at = vault.db.audit.lastMemoryWriteAtForPathPrefix(prefix);
+    entries.push({
+      name: sink.name,
+      vault: sink.vault,
+      handle: sink.handle,
+      doc_count,
+      by_type,
+      by_status,
+      last_write_at
+    });
+  }
+  return {
+    total_docs: totalDocs,
+    sinks: entries
+  };
+}
+function parseFrontmatter(raw) {
+  if (raw === null || raw.length === 0) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed;
+    }
+    return {};
+  } catch {
+    return {};
+  }
+}
+function stringField(fm, key) {
+  const v = fm[key];
+  return typeof v === "string" && v.length > 0 ? v : null;
+}
+var init_memory_stats = __esm({
+  "src/memory/resources/memory-stats.ts"() {
+    "use strict";
+    init_esm_shims();
+  }
+});
+
+// src/memory/resources/index.ts
+var RESOURCE_URI_LIST_SINKS, RESOURCE_URI_MEMORY_STATS;
+var init_resources = __esm({
+  "src/memory/resources/index.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_list_sinks();
+    init_memory_stats();
+    RESOURCE_URI_LIST_SINKS = "vault-memory://memory/sinks";
+    RESOURCE_URI_MEMORY_STATS = "vault-memory://memory/stats";
+  }
+});
+
+// src/memory/index.ts
+var init_memory = __esm({
+  "src/memory/index.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_sink();
+    init_registry2();
+    init_contract();
+    init_citation_packet();
+    init_resources();
+  }
+});
+
+// src/memory/tools/record-observation.ts
+import { createHash as createHash2 } from "crypto";
+function slugify(claim) {
+  const stripped = claim.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+  if (stripped.length <= 60) return stripped || "observation";
+  return stripped.slice(0, 60).replace(/-+$/g, "") || "observation";
+}
+function hashSuffix(claim, observedAt, salt = "") {
+  return createHash2("sha256").update(`${claim}\0${observedAt}\0${salt}`).digest("hex").slice(0, 6);
+}
+function dateSlug(isoTimestamp) {
+  return isoTimestamp.slice(0, 10);
+}
+async function handleRecordObservation(deps, args2) {
+  const registry = deps.memorySinkRegistry;
+  const sink = args2.sink !== void 0 ? registry.resolveMemorySink(args2.sink) : registry.getDefaultMemorySink();
+  if (sink.vault !== args2.vault) {
+    throw new Error(
+      `Sink "${sink.name}" belongs to vault "${sink.vault}", not "${args2.vault}"`
+    );
+  }
+  const observedAtDefault = (/* @__PURE__ */ new Date()).toISOString();
+  const sugarProps = {
+    source: "agent",
+    observed_at: observedAtDefault,
+    status: "active",
+    confidence: args2.confidence,
+    evidence: args2.evidence,
+    type: args2.type,
+    superseded_by: null
+  };
+  const properties = {
+    ...sugarProps,
+    ...args2.properties ?? {}
+  };
+  const observedAtForNaming = typeof properties.observed_at === "string" ? properties.observed_at : observedAtDefault;
+  const slug = slugify(args2.claim);
+  const delivery = deps.deliveryAdapterFor(args2.vault);
+  const source = deps.sourceConnectorFor(args2.vault);
+  let attempt = 0;
+  while (attempt < MAX_COLLISION_RETRIES) {
+    const suffix = hashSuffix(args2.claim, observedAtForNaming, String(attempt));
+    const filename = `${dateSlug(observedAtForNaming)}-${slug}-${suffix}.md`;
+    const relativeResource = sink.resolveToRelativePath + OBSERVATIONS_SUBFOLDER + filename;
+    const docId = formatDocId("obsidian-fs", args2.vault, relativeResource);
+    const collides = await source.exists(docId);
+    if (collides) {
+      attempt += 1;
+      continue;
+    }
+    const partialDoc = {
+      id: docId,
+      title: args2.claim.slice(0, 80),
+      properties,
+      blocks: [{ kind: "paragraph", text: args2.claim }]
+    };
+    return await delivery.write(docId, partialDoc, { sink: sink.handle });
+  }
   return {
     ok: false,
     reason: "permission_denied",
-    message: `Vault "${vaultName}" is read-only (write_enabled=false in config.toml)`
+    message: `Failed to mint unique DocId after ${MAX_COLLISION_RETRIES} attempts`
   };
 }
-function computeHash2(content, frontmatter) {
-  return computeNoteHash(content, frontmatter);
-}
-function extractTitle3(content, relativePath) {
-  for (const line of content.split("\n")) {
-    const m = /^#\s+(.+?)\s*$/.exec(line);
-    if (m !== null && m[1] !== void 0) return m[1].trim();
-  }
-  return basename3(relativePath, ".md");
-}
-function countWords3(content) {
-  if (content.length === 0) return 0;
-  return content.split(/\s+/).filter((s) => s.length > 0).length;
-}
-async function readExistingFile(absPath) {
-  let raw;
-  try {
-    raw = await fs6.readFile(absPath, "utf-8");
-  } catch (err) {
-    if (typeof err === "object" && err !== null && err.code === "ENOENT") {
-      return null;
-    }
-    throw err;
-  }
-  const parsed = matter3(raw);
-  const fmData = parsed.data;
-  const frontmatter = fmData !== void 0 && Object.keys(fmData).length > 0 ? fmData : null;
-  const hash = computeHash2(parsed.content, frontmatter);
-  return { raw, content: parsed.content, frontmatter, hash };
-}
-async function writeNote(input) {
-  const { vault, relativePath, content } = input;
-  const frontmatter = input.frontmatter ?? null;
-  const clientId = input.clientId ?? DEFAULT_CLIENT_ID;
-  if (vault.config.write_enabled !== true) {
-    return permissionDenied(vault.config.name);
-  }
-  const absPath = await safeJoinInsideVault(vault.config.path, relativePath);
-  const existing = await readExistingFile(absPath);
-  const created = existing === null;
-  if (existing !== null) {
-    if (input.expectedHash === void 0) {
-      return {
-        ok: false,
-        reason: "hash_mismatch",
-        currentHash: existing.hash,
-        currentContent: existing.raw,
-        message: `File "${relativePath}" already exists. Pass expectedHash="${existing.hash}" to overwrite intentionally.`
-      };
-    }
-    if (input.expectedHash !== existing.hash) {
-      return {
-        ok: false,
-        reason: "hash_mismatch",
-        currentHash: existing.hash,
-        currentContent: existing.raw,
-        message: `Hash mismatch for "${relativePath}": expected ${input.expectedHash}, got ${existing.hash}. The file was modified externally \u2014 re-read and retry.`
-      };
-    }
-  }
-  const fileText = frontmatter !== null && Object.keys(frontmatter).length > 0 ? matter3.stringify(content, frontmatter) : content;
-  input.onBeforeFsWrite?.();
-  await atomicWriteFile(absPath, fileText);
-  const written = await readExistingFile(absPath);
-  if (written === null) {
-    throw new Error(
-      `Internal error: file disappeared after write: ${relativePath}`
-    );
-  }
-  const stat = await fs6.stat(absPath);
-  const previousNote = vault.db.notes.getByPath(relativePath);
-  const previousHash = previousNote?.hash ?? null;
-  const title = extractTitle3(written.content, relativePath);
-  let upsertId;
-  try {
-    upsertId = vault.db.transaction(() => {
-      const up = vault.db.notes.upsertByPath({
-        path: relativePath,
-        content: written.content,
-        frontmatter: written.frontmatter ? JSON.stringify(written.frontmatter) : null,
-        title,
-        hash: written.hash,
-        bodyHash: computeBodyHash(written.content),
-        mtime: Math.floor(stat.mtimeMs),
-        wordCount: countWords3(written.content)
-      });
-      vault.db.aliases.setForNote(up.id, extractAliases(written.frontmatter));
-      vault.db.audit.recordWrite({
-        noteId: up.id,
-        op: created ? "create" : "update",
-        previousHash,
-        newHash: written.hash,
-        expectedHash: input.expectedHash ?? null,
-        clientId,
-        diffSummary: null
-      });
-      return up.id;
-    });
-  } catch (dbErr) {
-    input.onBeforeFsWrite?.();
-    try {
-      if (created) {
-        await fs6.unlink(absPath);
-      } else if (existing !== null) {
-        await atomicWriteFile(absPath, existing.raw);
-      }
-    } catch {
-    }
-    throw dbErr;
-  }
-  return {
-    ok: true,
-    newHash: written.hash,
-    noteId: upsertId,
-    created
-  };
-}
-async function deleteNote(input) {
-  const { vault, relativePath, expectedHash } = input;
-  const clientId = input.clientId ?? DEFAULT_CLIENT_ID;
-  if (vault.config.write_enabled !== true) {
-    return permissionDenied(vault.config.name);
-  }
-  const absPath = await safeJoinInsideVault(vault.config.path, relativePath);
-  const existing = await readExistingFile(absPath);
-  if (existing === null) {
-    return {
-      ok: false,
-      reason: "hash_mismatch",
-      message: `File "${relativePath}" does not exist \u2014 nothing to delete.`
-    };
-  }
-  if (existing.hash !== expectedHash) {
-    return {
-      ok: false,
-      reason: "hash_mismatch",
-      currentHash: existing.hash,
-      currentContent: existing.raw,
-      message: `Hash mismatch for "${relativePath}": expected ${expectedHash}, got ${existing.hash}. The file was modified externally \u2014 re-read and retry.`
-    };
-  }
-  const previousNote = vault.db.notes.getByPath(relativePath);
-  const previousHash = previousNote?.hash ?? existing.hash;
-  input.onBeforeFsWrite?.();
-  await fs6.unlink(absPath);
-  if (previousNote !== null) {
-    vault.db.transaction(() => {
-      vault.db.audit.recordWrite({
-        noteId: previousNote.id,
-        op: "delete",
-        previousHash,
-        newHash: null,
-        expectedHash,
-        clientId,
-        diffSummary: null
-      });
-      vault.db.notes.deleteByPath(relativePath);
-    });
-    return {
-      ok: true,
-      newHash: existing.hash,
-      noteId: previousNote.id,
-      created: false
-    };
-  }
-  return {
-    ok: true,
-    newHash: existing.hash,
-    noteId: 0,
-    created: false
-  };
-}
-var DEFAULT_CLIENT_ID;
-var init_write = __esm({
-  "src/write/write.ts"() {
+var OBSERVATIONS_SUBFOLDER, MAX_COLLISION_RETRIES;
+var init_record_observation = __esm({
+  "src/memory/tools/record-observation.ts"() {
     "use strict";
     init_esm_shims();
-    init_reader();
-    init_indexer2();
-    init_fs();
-    DEFAULT_CLIENT_ID = "claude-code";
+    init_registry();
+    OBSERVATIONS_SUBFOLDER = "observations/";
+    MAX_COLLISION_RETRIES = 3;
   }
 });
 
-// src/write/index.ts
-var init_write2 = __esm({
-  "src/write/index.ts"() {
+// src/memory/tools/supersede.ts
+async function handleSupersede(deps, args2) {
+  const oldId = parseDocId(args2.doc_id);
+  parseDocId(args2.replacement_doc_id);
+  const { authority: vaultName } = decomposeDocId(oldId);
+  const sink = deps.memorySinkRegistry.findSinkContaining(oldId);
+  if (sink === null) {
+    throw new Error(
+      `supersede() target ${oldId} is not inside any configured MemorySink; supersede applies to memory documents only.`
+    );
+  }
+  const source = deps.sourceConnectorFor(vaultName);
+  const oldDoc = await source.readDocument(oldId);
+  const {
+    wikilinks: _w,
+    ...existingProps
+  } = oldDoc.properties;
+  const patch = {
+    properties: {
+      ...existingProps,
+      status: "superseded",
+      superseded_by: args2.replacement_doc_id,
+      superseded_reason: args2.reason
+    }
+  };
+  return await deps.deliveryAdapterFor(vaultName).update(oldId, patch, {
+    expectedHash: oldDoc.hash,
+    sink: sink.handle
+  });
+}
+var init_supersede = __esm({
+  "src/memory/tools/supersede.ts"() {
     "use strict";
     init_esm_shims();
-    init_write();
-    init_fs();
+    init_registry();
+  }
+});
+
+// src/memory/tools/recall.ts
+function confidenceRank(c) {
+  switch (c) {
+    case "direct":
+      return 3;
+    case "inferred":
+      return 2;
+    case "uncertain":
+      return 1;
+    default:
+      return 0;
+  }
+}
+function observedAtIso(value) {
+  if (value instanceof Date) {
+    return Number.isNaN(value.getTime()) ? null : value.toISOString();
+  }
+  if (typeof value === "string") {
+    const t = Date.parse(value);
+    return Number.isNaN(t) ? null : new Date(t).toISOString();
+  }
+  return null;
+}
+async function handleRecall(deps, args2) {
+  const sinks = args2.sink ? [deps.memorySinkRegistry.resolveMemorySink(args2.sink)] : deps.memorySinkRegistry.listMemorySinks();
+  if (sinks.length === 0) return [];
+  const sinkVaultNames = new Set(sinks.map((s) => s.vault));
+  const allowedVaultNames = args2.vaults ? new Set(args2.vaults.filter((v) => sinkVaultNames.has(v))) : sinkVaultNames;
+  if (allowedVaultNames.size === 0) return [];
+  const vaults = [];
+  for (const name of allowedVaultNames) {
+    vaults.push(deps.manager.require(name));
+  }
+  const candidates = await deps.searchHybrid({
+    query: args2.query,
+    vaults,
+    topK: RECALL_HYBRID_TOP_K
+  });
+  const sinkMatchers = sinks.filter((s) => allowedVaultNames.has(s.vault)).map((s) => ({ vault: s.vault, prefix: s.resolveToRelativePath }));
+  const inSink = candidates.filter(
+    (hit) => sinkMatchers.some(
+      (m) => hit.vault === m.vault && hit.notePath.startsWith(m.prefix)
+    )
+  );
+  const uniqueByPath = /* @__PURE__ */ new Map();
+  for (const hit of inSink) {
+    const key = `${hit.vault}::${hit.notePath}`;
+    const existing = uniqueByPath.get(key);
+    if (!existing || hit.score > existing.score) {
+      uniqueByPath.set(key, hit);
+    }
+  }
+  if (uniqueByPath.size === 0) return [];
+  const docs = [];
+  for (const hit of uniqueByPath.values()) {
+    const docId = formatDocId("obsidian-fs", hit.vault, hit.notePath);
+    try {
+      const doc = await deps.sourceConnectorFor(hit.vault).readDocument(docId);
+      docs.push(doc);
+    } catch {
+    }
+  }
+  const now = Date.now();
+  const minRank = args2.min_confidence ? confidenceRank(args2.min_confidence) : 0;
+  const typeSet = args2.types && args2.types.length > 0 ? new Set(args2.types) : null;
+  const maxAgeMs = args2.max_age_days !== void 0 ? args2.max_age_days * 864e5 : null;
+  const filtered = docs.filter((doc) => {
+    const props = doc.properties ?? {};
+    if (props.status === "superseded") return false;
+    if (minRank > 0) {
+      const docConf = typeof props.confidence === "string" ? props.confidence : void 0;
+      if (confidenceRank(docConf) < minRank) return false;
+    }
+    if (typeSet) {
+      const t = typeof props.type === "string" ? props.type : void 0;
+      if (t === void 0 || !typeSet.has(t)) return false;
+    }
+    if (maxAgeMs !== null) {
+      const iso = observedAtIso(props.observed_at);
+      if (iso === null) return false;
+      if (now - Date.parse(iso) > maxAgeMs) return false;
+    }
+    return true;
+  });
+  filtered.sort((a, b) => {
+    const ao = observedAtIso(a.properties?.observed_at) ?? "";
+    const bo = observedAtIso(b.properties?.observed_at) ?? "";
+    if (ao !== bo) {
+      return ao < bo ? 1 : -1;
+    }
+    return b.mtime - a.mtime;
+  });
+  const limit = args2.limit ?? DEFAULT_LIMIT;
+  const top = filtered.slice(0, limit);
+  return top.map((doc) => {
+    const { authority: vaultName } = decomposeDocId(doc.id);
+    const source = deps.sourceConnectorFor(vaultName);
+    return toCitationPacket(doc, displayUrlFor(doc.id, source));
+  });
+}
+var DEFAULT_LIMIT, RECALL_HYBRID_TOP_K;
+var init_recall = __esm({
+  "src/memory/tools/recall.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_registry();
+    init_citation_packet();
+    DEFAULT_LIMIT = 20;
+    RECALL_HYBRID_TOP_K = 200;
+  }
+});
+
+// src/memory/tools/index.ts
+var init_tools = __esm({
+  "src/memory/tools/index.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_record_observation();
+    init_supersede();
+    init_recall();
   }
 });
 
@@ -4911,6 +6392,9 @@ function getAuditLog(input) {
   }
   if (input.op !== void 0) filter.op = input.op;
   if (input.since !== void 0) filter.since = input.since;
+  if (input.is_memory_sink_write !== void 0) {
+    filter.isMemorySinkWrite = input.is_memory_sink_write;
+  }
   const rows = vault.db.audit.listWrites(filter);
   return rows.map((row) => {
     const note = vault.db.notes.getById(row.note_id);
@@ -4924,7 +6408,11 @@ function getAuditLog(input) {
       expectedHash: row.expected_hash,
       clientId: row.client_id,
       diffSummary: row.diff_summary,
-      at: row.at
+      at: row.at,
+      // SQLite returns the column as 0 | 1; convert to JS boolean at the
+      // audit-layer boundary so callers (MCP audit_log + tests) see the
+      // documented `is_memory_sink_write: boolean` shape.
+      is_memory_sink_write: row.is_memory_sink_write === 1
     };
   });
 }
@@ -4977,10 +6465,10 @@ var init_audit3 = __esm({
   }
 });
 
-// src/watcher/queue.ts
+// src/adapters/change-feed/obsidian-fs/queue.ts
 var DebouncedQueue;
 var init_queue = __esm({
-  "src/watcher/queue.ts"() {
+  "src/adapters/change-feed/obsidian-fs/queue.ts"() {
     "use strict";
     init_esm_shims();
     DebouncedQueue = class {
@@ -4997,10 +6485,7 @@ var init_queue = __esm({
         this.maxLatencyMs = options.maxLatencyMs ?? 5e3;
         this.onFlush = options.onFlush;
         this.onError = options.onError ?? ((event, err) => {
-          console.error(
-            `[DebouncedQueue] onFlush failed for ${event.path} (${event.kind}):`,
-            err
-          );
+          console.error(`[DebouncedQueue] onFlush failed for ${event.path} (${event.kind}):`, err);
         });
       }
       /**
@@ -5033,10 +6518,10 @@ var init_queue = __esm({
       /** Force-flush all pending events. Resolves once all onFlush calls settle. */
       async flushAll() {
         const entries = [...this.pending.entries()];
-        for (const [path5, entry] of entries) {
+        for (const [path7, entry] of entries) {
           clearTimeout(entry.timer);
-          this.pending.delete(path5);
-          this.dispatch({ path: path5, kind: entry.kind });
+          this.pending.delete(path7);
+          this.dispatch({ path: path7, kind: entry.kind });
         }
         while (this.inFlight.size > 0) {
           await Promise.all([...this.inFlight]);
@@ -5080,17 +6565,49 @@ var init_queue = __esm({
   }
 });
 
-// src/watcher/watcher.ts
-import chokidar from "chokidar";
+// src/adapters/change-feed/obsidian-fs/chokidar-config.ts
 import { posix } from "path";
+function buildChokidarOptions(vaultPath, excludes) {
+  return {
+    persistent: true,
+    ignoreInitial: true,
+    // we expect initial state via indexVault
+    ignored: [
+      // chokidar handles glob-like patterns. Provide both raw and absolute.
+      ...excludes.map((g) => posix.join(vaultPath, g)),
+      /(^|[\\/])\../,
+      // hidden files at any level
+      "**/*.tmp.*"
+      // our atomic-write artifacts
+    ],
+    // Only watch markdown files — saves event volume.
+    // chokidar's `ignored` runs against absolute paths, so we filter via
+    // an after-the-fact event check (cheaper than a glob).
+    awaitWriteFinish: {
+      stabilityThreshold: 400,
+      pollInterval: 50
+    },
+    followSymlinks: false
+  };
+}
+var init_chokidar_config = __esm({
+  "src/adapters/change-feed/obsidian-fs/chokidar-config.ts"() {
+    "use strict";
+    init_esm_shims();
+  }
+});
+
+// src/adapters/change-feed/obsidian-fs/watcher.ts
+import chokidar from "chokidar";
 import { sep as nativeSep } from "path";
 var VaultWatcher;
 var init_watcher = __esm({
-  "src/watcher/watcher.ts"() {
+  "src/adapters/change-feed/obsidian-fs/watcher.ts"() {
     "use strict";
     init_esm_shims();
     init_indexer2();
     init_queue();
+    init_chokidar_config();
     VaultWatcher = class {
       fsWatcher = null;
       queue;
@@ -5121,36 +6638,16 @@ var init_watcher = __esm({
         if (this.started) return;
         const vaultPath = this.opts.vault.config.path;
         const excludes = this.opts.vault.config.exclude_globs ?? [];
-        this.fsWatcher = chokidar.watch(vaultPath, {
-          persistent: true,
-          ignoreInitial: true,
-          // we expect initial state via indexVault
-          ignored: [
-            // chokidar handles glob-like patterns. Provide both raw and absolute.
-            ...excludes.map((g) => posix.join(vaultPath, g)),
-            /(^|[\\/])\../,
-            // hidden files at any level
-            "**/*.tmp.*"
-            // our atomic-write artifacts
-          ],
-          // Only watch markdown files — saves event volume.
-          // chokidar's `ignored` runs against absolute paths, so we filter via
-          // an after-the-fact event check (cheaper than a glob).
-          awaitWriteFinish: {
-            stabilityThreshold: 200,
-            pollInterval: 50
-          },
-          followSymlinks: false
-        });
-        this.fsWatcher.on("add", (path5) => this.onFsEvent(path5, "change"));
-        this.fsWatcher.on("change", (path5) => this.onFsEvent(path5, "change"));
-        this.fsWatcher.on("unlink", (path5) => this.onFsEvent(path5, "delete"));
+        this.fsWatcher = chokidar.watch(vaultPath, buildChokidarOptions(vaultPath, excludes));
+        this.fsWatcher.on("add", (path7) => this.onFsEvent(path7, "change"));
+        this.fsWatcher.on("change", (path7) => this.onFsEvent(path7, "change"));
+        this.fsWatcher.on("unlink", (path7) => this.onFsEvent(path7, "delete"));
         this.fsWatcher.on("error", (err) => {
           const message = err instanceof Error ? err.message : String(err);
           this.opts.log(`fs watcher error: ${message}`);
         });
-        await new Promise((resolve6) => {
-          this.fsWatcher.once("ready", () => resolve6());
+        await new Promise((resolve7) => {
+          this.fsWatcher.once("ready", () => resolve7());
         });
         this.started = true;
         this.opts.log(`watching ${vaultPath}`);
@@ -5224,10 +6721,10 @@ var init_watcher = __esm({
   }
 });
 
-// src/watcher/suppression.ts
+// src/adapters/change-feed/obsidian-fs/suppression.ts
 var SuppressionSet;
 var init_suppression = __esm({
-  "src/watcher/suppression.ts"() {
+  "src/adapters/change-feed/obsidian-fs/suppression.ts"() {
     "use strict";
     init_esm_shims();
     SuppressionSet = class {
@@ -5239,33 +6736,33 @@ var init_suppression = __esm({
         this.now = options.now ?? Date.now;
       }
       /** Mark a path as "expect a filesystem event for this — please ignore it". */
-      add(path5, ttlMs) {
+      add(path7, ttlMs) {
         this.prune();
         const ttl = ttlMs ?? this.defaultTtlMs;
-        this.entries.set(path5, { expiresAt: this.now() + ttl });
+        this.entries.set(path7, { expiresAt: this.now() + ttl });
       }
       /**
        * If path is suppressed, remove the entry and return true (skip event).
        * Otherwise return false.
        */
-      consume(path5) {
+      consume(path7) {
         this.prune();
-        const entry = this.entries.get(path5);
+        const entry = this.entries.get(path7);
         if (!entry) return false;
         if (entry.expiresAt <= this.now()) {
-          this.entries.delete(path5);
+          this.entries.delete(path7);
           return false;
         }
-        this.entries.delete(path5);
+        this.entries.delete(path7);
         return true;
       }
       /** Read-only check; does not consume. */
-      has(path5) {
+      has(path7) {
         this.prune();
-        const entry = this.entries.get(path5);
+        const entry = this.entries.get(path7);
         if (!entry) return false;
         if (entry.expiresAt <= this.now()) {
-          this.entries.delete(path5);
+          this.entries.delete(path7);
           return false;
         }
         return true;
@@ -5273,9 +6770,9 @@ var init_suppression = __esm({
       /** Drop expired entries. */
       prune() {
         const t = this.now();
-        for (const [path5, entry] of this.entries) {
+        for (const [path7, entry] of this.entries) {
           if (entry.expiresAt <= t) {
-            this.entries.delete(path5);
+            this.entries.delete(path7);
           }
         }
       }
@@ -5287,106 +6784,159 @@ var init_suppression = __esm({
   }
 });
 
-// src/watcher/index.ts
-var init_watcher2 = __esm({
-  "src/watcher/index.ts"() {
+// src/adapters/change-feed/obsidian-fs/change-feed.ts
+import chokidar2 from "chokidar";
+import { sep as nativeSep2 } from "path";
+var SCHEME3, ObsidianFsChangeFeed;
+var init_change_feed = __esm({
+  "src/adapters/change-feed/obsidian-fs/change-feed.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_registry();
+    init_suppression();
+    init_chokidar_config();
+    SCHEME3 = "obsidian-fs";
+    ObsidianFsChangeFeed = class {
+      handle;
+      capabilities = {
+        watch: "push",
+        /**
+         * Phase 1 emits delete+create rather than a tagged rename event.
+         * Honest publication per Invariant I-7 — the conformance test
+         * asserts no `{kind: "rename"}` event is observed when this flag
+         * is false.
+         */
+        emitsRename: false
+      };
+      vault;
+      suppression;
+      log;
+      handlers = /* @__PURE__ */ new Set();
+      fsWatcher = null;
+      startPromise = null;
+      closed = false;
+      constructor(options) {
+        this.vault = options.vault;
+        this.suppression = options.suppression;
+        this.log = options.log ?? ((_m) => {
+        });
+        this.handle = parseSourceHandle(`${SCHEME3}://${this.vault.config.name}`);
+      }
+      subscribe(handler) {
+        if (this.closed) {
+          return { [Symbol.dispose]: () => void 0 };
+        }
+        this.handlers.add(handler);
+        if (!this.startPromise) {
+          this.startPromise = this.start();
+        }
+        return {
+          [Symbol.dispose]: () => {
+            this.handlers.delete(handler);
+          }
+        };
+      }
+      /**
+       * Wait until the chokidar watcher has reported "ready". Test-only
+       * helper — the conformance test awaits this between `subscribe` and
+       * its first synthetic event so the watcher has surveyed the dir.
+       */
+      async ready() {
+        if (this.startPromise) {
+          await this.startPromise;
+        }
+      }
+      async close() {
+        if (this.closed) return;
+        this.closed = true;
+        this.handlers.clear();
+        if (this.fsWatcher) {
+          await this.fsWatcher.close();
+          this.fsWatcher = null;
+        }
+      }
+      // ─── internal ──────────────────────────────────────────────────────────
+      async start() {
+        if (this.closed) return;
+        const vaultPath = this.vault.config.path;
+        const excludes = this.vault.config.exclude_globs ?? [];
+        const watcher = chokidar2.watch(vaultPath, buildChokidarOptions(vaultPath, excludes));
+        this.fsWatcher = watcher;
+        watcher.on("add", (absolutePath) => this.onFsEvent(absolutePath, "create"));
+        watcher.on("change", (absolutePath) => this.onFsEvent(absolutePath, "update"));
+        watcher.on("unlink", (absolutePath) => this.onFsEvent(absolutePath, "delete"));
+        watcher.on("error", (err) => {
+          const message = err instanceof Error ? err.message : String(err);
+          this.log(`fs watcher error: ${message}`);
+        });
+        await new Promise((resolve7) => {
+          watcher.once("ready", () => resolve7());
+        });
+      }
+      onFsEvent(absolutePath, kind) {
+        if (this.closed) return;
+        if (!absolutePath.endsWith(".md")) return;
+        const relativePath = this.toRelative(absolutePath);
+        if (this.suppression.consume(relativePath)) {
+          this.log(`suppressed ${kind} ${relativePath} (own write)`);
+          return;
+        }
+        const id = formatDocId(SCHEME3, this.vault.config.name, relativePath);
+        const event = { kind, id, at: Date.now() };
+        this.fanout(event);
+      }
+      toRelative(absolutePath) {
+        const root = this.vault.config.path;
+        let rel = absolutePath;
+        if (rel.startsWith(root)) rel = rel.slice(root.length);
+        if (rel.startsWith(nativeSep2) || rel.startsWith("/")) rel = rel.slice(1);
+        return rel.split(nativeSep2).join("/");
+      }
+      fanout(event) {
+        for (const handler of [...this.handlers]) {
+          try {
+            const result = handler(event);
+            if (result && typeof result.then === "function") {
+              result.catch((err) => {
+                const message = err instanceof Error ? err.message : String(err);
+                this.log(`handler error: ${message}`);
+              });
+            }
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            this.log(`handler error: ${message}`);
+          }
+        }
+      }
+    };
+  }
+});
+
+// src/adapters/change-feed/obsidian-fs/index.ts
+var init_obsidian_fs3 = __esm({
+  "src/adapters/change-feed/obsidian-fs/index.ts"() {
     "use strict";
     init_esm_shims();
     init_watcher();
     init_queue();
     init_suppression();
+    init_change_feed();
   }
 });
 
-// src/server.ts
-var server_exports = {};
-__export(server_exports, {
-  aggregateTopFrontmatterKeys: () => aggregateTopFrontmatterKeys,
-  aggregateTopTags: () => aggregateTopTags,
-  decodeNoteId: () => decodeNoteId,
-  encodeNoteId: () => encodeNoteId,
-  obsidianUrl: () => obsidianUrl,
-  serve: () => serve,
-  truncateSnippet: () => truncateSnippet
-});
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema
-} from "@modelcontextprotocol/sdk/types.js";
-import { z as z3 } from "zod";
-import { homedir as homedir4 } from "os";
-import { join as joinPath } from "path";
-async function serve() {
-  const config = await loadConfig();
-  const manager = new VaultManager();
-  await manager.loadAll(config.vaults);
-  const ollama = new OllamaClient({
-    endpoint: config.server.ollama_endpoint
-  });
-  const defaultModel = config.server.default_embedding_model ?? "qwen3-embedding:0.6b";
-  const activeVault = process.env.VAULT_MEMORY_ACTIVE_VAULT?.trim() || void 0;
-  const rerankerBackend = config.server.reranker_backend ?? (config.server.reranker_model ? "onnx" : void 0);
-  const reranker = config.server.reranker_model ? rerankerBackend === "ollama" ? new OllamaReranker({ ollama, model: config.server.reranker_model }) : new OnnxReranker({
-    modelDir: config.server.reranker_model_dir ?? joinPath(homedir4(), ".vault-memory", "models", "bge-reranker-v2-m3")
-  }) : void 0;
-  const suppression = new SuppressionSet({ ttlMs: 2e3 });
-  const watchers = /* @__PURE__ */ new Map();
-  const startCatchupAndWatchers = async () => {
-    for (const vault of manager.list()) {
-      if (!vault.config.embedding_model && !vault.db.models.getActive()) continue;
-      const modelName = vault.config.embedding_model ?? defaultModel;
-      try {
-        const result = await catchupVault({
-          vault,
-          embeddingModel: modelName,
-          ollama,
-          log: (m) => process.stderr.write(`[catchup:${vault.config.name}] ${m}
-`)
-        });
-        if (result.reindexed > 0 || result.removed > 0) {
-          process.stderr.write(
-            `[catchup:${vault.config.name}] scanned ${result.scanned}, reindexed ${result.reindexed}, removed ${result.removed} (${result.durationMs}ms)
-`
-          );
-        }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        process.stderr.write(
-          `[catchup:${vault.config.name}] failed: ${message} (watcher will still start)
-`
-        );
-      }
-      const watcher = new VaultWatcher({
-        vault,
-        embeddingModel: modelName,
-        secondaryEmbeddingModel: vault.config.secondary_embedding_model,
-        ollama,
-        suppression
-      });
-      await watcher.start();
-      watchers.set(vault.config.name, watcher);
-    }
-  };
-  const shutdown = async () => {
-    for (const w of watchers.values()) {
-      await w.drain();
-      await w.stop();
-    }
-  };
-  process.on("SIGINT", () => {
-    void shutdown().finally(() => process.exit(0));
-  });
-  process.on("SIGTERM", () => {
-    void shutdown().finally(() => process.exit(0));
-  });
-  const server = new Server(
-    { name: "vault-memory", version: VERSION },
-    { capabilities: { tools: {} } }
-  );
-  server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: [
+// src/tool-registry.ts
+import { z as z6 } from "zod";
+function buildToolSchema(name) {
+  const builder = SCHEMA_BUILDERS[name];
+  if (builder) return builder();
+  return z6.object(TOOL_SCHEMAS[name]);
+}
+var TOOLS, DOC_ID_PATTERN2, PredicateSchema, TOOL_SCHEMAS, SCHEMA_BUILDERS;
+var init_tool_registry = __esm({
+  "src/tool-registry.ts"() {
+    "use strict";
+    init_esm_shims();
+    TOOLS = [
       {
         name: "list_vaults",
         description: "List configured vaults with their status (note count, last indexed run).",
@@ -5620,7 +7170,11 @@ async function serve() {
               type: "integer",
               description: "Epoch ms \u2014 entries at or after this timestamp."
             },
-            limit: { type: "integer", minimum: 1, maximum: 1e3, default: 50 }
+            limit: { type: "integer", minimum: 1, maximum: 1e3, default: 50 },
+            is_memory_sink_write: {
+              type: "boolean",
+              description: "Filter rows to memory-sink writes only (true) or non-memory writes only (false). Omit to include all. See docs/tools/audit_log.md."
+            }
           }
         }
       },
@@ -5689,7 +7243,10 @@ async function serve() {
       },
       {
         name: "search",
+        // Tool description names "Claude.ai" + "Deep-Research" as the // vault-memory:claude-ok
+        // real OB1-connector-ecosystem product names; not a Claude-only coupling.
         description: "OB1-compatible search adapter. Returns a flat list of {id, title, url, snippet} for connector ecosystems (ChatGPT Custom Connectors, Claude.ai, Deep-Research). Backed by hybrid (semantic+BM25+RRF) search. For richer output use search_hybrid.",
+        // vault-memory:claude-ok
         inputSchema: {
           type: "object",
           required: ["query"],
@@ -5764,233 +7321,734 @@ async function serve() {
             }
           }
         }
+      },
+      // ── Phase 2 memory tools (Plan 02-04 + 02-05) ─────────────────────────────
+      {
+        name: "record_observation",
+        description: "Record a new memory observation under the labeled MemorySink for a vault. Required provenance properties (source, confidence, evidence, status, observed_at, type, superseded_by) are auto-filled from arguments; `properties` is an escape hatch for contract-allowed extras and overrides any sugar default (D-02 \u2014 caller-last merge). Writes route through DeliveryAdapter.write() and pass through the centralized provenance validator.",
+        inputSchema: {
+          type: "object",
+          required: ["vault", "claim", "evidence", "confidence", "type"],
+          properties: {
+            vault: { type: "string", description: "Vault name (registered in [vaults] config)" },
+            claim: {
+              type: "string",
+              description: "Short natural-language statement of the observation (becomes title + body)."
+            },
+            evidence: {
+              type: "array",
+              items: { type: "string" },
+              description: "DocIds or quoted source spans supporting the claim; empty array allowed."
+            },
+            confidence: {
+              type: "string",
+              enum: ["direct", "inferred", "uncertain"],
+              description: "How the agent arrived at this claim."
+            },
+            type: {
+              type: "string",
+              description: "Observation type per the sink contract (e.g. 'observation', 'hypothesis', 'decision')."
+            },
+            sink: {
+              type: "string",
+              description: "Memory sink name OR full obsidian-fs://\u2026 handle. Defaults to the vault's default sink."
+            },
+            properties: {
+              type: "object",
+              additionalProperties: true,
+              description: "Escape-hatch: contract-allowed extra properties; merged AFTER sugar args (caller wins)."
+            }
+          }
+        }
+      },
+      {
+        name: "supersede",
+        description: 'Mark an existing memory document as superseded by a replacement document. Forward-only \u2014 the replacement doc is NOT touched; back-links are derived by the Phase 4 graph layer at query time. Atomic single OCC update on the OLD doc; sets status="superseded", superseded_by, and superseded_reason.',
+        inputSchema: {
+          type: "object",
+          required: ["doc_id", "replacement_doc_id", "reason"],
+          properties: {
+            doc_id: {
+              type: "string",
+              description: "DocId of the document being superseded."
+            },
+            replacement_doc_id: {
+              type: "string",
+              description: "DocId of the replacement document."
+            },
+            reason: {
+              type: "string",
+              description: "Why the old document is being retired; written to superseded_reason."
+            }
+          }
+        }
+      },
+      // ── Phase 2 memory tools (Plan 02-05) ────────────────────────────────────
+      {
+        name: "recall",
+        description: "Retrieve memory documents from one or more labeled MemorySinks, filtered by provenance (min_confidence, types, max_age_days) and ranked by recency (observed_at DESC). Returns citation packets (doc_id, source_handle, title, heading_path, mtime, hash, display_url, properties) \u2014 the same 8-field shape Phase 3 assembly tools use. Superseded documents are hidden by default.",
+        inputSchema: {
+          type: "object",
+          required: ["query"],
+          properties: {
+            query: {
+              type: "string",
+              description: "Natural-language query; routes through hybrid (semantic + BM25) search."
+            },
+            min_confidence: {
+              type: "string",
+              enum: ["direct", "inferred", "uncertain"],
+              description: "Exclude docs whose confidence ordinal is lower than this (direct=3, inferred=2, uncertain=1)."
+            },
+            types: {
+              type: "array",
+              items: { type: "string" },
+              description: "Restrict to docs whose `type` property is in this set."
+            },
+            max_age_days: {
+              type: "integer",
+              minimum: 1,
+              description: "Exclude docs whose `observed_at` is older than this many days."
+            },
+            sink: {
+              type: "string",
+              description: "Memory sink name OR full obsidian-fs://\u2026 handle. Defaults to all configured sinks."
+            },
+            limit: {
+              type: "integer",
+              minimum: 1,
+              maximum: 200,
+              default: 20,
+              description: "Max results AFTER filter+sort."
+            },
+            vaults: {
+              type: "array",
+              items: { type: "string" },
+              description: "Restrict to these vault names; defaults to all configured."
+            }
+          }
+        }
       }
-    ]
-  }));
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name, arguments: args2 } = request.params;
-    try {
-      switch (name) {
-        case "list_vaults":
-          return ok(handleListVaults(manager));
-        case "read_note": {
-          const parsed = ReadNoteArgs.parse(args2 ?? {});
-          return ok(handleReadNote(manager, parsed.vault, parsed.path));
-        }
-        case "search_semantic": {
-          const parsed = SearchArgs.parse(args2 ?? {});
-          return ok(
-            await handleSearchSemantic(
-              manager,
-              ollama,
-              defaultModel,
-              activeVault,
-              parsed.query,
-              parsed.vaults,
-              parsed.top_k,
-              parsed.exclude_paths
-            )
-          );
-        }
-        case "search_text": {
-          const parsed = SearchArgs.parse(args2 ?? {});
-          return ok(
-            handleSearchText(
-              manager,
-              activeVault,
-              parsed.query,
-              parsed.vaults,
-              parsed.top_k,
-              parsed.exclude_paths
-            )
-          );
-        }
-        case "search_hybrid": {
-          const parsed = HybridSearchArgs.parse(args2 ?? {});
-          return ok(
-            await handleSearchHybrid(
-              manager,
-              ollama,
-              defaultModel,
-              activeVault,
-              parsed.query,
-              parsed.vaults,
-              parsed.top_k,
-              parsed.rrf_k,
-              parsed.exclude_paths,
-              parsed.rerank ? reranker : void 0
-            )
-          );
-        }
-        case "list_backlinks": {
-          const parsed = VaultPathArgs.parse(args2 ?? {});
-          const vault = manager.require(parsed.vault);
-          return ok({ backlinks: listBacklinks(vault, parsed.path) });
-        }
-        case "list_forward_links": {
-          const parsed = ForwardLinksArgs.parse(args2 ?? {});
-          const vault = manager.require(parsed.vault);
-          return ok({
-            links: listForwardLinks(vault, parsed.path, parsed.include_broken)
-          });
-        }
-        case "find_broken_links": {
-          const parsed = FindBrokenLinksArgs.parse(args2 ?? {});
-          const vault = manager.require(parsed.vault);
-          return ok({ broken: findBrokenLinks(vault) });
-        }
-        case "query_frontmatter": {
-          const parsed = QueryFrontmatterArgs.parse(args2 ?? {});
-          const vault = manager.require(parsed.vault);
-          const hits = queryFrontmatter(vault, {
-            where: parsed.where,
-            limit: parsed.limit
-          });
-          return ok({
-            notes: hits.map((n) => ({
-              path: n.path,
-              title: n.title,
-              frontmatter: n.frontmatter ? JSON.parse(n.frontmatter) : null,
-              mtime: n.mtime
-            })),
-            count: hits.length
-          });
-        }
-        case "write_note": {
-          const parsed = WriteNoteArgs.parse(args2 ?? {});
-          const vault = manager.require(parsed.vault);
-          const result = await writeNote({
-            vault,
-            relativePath: parsed.path,
-            content: parsed.content,
-            frontmatter: parsed.frontmatter ?? null,
-            expectedHash: parsed.expected_hash,
-            clientId: parsed.client_id,
-            onBeforeFsWrite: () => suppression.add(parsed.path)
-          });
-          return ok(result);
-        }
-        case "update_frontmatter": {
-          const parsed = UpdateFrontmatterArgs.parse(args2 ?? {});
-          const vault = manager.require(parsed.vault);
-          const result = await updateFrontmatter({
-            vault,
-            relativePath: parsed.path,
-            merge: parsed.merge,
-            expectedHash: parsed.expected_hash,
-            clientId: parsed.client_id,
-            onBeforeFsWrite: () => suppression.add(parsed.path)
-          });
-          return ok(result);
-        }
-        case "delete_note": {
-          const parsed = DeleteNoteArgs.parse(args2 ?? {});
-          const vault = manager.require(parsed.vault);
-          const result = await deleteNote({
-            vault,
-            relativePath: parsed.path,
-            expectedHash: parsed.expected_hash,
-            clientId: parsed.client_id,
-            onBeforeFsWrite: () => suppression.add(parsed.path)
-          });
-          return ok(result);
-        }
-        case "audit_log": {
-          const parsed = AuditLogArgs.parse(args2 ?? {});
-          const vault = manager.require(parsed.vault);
-          const entries = getAuditLog({
-            vault,
-            notePath: parsed.note_path,
-            op: parsed.op,
-            since: parsed.since,
-            limit: parsed.limit
-          });
-          return ok({ entries, count: entries.length });
-        }
-        case "list_models": {
-          const parsed = ListModelsArgs.parse(args2 ?? {});
-          const vault = manager.require(parsed.vault);
-          const models = listModels(vault);
-          return ok({ models, count: models.length });
-        }
-        case "start_shadow_index": {
-          const parsed = StartShadowIndexArgs.parse(args2 ?? {});
-          const vault = manager.require(parsed.vault);
-          const result = await startShadowIndex({
-            vault,
-            model: parsed.model,
-            ollama,
-            batchSize: parsed.batch_size,
-            log: (m) => process.stderr.write(`[shadow:${vault.config.name}] ${m}
-`)
-          });
-          return ok(result);
-        }
-        case "switch_active_model": {
-          const parsed = SwitchActiveModelArgs.parse(args2 ?? {});
-          const vault = manager.require(parsed.vault);
-          const result = switchActiveModel(vault, parsed.model_name);
-          return ok(result);
-        }
-        case "vacuum_embeddings": {
-          const parsed = VacuumEmbeddingsArgs.parse(args2 ?? {});
-          const vault = manager.require(parsed.vault);
-          const result = vacuumEmbeddings(vault);
-          return ok(result);
-        }
-        case "index_runs": {
-          const parsed = IndexRunsArgs.parse(args2 ?? {});
-          const vault = manager.require(parsed.vault);
-          const runs = getIndexRuns({ vault, limit: parsed.limit });
-          return ok({ runs, count: runs.length });
-        }
-        case "search": {
-          const parsed = SearchCompatArgs.parse(args2 ?? {});
-          return ok(
-            await handleSearchCompat(
-              manager,
-              ollama,
-              defaultModel,
-              activeVault,
-              parsed.query,
-              parsed.limit,
-              reranker
-            )
-          );
-        }
-        case "fetch": {
-          const parsed = FetchCompatArgs.parse(args2 ?? {});
-          return ok(handleFetchCompat(manager, parsed.id));
-        }
-        case "vault_stats": {
-          const parsed = VaultStatsArgs.parse(args2 ?? {});
-          return ok(handleVaultStats(manager, parsed.vault));
-        }
-        case "recent_notes": {
-          const parsed = RecentNotesArgs.parse(args2 ?? {});
-          return ok(
-            handleRecentNotes(
-              manager,
-              parsed.vault,
-              parsed.limit,
-              parsed.since
-            )
-          );
-        }
-        case "suggest_frontmatter": {
-          const parsed = SuggestFrontmatterArgs.parse(args2 ?? {});
-          return ok(handleSuggestFrontmatter(manager, parsed));
-        }
-        default:
-          return errorResponse(`Unknown tool: ${name}`);
+    ];
+    DOC_ID_PATTERN2 = /^[a-z][a-z0-9-]*:\/\/[^/]+\/.+$/;
+    PredicateSchema = z6.union([
+      z6.string(),
+      z6.number(),
+      z6.boolean(),
+      z6.null(),
+      z6.object({ $in: z6.array(z6.union([z6.string(), z6.number(), z6.boolean(), z6.null()])) }),
+      z6.object({ $exists: z6.boolean() }),
+      z6.object({ $contains: z6.union([z6.string(), z6.number(), z6.boolean(), z6.null()]) })
+    ]);
+    TOOL_SCHEMAS = {
+      list_vaults: {},
+      read_note: {
+        vault: z6.string(),
+        path: z6.string()
+      },
+      search_semantic: {
+        query: z6.string().min(1),
+        vaults: z6.array(z6.string()).optional(),
+        top_k: z6.number().int().positive().max(100).optional().default(10),
+        exclude_paths: z6.array(z6.string()).optional()
+      },
+      search_text: {
+        query: z6.string().min(1),
+        vaults: z6.array(z6.string()).optional(),
+        top_k: z6.number().int().positive().max(100).optional().default(10),
+        exclude_paths: z6.array(z6.string()).optional()
+      },
+      search_hybrid: {
+        query: z6.string().min(1),
+        vaults: z6.array(z6.string()).optional(),
+        top_k: z6.number().int().positive().max(100).optional().default(10),
+        rrf_k: z6.number().int().positive().max(1e3).optional().default(60),
+        exclude_paths: z6.array(z6.string()).optional(),
+        rerank: z6.boolean().optional().default(false)
+      },
+      list_backlinks: {
+        vault: z6.string(),
+        path: z6.string()
+      },
+      list_forward_links: {
+        vault: z6.string(),
+        path: z6.string(),
+        include_broken: z6.boolean().optional().default(true)
+      },
+      find_broken_links: {
+        vault: z6.string()
+      },
+      query_frontmatter: {
+        vault: z6.string(),
+        where: z6.record(z6.string(), PredicateSchema),
+        limit: z6.number().int().positive().max(1e3).optional().default(100)
+      },
+      write_note: {
+        vault: z6.string(),
+        path: z6.string(),
+        content: z6.string(),
+        frontmatter: z6.record(z6.string(), z6.unknown()).nullable().optional(),
+        expected_hash: z6.string().optional(),
+        client_id: z6.string().optional()
+      },
+      update_frontmatter: {
+        vault: z6.string(),
+        path: z6.string(),
+        merge: z6.record(z6.string(), z6.unknown()),
+        expected_hash: z6.string().optional(),
+        client_id: z6.string().optional()
+      },
+      delete_note: {
+        vault: z6.string(),
+        path: z6.string(),
+        expected_hash: z6.string(),
+        client_id: z6.string().optional()
+      },
+      audit_log: {
+        vault: z6.string(),
+        note_path: z6.string().optional(),
+        op: z6.enum(["create", "update", "delete"]).optional(),
+        since: z6.number().int().nonnegative().optional(),
+        limit: z6.number().int().positive().max(1e3).optional().default(50),
+        // Plan 02-06 (MEM-08): additive optional filter. The MCP tool's
+        // `description` string is INTENTIONALLY unchanged — Phase 1 byte-identity
+        // is preserved. New capability is documented in docs/tools/audit_log.md.
+        is_memory_sink_write: z6.boolean().optional()
+      },
+      list_models: {
+        vault: z6.string()
+      },
+      start_shadow_index: {
+        vault: z6.string(),
+        model: z6.string().min(1),
+        batch_size: z6.number().int().positive().max(256).optional()
+      },
+      switch_active_model: {
+        vault: z6.string(),
+        model_name: z6.string().min(1)
+      },
+      vacuum_embeddings: {
+        vault: z6.string()
+      },
+      index_runs: {
+        vault: z6.string(),
+        limit: z6.number().int().positive().max(200).optional().default(20)
+      },
+      search: {
+        query: z6.string().min(1),
+        limit: z6.number().int().positive().max(50).optional().default(10)
+      },
+      fetch: {
+        id: z6.string().min(1)
+      },
+      vault_stats: {
+        vault: z6.string().optional()
+      },
+      recent_notes: {
+        vault: z6.string().optional(),
+        limit: z6.number().int().positive().max(200).optional().default(20),
+        since: z6.number().int().nonnegative().optional()
+      },
+      suggest_frontmatter: {
+        vault: z6.string(),
+        path: z6.string().optional(),
+        content: z6.string().optional(),
+        title: z6.string().optional(),
+        folder_hint: z6.string().optional()
+      },
+      // ── Phase 2 memory tools (Plan 02-04) ───────────────────────────────────
+      record_observation: {
+        vault: z6.string().min(1).describe("Vault name (registered in [vaults] config block)"),
+        claim: z6.string().min(1).describe("Short natural-language statement of the observation (becomes title + body)"),
+        evidence: z6.array(z6.string()).describe("DocIds or quoted source spans supporting the claim; empty array allowed"),
+        confidence: z6.enum(["direct", "inferred", "uncertain"]).describe("How the agent arrived at this claim"),
+        type: z6.string().min(1).describe(
+          "Observation type per the sink contract (e.g. 'observation', 'hypothesis', 'decision')"
+        ),
+        sink: z6.string().min(1).optional().describe(
+          "Memory sink name OR full obsidian-fs://\u2026 handle. Defaults to the vault's default sink."
+        ),
+        properties: z6.record(z6.string(), z6.unknown()).optional().describe(
+          "Escape-hatch: contract-allowed extra properties; merged AFTER sugar args (caller wins)"
+        )
+      },
+      supersede: {
+        doc_id: z6.string().regex(DOC_ID_PATTERN2).describe("DocId of the document being superseded"),
+        replacement_doc_id: z6.string().regex(DOC_ID_PATTERN2).describe("DocId of the replacement document"),
+        reason: z6.string().min(1).describe("Why the old document is being retired; written to superseded_reason")
+      },
+      // ── Phase 2 memory tools (Plan 02-05) ───────────────────────────────────
+      recall: {
+        query: z6.string().min(1).describe("Natural-language query; routes through hybrid (semantic + BM25) search"),
+        min_confidence: z6.enum(["direct", "inferred", "uncertain"]).optional().describe(
+          "Exclude docs whose confidence ordinal is lower than this (direct=3, inferred=2, uncertain=1)"
+        ),
+        types: z6.array(z6.string().min(1)).optional().describe("Restrict to docs whose `type` property is in this set"),
+        max_age_days: z6.number().int().positive().optional().describe("Exclude docs whose `observed_at` is older than this many days"),
+        sink: z6.string().min(1).optional().describe(
+          "Memory sink name OR full obsidian-fs://\u2026 handle. Defaults to all configured sinks."
+        ),
+        limit: z6.number().int().positive().max(200).optional().describe("Maximum results AFTER filter+sort; default 20"),
+        vaults: z6.array(z6.string().min(1)).optional().describe("Restrict to these vault names; defaults to all configured")
       }
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      return errorResponse(message);
+    };
+    SCHEMA_BUILDERS = {
+      suggest_frontmatter: () => z6.object(TOOL_SCHEMAS.suggest_frontmatter).refine((v) => v.path !== void 0 || v.content !== void 0, {
+        message: "suggest_frontmatter requires either `path` or `content`"
+      })
+    };
+  }
+});
+
+// src/server.ts
+var server_exports = {};
+__export(server_exports, {
+  aggregateTopFrontmatterKeys: () => aggregateTopFrontmatterKeys,
+  aggregateTopTags: () => aggregateTopTags,
+  decodeNoteId: () => decodeNoteId,
+  discoverMemorySinks: () => discoverMemorySinks,
+  encodeNoteId: () => encodeNoteId,
+  serve: () => serve,
+  setupMemorySinks: () => setupMemorySinks,
+  truncateSnippet: () => truncateSnippet
+});
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { homedir as homedir4 } from "os";
+import { join as joinPath } from "path";
+async function discoverMemorySinks(configured, vaults) {
+  if (configured.length > 0) {
+    return [...configured];
+  }
+  const discovered = [];
+  for (const v of vaults) {
+    if (await sentinelExistsAt(v.path, "_memory")) {
+      discovered.push({
+        name: "default",
+        handle: `obsidian-fs://${v.name}/_memory/`,
+        contract: "default-memory-v1"
+      });
     }
+  }
+  return discovered;
+}
+async function setupMemorySinks(config, manager) {
+  const registry = new MemorySinkRegistry();
+  const vaults = manager.list().map((v) => ({
+    name: v.config.name,
+    path: v.config.path
+  }));
+  const sinksConfig = await discoverMemorySinks(config.memory_sinks, vaults);
+  await registry.registerMemorySinks(sinksConfig, {
+    resolveVaultAbsolutePath: (name) => manager.require(name).config.path,
+    ...config.memory?.default_sink !== void 0 ? { defaultSinkName: config.memory.default_sink } : {},
+    provisioner: async (sink, vaultAbs) => provisionSink(sink, vaultAbs, { version: VERSION })
   });
+  return registry;
+}
+async function serve(options = {}) {
+  const onPhase = options.onPhase ?? (() => void 0);
+  onPhase("load_config");
+  const config = await loadConfig();
+  onPhase("open_vaults");
+  const manager = new VaultManager();
+  await manager.loadAll(config.vaults);
+  onPhase("register_memory_sinks");
+  const memorySinkRegistry = await setupMemorySinks(config, manager);
+  const adapterRegistry = new AdapterRegistry();
+  let serverRef;
+  const getClientId = () => serverRef?.server.getClientVersion()?.name ?? "unknown";
+  const suppression = new SuppressionSet({ ttlMs: 2e3 });
+  const changeFeeds = /* @__PURE__ */ new Map();
+  for (const vault of manager.list()) {
+    const source = new ObsidianFsSource(vault.config);
+    adapterRegistry.registerSource(source.handle, source);
+    const delivery = new ObsidianFsDelivery(vault, getClientId, memorySinkRegistry);
+    adapterRegistry.registerDelivery(delivery.handle, delivery);
+    const changeFeed = new ObsidianFsChangeFeed({
+      vault,
+      suppression,
+      log: (m) => process.stderr.write(`[change-feed:${vault.config.name}] ${m}
+`)
+    });
+    adapterRegistry.registerChangeFeed(changeFeed.handle, changeFeed);
+    changeFeeds.set(vault.config.name, changeFeed);
+  }
+  const ollama = new OllamaClient({
+    endpoint: config.server.ollama_endpoint
+  });
+  const defaultModel = config.server.default_embedding_model ?? "qwen3-embedding:0.6b";
+  const activeVault = process.env.VAULT_MEMORY_ACTIVE_VAULT?.trim() || void 0;
+  const rerankerBackend = config.server.reranker_backend ?? (config.server.reranker_model ? "onnx" : void 0);
+  const reranker = config.server.reranker_model ? rerankerBackend === "ollama" ? new OllamaReranker({ ollama, model: config.server.reranker_model }) : new OnnxReranker({
+    modelDir: config.server.reranker_model_dir ?? joinPath(homedir4(), ".vault-memory", "models", "bge-reranker-v2-m3")
+  }) : void 0;
+  const watchers = /* @__PURE__ */ new Map();
+  const startCatchupAndWatchers = async () => {
+    for (const vault of manager.list()) {
+      if (!vault.config.embedding_model && !vault.db.models.getActive()) continue;
+      const modelName = vault.config.embedding_model ?? defaultModel;
+      try {
+        const result = await catchupVault({
+          vault,
+          embeddingModel: modelName,
+          ollama,
+          log: (m) => process.stderr.write(`[catchup:${vault.config.name}] ${m}
+`)
+        });
+        if (result.reindexed > 0 || result.removed > 0) {
+          process.stderr.write(
+            `[catchup:${vault.config.name}] scanned ${result.scanned}, reindexed ${result.reindexed}, removed ${result.removed} (${result.durationMs}ms)
+`
+          );
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        process.stderr.write(
+          `[catchup:${vault.config.name}] failed: ${message} (watcher will still start)
+`
+        );
+      }
+      const watcher = new VaultWatcher({
+        vault,
+        embeddingModel: modelName,
+        secondaryEmbeddingModel: vault.config.secondary_embedding_model,
+        ollama,
+        suppression
+      });
+      await watcher.start();
+      watchers.set(vault.config.name, watcher);
+    }
+  };
+  const shutdown = async () => {
+    for (const w of watchers.values()) {
+      await w.drain();
+      await w.stop();
+    }
+    for (const cf of changeFeeds.values()) {
+      await cf.close();
+    }
+  };
+  process.on("SIGINT", () => {
+    void shutdown().finally(() => process.exit(0));
+  });
+  process.on("SIGTERM", () => {
+    void shutdown().finally(() => process.exit(0));
+  });
+  const server = new McpServer(
+    { name: "vault-memory", version: VERSION },
+    // Plan 02-06 (MEM-09): advertise `resources` capability so MCP clients
+    // call `resources/list` + `resources/read` on bootstrap. Polled-only —
+    // no `subscribe` / `listChanged` flags asserted.
+    { capabilities: { tools: {}, resources: {} } }
+  );
+  serverRef = server;
+  const handlers = {
+    list_vaults: async () => handleListVaults(manager),
+    read_note: async (a) => {
+      const p = a;
+      return handleReadNote(adapterRegistry, p.vault, p.path);
+    },
+    search_semantic: async (a) => {
+      const p = a;
+      return handleSearchSemantic(
+        manager,
+        ollama,
+        defaultModel,
+        activeVault,
+        p.query,
+        p.vaults,
+        p.top_k,
+        p.exclude_paths
+      );
+    },
+    search_text: async (a) => {
+      const p = a;
+      return handleSearchText(manager, activeVault, p.query, p.vaults, p.top_k, p.exclude_paths);
+    },
+    search_hybrid: async (a) => {
+      const p = a;
+      return handleSearchHybrid(
+        manager,
+        ollama,
+        defaultModel,
+        activeVault,
+        p.query,
+        p.vaults,
+        p.top_k,
+        p.rrf_k,
+        p.exclude_paths,
+        p.rerank ? reranker : void 0
+      );
+    },
+    list_backlinks: async (a) => {
+      const p = a;
+      const vault = manager.require(p.vault);
+      return { backlinks: listBacklinks(vault, p.path) };
+    },
+    list_forward_links: async (a) => {
+      const p = a;
+      const vault = manager.require(p.vault);
+      return { links: listForwardLinks(vault, p.path, p.include_broken) };
+    },
+    find_broken_links: async (a) => {
+      const p = a;
+      const vault = manager.require(p.vault);
+      return { broken: findBrokenLinks(vault) };
+    },
+    query_frontmatter: async (a) => {
+      const p = a;
+      const vault = manager.require(p.vault);
+      const hits = queryFrontmatter(vault, {
+        where: p.where,
+        limit: p.limit
+      });
+      return {
+        notes: hits.map((n) => ({
+          path: n.path,
+          title: n.title,
+          frontmatter: n.frontmatter ? JSON.parse(n.frontmatter) : null,
+          mtime: n.mtime
+        })),
+        count: hits.length
+      };
+    },
+    write_note: async (a) => {
+      const p = a;
+      const vault = manager.require(p.vault);
+      suppression.add(p.path);
+      return handleWriteNote(adapterRegistry, vault, p);
+    },
+    update_frontmatter: async (a) => {
+      const p = a;
+      const vault = manager.require(p.vault);
+      return updateFrontmatter({
+        vault,
+        registry: adapterRegistry,
+        memorySinkRegistry,
+        relativePath: p.path,
+        merge: p.merge,
+        ...p.expected_hash !== void 0 ? { expectedHash: p.expected_hash } : {},
+        ...p.client_id !== void 0 ? { clientId: p.client_id } : {},
+        onBeforeFsWrite: () => suppression.add(p.path)
+      });
+    },
+    delete_note: async (a) => {
+      const p = a;
+      const vault = manager.require(p.vault);
+      suppression.add(p.path);
+      return handleDeleteNote(adapterRegistry, vault, p);
+    },
+    audit_log: async (a) => {
+      const p = a;
+      const vault = manager.require(p.vault);
+      const entries = getAuditLog({
+        vault,
+        notePath: p.note_path,
+        op: p.op,
+        since: p.since,
+        limit: p.limit,
+        ...p.is_memory_sink_write !== void 0 ? { is_memory_sink_write: p.is_memory_sink_write } : {}
+      });
+      return { entries, count: entries.length };
+    },
+    list_models: async (a) => {
+      const p = a;
+      const vault = manager.require(p.vault);
+      const models = listModels(vault);
+      return { models, count: models.length };
+    },
+    start_shadow_index: async (a) => {
+      const p = a;
+      const vault = manager.require(p.vault);
+      return startShadowIndex({
+        vault,
+        model: p.model,
+        ollama,
+        batchSize: p.batch_size,
+        log: (m) => process.stderr.write(`[shadow:${vault.config.name}] ${m}
+`)
+      });
+    },
+    switch_active_model: async (a) => {
+      const p = a;
+      const vault = manager.require(p.vault);
+      return switchActiveModel(vault, p.model_name);
+    },
+    vacuum_embeddings: async (a) => {
+      const p = a;
+      const vault = manager.require(p.vault);
+      return vacuumEmbeddings(vault);
+    },
+    index_runs: async (a) => {
+      const p = a;
+      const vault = manager.require(p.vault);
+      const runs = getIndexRuns({ vault, limit: p.limit });
+      return { runs, count: runs.length };
+    },
+    search: async (a) => {
+      const p = a;
+      return handleSearchCompat(
+        manager,
+        adapterRegistry,
+        ollama,
+        defaultModel,
+        activeVault,
+        p.query,
+        p.limit,
+        reranker
+      );
+    },
+    fetch: async (a) => {
+      const p = a;
+      return handleFetchCompat(manager, adapterRegistry, p.id);
+    },
+    vault_stats: async (a) => {
+      const p = a;
+      return handleVaultStats(manager, p.vault);
+    },
+    recent_notes: async (a) => {
+      const p = a;
+      return handleRecentNotes(manager, p.vault, p.limit, p.since);
+    },
+    suggest_frontmatter: async (a) => {
+      const p = a;
+      return handleSuggestFrontmatter(manager, p);
+    },
+    // ── Phase 2 memory tools (Plan 02-04) ──────────────────────────────────
+    record_observation: async (a) => {
+      const p = a;
+      const result = await handleRecordObservation(
+        {
+          memorySinkRegistry,
+          manager,
+          deliveryAdapterFor: (vaultName) => adapterRegistry.resolveDelivery(
+            parseSourceHandle(`obsidian-fs://${vaultName}`)
+          ),
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
+            parseSourceHandle(`obsidian-fs://${vaultName}`)
+          )
+        },
+        p
+      );
+      if (result.ok) {
+        const resource = result.doc_id.replace(
+          `obsidian-fs://${p.vault}/`,
+          ""
+        );
+        suppression.add(resource);
+      }
+      return result;
+    },
+    supersede: async (a) => {
+      const p = a;
+      const result = await handleSupersede(
+        {
+          memorySinkRegistry,
+          manager,
+          deliveryAdapterFor: (vaultName) => adapterRegistry.resolveDelivery(
+            parseSourceHandle(`obsidian-fs://${vaultName}`)
+          ),
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
+            parseSourceHandle(`obsidian-fs://${vaultName}`)
+          )
+        },
+        p
+      );
+      if (result.ok) {
+        const resource = result.doc_id.replace(/^obsidian-fs:\/\/[^/]+\//, "");
+        suppression.add(resource);
+      }
+      return result;
+    },
+    // ── Phase 2 memory tools (Plan 02-05) ──────────────────────────────────
+    recall: async (a) => {
+      const p = a;
+      const packets = await handleRecall(
+        {
+          memorySinkRegistry,
+          manager,
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
+            parseSourceHandle(`obsidian-fs://${vaultName}`)
+          ),
+          searchHybrid: async (input) => hybridSearch({
+            query: input.query,
+            embeddingModel: defaultModel,
+            ollama,
+            vaults: input.vaults,
+            topK: input.topK,
+            rrfK: 60,
+            includeBreakdown: false
+          })
+        },
+        p
+      );
+      return { packets, count: packets.length };
+    }
+  };
+  for (const tool of TOOLS) {
+    const name = tool.name;
+    const handler = handlers[name];
+    const schema = TOOL_SCHEMAS[name];
+    const needsRefinementCheck = name === "suggest_frontmatter";
+    server.registerTool(
+      name,
+      { description: tool.description, inputSchema: schema },
+      async (args2) => {
+        try {
+          let validated = args2;
+          if (needsRefinementCheck) {
+            validated = buildToolSchema(name).parse(args2);
+          }
+          const data = await handler(validated);
+          return ok(data);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          return errorResponse(message);
+        }
+      }
+    );
+  }
+  server.registerResource(
+    "memory-sinks",
+    RESOURCE_URI_LIST_SINKS,
+    {
+      title: "Memory sinks",
+      description: "Configured + auto-discovered MemorySinks (name, handle, vault, contract, default). Read to discover where memory documents (record_observation, supersede) land.",
+      mimeType: "application/json"
+    },
+    async (uri) => ({
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: "application/json",
+          text: JSON.stringify(readListSinks(memorySinkRegistry), null, 2)
+        }
+      ]
+    })
+  );
+  server.registerResource(
+    "memory-stats",
+    RESOURCE_URI_MEMORY_STATS,
+    {
+      title: "Memory sink stats",
+      description: "Per-sink document counts, by_type / by_status breakdowns, and last memory-write timestamp. Polled \u2014 re-read to refresh.",
+      mimeType: "application/json"
+    },
+    async (uri) => ({
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: "application/json",
+          text: JSON.stringify(readMemoryStats(memorySinkRegistry, manager), null, 2)
+        }
+      ]
+    })
+  );
+  onPhase("connect_transport");
   const transport = new StdioServerTransport();
   await server.connect(transport);
+  onPhase("start_catchup");
   startCatchupAndWatchers().catch((err) => {
     const message = err instanceof Error ? err.message : String(err);
     process.stderr.write(`[catchup] unexpected failure: ${message}
@@ -6018,21 +8076,99 @@ function handleListVaults(manager) {
   });
   return { vaults, count: vaults.length };
 }
-function handleReadNote(manager, vaultName, path5) {
-  const vault = manager.require(vaultName);
-  const note = vault.db.notes.getByPath(path5);
-  if (!note) {
-    throw new Error(`Note not found: ${vaultName}/${path5}`);
+async function handleReadNote(registry, vaultName, path7) {
+  const handle = parseSourceHandle(`obsidian-fs://${vaultName}`);
+  let source;
+  try {
+    source = registry.resolveSource(handle);
+  } catch {
+    throw new Error(`Note not found: ${vaultName}/${path7}`);
+  }
+  const id = formatDocId("obsidian-fs", vaultName, path7);
+  let doc;
+  try {
+    doc = await source.readDocument(id);
+  } catch {
+    throw new Error(`Note not found: ${vaultName}/${path7}`);
+  }
+  const { wikilinks: _wikilinks, ...frontmatterOnly } = doc.properties;
+  const hasFrontmatter = Object.keys(frontmatterOnly).length > 0;
+  const content = doc.blocks[0]?.kind === "paragraph" ? doc.blocks[0].text : "";
+  return {
+    path: path7,
+    title: doc.title,
+    content,
+    frontmatter: hasFrontmatter ? frontmatterOnly : null,
+    hash: doc.hash,
+    mtime: doc.mtime,
+    word_count: countWords3(content)
+  };
+}
+async function handleWriteNote(registry, vault, parsed) {
+  const handle = parseSourceHandle(`obsidian-fs://${parsed.vault}`);
+  const delivery = registry.resolveDelivery(handle);
+  const docId = formatDocId("obsidian-fs", parsed.vault, parsed.path);
+  const partial = {
+    blocks: [{ kind: "paragraph", text: parsed.content }],
+    properties: parsed.frontmatter ?? {}
+  };
+  const opts = {};
+  if (parsed.expected_hash !== void 0) opts.expectedHash = parsed.expected_hash;
+  if (parsed.client_id !== void 0) opts.clientId = parsed.client_id;
+  const res = await delivery.write(docId, partial, opts);
+  if (!res.ok) {
+    const out = {
+      ok: false,
+      reason: res.reason === "not_found" ? "hash_mismatch" : res.reason
+    };
+    if (res.currentHash !== void 0) out.currentHash = res.currentHash;
+    if (res.message !== void 0) out.message = res.message;
+    if (res.sinkName !== void 0) out.sinkName = res.sinkName;
+    if (res.suggestion !== void 0) out.suggestion = res.suggestion;
+    if (res.key !== void 0) out.key = res.key;
+    if (res.observedValue !== void 0) out.observedValue = res.observedValue;
+    return out;
+  }
+  const noteRow = vault.db.notes.getByPath(parsed.path);
+  return {
+    ok: true,
+    newHash: res.newHash,
+    noteId: noteRow?.id ?? 0,
+    created: res.created
+  };
+}
+async function handleDeleteNote(registry, vault, parsed) {
+  const noteRow = vault.db.notes.getByPath(parsed.path);
+  const preDeleteHash = noteRow?.hash ?? parsed.expected_hash;
+  const handle = parseSourceHandle(`obsidian-fs://${parsed.vault}`);
+  const delivery = registry.resolveDelivery(handle);
+  const docId = formatDocId("obsidian-fs", parsed.vault, parsed.path);
+  const opts = {
+    expectedHash: parsed.expected_hash
+  };
+  if (parsed.client_id !== void 0) opts.clientId = parsed.client_id;
+  const res = await delivery.delete(docId, opts);
+  if (!res.ok) {
+    const out = {
+      ok: false,
+      reason: res.reason === "not_found" ? "hash_mismatch" : res.reason
+    };
+    if (res.currentHash !== void 0) out.currentHash = res.currentHash;
+    if (res.message !== void 0) out.message = res.message;
+    if (res.sinkName !== void 0) out.sinkName = res.sinkName;
+    if (res.suggestion !== void 0) out.suggestion = res.suggestion;
+    return out;
   }
   return {
-    path: note.path,
-    title: note.title,
-    content: note.content,
-    frontmatter: note.frontmatter ? JSON.parse(note.frontmatter) : null,
-    hash: note.hash,
-    mtime: note.mtime,
-    word_count: note.word_count
+    ok: true,
+    newHash: preDeleteHash,
+    noteId: noteRow?.id ?? 0,
+    created: false
   };
+}
+function countWords3(content) {
+  if (content.length === 0) return 0;
+  return content.split(/\s+/).filter((s) => s.length > 0).length;
 }
 function resolveVaultTargets(manager, vaultFilter, activeVault) {
   if (vaultFilter) {
@@ -6073,11 +8209,7 @@ async function handleSearchSemantic(manager, ollama, defaultModel, activeVault, 
       if (!queryVec) continue;
       embedCache.set(modelName, queryVec);
     }
-    const semanticHits = vault.db.embeddings.searchSemantic(
-      model.id,
-      queryVec,
-      fanK
-    );
+    const semanticHits = vault.db.embeddings.searchSemantic(model.id, queryVec, fanK);
     for (const hit of semanticHits) {
       const chunk = vault.db.chunks.getById(hit.chunkId);
       if (!chunk) continue;
@@ -6179,22 +8311,22 @@ async function handleSearchHybrid(manager, ollama, defaultModel, activeVault, qu
   }
   return out;
 }
-function encodeNoteId(vault, path5) {
-  return `${vault}:${path5}`;
+function encodeNoteId(vault, path7) {
+  return `${vault}:${path7}`;
 }
 function decodeNoteId(id) {
   const idx = id.indexOf(":");
   if (idx <= 0 || idx === id.length - 1) {
-    throw new Error(
-      `Invalid id: ${id}. Expected format <vault>:<vault-relative-path>.`
-    );
+    throw new Error(`Invalid id: ${id}. Expected format <vault>:<vault-relative-path>.`);
   }
   return { vault: id.slice(0, idx), path: id.slice(idx + 1) };
 }
-function obsidianUrl(vaultName, notePath) {
-  return `obsidian://open?vault=${encodeURIComponent(vaultName)}&file=${encodeURIComponent(notePath)}`;
+function displayUrl(registry, vaultName, notePath) {
+  const source = registry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`));
+  const docId = formatDocId("obsidian-fs", vaultName, notePath);
+  return source.formatDisplayUrl?.(docId) ?? `obsidian-fs://${vaultName}/${notePath}`;
 }
-async function handleSearchCompat(manager, ollama, defaultModel, activeVault, query, limit, reranker) {
+async function handleSearchCompat(manager, registry, ollama, defaultModel, activeVault, query, limit, reranker) {
   const { targets, skipped } = resolveVaultTargets(manager, void 0, activeVault);
   if (targets.length === 0) {
     return {
@@ -6221,7 +8353,7 @@ async function handleSearchCompat(manager, ollama, defaultModel, activeVault, qu
     results.push({
       id: encodeNoteId(h.vault, h.notePath),
       title: h.noteTitle ?? h.notePath,
-      url: obsidianUrl(h.vault, h.notePath),
+      url: displayUrl(registry, h.vault, h.notePath),
       snippet: truncateSnippet(h.chunkText, 280)
     });
     if (results.length >= limit) break;
@@ -6237,12 +8369,12 @@ function truncateSnippet(text, max) {
   if (collapsed.length <= max) return collapsed;
   return collapsed.slice(0, max - 1).trimEnd() + "\u2026";
 }
-function handleFetchCompat(manager, id) {
-  const { vault: vaultName, path: path5 } = decodeNoteId(id);
+function handleFetchCompat(manager, registry, id) {
+  const { vault: vaultName, path: path7 } = decodeNoteId(id);
   const vault = manager.require(vaultName);
-  const note = vault.db.notes.getByPath(path5);
+  const note = vault.db.notes.getByPath(path7);
   if (!note) {
-    throw new Error(`Note not found: ${vaultName}/${path5}`);
+    throw new Error(`Note not found: ${vaultName}/${path7}`);
   }
   const metadata = {
     vault: vaultName,
@@ -6261,7 +8393,7 @@ function handleFetchCompat(manager, id) {
     id,
     title: note.title ?? note.path,
     text: note.content,
-    url: obsidianUrl(vaultName, note.path),
+    url: displayUrl(registry, vaultName, note.path),
     metadata
   };
 }
@@ -6269,9 +8401,7 @@ function handleVaultStats(manager, vaultFilter) {
   const targets = vaultFilter ? [manager.require(vaultFilter)] : manager.list();
   const stats = targets.map((v) => {
     const total_notes = v.db.notes.countAll();
-    const wordRow = v.db.handle.prepare(
-      "SELECT SUM(word_count) AS total FROM notes"
-    ).get();
+    const wordRow = v.db.handle.prepare("SELECT SUM(word_count) AS total FROM notes").get();
     const lastRun = v.db.audit.listRuns(1)[0];
     const activeModel = v.db.models.getActive();
     return {
@@ -6408,8 +8538,8 @@ function safeParseFrontmatter(s) {
     return null;
   }
 }
-function defaultBasename(path5) {
-  const base = path5.split("/").pop() ?? path5;
+function defaultBasename(path7) {
+  const base = path7.split("/").pop() ?? path7;
   return base.replace(/\.md$/i, "");
 }
 function normalizeFolderHint(hint) {
@@ -6430,7 +8560,7 @@ function errorResponse(message) {
     content: [{ type: "text", text: message }]
   };
 }
-var VERSION, ReadNoteArgs, SearchArgs, HybridSearchArgs, VaultPathArgs, ForwardLinksArgs, FindBrokenLinksArgs, PredicateSchema, QueryFrontmatterArgs, WriteNoteArgs, UpdateFrontmatterArgs, DeleteNoteArgs, AuditLogArgs, IndexRunsArgs, ListModelsArgs, StartShadowIndexArgs, SwitchActiveModelArgs, VacuumEmbeddingsArgs, SearchCompatArgs, FetchCompatArgs, VaultStatsArgs, RecentNotesArgs, SuggestFrontmatterArgs;
+var VERSION;
 var init_server = __esm({
   "src/server.ts"() {
     "use strict";
@@ -6443,126 +8573,18 @@ var init_server = __esm({
     init_rerank();
     init_graph2();
     init_frontmatter();
-    init_schema2();
-    init_write2();
+    init_schema3();
+    init_obsidian_fs2();
+    init_sentinel();
+    init_memory();
+    init_tools();
     init_audit3();
-    init_watcher2();
+    init_obsidian_fs3();
     init_indexer2();
+    init_tool_registry();
+    init_registry();
+    init_obsidian_fs();
     VERSION = "1.0.0";
-    ReadNoteArgs = z3.object({
-      vault: z3.string(),
-      path: z3.string()
-    });
-    SearchArgs = z3.object({
-      query: z3.string().min(1),
-      vaults: z3.array(z3.string()).optional(),
-      top_k: z3.number().int().positive().max(100).optional().default(10),
-      /** Glob patterns of vault-relative paths to exclude from results. Useful
-       *  for filtering self-referential notes (e.g. an eval note that lists
-       *  the same keywords it's testing) or auxiliary indices. */
-      exclude_paths: z3.array(z3.string()).optional()
-    });
-    HybridSearchArgs = SearchArgs.extend({
-      rrf_k: z3.number().int().positive().max(1e3).optional().default(60),
-      /** When true AND a `reranker_model` is configured, runs a cross-encoder
-       *  rerank pass over the top candidates. Silently ignored otherwise. */
-      rerank: z3.boolean().optional().default(false)
-    });
-    VaultPathArgs = z3.object({
-      vault: z3.string(),
-      path: z3.string()
-    });
-    ForwardLinksArgs = VaultPathArgs.extend({
-      include_broken: z3.boolean().optional().default(true)
-    });
-    FindBrokenLinksArgs = z3.object({
-      vault: z3.string()
-    });
-    PredicateSchema = z3.union([
-      z3.string(),
-      z3.number(),
-      z3.boolean(),
-      z3.null(),
-      z3.object({ $in: z3.array(z3.union([z3.string(), z3.number(), z3.boolean(), z3.null()])) }),
-      z3.object({ $exists: z3.boolean() }),
-      z3.object({ $contains: z3.union([z3.string(), z3.number(), z3.boolean(), z3.null()]) })
-    ]);
-    QueryFrontmatterArgs = z3.object({
-      vault: z3.string(),
-      where: z3.record(z3.string(), PredicateSchema),
-      limit: z3.number().int().positive().max(1e3).optional().default(100)
-    });
-    WriteNoteArgs = z3.object({
-      vault: z3.string(),
-      path: z3.string(),
-      content: z3.string(),
-      frontmatter: z3.record(z3.string(), z3.unknown()).nullable().optional(),
-      expected_hash: z3.string().optional(),
-      client_id: z3.string().optional()
-    });
-    UpdateFrontmatterArgs = z3.object({
-      vault: z3.string(),
-      path: z3.string(),
-      merge: z3.record(z3.string(), z3.unknown()),
-      expected_hash: z3.string().optional(),
-      client_id: z3.string().optional()
-    });
-    DeleteNoteArgs = z3.object({
-      vault: z3.string(),
-      path: z3.string(),
-      expected_hash: z3.string(),
-      client_id: z3.string().optional()
-    });
-    AuditLogArgs = z3.object({
-      vault: z3.string(),
-      note_path: z3.string().optional(),
-      op: z3.enum(["create", "update", "delete"]).optional(),
-      since: z3.number().int().nonnegative().optional(),
-      limit: z3.number().int().positive().max(1e3).optional().default(50)
-    });
-    IndexRunsArgs = z3.object({
-      vault: z3.string(),
-      limit: z3.number().int().positive().max(200).optional().default(20)
-    });
-    ListModelsArgs = z3.object({
-      vault: z3.string()
-    });
-    StartShadowIndexArgs = z3.object({
-      vault: z3.string(),
-      model: z3.string().min(1),
-      batch_size: z3.number().int().positive().max(256).optional()
-    });
-    SwitchActiveModelArgs = z3.object({
-      vault: z3.string(),
-      model_name: z3.string().min(1)
-    });
-    VacuumEmbeddingsArgs = z3.object({
-      vault: z3.string()
-    });
-    SearchCompatArgs = z3.object({
-      query: z3.string().min(1),
-      limit: z3.number().int().positive().max(50).optional().default(10)
-    });
-    FetchCompatArgs = z3.object({
-      id: z3.string().min(1)
-    });
-    VaultStatsArgs = z3.object({
-      vault: z3.string().optional()
-    });
-    RecentNotesArgs = z3.object({
-      vault: z3.string().optional(),
-      limit: z3.number().int().positive().max(200).optional().default(20),
-      since: z3.number().int().nonnegative().optional()
-    });
-    SuggestFrontmatterArgs = z3.object({
-      vault: z3.string(),
-      path: z3.string().optional(),
-      content: z3.string().optional(),
-      title: z3.string().optional(),
-      folder_hint: z3.string().optional()
-    }).refine((v) => v.path !== void 0 || v.content !== void 0, {
-      message: "suggest_frontmatter requires either `path` or `content`"
-    });
   }
 });
 
@@ -6642,7 +8664,7 @@ async function runIndex(rest) {
 }
 async function runAddVault(rest) {
   const { addVault: addVault2 } = await Promise.resolve().then(() => (init_config(), config_exports));
-  let path5 = null;
+  let path7 = null;
   let name;
   let writeEnabled = false;
   let skipIndex = false;
@@ -6661,18 +8683,16 @@ async function runAddVault(rest) {
 Registers a vault in ~/.vault-memory/config.toml, writes a .mcp.json
 into the vault root, and runs an initial index. Idempotent.`);
       return;
-    } else if (arg && !arg.startsWith("--") && path5 === null) {
-      path5 = arg;
+    } else if (arg && !arg.startsWith("--") && path7 === null) {
+      path7 = arg;
     }
   }
-  if (path5 === null) {
-    console.error(
-      "Usage: vault-memory add-vault <path> [--name <name>] [--write] [--no-index]"
-    );
+  if (path7 === null) {
+    console.error("Usage: vault-memory add-vault <path> [--name <name>] [--write] [--no-index]");
     process.exit(2);
   }
-  console.error(`\u2192 Registering vault: ${path5}`);
-  const result = await addVault2({ path: path5, name, writeEnabled });
+  console.error(`\u2192 Registering vault: ${path7}`);
+  const result = await addVault2({ path: path7, name, writeEnabled });
   for (const step of result.steps) {
     switch (step.kind) {
       case "config-added":
@@ -6705,7 +8725,7 @@ Skipped indexing (--no-index). Run later:`);
   }
   console.error(
     `
-Done. Open ${result.resolvedPath} in Claude Code \u2014 the vault-memory MCP server will be available.`
+Done. Open ${result.resolvedPath} in your MCP-aware client \u2014 the vault-memory MCP server will be available.`
   );
 }
 function printHelp() {
