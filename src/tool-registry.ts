@@ -823,8 +823,11 @@ export const TOOLS = [
       "5000 nodes; pass `force: true` to override. Either `query` " +
       "(composes search_hybrid + expand 1-hop) OR `seed_doc_ids` (uses " +
       "provided seeds + induced 1-hop neighborhood); not both — passing " +
-      "both returns {ok:false, reason:'both_seeds_and_query'}. Returns " +
-      "per-cluster {cluster_id, size, members[], summary: {top_types, " +
+      "both returns {ok:false, reason:'both_seeds_and_query'}. On the " +
+      "`query` path with multiple vaults configured, the `vault` field " +
+      "is required so search scope is deterministic; single-vault setups " +
+      "may omit it (returns {ok:false, reason:'vault_required'} otherwise). " +
+      "Returns per-cluster {cluster_id, size, members[], summary: {top_types, " +
       "top_titles, edge_density}}. No LLM enrichment — summary fields " +
       "are pure-deterministic computations (LLM enrichment is Phase 5 " +
       "brief layer's job). _memory opacity inherited from expand() " +
@@ -844,6 +847,11 @@ export const TOOLS = [
           items: { type: "string" },
           description:
             "1+ opaque DocIds. When set, cluster() uses these seeds + their induced 1-hop neighborhood. Mutually exclusive with query.",
+        },
+        vault: {
+          type: "string",
+          description:
+            "Vault name to scope the `query` search against (CR-02). Required on the `query` path when multiple vaults are configured; optional on single-vault setups. Ignored on the `seed_doc_ids` path (the vault is inferred from each DocId).",
         },
         method: {
           type: "string",
@@ -1297,6 +1305,12 @@ export const TOOL_SCHEMAS = {
   cluster: {
     query: z.string().min(1).optional(),
     seed_doc_ids: z.array(z.string().regex(DOC_ID_PATTERN)).min(1).optional(),
+    // CR-02: `vault` scopes the `query` path on multi-vault setups so
+    // search_hybrid is not silently restricted to whichever vault
+    // sorts first in VaultManager insertion order. Optional at the
+    // schema layer; the runtime cluster() entry enforces the
+    // multi-vault-without-vault error.
+    vault: z.string().min(1).optional(),
     method: z.literal("edge-community"),
     query_top_k: z.number().int().positive().max(200).optional().default(50),
     force: z.boolean().optional().default(false),

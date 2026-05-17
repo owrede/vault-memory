@@ -916,7 +916,7 @@
     },
     {
       "name": "cluster",
-      "description": "Community detection over the typed-edge graph via Louvain modularity (Blondel et al. 2008) using `graphology` + `graphology-communities-louvain`. Deterministic: same input produces byte-identical cluster_id assignment via DocId-sorted node insertion + seeded RNG (`vault-memory-cluster-v1`). cluster_id = smallest member DocId per community. Hard-capped at 5000 nodes; pass `force: true` to override. Either `query` (composes search_hybrid + expand 1-hop) OR `seed_doc_ids` (uses provided seeds + induced 1-hop neighborhood); not both — passing both returns {ok:false, reason:'both_seeds_and_query'}. Returns per-cluster {cluster_id, size, members[], summary: {top_types, top_titles, edge_density}}. No LLM enrichment — summary fields are pure-deterministic computations (LLM enrichment is Phase 5 brief layer's job). _memory opacity inherited from expand() (Plan 04-03).",
+      "description": "Community detection over the typed-edge graph via Louvain modularity (Blondel et al. 2008) using `graphology` + `graphology-communities-louvain`. Deterministic: same input produces byte-identical cluster_id assignment via DocId-sorted node insertion + seeded RNG (`vault-memory-cluster-v1`). cluster_id = smallest member DocId per community. Hard-capped at 5000 nodes; pass `force: true` to override. Either `query` (composes search_hybrid + expand 1-hop) OR `seed_doc_ids` (uses provided seeds + induced 1-hop neighborhood); not both — passing both returns {ok:false, reason:'both_seeds_and_query'}. On the `query` path with multiple vaults configured, the `vault` field is required so search scope is deterministic; single-vault setups may omit it (returns {ok:false, reason:'vault_required'} otherwise). Returns per-cluster {cluster_id, size, members[], summary: {top_types, top_titles, edge_density}}. No LLM enrichment — summary fields are pure-deterministic computations (LLM enrichment is Phase 5 brief layer's job). _memory opacity inherited from expand() (Plan 04-03).",
       "inputSchema": {
         "type": "object",
         "required": [
@@ -934,6 +934,10 @@
               "type": "string"
             },
             "description": "1+ opaque DocIds. When set, cluster() uses these seeds + their induced 1-hop neighborhood. Mutually exclusive with query."
+          },
+          "vault": {
+            "type": "string",
+            "description": "Vault name to scope the `query` search against (CR-02). Required on the `query` path when multiple vaults are configured; optional on single-vault setups. Ignored on the `seed_doc_ids` path (the vault is inferred from each DocId)."
           },
           "method": {
             "type": "string",

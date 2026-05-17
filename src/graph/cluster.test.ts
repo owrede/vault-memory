@@ -392,9 +392,13 @@ describe("cluster() — Plan 04-05 / GRA-02", () => {
         },
       ],
     );
+    // CR-02: explicitly pass `vault` so the query path is deterministic.
+    // (Single-vault setups still accept omission; passing it documents the
+    // intended scope.)
     const res = await cluster(fx.deps, {
       query: "atlas",
       method: "edge-community",
+      vault: VAULT_NAME,
       query_top_k: 5,
     });
     expect(res.ok).toBe(true);
@@ -406,6 +410,170 @@ describe("cluster() — Plan 04-05 / GRA-02", () => {
     expect(res.node_count).toBe(3);
     // At least one cluster surfaces.
     expect(res.clusters.length).toBeGreaterThan(0);
+  });
+
+  // ── CR-02: query path requires `vault` on multi-vault setups ────────────
+  describe("CR-02: cluster() query path scopes via explicit `vault`", () => {
+    it("multi-vault setup, query path WITHOUT `vault` → returns vault_required error", async () => {
+      fx = buildFixture(
+        [{ notePath: "a.md", title: "A" }],
+        [],
+        [
+          {
+            vault: VAULT_NAME,
+            notePath: "a.md",
+            noteTitle: "A",
+            chunkText: "",
+            chunkIdx: 0,
+            headingPath: null,
+            score: 0.9,
+            doc_id: docIdFor("a.md"),
+          },
+        ],
+      );
+      // Register a SECOND vault on the same manager so list() returns
+      // two entries. The second vault's DB is unused — we only need it
+      // to make manager.list().length > 1 to trigger the CR-02 guard.
+      const db2 = new Database(":memory:", "other-vault");
+      db2.migrate();
+      const otherVault: Vault = {
+        config: { name: "other-vault", path: "/fake/other", write_enabled: false },
+        db: db2,
+        dbPath: ":memory:",
+      };
+      (fx.manager as unknown as { vaults: Map<string, Vault> }).vaults.set(
+        "other-vault",
+        otherVault,
+      );
+      try {
+        const res = await cluster(fx.deps, {
+          query: "atlas",
+          method: "edge-community",
+        });
+        expect(res.ok).toBe(false);
+        if (res.ok) return;
+        expect(res.reason).toBe("vault_required");
+        if (res.reason !== "vault_required") return;
+        // Hint mentions the configured vault names so the caller can
+        // pick one.
+        expect(res.configured_vaults.sort()).toEqual(
+          [VAULT_NAME, "other-vault"].sort(),
+        );
+        expect(res.hint).toMatch(/vault/i);
+        // hybridSearch was NEVER called — the guard fires before search.
+        expect(fx.hybridSearchCalls).toHaveLength(0);
+      } finally {
+        db2.close();
+      }
+    });
+
+    it("multi-vault setup, query path WITH `vault` → scopes to that vault", async () => {
+      fx = buildFixture(
+        [
+          { notePath: "x1.md", title: "X1" },
+          { notePath: "x2.md", title: "X2" },
+        ],
+        [{ source: "x1.md", target: "x2.md", type: "wikilink" }],
+        [
+          {
+            vault: VAULT_NAME,
+            notePath: "x1.md",
+            noteTitle: "X1",
+            chunkText: "",
+            chunkIdx: 0,
+            headingPath: null,
+            score: 0.9,
+            doc_id: docIdFor("x1.md"),
+          },
+        ],
+      );
+      const db2 = new Database(":memory:", "other-vault");
+      db2.migrate();
+      const otherVault: Vault = {
+        config: { name: "other-vault", path: "/fake/other", write_enabled: false },
+        db: db2,
+        dbPath: ":memory:",
+      };
+      (fx.manager as unknown as { vaults: Map<string, Vault> }).vaults.set(
+        "other-vault",
+        otherVault,
+      );
+      try {
+        const res = await cluster(fx.deps, {
+          query: "atlas",
+          method: "edge-community",
+          vault: VAULT_NAME,
+        });
+        expect(res.ok).toBe(true);
+        if (!res.ok) return;
+        // hybridSearch was called against the named vault (not "first
+        // configured" by Map insertion order).
+        expect(fx.hybridSearchCalls).toHaveLength(1);
+        // node_count = seed (x1) ∪ 1-hop (x2) = 2
+        expect(res.node_count).toBe(2);
+      } finally {
+        db2.close();
+      }
+    });
+
+    it("multi-vault setup, query path with UNKNOWN `vault` → returns vault_required error", async () => {
+      fx = buildFixture([{ notePath: "a.md", title: "A" }], [], []);
+      const db2 = new Database(":memory:", "other-vault");
+      db2.migrate();
+      const otherVault: Vault = {
+        config: { name: "other-vault", path: "/fake/other", write_enabled: false },
+        db: db2,
+        dbPath: ":memory:",
+      };
+      (fx.manager as unknown as { vaults: Map<string, Vault> }).vaults.set(
+        "other-vault",
+        otherVault,
+      );
+      try {
+        const res = await cluster(fx.deps, {
+          query: "atlas",
+          method: "edge-community",
+          vault: "no-such-vault",
+        });
+        expect(res.ok).toBe(false);
+        if (res.ok) return;
+        expect(res.reason).toBe("vault_required");
+        if (res.reason !== "vault_required") return;
+        expect(res.hint).toContain("no-such-vault");
+        expect(fx.hybridSearchCalls).toHaveLength(0);
+      } finally {
+        db2.close();
+      }
+    });
+
+    it("single-vault setup, query path WITHOUT `vault` → still works (backwards-compatible)", async () => {
+      // The single-vault case is exactly Test 6's scenario; we confirm
+      // here that the CR-02 change is backwards-compatible — single-vault
+      // callers can still omit the new field.
+      fx = buildFixture(
+        [{ notePath: "x1.md", title: "X1" }],
+        [],
+        [
+          {
+            vault: VAULT_NAME,
+            notePath: "x1.md",
+            noteTitle: "X1",
+            chunkText: "",
+            chunkIdx: 0,
+            headingPath: null,
+            score: 0.9,
+            doc_id: docIdFor("x1.md"),
+          },
+        ],
+      );
+      const res = await cluster(fx.deps, {
+        query: "atlas",
+        method: "edge-community",
+      });
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      expect(fx.hybridSearchCalls).toHaveLength(1);
+    });
   });
 
   // ── Test 7: seed_doc_ids path with induced 1-hop neighborhood ───────────

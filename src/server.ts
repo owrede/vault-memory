@@ -896,6 +896,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
       const p = a as {
         query?: string;
         seed_doc_ids?: string[];
+        vault?: string;
         method: "edge-community";
         query_top_k?: number;
         force?: boolean;
@@ -907,9 +908,12 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
       // a defense-in-depth check for direct (non-MCP) callers.
       let opts: ClusterOptions;
       if (p.query !== undefined) {
+        // CR-02: propagate `vault` so cluster()'s query path can scope
+        // search_hybrid deterministically on multi-vault setups.
         opts = {
           query: p.query,
           method: "edge-community",
+          ...(p.vault !== undefined ? { vault: p.vault } : {}),
           ...(p.query_top_k !== undefined ? { query_top_k: p.query_top_k } : {}),
           ...(p.force !== undefined ? { force: p.force } : {}),
         };

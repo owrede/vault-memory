@@ -88,6 +88,17 @@ export type ClusterOptions =
   | {
       query: string;
       method: "edge-community";
+      /**
+       * Vault name to scope the `query` search against. CR-02: required
+       * on multi-vault setups so the query path is deterministic; on
+       * single-vault setups the dispatcher (server.ts) and the runtime
+       * cluster() entry below default to the lone configured vault, so
+       * single-vault callers can still omit it.
+       *
+       * Mirrors how `recall` and `search_sections` handle the same
+       * constraint at the controller layer.
+       */
+      vault?: string;
       query_top_k?: number;
       force?: boolean;
       seed_doc_ids?: undefined;
@@ -97,6 +108,7 @@ export type ClusterOptions =
       method: "edge-community";
       force?: boolean;
       query?: undefined;
+      vault?: undefined;
     };
 
 /**
@@ -137,6 +149,12 @@ export type ClusterResult =
       hint: string;
     }
   | { ok: false; reason: "both_seeds_and_query"; hint: string }
+  | {
+      ok: false;
+      reason: "vault_required";
+      hint: string;
+      configured_vaults: string[];
+    }
   | { ok: true; clusters: Cluster[]; node_count: number };
 
 /**
@@ -197,25 +215,58 @@ export async function cluster(
   let scheme: string | null = null;
 
   if (opts.query !== undefined) {
-    // Resolve the vault from the active manager. cluster() composes over
-    // search_hybrid which is multi-vault; we infer the working vault from
-    // the FIRST hit's `doc_id`. If there are no hits, we still return an
-    // empty success — no work to do, no nodes to cluster.
+    // CR-02: resolve the working vault EXPLICITLY. The query path
+    // historically scoped to `deps.manager.list()[0]` which silently
+    // restricted multi-vault setups to whichever vault sorted first in
+    // VaultManager insertion order — non-deterministic across users and
+    // silently incomplete. We now require `opts.vault` on multi-vault
+    // setups; single-vault setups still accept omission (the lone vault
+    // is the only well-defined target).
+    //
+    // This mirrors how `recall` and `search_sections` enforce the same
+    // constraint at the controller layer (server.ts).
     const limit = opts.query_top_k ?? 50;
-    // We don't have a concrete `vault` to pass in yet (search_hybrid is
-    // multi-vault). The convention from the production dispatcher is to
-    // pass the first configured vault as a placeholder; the deps wiring
-    // in server.ts can route to all vaults if needed. For the unit-test
-    // contract we use the first vault available from manager.
     const allVaults = deps.manager.list();
     if (allVaults.length === 0) {
       return { ok: true, clusters: [], node_count: 0 };
     }
-    const firstVault = allVaults[0];
-    if (!firstVault) {
+    let workingVault: Vault | null = null;
+    if (opts.vault !== undefined) {
+      // Caller specified a vault — resolve via manager.require(), which
+      // throws on unknown name. We translate that into a structured
+      // {ok:false, reason:"vault_required"} (with the caller-supplied
+      // name surfaced in `hint`) so the MCP boundary keeps a consistent
+      // error envelope; unknown-vault is a caller mistake, not a
+      // crash-worthy condition.
+      try {
+        workingVault = deps.manager.require(opts.vault);
+      } catch {
+        return {
+          ok: false,
+          reason: "vault_required",
+          hint: `Unknown vault: "${opts.vault}". Pass one of the configured vault names.`,
+          configured_vaults: allVaults.map((v) => v.config.name),
+        };
+      }
+    } else if (allVaults.length === 1) {
+      // Single configured vault — omission is fine, scope to that vault.
+      workingVault = allVaults[0] ?? null;
+    } else {
+      // Multi-vault setup without an explicit `vault` filter — reject.
+      // This is the CR-02 fix: silent first-vault-wins is replaced with
+      // a clear error.
+      return {
+        ok: false,
+        reason: "vault_required",
+        hint:
+          "cluster() with `query` requires an explicit `vault:` parameter when multiple vaults are configured.",
+        configured_vaults: allVaults.map((v) => v.config.name),
+      };
+    }
+    if (!workingVault) {
       return { ok: true, clusters: [], node_count: 0 };
     }
-    const hits = await deps.hybridSearch(firstVault, opts.query, limit);
+    const hits = await deps.hybridSearch(workingVault, opts.query, limit);
     const ids: DocId[] = [];
     for (const h of hits) {
       if (h.doc_id !== undefined) ids.push(h.doc_id);
