@@ -684,6 +684,42 @@ export const TOOLS = [
       },
     },
   },
+  // ── Phase 3 assembly tools (Plan 03-06) ──────────────────────────────────
+  {
+    name: "assemble_dossier",
+    description:
+      "Resolve a {type, key} pair to an anchor document and walk its backlinks " +
+      "into a structured dossier: { anchor (citation packet), linked_documents " +
+      "(citation packets + relation), property_rollups (linked_count, linked_types, " +
+      "status_distribution) }. Strict properties.type match (D-03). The key matches " +
+      "the candidate's title OR any entry in properties.aliases (D-04). " +
+      "v2.0.0 returns relation:\"wikilink\" on every linked_documents entry (the v1 " +
+      "wikilinks table is the only edge source); Phase 4 (GRA-04) widens to typed edges. " +
+      "Superseded backlinks are NOT filtered — dossiers show the whole picture (CONTEXT D-04).",
+    inputSchema: {
+      type: "object",
+      required: ["type", "key"],
+      properties: {
+        type: {
+          type: "string",
+          description:
+            "Exact-match value for properties.type on the anchor document " +
+            "(e.g. 'Person', 'Project', 'Meeting'). No fuzzy / synonym matching.",
+        },
+        key: {
+          type: "string",
+          description:
+            "Candidate key. Matches the document's title OR any entry in " +
+            "properties.aliases (a string[] from frontmatter). Exact-string match.",
+        },
+        vaults: {
+          type: "array",
+          items: { type: "string" },
+          description: "Restrict to these vault names; defaults to all configured.",
+        },
+      },
+    },
+  },
 ] as const;
 
 export type ToolName = (typeof TOOLS)[number]["name"];
@@ -986,6 +1022,26 @@ export const TOOL_SCHEMAS = {
       .max(200)
       .optional()
       .describe("Maximum results AFTER filter+sort; default 20"),
+    vaults: z
+      .array(z.string().min(1))
+      .optional()
+      .describe("Restrict to these vault names; defaults to all configured"),
+  },
+
+  // ── Phase 3 assembly tools (Plan 03-06) ─────────────────────────────────
+  assemble_dossier: {
+    type: z
+      .string()
+      .min(1)
+      .describe(
+        "Exact-match value for properties.type on the anchor document (D-03 — no fuzzy match)",
+      ),
+    key: z
+      .string()
+      .min(1)
+      .describe(
+        "Candidate key — matches the document's title OR any entry in properties.aliases (D-04)",
+      ),
     vaults: z
       .array(z.string().min(1))
       .optional()

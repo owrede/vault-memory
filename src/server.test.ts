@@ -561,8 +561,9 @@ describe("Plan 02-04: MEM-02 (record_observation) + MEM-04 (supersede) end-to-en
     expect(names).toContain("supersede");
     // Plan 02-05 grew the snapshot to 26 (adds `recall`); Plan 03-02
     // grows it to 27 (adds `get_outline`); Plan 03-03 grows it to 28
-    // (adds `search_sections`).
-    expect(TOOLS).toHaveLength(28);
+    // (adds `search_sections`); Plan 03-06 grows it to 29 (adds
+    // `assemble_dossier`). The 23-entry v1 prefix remains byte-identical.
+    expect(TOOLS).toHaveLength(29);
 
     const ro = TOOLS.find((t) => t.name === "record_observation");
     const sup = TOOLS.find((t) => t.name === "supersede");
@@ -911,7 +912,8 @@ describe("Plan 02-05: MEM-03 recall end-to-end", () => {
     expect(names).toContain("recall");
     expect(names).toContain("search_sections");
     expect(names).toContain("get_outline");
-    expect(TOOLS).toHaveLength(28);
+    expect(names).toContain("assemble_dossier");
+    expect(TOOLS).toHaveLength(29);
   });
 
   it("recall against the v2 fixture: 'Atlas pilot' returns the live 2026-04-16 doc; the 2026-04-20 superseded doc is hidden", async () => {
@@ -1443,13 +1445,14 @@ describe("Plan 02-06: MCP Resources (MEM-09)", () => {
     }
   });
 
-  it("tools/list count is 28 after Plan 03-02 + Plan 03-03 (Resources still do NOT add tool entries)", async () => {
+  it("tools/list count is 29 after Plan 03-02 + 03-03 + 03-06 (Resources still do NOT add tool entries)", async () => {
     const { TOOLS } = await import("./tool-registry.js");
     // Pin: MCP Resources (memory_stats, list_sinks) project from the
     // sink registry — they MUST NOT manifest as tools. Phase 3 plan
-    // 03-02 added `get_outline` (26 → 27) and 03-03 added
-    // `search_sections` (27 → 28); the resource invariant still holds.
-    expect(TOOLS).toHaveLength(28);
+    // 03-02 added `get_outline` (26 → 27), 03-03 added `search_sections`
+    // (27 → 28), and 03-06 added `assemble_dossier` (28 → 29); the
+    // resource invariant still holds at the new count.
+    expect(TOOLS).toHaveLength(29);
     // Spot-check: no memory_stats or list_sinks tool exists.
     const names = TOOLS.map((t) => t.name);
     expect(names).not.toContain("memory_stats");

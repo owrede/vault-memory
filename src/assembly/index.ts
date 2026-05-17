@@ -4,10 +4,11 @@
  * The assembly layer composes the section-identity substrate (`src/sections/`,
  * landed in 03-01) into higher-level reading tools:
  *
- *   - 03-02 (this slice): `get_outline` — nested section tree.
- *   - 03-03: `get_bundle` — section-window assembly.
- *   - 03-04: `dossier` — multi-bundle synthesis.
- *   - 03-06: authority / staleness scoring on assembled bundles.
+ *   - 03-02: `get_outline` — nested section tree.
+ *   - 03-03: `search_sections` — section-level retrieval.
+ *   - 03-04: `get_bundle` — section-window assembly.
+ *   - 03-05: search_hybrid rescore (authority / staleness).
+ *   - 03-06: `assemble_dossier` — multi-bundle synthesis with property rollups.
  *
  * Adapter-seam discipline (per 03-CONTEXT.md, enforced by
  * `scripts/lint-adapters.sh`): nothing under `src/assembly/` imports
@@ -15,5 +16,14 @@
  * through the injected `SourceConnector` seam.
  */
 
-export type { OutlineNode, OutlineResult, GetOutlineArgs } from "./types.js";
+export { assembleDossier } from "./dossier.js";
+export type {
+  AssembleDossierArgs,
+  AssembleDossierDeps,
+  DossierAnchor,
+  DossierError,
+  DossierResult,
+  LinkedDocument,
+} from "./dossier.js";
 export { getOutline, type GetOutlineDeps } from "./outline.js";
+export type { OutlineNode, OutlineResult, GetOutlineArgs } from "./types.js";
