@@ -1,0 +1,65 @@
+# Phase 4 / 04-06 / GRA-05 (D-18) — `search_hybrid({expand})` integration.
+#
+# Three queries that pin the Plan 04-04 composition contract:
+#   1. Top-K ranking is IDENTICAL whether `expand` is passed or not
+#      (expand never participates in score computation — D-16).
+#   2. With `expand`, each hit carries `expansions: CitationPacketWithVia[]`
+#      and every expansion's `via.seed_doc_id` equals its parent hit's
+#      `doc_id`.
+#   3. Without `expand`, no hit carries `expansions` (v1-baseline shape
+#      preserved byte-identically).
+#
+# The integration test `src/search/hybrid-expand.integration.test.ts`
+# loads this YAML and runs `hybridSearch` twice per query — once with
+# and once without the `expand` option — then asserts the three
+# invariants above plus the `expand_edge_types` filter when present.
+#
+# Fixture path: Atlas Robotics (`evals/fixtures/v2-test-vault/`). The
+# test builder seeds chunks for BM25 (no active embedding model — see
+# `__test_helpers__/atlas-live-fixture.ts` `withChunks: true`).
+
+tool: search_hybrid
+
+queries:
+  - id: atlas-1-with-expand-1hop
+    description: >
+      Broad query "atlas-1" — surfaces the canonical atlas-1.md note and
+      related atlas-prefixed docs via BM25. With `expand: {hops:1}`
+      attached, each hit gains a 1-hop typed-edge neighborhood. The
+      assertion is structural (expansions present, via.hop === 1, no
+      cross-hit pollution), not P/R — that's what Plan 04-06 Task 2's
+      expand.yaml is for.
+    input:
+      query: atlas-1
+      top_k: 5
+      expand:
+        hops: 1
+
+  - id: alice-with-expand-frontmatter-only
+    description: >
+      Query likely to surface Alice's note (BM25 matches "alice" in
+      body prose across multiple docs). `expand: {hops:1, edge_types:
+      ["frontmatter-ref"]}` restricts expansions to frontmatter-ref
+      typed edges only — exercising the Phase 4 edge_types filter on
+      the composition path. The atlas-1 doc carries a frontmatter-ref
+      `owner: alice-chen` edge so when atlas-1 is a hit, its expansion
+      will include Alice via frontmatter-ref.
+    input:
+      query: alice chen
+      top_k: 5
+      expand:
+        hops: 1
+        edge_types:
+          - frontmatter-ref
+
+  - id: ranking-preservation-sanity
+    description: >
+      Multi-hit query — assert top-K (doc_id sequence + score sequence)
+      is IDENTICAL with vs. without `expand`. Pins D-16: expand attaches
+      AFTER all ranking computation, so the ordering is invariant.
+      Uses "reliability" which produces multiple project + meeting hits.
+    input:
+      query: reliability program
+      top_k: 5
+      expand:
+        hops: 1

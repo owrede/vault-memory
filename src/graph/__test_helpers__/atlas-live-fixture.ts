@@ -47,6 +47,7 @@ import { join, resolve } from "node:path";
 import { AdapterRegistry, parseSourceHandle } from "../../adapters/registry.js";
 import { parseNote } from "../../adapters/source/obsidian-fs/parser.js";
 import { ObsidianFsSource } from "../../adapters/source/obsidian-fs/index.js";
+import { chunkNote } from "../../chunker/index.js";
 import { Database } from "../../db/index.js";
 import { extractAliases } from "../../indexer/indexer.js";
 import { WikilinkResolver } from "../../indexer/resolver.js";
@@ -64,6 +65,18 @@ export interface AtlasLiveFixture {
   sourceConnectorFor: (vaultName: string) => SourceConnector;
   sourceHandle: SourceHandle;
   cleanup: () => void;
+}
+
+export interface BuildAtlasLiveFixtureOptions {
+  /**
+   * When true, the builder also chunks every note via `chunkNote` and
+   * inserts the chunks + FTS rows so the BM25 path of `hybridSearch`
+   * has something to find. Defaults to false (graph-only fixtures
+   * skip the chunk insert for speed). Embeddings are NOT generated —
+   * the BM25-only hybrid path is sufficient for the integration tests
+   * that consume this option.
+   */
+  withChunks?: boolean;
 }
 
 function walkMd(dir: string, out: string[] = []): string[] {
@@ -107,7 +120,10 @@ function synthesizePersonAliases(vault: Vault): void {
  * Returns the assembled deps for `expand()` / `hybridSearch({expand})` /
  * `cluster()`. Caller MUST invoke `cleanup()` to close the DB.
  */
-export async function buildAtlasLiveFixture(): Promise<AtlasLiveFixture> {
+export async function buildAtlasLiveFixture(
+  options: BuildAtlasLiveFixtureOptions = {},
+): Promise<AtlasLiveFixture> {
+  const withChunks = options.withChunks === true;
   const db = new Database(":memory:", ATLAS_VAULT_NAME);
   db.migrate();
   const vault: Vault = {
@@ -143,6 +159,23 @@ export async function buildAtlasLiveFixture(): Promise<AtlasLiveFixture> {
         ? (p.frontmatter["status"] as string)
         : null;
     if (status !== null) vault.db.notes.setStatus(res.id, status);
+
+    if (withChunks) {
+      const chunks = chunkNote(p.content);
+      if (chunks.length > 0) {
+        vault.db.chunks.insertBatch(
+          res.id,
+          chunks.map((c) => ({
+            idx: c.idx,
+            text: c.text,
+            headingPath: c.headingPath ?? null,
+            startOffset: c.startOffset,
+            endOffset: c.endOffset,
+            tokenCount: c.tokenCount,
+          })),
+        );
+      }
+    }
   }
 
   // Synthesize slug + title aliases for people so frontmatter-ref Rule (b)
