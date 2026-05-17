@@ -670,7 +670,8 @@ function runMigration011(db: BetterSqlite3Database, _ctx: MigrationContext): voi
       type         TEXT NOT NULL CHECK (type IN ('wikilink','mention','frontmatter-ref','hyperlink')),
       rel          TEXT,
       anchor       TEXT,
-      line_number  INTEGER
+      line_number  INTEGER,
+      link_text    TEXT
     );
     CREATE UNIQUE INDEX IF NOT EXISTS idx_edges_unique
       ON edges(source_doc, COALESCE(target_doc, -1), type, COALESCE(anchor, ''));
@@ -700,8 +701,8 @@ function runMigration011(db: BetterSqlite3Database, _ctx: MigrationContext): voi
   const CHUNK = 10_000;
   const copy = db.prepare(`
     INSERT OR IGNORE INTO edges
-      (source_doc, target_doc, target_path, type, rel, anchor, line_number)
-    SELECT source_note, target_note, target_path, 'wikilink', NULL, anchor, line_number
+      (source_doc, target_doc, target_path, type, rel, anchor, line_number, link_text)
+    SELECT source_note, target_note, target_path, 'wikilink', NULL, anchor, line_number, link_text
       FROM wikilinks
      WHERE id > @after_id
      ORDER BY id ASC

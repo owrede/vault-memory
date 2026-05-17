@@ -45,6 +45,13 @@ export interface EdgeInput {
   /** Section anchor for wikilinks (`[[target#section]]`). */
   anchor: string | null;
   lineNumber: number | null;
+  /**
+   * Optional display text from the source (e.g., wikilink alias
+   * `[[target|display text]]`). Carried through from the v1
+   * `wikilinks.link_text` column so the graph-tool result shape is
+   * preserved post-04-01 read switch.
+   */
+  linkText: string | null;
 }
 
 export interface EdgeBacklinkRow {
@@ -52,6 +59,7 @@ export interface EdgeBacklinkRow {
   type: EdgeType;
   anchor: string | null;
   lineNumber: number | null;
+  linkText: string | null;
 }
 
 export interface EdgeForwardLinkRow {
@@ -60,12 +68,14 @@ export interface EdgeForwardLinkRow {
   type: EdgeType;
   anchor: string | null;
   lineNumber: number | null;
+  linkText: string | null;
 }
 
 export interface EdgeBrokenLinkRow {
   sourceNoteId: number;
   targetPath: string | null;
   type: EdgeType;
+  lineNumber: number | null;
 }
 
 export class EdgesQueries {
@@ -78,6 +88,7 @@ export class EdgesQueries {
       type: EdgeType;
       anchor: string | null;
       line_number: number | null;
+      link_text: string | null;
     }
   >;
   private readonly _forward: BetterSqlite3.Statement<
@@ -88,32 +99,38 @@ export class EdgesQueries {
       type: EdgeType;
       anchor: string | null;
       line_number: number | null;
+      link_text: string | null;
     }
   >;
   private readonly _broken: BetterSqlite3.Statement<
     [],
-    { source_doc: number; target_path: string | null; type: EdgeType }
+    {
+      source_doc: number;
+      target_path: string | null;
+      type: EdgeType;
+      line_number: number | null;
+    }
   >;
 
   constructor(private readonly db: BetterSqlite3.Database) {
     this._insert = db.prepare(`
       INSERT OR IGNORE INTO edges
-        (source_doc, target_doc, target_path, type, rel, anchor, line_number)
-      VALUES (@source_doc, @target_doc, @target_path, @type, @rel, @anchor, @line_number)
+        (source_doc, target_doc, target_path, type, rel, anchor, line_number, link_text)
+      VALUES (@source_doc, @target_doc, @target_path, @type, @rel, @anchor, @line_number, @link_text)
     `);
     this._deleteByNote = db.prepare("DELETE FROM edges WHERE source_doc = ?");
     this._backlinks = db.prepare(
-      `SELECT source_doc, type, anchor, line_number
+      `SELECT source_doc, type, anchor, line_number, link_text
        FROM edges
        WHERE target_doc = ?`,
     );
     this._forward = db.prepare(
-      `SELECT target_doc, target_path, type, anchor, line_number
+      `SELECT target_doc, target_path, type, anchor, line_number, link_text
        FROM edges
        WHERE source_doc = ?`,
     );
     this._broken = db.prepare(
-      `SELECT source_doc, target_path, type
+      `SELECT source_doc, target_path, type, line_number
        FROM edges
        WHERE target_doc IS NULL`,
     );
@@ -130,6 +147,7 @@ export class EdgesQueries {
           rel: x.rel,
           anchor: x.anchor,
           line_number: x.lineNumber,
+          link_text: x.linkText,
         });
       }
     });
@@ -146,6 +164,7 @@ export class EdgesQueries {
       type: r.type,
       anchor: r.anchor,
       lineNumber: r.line_number,
+      linkText: r.link_text,
     }));
   }
 
@@ -156,6 +175,7 @@ export class EdgesQueries {
       type: r.type,
       anchor: r.anchor,
       lineNumber: r.line_number,
+      linkText: r.link_text,
     }));
   }
 
@@ -164,6 +184,7 @@ export class EdgesQueries {
       sourceNoteId: r.source_doc,
       targetPath: r.target_path,
       type: r.type,
+      lineNumber: r.line_number,
     }));
   }
 }

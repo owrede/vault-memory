@@ -64,6 +64,7 @@ describe("EdgesQueries / migration 011", () => {
           "anchor",
           "id",
           "line_number",
+          "link_text",
           "rel",
           "source_doc",
           "target_doc",
@@ -477,6 +478,7 @@ describe("EdgesQueries / migration 011", () => {
           sourceNoteId: a,
           targetPath: "ghost.md",
           type: "wikilink",
+          lineNumber: 1,
         },
       ]);
     });

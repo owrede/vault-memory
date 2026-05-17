@@ -422,18 +422,29 @@ async function buildObsidianFsAssemblyHarness(): Promise<AssemblyHarness> {
   for (const p of parsed) {
     const sourceId = noteIdByPath.get(p.relativePath);
     if (sourceId === undefined || p.wikilinks.length === 0) continue;
-    vault.db.wikilinks.insertBatch(
+    const wikilinkInputs = p.wikilinks.map((wl) => {
+      const hit = resolver.resolve(wl.normalizedTarget);
+      return {
+        targetPath: hit?.path ?? wl.normalizedTarget,
+        targetNoteId: hit?.id ?? null,
+        linkText: wl.rawTarget,
+        anchor: wl.anchor,
+        lineNumber: wl.line,
+      };
+    });
+    vault.db.wikilinks.insertBatch(sourceId, wikilinkInputs);
+    // Phase 4 / 04-01 (D-01): dual-write into `edges`.
+    vault.db.edges.insertBatch(
       sourceId,
-      p.wikilinks.map((wl) => {
-        const hit = resolver.resolve(wl.normalizedTarget);
-        return {
-          targetPath: hit?.path ?? wl.normalizedTarget,
-          targetNoteId: hit?.id ?? null,
-          linkText: wl.rawTarget,
-          anchor: wl.anchor,
-          lineNumber: wl.line,
-        };
-      }),
+      wikilinkInputs.map((wl) => ({
+        targetNoteId: wl.targetNoteId,
+        targetPath: wl.targetPath,
+        type: "wikilink" as const,
+        rel: null,
+        anchor: wl.anchor,
+        lineNumber: wl.lineNumber,
+        linkText: wl.linkText,
+      })),
     );
   }
 
@@ -531,19 +542,30 @@ function buildStubAssemblyHarness(): AssemblyHarness {
     if (sourceId === undefined) continue;
     const wikilinkEdges = d.links.filter((e) => e.type === "wikilink");
     if (wikilinkEdges.length === 0) continue;
-    vault.db.wikilinks.insertBatch(
+    const wikilinkInputs = wikilinkEdges.map((e) => {
+      const targetPath = pathForDoc(String(e.target));
+      const targetId = noteIdByPath.get(targetPath);
+      return {
+        targetPath,
+        targetNoteId: targetId ?? null,
+        linkText: targetPath,
+        anchor: null,
+        lineNumber: null,
+      };
+    });
+    vault.db.wikilinks.insertBatch(sourceId, wikilinkInputs);
+    // Phase 4 / 04-01 (D-01): dual-write into `edges`.
+    vault.db.edges.insertBatch(
       sourceId,
-      wikilinkEdges.map((e) => {
-        const targetPath = pathForDoc(String(e.target));
-        const targetId = noteIdByPath.get(targetPath);
-        return {
-          targetPath,
-          targetNoteId: targetId ?? null,
-          linkText: targetPath,
-          anchor: null,
-          lineNumber: null,
-        };
-      }),
+      wikilinkInputs.map((wl) => ({
+        targetNoteId: wl.targetNoteId,
+        targetPath: wl.targetPath,
+        type: "wikilink" as const,
+        rel: null,
+        anchor: wl.anchor,
+        lineNumber: wl.lineNumber,
+        linkText: wl.linkText,
+      })),
     );
   }
 

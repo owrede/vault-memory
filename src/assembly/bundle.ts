@@ -76,6 +76,7 @@ import { decomposeDocId, formatDocId, parseDocId } from "../adapters/registry.js
 import type { SourceConnector } from "../adapters/source/types.js";
 import { getAuditLog } from "../audit/audit.js";
 import { listBacklinks, listForwardLinks } from "../graph/graph.js";
+import type { EdgeType } from "../graph/graph.js";
 import { type CitationPacket, displayUrlFor, toCitationPacket } from "../memory/citation-packet.js";
 import { DocNotFoundError } from "./outline.js";
 import { buildOutlineTree } from "./outline.js";
@@ -142,10 +143,14 @@ export type BundleAnchor = CitationPacket & {
  *                          `Document` shape already separates
  *                          `properties` from `blocks`, so no manual
  *                          frontmatter strip is needed).
- *   - `relation`         — v2.0.0 ships `"wikilink"` only (the v1
- *                          wikilinks table is the only edge source).
- *                          Phase 4 widens to typed edges; the literal
- *                          becomes the actual `Edge.type`.
+ *   - `relation`         — `EdgeType` (Phase 4 / 04-01 / D-04). Reads
+ *                          route through `vault.db.edges` (post-04-01
+ *                          backfill) and `bl.type` / `fl.type` carry
+ *                          the actual edge type. Post-backfill every
+ *                          row is `'wikilink'`; Plan 04-02 widens to
+ *                          the other three `Edge.type` literals once
+ *                          the indexer populates them. COMPLETED
+ *                          Phase 4 / 04-01.
  *
  * `heading_path` is inherited from `CitationPacket` and is `[]` for
  * document-level links per `<specifics>` (only outline nodes carry a
@@ -153,7 +158,12 @@ export type BundleAnchor = CitationPacket & {
  */
 export type BacklinkEntry = CitationPacket & {
   property_snippet: string;
-  relation: "wikilink";
+  // ── Phase 4 / 04-01 / GRA-04 (D-01, D-04): widen `relation` to EdgeType ──
+  //
+  // Strict widening from the prior `"wikilink"` literal. Post-backfill all
+  // existing rows still carry `"wikilink"`; Plan 04-02 starts populating
+  // the other three types in the same column.
+  relation: EdgeType;
 };
 
 /**
@@ -162,7 +172,8 @@ export type BacklinkEntry = CitationPacket & {
  */
 export type ForwardLinkEntry = CitationPacket & {
   property_snippet: string;
-  relation: "wikilink";
+  /** Phase 4 / 04-01 (D-04) — widened from `"wikilink"` to `EdgeType`. */
+  relation: EdgeType;
 };
 
 /**
@@ -368,14 +379,15 @@ export async function getDocumentBundle(
       continue;
     }
     const packet = toCitationPacket(linkedDoc, displayUrlFor(sourceDocId, source));
-    // PHASE-4-WIDEN: v2.0.0 reads from the v1 wikilinks table, which
-    // stores only `"wikilink"` edges. When GRA-04 introduces typed
-    // edges, this hardcoded literal becomes `edge.type` and the
-    // `relation` field on `BacklinkEntry` widens to `EdgeType`.
+    // PHASE-4-WIDEN: v1 wikilinks-only graph reads now route through the
+    // typed-edges substrate (`vault.db.edges`, Plan 04-01). `bl.type`
+    // sources the actual edge type per row; post-backfill this is
+    // `'wikilink'` for every row, and Plan 04-02 starts producing
+    // mention / frontmatter-ref / hyperlink. COMPLETED Phase 4 / 04-01.
     backlinks.push({
       ...packet,
       property_snippet: bodyPlainText(linkedDoc.blocks),
-      relation: "wikilink" as const,
+      relation: bl.type,
     });
   }
 
@@ -406,7 +418,8 @@ export async function getDocumentBundle(
     forward_links.push({
       ...packet,
       property_snippet: bodyPlainText(linkedDoc.blocks),
-      relation: "wikilink" as const,
+      // PHASE-4-WIDEN — see backlinks loop above. COMPLETED Phase 4 / 04-01.
+      relation: fl.type,
     });
   }
 
