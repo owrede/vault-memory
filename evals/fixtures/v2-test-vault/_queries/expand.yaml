@@ -1,0 +1,253 @@
+# Phase 4 / 04-06 / GRA-05 — `expand()` eval gold-set over Atlas Robotics.
+#
+# Each query exercises the typed-edge BFS retrieval primitive at
+# `src/graph/expand.ts`. The integration test
+# `src/graph/expand.integration.test.ts` loads this file, runs each query
+# against a live in-memory fixture (`__test_helpers__/atlas-live-fixture.ts`)
+# and asserts precision >= `min_precision` AND recall >= `min_recall`
+# against `expected_doc_ids`.
+#
+# Coverage matrix (per Plan 04-06 §<behavior>):
+#   - All four edge types are exercised by at least one query each:
+#       wikilink         → `alice-1-hop-both` (and most others)
+#       frontmatter-ref  → `atlas-1-frontmatter-only-2hop`,
+#                          `q2-okr-meeting-attendees`
+#       mention          → `bob-mentions-1hop`
+#       hyperlink        → `pivot-hyperlinks-empty` (Atlas Robotics has
+#                          ZERO hyperlinks; the negative case pins that
+#                          `edge_types: ["hyperlink"]` returns an empty
+#                          document set — `min_precision: 1.0` is
+#                          trivially satisfied)
+#   - At least one `hops: 2` query: `atlas-1-frontmatter-only-2hop`
+#   - At least one non-default `direction`: `pivot-backward-only`
+#   - At least one `filter_properties` query:
+#       `alice-1-hop-people-only` (filter_properties: {type: Person})
+#   - At least one query with an unknown seed_doc_id verifying the
+#     warnings shape: `alice-with-unknown-seed`
+#
+# A1 empirical note (Plan 04-06 Task 1):
+#   MIN_MENTION_LEN=4 produces 0 raw mentions over the fixture because
+#   no people note carries explicit `aliases:`. The test fixture builder
+#   SYNTHESIZES slug + title aliases for every `people/<slug>.md` row
+#   (see `atlas-live-fixture.ts:synthesizePersonAliases`) so the mention
+#   extractor has candidates to match against. This raises the mention
+#   count to 9, and the negative human-eye false-positive review at
+#   MIN=4 stands: ≤ 3 FPs/note threshold is comfortably met.
+
+tool: expand
+
+queries:
+  - id: alice-1-hop-both
+    description: >
+      Alice's complete 1-hop neighborhood (direction='both', default).
+      Atlas Robotics topology gives Alice 4 outbound edges (3 wikilinks
+      + 1 mention to Carlos) and 19 inbound edges (mix of wikilink +
+      frontmatter-ref + mention). After shortest-path dedup the unique
+      target set covers her three wikilinked notes + every meeting that
+      lists her in `attendees:` + each peer person who wikilinks her.
+      P/R floors set tight (0.8 / 0.8) per D-17.
+    input:
+      seed_doc_ids:
+        - obsidian-fs://v2-test-vault/people/alice-chen.md
+      hops: 1
+    expected_doc_ids:
+      - obsidian-fs://v2-test-vault/decisions/2026-03-12-pivot-to-warehouse.md
+      - obsidian-fs://v2-test-vault/projects/atlas-1.md
+      - obsidian-fs://v2-test-vault/meetings/2026-04-15-q2-okr-review.md
+      - obsidian-fs://v2-test-vault/people/carlos-yim.md
+      - obsidian-fs://v2-test-vault/people/dana-park.md
+      - obsidian-fs://v2-test-vault/people/priya-rao.md
+      - obsidian-fs://v2-test-vault/people/quinn-vega.md
+      - obsidian-fs://v2-test-vault/people/bob-martinez.md
+      - obsidian-fs://v2-test-vault/meetings/2026-04-23-pilot-onboarding-kickoff.md
+      - obsidian-fs://v2-test-vault/meetings/2026-04-29-vendor-risk-review.md
+      - obsidian-fs://v2-test-vault/meetings/2026-05-04-dana-onboarding-kickoff.md
+      - obsidian-fs://v2-test-vault/meetings/2026-05-06-perception-hire-debrief.md
+      - obsidian-fs://v2-test-vault/projects/spire-fleet-orchestrator.md
+      - obsidian-fs://v2-test-vault/projects/spire.md
+      - obsidian-fs://v2-test-vault/references/customer-pilot-playbook.md
+      - obsidian-fs://v2-test-vault/references/spire-architecture.md
+      - obsidian-fs://v2-test-vault/_memory/observations/2026-04-16-atlas-1-pilot-count-reduced.md
+    min_precision: 0.8
+    min_recall: 0.8
+
+  - id: atlas-1-frontmatter-only-2hop
+    description: >
+      2-hop traversal restricted to `frontmatter-ref` edges from Atlas-1.
+      Atlas-1.md carries `owner: alice-chen` (rule-(b) frontmatter-ref).
+      Many meeting notes carry `attendees: [alice-chen, bob-martinez,
+      ...]` which resolve as frontmatter-ref edges INTO those people.
+      Hop-1: alice-chen (the project's owner). Hop-2: every other person
+      reachable via meeting attendees backward chain... but those go
+      OUTBOUND from meetings — not from alice. So practically the 2-hop
+      forward frontmatter-ref expansion from atlas-1 captures alice-chen
+      and the small set of people who appear in alice's outbound frontmatter
+      (none — people notes have no fm-ref props). The interesting expansion
+      is BACKWARD: meetings/q2-okr-review and atlas-1-perception-stack
+      both carry frontmatter-ref TO atlas-1's owner (alice). With
+      `direction: 'both'` and `hops: 2`, both directions get walked.
+      Exercises the deep traversal + edge-type filter combo per D-05/D-17.
+    input:
+      seed_doc_ids:
+        - obsidian-fs://v2-test-vault/projects/atlas-1.md
+      hops: 2
+      edge_types:
+        - frontmatter-ref
+    expected_doc_ids:
+      - obsidian-fs://v2-test-vault/people/alice-chen.md
+    min_precision: 0.8
+    min_recall: 0.8
+
+  - id: atlas-1-active-projects-1hop
+    description: >
+      1-hop from Atlas-1, filtered to `filter_properties: {status:
+      "active"}`. Validates the Plan 03 D-08 strict-equality property
+      filter applied at hydration time (post-BFS). Atlas-1's 1-hop
+      neighborhood spans projects, people, meetings, decisions and
+      references; the filter retains only docs with `status: active`
+      in frontmatter, which over Atlas Robotics matches three project
+      sibling docs (`atlas-1-perception-stack`, `atlas-1-warehouse-task-
+      library`, `spire`) — each linked to atlas-1 via wikilink edges
+      from those project notes' bodies.
+    input:
+      seed_doc_ids:
+        - obsidian-fs://v2-test-vault/projects/atlas-1.md
+      hops: 1
+      filter_properties:
+        status: active
+    expected_doc_ids:
+      - obsidian-fs://v2-test-vault/projects/atlas-1-perception-stack.md
+      - obsidian-fs://v2-test-vault/projects/atlas-1-warehouse-task-library.md
+      - obsidian-fs://v2-test-vault/projects/spire.md
+    min_precision: 0.8
+    min_recall: 0.8
+
+  - id: pivot-backward-only
+    description: >
+      Backward-only 1-hop from the pivot decision — answers "what cites
+      this decision?". Exercises a non-default `direction` per D-06.
+      Pivot decision is heavily referenced — Atlas-1, alice, dana,
+      q2-okr meeting, pilot-onboarding meeting, atlas-1-warehouse-task-
+      library, spire, several reference docs, and the RGBD decision all
+      cite back via wikilinks.
+    input:
+      seed_doc_ids:
+        - obsidian-fs://v2-test-vault/decisions/2026-03-12-pivot-to-warehouse.md
+      hops: 1
+      direction: backward
+    expected_doc_ids:
+      - obsidian-fs://v2-test-vault/decisions/2026-04-08-rgbd-over-stereo-only.md
+      - obsidian-fs://v2-test-vault/meetings/2026-04-15-q2-okr-review.md
+      - obsidian-fs://v2-test-vault/meetings/2026-04-23-pilot-onboarding-kickoff.md
+      - obsidian-fs://v2-test-vault/people/alice-chen.md
+      - obsidian-fs://v2-test-vault/people/dana-park.md
+      - obsidian-fs://v2-test-vault/projects/atlas-1-warehouse-task-library.md
+      - obsidian-fs://v2-test-vault/projects/atlas-1.md
+      - obsidian-fs://v2-test-vault/projects/spire.md
+      - obsidian-fs://v2-test-vault/references/atlas-1-component-spec.md
+      - obsidian-fs://v2-test-vault/references/customer-pilot-playbook.md
+      - obsidian-fs://v2-test-vault/references/spire-architecture.md
+    min_precision: 0.8
+    min_recall: 0.8
+
+  - id: bob-mentions-1hop
+    description: >
+      1-hop expansion from Bob filtered to `edge_types: ["mention"]`.
+      With synthesized slug + title aliases, Bob's body prose mentions
+      Alice and Carlos by name ("Bob co-founded Atlas Robotics with
+      Alice Chen and Carlos Yim..."), producing two outbound mentions.
+      Inbound mentions to Bob come from atlas-1.md ("Bob Martinez owns
+      the perception stack"). The bidirectional default surfaces all
+      three. Pins the mention extractor edge type on the BFS path.
+    input:
+      seed_doc_ids:
+        - obsidian-fs://v2-test-vault/people/bob-martinez.md
+      hops: 1
+      edge_types:
+        - mention
+    expected_doc_ids:
+      - obsidian-fs://v2-test-vault/people/alice-chen.md
+      - obsidian-fs://v2-test-vault/people/carlos-yim.md
+      - obsidian-fs://v2-test-vault/projects/atlas-1.md
+    min_precision: 0.8
+    min_recall: 0.8
+
+  - id: q2-okr-meeting-attendees
+    description: >
+      The Q2 OKR Review meeting carries `attendees: [alice-chen,
+      bob-martinez, carlos-yim]`. With slug aliases synthesized in the
+      test fixture, these resolve as frontmatter-ref edges. 1-hop forward
+      with `edge_types: ["frontmatter-ref"]` gives the three attendees.
+      Pins the rule-(b) frontmatter-ref path against a meeting note's
+      attendee list.
+    input:
+      seed_doc_ids:
+        - obsidian-fs://v2-test-vault/meetings/2026-04-15-q2-okr-review.md
+      hops: 1
+      direction: forward
+      edge_types:
+        - frontmatter-ref
+    expected_doc_ids:
+      - obsidian-fs://v2-test-vault/people/alice-chen.md
+      - obsidian-fs://v2-test-vault/people/bob-martinez.md
+      - obsidian-fs://v2-test-vault/people/carlos-yim.md
+    min_precision: 1.0
+    min_recall: 1.0
+
+  - id: pivot-hyperlinks-empty
+    description: >
+      Negative case for the `hyperlink` edge type. Atlas Robotics fixture
+      contains ZERO http(s) URLs (verified empirically — see Plan 04-06
+      Task 1 / A1 validation). A query with `edge_types: ["hyperlink"]`
+      must therefore return an empty `documents` set. This pins the
+      contract that (a) the `hyperlink` filter is honored, and (b)
+      hyperlink edges with `target_doc IS NULL` are skipped by the
+      BFS (per Plan 04-03 §"unresolved hyperlinks").
+    input:
+      seed_doc_ids:
+        - obsidian-fs://v2-test-vault/decisions/2026-03-12-pivot-to-warehouse.md
+      hops: 1
+      edge_types:
+        - hyperlink
+    expected_doc_ids: []
+    min_precision: 1.0
+    min_recall: 1.0
+
+  - id: alice-with-unknown-seed
+    description: >
+      Mixes a valid seed (Alice) with an unknown DocId. Asserts the soft-
+      warning shape `warnings: [{seed_doc_id, reason: "unknown_doc"}]`
+      and that the valid seed's expansion still appears in `documents`.
+      The P/R threshold is set against the valid seed's full 1-hop set
+      (subset of `alice-1-hop-both`'s expected); the test additionally
+      checks the warnings array on the result object.
+    input:
+      seed_doc_ids:
+        - obsidian-fs://v2-test-vault/people/alice-chen.md
+        - obsidian-fs://v2-test-vault/nonexistent/foo.md
+      hops: 1
+    expected_doc_ids:
+      - obsidian-fs://v2-test-vault/decisions/2026-03-12-pivot-to-warehouse.md
+      - obsidian-fs://v2-test-vault/projects/atlas-1.md
+      - obsidian-fs://v2-test-vault/meetings/2026-04-15-q2-okr-review.md
+      - obsidian-fs://v2-test-vault/people/carlos-yim.md
+      - obsidian-fs://v2-test-vault/people/dana-park.md
+      - obsidian-fs://v2-test-vault/people/priya-rao.md
+      - obsidian-fs://v2-test-vault/people/quinn-vega.md
+      - obsidian-fs://v2-test-vault/people/bob-martinez.md
+      - obsidian-fs://v2-test-vault/meetings/2026-04-23-pilot-onboarding-kickoff.md
+      - obsidian-fs://v2-test-vault/meetings/2026-04-29-vendor-risk-review.md
+      - obsidian-fs://v2-test-vault/meetings/2026-05-04-dana-onboarding-kickoff.md
+      - obsidian-fs://v2-test-vault/meetings/2026-05-06-perception-hire-debrief.md
+      - obsidian-fs://v2-test-vault/projects/spire-fleet-orchestrator.md
+      - obsidian-fs://v2-test-vault/projects/spire.md
+      - obsidian-fs://v2-test-vault/references/customer-pilot-playbook.md
+      - obsidian-fs://v2-test-vault/references/spire-architecture.md
+      - obsidian-fs://v2-test-vault/_memory/observations/2026-04-16-atlas-1-pilot-count-reduced.md
+    min_precision: 0.8
+    min_recall: 0.8
+    # Special assertion driven from the test, not from a generic
+    # YAML field: `result.warnings` MUST contain `{seed_doc_id:
+    # "obsidian-fs://v2-test-vault/nonexistent/foo.md", reason:
+    # "unknown_doc"}`. See `expand.integration.test.ts` §"warnings".
+    expects_warning_for: obsidian-fs://v2-test-vault/nonexistent/foo.md
