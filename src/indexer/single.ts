@@ -13,8 +13,10 @@ import type { Vault } from "../vault/index.js";
 import type { OllamaClient } from "../ollama/index.js";
 import { parseNote } from "../adapters/source/obsidian-fs/parser.js";
 import { chunkNote } from "../chunker/index.js";
-import { extractAliases, resolveWikilinkTarget } from "./indexer.js";
-import type { ParsedWikilink } from "../types.js";
+import { extractAliases } from "./indexer.js";
+import { WikilinkResolver } from "./resolver.js";
+import { extractAllEdges } from "./extract-edges.js";
+import type { ParsedNote, ParsedWikilink } from "../types.js";
 
 export interface IndexNoteOptions {
   vault: Vault;
@@ -116,9 +118,16 @@ export async function indexNote(options: IndexNoteOptions): Promise<IndexNoteRes
     });
     vault.db.aliases.setForNote(upsert.id, extractAliases(parsed.frontmatter));
     vault.db.wikilinks.deleteByNote(upsert.id);
-    // Phase 4 / 04-01 (D-01): dual-write mirror — see insertWikilinks below.
+    // ── Phase 4 / 04-02 / GRA-04 / D-02 ──
+    // Clear all typed edges and re-extract via the unified extractor.
+    // The body-hash fast path is NOT a shortcut around edge
+    // re-extraction — frontmatter-only edits (e.g. a new `owner:`
+    // wikilink-shape) flip the frontmatter-ref edge mix, so we MUST
+    // re-run the extractor here. The legacy wikilinks-table write
+    // stays in place per D-01 (v1 invariance).
     vault.db.edges.deleteByNote(upsert.id);
     insertWikilinks(vault, upsert.id, parsed.wikilinks);
+    writeAllEdges(vault, upsert.id, parsed);
     return {
       status: "indexed",
       notePath: parsed.relativePath,
@@ -161,7 +170,12 @@ export async function indexNote(options: IndexNoteOptions): Promise<IndexNoteRes
   // 7. Wipe derived layer for this note.
   vault.db.chunks.deleteByNote(upsert.id);
   vault.db.wikilinks.deleteByNote(upsert.id);
-  // Phase 4 / 04-01 (D-01): dual-write mirror — see insertWikilinks below.
+  // ── Phase 4 / 04-02 / GRA-04 / D-02 ──
+  // Wipe typed edges; writeAllEdges below repopulates them via the
+  // unified extractor (wikilink + mention + frontmatter-ref +
+  // hyperlink) in one parse pass. The legacy wikilinks write keeps
+  // running too per D-01 — single-indexer's `insertWikilinks` helper
+  // still hits the v1 table for byte-stable backward compatibility.
   vault.db.edges.deleteByNote(upsert.id);
 
   // 8. Chunk + embed + persist.
@@ -169,6 +183,11 @@ export async function indexNote(options: IndexNoteOptions): Promise<IndexNoteRes
 
   if (chunks.length === 0) {
     insertWikilinks(vault, upsert.id, parsed.wikilinks);
+    // ── Phase 4 / 04-02 / GRA-04 / D-02 ──
+    // Empty-body branch still gets the full extractor pass: a note
+    // with only frontmatter (e.g. a person stub with `owner:` /
+    // `attendees:` arrays) can still emit frontmatter-ref edges.
+    writeAllEdges(vault, upsert.id, parsed);
     return {
       status: "indexed",
       notePath: parsed.relativePath,
@@ -238,6 +257,9 @@ export async function indexNote(options: IndexNoteOptions): Promise<IndexNoteRes
   }
 
   insertWikilinks(vault, upsert.id, parsed.wikilinks);
+  // ── Phase 4 / 04-02 / GRA-04 / D-02 ──
+  // Full re-embed branch — emit the typed-edge mix into `edges`.
+  writeAllEdges(vault, upsert.id, parsed);
 
   return {
     status: "indexed",
@@ -312,12 +334,19 @@ function isENOENT(err: unknown): boolean {
  * Mirror of indexer.ts `insertWikilinks` — kept private to avoid widening
  * that module's public API. Single-indexer skips the second-pass resolution,
  * so unresolved targets remain broken until a full index runs.
+ *
+ * Phase 4 / 04-02: the dual-write into `edges` has moved into
+ * `writeAllEdges` below so the wikilinks-edge resolution shares a
+ * single `WikilinkResolver` instance with the mention + frontmatter-ref
+ * extractors. This helper now writes ONLY the legacy `wikilinks`
+ * table (D-01 byte-stability).
  */
 function insertWikilinks(vault: Vault, sourceNoteId: number, wikilinks: ParsedWikilink[]): void {
   if (wikilinks.length === 0) return;
 
+  const resolver = new WikilinkResolver(vault);
   const inputs = wikilinks.map((wl) => {
-    const target = resolveWikilinkTarget(vault, wl.normalizedTarget);
+    const target = resolver.resolve(wl.normalizedTarget);
     return {
       targetPath: wl.normalizedTarget,
       targetNoteId: target?.id ?? null,
@@ -327,30 +356,23 @@ function insertWikilinks(vault: Vault, sourceNoteId: number, wikilinks: ParsedWi
     };
   });
   vault.db.wikilinks.insertBatch(sourceNoteId, inputs);
-  // ── Phase 4 / 04-01 / GRA-04 (D-01): dual-write into `edges` ──
-  //
-  // Writes stay on `wikilinks` for backward compat with the v1 graph
-  // tools' write paths and `find_broken_links`. Plan 04-02 lands the
-  // unified extractor that collapses this dual-write into a single
-  // helper that also produces mention / frontmatter-ref / hyperlink
-  // edges in the same pass. Until then, every wikilink insert also
-  // lands a `type='wikilink'` row in `edges` so v1 graph-tool reads
-  // (Plan 04-01 Task 2) see live writes.
-  //
-  // Mirrored delete: callers above this helper already issue
-  // `vault.db.wikilinks.deleteByNote(noteId)` before re-inserting.
-  // The corresponding `vault.db.edges.deleteByNote(noteId)` is added
-  // at each call site (see indexer/single.ts:118/161 + indexer.ts).
-  vault.db.edges.insertBatch(
-    sourceNoteId,
-    inputs.map((wl) => ({
-      targetNoteId: wl.targetNoteId,
-      targetPath: wl.targetPath,
-      type: "wikilink" as const,
-      rel: null,
-      anchor: wl.anchor,
-      lineNumber: wl.lineNumber,
-      linkText: wl.linkText,
-    })),
-  );
+}
+
+/**
+ * Phase 4 / 04-02 / GRA-04 / D-02 — write all four edge types into
+ * `vault.db.edges` via the unified extractor. Callers MUST have
+ * already issued `vault.db.edges.deleteByNote(sourceNoteId)` so the
+ * write is a clean replace; `INSERT OR IGNORE` + the UNIQUE index on
+ * `(source_doc, target_doc, type, anchor)` makes re-extraction
+ * idempotent in any case (Pattern C from PATTERNS.md).
+ *
+ * Constructs a single `WikilinkResolver` per call — the single-indexer
+ * path indexes one note at a time, so cache amortization across notes
+ * is not relevant. The full-index path (`indexer.ts`) uses a long-lived
+ * resolver instead (see `firstPassResolver` there).
+ */
+function writeAllEdges(vault: Vault, sourceNoteId: number, parsed: ParsedNote): void {
+  const resolver = new WikilinkResolver(vault);
+  const edges = extractAllEdges(vault, parsed, resolver);
+  if (edges.length > 0) vault.db.edges.insertBatch(sourceNoteId, edges);
 }

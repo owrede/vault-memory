@@ -22,6 +22,7 @@ import type {
   SectionInfo,
 } from "../types.js";
 import { WikilinkResolver } from "./resolver.js";
+import { extractAllEdges } from "./extract-edges.js";
 import { extractSections, markdownToSectionBlocks } from "../sections/index.js";
 import { extractHeadings } from "../chunker/headings.js";
 
@@ -233,7 +234,12 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
 
       if (chunks.length === 0) {
         // empty note — record wikilinks anyway, but no chunks/embeddings
-        insertWikilinks(vault, noteId, parsed.wikilinks);
+        insertWikilinks(vault, noteId, parsed.wikilinks, firstPassResolver);
+        // Phase 4 / 04-02 / GRA-04 / D-02: also emit typed edges for
+        // frontmatter-ref / hyperlink / mention. A note with only
+        // frontmatter (no body) can still contribute owner / attendees
+        // edges to the graph.
+        writeAllEdges(vault, noteId, parsed, firstPassResolver);
         continue;
       }
 
@@ -297,8 +303,10 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
         );
       }
 
-      // Wikilinks
+      // Wikilinks (v1 invariant write path — D-01)
       insertWikilinks(vault, noteId, parsed.wikilinks, firstPassResolver);
+      // Phase 4 / 04-02 / GRA-04 / D-02: typed-edge unified write.
+      writeAllEdges(vault, noteId, parsed, firstPassResolver);
 
       chunksCreated += chunks.length;
     }
@@ -404,29 +412,35 @@ function insertWikilinks(
     };
   });
   vault.db.wikilinks.insertBatch(sourceNoteId, inputs);
-  // ── Phase 4 / 04-01 / GRA-04 (D-01): dual-write into `edges` ──
-  //
-  // Phase 4 graph reads (v1 graph tools, bundle, dossier, expand, cluster)
-  // route through `vault.db.edges`. Until Plan 04-02 lands the unified
-  // extractor, every wikilink insert also lands a `type='wikilink'`
-  // row in `edges` so live indexing keeps the read substrate fresh.
-  //
-  // Callers above this helper already issue
-  // `vault.db.wikilinks.deleteByNote(noteId)` before re-inserting;
-  // the corresponding `vault.db.edges.deleteByNote(noteId)` is added
-  // at each call site.
-  vault.db.edges.insertBatch(
-    sourceNoteId,
-    inputs.map((wl) => ({
-      targetNoteId: wl.targetNoteId,
-      targetPath: wl.targetPath,
-      type: "wikilink" as const,
-      rel: null,
-      anchor: wl.anchor,
-      lineNumber: wl.lineNumber,
-      linkText: wl.linkText,
-    })),
-  );
+  // Phase 4 / 04-02 / GRA-04 / D-02 — the unified edge write is no
+  // longer co-located here. `writeAllEdges` (called immediately
+  // after this helper at every call site) produces the full typed
+  // edge mix in a single pass, sharing this same `WikilinkResolver`
+  // so cache lookups are not duplicated. The legacy `wikilinks`
+  // table write above stays for v1 invariance per D-01.
+}
+
+/**
+ * Phase 4 / 04-02 / GRA-04 / D-02 — emit all four typed edges into
+ * `vault.db.edges`. Callers MUST have already issued
+ * `vault.db.edges.deleteByNote(sourceNoteId)` for a clean replace;
+ * the UNIQUE index on `(source_doc, target_doc, type, anchor)` +
+ * `INSERT OR IGNORE` makes the write idempotent regardless.
+ *
+ * The full-index path passes its long-lived `firstPassResolver` so
+ * the wikilink-edge resolution shares the same cache as the
+ * frontmatter-ref rule-(a) lookups. Plan 04-01's second-pass broken-
+ * link resolver (`secondPassResolver`) only mutates the `wikilinks`
+ * table — Plan 04-03 will lift that into `edges` if needed.
+ */
+function writeAllEdges(
+  vault: Vault,
+  sourceNoteId: number,
+  parsed: ParsedNote,
+  resolver: WikilinkResolver,
+): void {
+  const edges = extractAllEdges(vault, parsed, resolver);
+  if (edges.length > 0) vault.db.edges.insertBatch(sourceNoteId, edges);
 }
 
 /**

@@ -335,3 +335,214 @@ describe("single-indexer: removeNote", () => {
     expect(result.notePath).toBeNull();
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 4 / 04-02 / GRA-04 — indexer writes all four edge types via
+// extractAllEdges() on every parse pass. Legacy wikilinks table also still
+// receives wikilink rows per D-01 (v1 invariance).
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe("single-indexer: edge extraction (04-02)", () => {
+  let tmpDir: string;
+  let vault: Vault;
+  let ollama: { client: OllamaClient; embed: ReturnType<typeof vi.fn> };
+
+  beforeEach(async () => {
+    tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "vmem-single-edges-"));
+    vault = makeVault(tmpDir);
+    ollama = makeOllama();
+  });
+
+  afterEach(async () => {
+    vault.db.close();
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
+
+  async function writeNoteFile(rel: string, body: string): Promise<string> {
+    const abs = path.join(tmpDir, rel);
+    await fs.mkdir(path.dirname(abs), { recursive: true });
+    await fs.writeFile(abs, body, "utf-8");
+    return abs;
+  }
+
+  function readEdgeTypes(noteId: number): Array<{ type: string; target_path: string | null }> {
+    return vault.db.handle
+      .prepare("SELECT type, target_path FROM edges WHERE source_doc = ? ORDER BY type, target_path")
+      .all(noteId) as Array<{ type: string; target_path: string | null }>;
+  }
+
+  it("Test 1: a single note with one of each edge type produces 4 rows in edges; re-index is idempotent", async () => {
+    // Seed a target note for the wikilink + a person for the frontmatter-ref
+    // + an alias for mention extraction.
+    const target = await writeNoteFile("target.md", "# Target\n\nbody.");
+    await indexNote({
+      vault,
+      absolutePath: target,
+      embeddingModel: MODEL,
+      ollama: ollama.client,
+    });
+    const alice = await writeNoteFile(
+      "people/alice-chen.md",
+      ["---", "aliases: [alice, alice-chen]", "---", "", "# Alice"].join("\n"),
+    );
+    await indexNote({
+      vault,
+      absolutePath: alice,
+      embeddingModel: MODEL,
+      ollama: ollama.client,
+    });
+
+    const note = await writeNoteFile(
+      "meeting.md",
+      [
+        "---",
+        "owner: \"[[alice-chen]]\"",
+        "---",
+        "",
+        "See [[target]] for details.",
+        "",
+        "Alice attended yesterday. https://example.com",
+      ].join("\n"),
+    );
+    const first = await indexNote({
+      vault,
+      absolutePath: note,
+      embeddingModel: MODEL,
+      ollama: ollama.client,
+    });
+    expect(first.status).toBe("indexed");
+
+    const rows = readEdgeTypes(first.noteId!);
+    const byType = new Set(rows.map((r) => r.type));
+    expect(byType.has("wikilink")).toBe(true);
+    expect(byType.has("frontmatter-ref")).toBe(true);
+    expect(byType.has("mention")).toBe(true);
+    expect(byType.has("hyperlink")).toBe(true);
+
+    // Re-index — file did not change on disk; the "unchanged" fast path
+    // still keeps edges intact (deleteByNote + re-extract is idempotent
+    // and equivalent to no-op here because the same parse output goes
+    // through).
+    const second = await indexNote({
+      vault,
+      absolutePath: note,
+      embeddingModel: MODEL,
+      ollama: ollama.client,
+    });
+    expect(second.status).toBe("unchanged");
+    const rows2 = readEdgeTypes(second.noteId!);
+    expect(rows2.length).toBe(rows.length);
+  });
+
+  it("Test 2: legacy wikilinks table also still receives the wikilink row (D-01)", async () => {
+    const target = await writeNoteFile("target.md", "# Target\n\nbody.");
+    await indexNote({
+      vault,
+      absolutePath: target,
+      embeddingModel: MODEL,
+      ollama: ollama.client,
+    });
+    const note = await writeNoteFile("source.md", "# Source\n\n[[target]]");
+    const result = await indexNote({
+      vault,
+      absolutePath: note,
+      embeddingModel: MODEL,
+      ollama: ollama.client,
+    });
+
+    const wlRows = vault.db.handle
+      .prepare("SELECT target_path FROM wikilinks WHERE source_note = ?")
+      .all(result.noteId!) as Array<{ target_path: string }>;
+    expect(wlRows.length).toBe(1);
+    expect(wlRows[0]?.target_path).toBe("target");
+  });
+
+  it("Test 3: deleting a note removes all of its outgoing edges (FK ON DELETE CASCADE)", async () => {
+    const target = await writeNoteFile("target.md", "# Target\n\nbody.");
+    await indexNote({
+      vault,
+      absolutePath: target,
+      embeddingModel: MODEL,
+      ollama: ollama.client,
+    });
+    const note = await writeNoteFile(
+      "source.md",
+      "# Source\n\n[[target]] https://example.com",
+    );
+    const r = await indexNote({
+      vault,
+      absolutePath: note,
+      embeddingModel: MODEL,
+      ollama: ollama.client,
+    });
+    const noteId = r.noteId!;
+    expect(readEdgeTypes(noteId).length).toBeGreaterThan(0);
+
+    removeNote(vault, note);
+    expect(readEdgeTypes(noteId).length).toBe(0);
+  });
+
+  it("Test 4: body-hash fast path also re-extracts and writes all edge types", async () => {
+    // Wire up a target for the wikilink to resolve.
+    const target = await writeNoteFile("target.md", "# Target\n\nbody.");
+    await indexNote({
+      vault,
+      absolutePath: target,
+      embeddingModel: MODEL,
+      ollama: ollama.client,
+    });
+
+    // First index with the original frontmatter — owner is unset.
+    const note = await writeNoteFile(
+      "source.md",
+      ["---", "tags: [a]", "---", "", "[[target]]"].join("\n"),
+    );
+    const first = await indexNote({
+      vault,
+      absolutePath: note,
+      embeddingModel: MODEL,
+      ollama: ollama.client,
+    });
+    const noteId = first.noteId!;
+    expect(ollama.embed).toHaveBeenCalledTimes(2); // target + source
+
+    // Seed an alias note so the new owner frontmatter-ref can resolve.
+    await new Promise((r) => setTimeout(r, 5));
+    const alice = await writeNoteFile(
+      "people/alice-chen.md",
+      ["---", "aliases: [alice-chen]", "---", "", "# Alice"].join("\n"),
+    );
+    await indexNote({
+      vault,
+      absolutePath: alice,
+      embeddingModel: MODEL,
+      ollama: ollama.client,
+    });
+
+    // Re-write source with a frontmatter-only change. Body bytes are
+    // identical, so the body-hash fast path (`single.ts:106`) should fire:
+    // no new ollama.embed call for the source note.
+    await fs.writeFile(
+      note,
+      ["---", "tags: [a]", "owner: \"[[alice-chen]]\"", "---", "", "[[target]]"].join("\n"),
+      "utf-8",
+    );
+    const callsBefore = ollama.embed.mock.calls.length;
+    const second = await indexNote({
+      vault,
+      absolutePath: note,
+      embeddingModel: MODEL,
+      ollama: ollama.client,
+    });
+    expect(second.status).toBe("indexed");
+    expect(second.chunksCreated).toBe(0); // fast path
+    expect(ollama.embed.mock.calls.length).toBe(callsBefore); // no re-embed
+
+    // The frontmatter-ref edge must now be present even though we took
+    // the body-hash fast path — extractAllEdges runs on BOTH branches.
+    const rows = readEdgeTypes(noteId);
+    const byType = new Set(rows.map((r) => r.type));
+    expect(byType.has("wikilink")).toBe(true);
+    expect(byType.has("frontmatter-ref")).toBe(true);
+  });
+});
