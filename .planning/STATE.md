@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: release
 status: phase_complete
-stopped_at: Phase 3 complete (7/7 slices); ready for Phase 4 planning
-last_updated: "2026-05-17T10:00:00.000Z"
+stopped_at: Phase 4 context gathered
+last_updated: "2026-05-17T17:11:39.193Z"
 last_activity: 2026-05-17
 progress:
   total_phases: 10
@@ -29,6 +29,7 @@ Phase: 3 — **COMPLETE** (2026-05-17)
 Plans: 7 implementation slices, all signed off. Phase 3 sign-off doc at `docs/v2/PHASE-3-SIGN-OFF.md`.
 
 Phase 3 ships:
+
 - 4 new MCP tools: `get_outline`, `search_sections`, `get_document_bundle`, `assemble_dossier`
 - Additive `search_hybrid` rescore signals (recency, authority, superseded filter)
 - Section identity substrate (migration 010 + ADR-003 H-7 anchors)
@@ -123,7 +124,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-16T13:55:00.000Z
-Stopped at: Phase 3 planned (7 MVP slices, PASS verdict after 1 revision pass)
-Resume file: .planning/phases/03-bundles-authority-staleness/03-PLAN.md
+Last session: 2026-05-17T17:11:39.186Z
+Stopped at: Phase 4 context gathered
+Resume file: .planning/phases/04-graph-as-retrieval/04-CONTEXT.md
 Next: `/gsd-execute-phase 3`
