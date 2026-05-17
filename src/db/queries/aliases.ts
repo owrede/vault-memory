@@ -13,11 +13,19 @@ export interface AliasResolveHit {
   alias: string; // original-case
 }
 
+export interface AliasListAllRow {
+  note_id: number;
+  path: string;
+  alias: string;
+  alias_norm: string;
+}
+
 export class AliasesQueries {
   private readonly setStmt: BetterSqlite3.Statement<[number, string, string]>;
   private readonly deleteStmt: BetterSqlite3.Statement<[number]>;
   private readonly listForNoteStmt: BetterSqlite3.Statement<[number]>;
   private readonly resolveStmt: BetterSqlite3.Statement<[string]>;
+  private readonly listAllStmt: BetterSqlite3.Statement<[]>;
 
   constructor(db: BetterSqlite3.Database) {
     this.setStmt = db.prepare(
@@ -36,6 +44,27 @@ export class AliasesQueries {
        ORDER BY length(n.path) ASC
        LIMIT 1`,
     );
+    // Phase 4 / 04-02 / GRA-04 (D-03): the mention extractor needs the
+    // full alias inventory once per indexer run to build the candidate
+    // regex. Ordered by alias_norm for deterministic regex alternation
+    // (mitigates T-04-02-04 — see plan threat model).
+    this.listAllStmt = db.prepare(
+      `SELECT na.note_id AS note_id, n.path AS path,
+              na.alias AS alias, na.alias_norm AS alias_norm
+       FROM note_aliases na
+       JOIN notes n ON n.id = na.note_id
+       ORDER BY na.alias_norm ASC`,
+    );
+  }
+
+  /**
+   * Phase 4 / 04-02 / GRA-04 (D-03): full alias inventory for the
+   * mention extractor's per-run candidate set. Result is sorted by
+   * `alias_norm` ASC so regex alternation ordering is deterministic
+   * across runs (T-04-02-04 mitigation).
+   */
+  listAll(): AliasListAllRow[] {
+    return this.listAllStmt.all() as AliasListAllRow[];
   }
 
   /**
