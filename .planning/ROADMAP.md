@@ -125,7 +125,7 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
   3. Edges carry an explicit `type` field per ADR-003 — schema supports `wikilink`, `frontmatter-ref`, `mention`, and `hyperlink` types
   4. Eval fixture includes ≥5 "find me everything related to X" queries that are answered correctly by expansion (precision/recall ≥0.8)
 **Plans**: 7 plans
-- [ ] 04-01-edges-substrate-PLAN.md — migration 011 + EdgesQueries + Database wiring + v1 graph tools additive `type` (GRA-04 substrate)
+- [x] 04-01-edges-substrate-PLAN.md — migration 011 + EdgesQueries + Database wiring + v1 graph tools additive `type` (GRA-04 substrate)
 - [ ] 04-02-edge-extractors-PLAN.md — indexer extracts mention/frontmatter-ref/hyperlink in a single per-note parse pass (GRA-04 indexer)
 - [ ] 04-03-expand-tool-PLAN.md — `expand()` BFS over typed edges with shortest-path `via` dedup + `_memory` opacity + MCP tool (GRA-01)
 - [ ] 04-04-search-hybrid-expand-PLAN.md — additive `search_hybrid({expand})` post-rescore attachment (GRA-03)
@@ -219,7 +219,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 →
 | 1. Adapter extraction & tech-debt-up | 0/TBD | Not started | - |
 | 2. Memory namespace & provenance contract | 16/16 | Complete   | 2026-05-15 |
 | 3. Bundles + authority/staleness | 0/TBD | Not started | - |
-| 4. Graph-as-retrieval | 0/7 | In progress (planned) | - |
+| 4. Graph-as-retrieval | 1/7 | In Progress|  |
 | 5. Compiled brief layer | 0/TBD | Not started | - |
 | 6. Task contract DSL | 0/TBD | Not started | - |
 | 7. Visual contract editor (Canvas) | 0/TBD | Not started | - |
