@@ -1640,3 +1640,84 @@ describe("Plan 04-03: expand MCP tool", () => {
     expect(names).toContain("expand");
   });
 });
+
+// ─── Plan 04-04 (GRA-03) — search_hybrid({expand}) Zod + JSON Schema ─────
+//
+// Validates that the `search_hybrid` tool gains an additive optional
+// `expand` nested object. v1 callers (no `expand` arg) continue to
+// pass validation untouched.
+describe("Plan 04-04: search_hybrid({expand}) Zod + JSON Schema", () => {
+  it("Test 1: Zod accepts {query, expand:{hops:1}} and fully-specified expand", async () => {
+    const { buildToolSchema } = await import("./tool-registry.js");
+    const schema = buildToolSchema("search_hybrid");
+    const r1 = schema.safeParse({ query: "x", expand: { hops: 1 } });
+    expect(r1.success).toBe(true);
+    const r2 = schema.safeParse({
+      query: "x",
+      expand: { hops: 2, direction: "forward", edge_types: ["wikilink"] },
+    });
+    expect(r2.success).toBe(true);
+  });
+
+  it("Test 2: Zod rejects expand.hops outside the {1, 2} literal union", async () => {
+    const { buildToolSchema } = await import("./tool-registry.js");
+    const schema = buildToolSchema("search_hybrid");
+    const r = schema.safeParse({ query: "x", expand: { hops: 3 } });
+    expect(r.success).toBe(false);
+  });
+
+  it("Test 3: Zod rejects expand.direction outside the {forward, backward, both} enum", async () => {
+    const { buildToolSchema } = await import("./tool-registry.js");
+    const schema = buildToolSchema("search_hybrid");
+    const r = schema.safeParse({
+      query: "x",
+      expand: { hops: 1, direction: "sideways" },
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("Test 4: Existing search_hybrid callers (no expand arg) still validate (v1 invariance)", async () => {
+    const { buildToolSchema } = await import("./tool-registry.js");
+    const schema = buildToolSchema("search_hybrid");
+    const r = schema.safeParse({ query: "atlas" });
+    expect(r.success).toBe(true);
+    if (r.success) {
+      // The parsed shape MUST NOT contain an `expand` property — the
+      // additive field stays `undefined` when omitted, so v1 callers
+      // see byte-identical behavior.
+      const parsed = r.data as { expand?: unknown };
+      expect(parsed.expand).toBeUndefined();
+    }
+  });
+
+  it("Test 5: TOOLS array JSON Schema for search_hybrid has the matching `expand` property", async () => {
+    const { TOOLS } = await import("./tool-registry.js");
+    const tool = TOOLS.find((t) => t.name === "search_hybrid");
+    expect(tool).toBeDefined();
+    const schema = tool?.inputSchema as {
+      properties?: Record<string, unknown>;
+    };
+    expect(schema.properties).toBeDefined();
+    const expandProp = schema.properties?.expand as {
+      type?: string;
+      required?: string[];
+      properties?: Record<string, unknown>;
+    };
+    expect(expandProp).toBeDefined();
+    expect(expandProp.type).toBe("object");
+    expect(expandProp.required).toContain("hops");
+    expect(expandProp.properties?.hops).toBeDefined();
+    expect(expandProp.properties?.direction).toBeDefined();
+    expect(expandProp.properties?.edge_types).toBeDefined();
+  });
+
+  it("Test 6: search_hybrid tool description mentions the new expand capability", async () => {
+    const { TOOLS } = await import("./tool-registry.js");
+    const tool = TOOLS.find((t) => t.name === "search_hybrid");
+    expect(tool).toBeDefined();
+    expect(tool?.description).toContain("expand");
+    // Mention that hops=1 attaches expansions per hit (so an agent
+    // reading the tool list immediately knows the surface).
+    expect(tool?.description?.toLowerCase()).toContain("hops");
+  });
+});

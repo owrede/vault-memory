@@ -26,7 +26,7 @@ import type { Reranker } from "./rerank/index.js";
 import { homedir } from "node:os";
 import { join as joinPath } from "node:path";
 import { expand, listBacklinks, listForwardLinks, findBrokenLinks } from "./graph/index.js";
-import type { ExpandDirection, ExpandOptions } from "./graph/index.js";
+import type { ExpandDeps, ExpandDirection, ExpandOptions } from "./graph/index.js";
 import type { EdgeType } from "./db/queries/edges.js";
 import { queryFrontmatter, updateFrontmatter } from "./frontmatter/index.js";
 import { suggestFrontmatter } from "./schema/index.js";
@@ -403,6 +403,13 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
         authority_weight: number;
         half_life_days: number;
         include_superseded: boolean;
+        // Phase 4 / 04-04 (D-15): additive optional auto-expansion.
+        // When omitted, the downstream hybridSearch guard short-circuits.
+        expand?: {
+          hops: 1 | 2;
+          direction?: ExpandDirection;
+          edge_types?: EdgeType[];
+        };
       };
       return handleSearchHybrid(
         manager,
@@ -423,6 +430,17 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
         // adapter (or whichever adapter owns the vault) so hybrid.ts never
         // mints adapter URL strings (ADR-002 §I-5b).
         (vaultName, notePath) => displayUrl(adapterRegistry, vaultName, notePath),
+        // Phase 4 / 04-04 (D-15): pass the optional expand object + its
+        // injected deps (manager + sourceConnectorFor) so hybridSearch
+        // can compose Plan 04-03's `expand()` over the rescored top-K.
+        p.expand,
+        {
+          manager,
+          sourceConnectorFor: (vaultName) =>
+            adapterRegistry.resolveSource(
+              parseSourceHandle(`obsidian-fs://${vaultName}`),
+            ),
+        },
       );
     },
     list_backlinks: async (a) => {
@@ -1398,6 +1416,16 @@ async function handleSearchHybrid(
   // Phase 3 / 03-05: optional display-URL resolver (ADR-002 §I-5b
   // seam-preserving — the URL literal lives in the adapter, not here).
   displayUrlFor?: (vaultName: string, notePath: string) => string,
+  // Phase 4 / 04-04 (D-15): optional auto-expansion + its injected deps.
+  // When `expand` is undefined, hybridSearch's guard short-circuits;
+  // `expandDeps` is forwarded unconditionally so future per-call wiring
+  // stays trivial.
+  expandOpts?: {
+    hops: 1 | 2;
+    direction?: ExpandDirection;
+    edge_types?: EdgeType[];
+  },
+  expandDeps?: ExpandDeps,
 ): Promise<object> {
   const { targets, skipped } = resolveVaultTargets(manager, vaultFilter, activeVault);
 
@@ -1431,6 +1459,11 @@ async function handleSearchHybrid(
     halfLifeDays,
     includeSuperseded,
     ...(displayUrlFor ? { displayUrlFor } : {}),
+    // Phase 4 / 04-04 (D-15): forward optional expand + deps. When
+    // `expandOpts` is undefined, hybridSearch short-circuits the
+    // expand block (zero new DB reads — v1-baseline byte-identical).
+    ...(expandOpts ? { expand: expandOpts } : {}),
+    ...(expandDeps ? { expandDeps } : {}),
   });
 
   const filtered = hasExclude
