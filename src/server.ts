@@ -47,6 +47,7 @@ import {
   handleSupersede,
 } from "./memory/tools/index.js";
 import { searchSections } from "./assembly/search-sections.js";
+import { DocNotFoundError, getOutline } from "./assembly/outline.js";
 import { getAuditLog, getIndexRuns } from "./audit/index.js";
 import {
   ObsidianFsChangeFeed,
@@ -679,6 +680,21 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
       return { packets, count: packets.length };
     },
 
+    // ── Phase 3 assembly tools (Plan 03-02 / ASM-02) ───────────────────────
+    get_outline: async (a) => {
+      const p = a as { doc_id: string; vaults?: string[] };
+      return getOutline(
+        {
+          manager,
+          sourceConnectorFor: (vaultName) =>
+            adapterRegistry.resolveSource(
+              parseSourceHandle(`obsidian-fs://${vaultName}`),
+            ),
+        },
+        p,
+      );
+    },
+
     // ── Phase 3 assembly tools (Plan 03-03) ──────────────────────────────────
     search_sections: async (a) => {
       const p = a as {
@@ -801,6 +817,13 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
           const data = await handler(validated);
           return ok(data);
         } catch (err) {
+          // Phase 3 ASM-02: a `DocNotFoundError` carries a structured
+          // payload (`{error: "doc_not_found", doc_id}`) per the plan's
+          // error contract. Other tools that resolve documents by id
+          // (forthcoming get_bundle, dossier) will throw the same shape.
+          if (err instanceof DocNotFoundError) {
+            return errorResponseJson({ error: "doc_not_found", doc_id: err.doc_id });
+          }
           const message = err instanceof Error ? err.message : String(err);
           return errorResponse(message);
         }
@@ -1778,5 +1801,22 @@ function errorResponse(message: string): {
   return {
     isError: true,
     content: [{ type: "text", text: message }],
+  };
+}
+
+/**
+ * Structured `isError: true` response — the JSON payload is stringified
+ * into the single `text` content block. Used by Phase 3 assembly tools
+ * for the `{error: "doc_not_found", doc_id}` contract (plan 03-02).
+ * Distinct from `errorResponse` (free-text) so callers can pattern-match
+ * `JSON.parse(content[0].text).error === "doc_not_found"`.
+ */
+function errorResponseJson(payload: object): {
+  isError: true;
+  content: Array<{ type: "text"; text: string }>;
+} {
+  return {
+    isError: true,
+    content: [{ type: "text", text: JSON.stringify(payload) }],
   };
 }
