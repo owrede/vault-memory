@@ -39,6 +39,13 @@ and lives in a labeled `MemorySink`.
 - ✓ Per-model embeddings tables + shadow-indexing for model upgrades — v1.0.0
 - ✓ Skills pack (install, add-vault, audit-vault-health, find-stale-notes, triage-inbox) — v0.9.2
 
+<!-- Shipped in v2 phase execution. -->
+
+- ✓ Typed-edge retrieval (`expand` BFS primitive, `search_hybrid({expand})` additive auto-expansion) — Phase 4 (graph-as-retrieval), 2026-05-17
+- ✓ Community-detection clustering (`cluster` MCP tool, graphology + Louvain, deterministic seed) — Phase 4, 2026-05-17
+- ✓ `edges` table substrate with all 4 typed edges (wikilink, frontmatter-ref, mention, hyperlink) per ADR-003 — Phase 4, 2026-05-17
+- ✓ Cross-adapter conformance for graph tools (obsidian-fs + stub adapter) — Phase 4, 2026-05-17
+
 ### Active
 
 <!-- v2 scope per docs/dev/gsd-agent-knowledg-layer.md. Phase numbering follows the brief. -->
@@ -91,11 +98,11 @@ and lives in a labeled `MemorySink`.
 - [ ] `superseded` filter; default hides `status: superseded` unless `include_superseded: true`
 - [ ] v1 default behavior unchanged when weights are absent (verified by re-running v1 eval set)
 
-**Phase 5 — Graph-as-retrieval**
-- [ ] `expand({seed_doc_ids, hops, edge_types?, filter_properties?})` — typed-edge neighborhood
-- [ ] `cluster({query | seed_doc_ids, method: "edge-community"})` — community detection on typed edge graph
-- [ ] `search_hybrid` accepts `expand: {hops: 1}` for auto-expansion of top-K
-- [ ] Edges carry explicit `type` field per ADR-003 — schema supports `wikilink`, `frontmatter-ref`, `mention`, `hyperlink`
+**Phase 5 — Graph-as-retrieval** ✓ Validated (ROADMAP Phase 4, 2026-05-17)
+- [x] `expand({seed_doc_ids, hops, edge_types?, filter_properties?})` — typed-edge neighborhood
+- [x] `cluster({query | seed_doc_ids, method: "edge-community"})` — community detection on typed edge graph
+- [x] `search_hybrid` accepts `expand: {hops: 1}` for auto-expansion of top-K
+- [x] Edges carry explicit `type` field per ADR-003 — schema supports `wikilink`, `frontmatter-ref`, `mention`, `hyperlink`
 
 **Phase 6 — Compiled brief layer**
 - [ ] Briefs are `Document`s in `_memory/_briefs/` with `compiled_from`, `compiled_at`, `source_hashes`, `confidence`, `target`, `purpose`
@@ -255,4 +262,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-14 after initialization*
+*Last updated: 2026-05-17 after Phase 4 (graph-as-retrieval) completion*
