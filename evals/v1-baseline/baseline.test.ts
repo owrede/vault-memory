@@ -59,12 +59,11 @@ const FIXTURE_VAULT = join(__dirname, "..", "fixtures", "v2-test-vault");
 // --- FND-10: tools/list snapshot pin ----------------------------------------
 
 describe("v1 tools/list surface (FND-10)", () => {
-  // Plan 04-03 §<action>: tool-list snapshot regen is DEFERRED to Plan
-  // 04-07 ("one regen with the full additive diff" across all Phase 4
-  // tools). The new `expand` tool is additive; the 23-v1-tool prefix
-  // remains byte-identical (asserted below). Skip the strict-equality
-  // test until 04-07 regenerates the snapshot.
-  it.skip("matches the pinned snapshot exactly (re-enabled after Plan 04-07 regenerates the snapshot)", () => {
+  // Plan 04-07: snapshot regenerated with the full Phase 4 additive diff
+  // (2 new tools `expand` + `cluster`, plus a nested `expand` param on
+  // `search_hybrid`). The 23 v1 + 7 Phase 3 entries remain byte-identical.
+  // Strict-equality test re-enabled per the Plan 04-07 sign-off gate.
+  it("matches the pinned snapshot exactly", () => {
     const actual = { tools: TOOLS };
     const pinned = JSON.parse(
       readFileSync(join(__dirname, "tools-list.snapshot.json"), "utf-8"),
