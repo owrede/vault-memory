@@ -112,7 +112,7 @@ export const TOOLS = [
   {
     name: "search_hybrid",
     description:
-      "Hybrid search: combines semantic (embedding) and BM25 (full-text) results via Reciprocal Rank Fusion. Best general-purpose query.",
+      "Hybrid search: combines semantic (embedding) and BM25 (full-text) results via Reciprocal Rank Fusion. Best general-purpose query. Pass `expand: {hops: 1}` to auto-attach 1–2 hop typed-edge neighbors as `expansions[]` per hit (preserves ranking; runs after recency/authority rescore).",
     inputSchema: {
       type: "object",
       required: ["query"],
@@ -167,6 +167,29 @@ export const TOOLS = [
           default: false,
           description:
             "Phase 3 (D-08, ASM-08): when false (default), docs whose frontmatter has `status: superseded` are excluded at SQL level via the notes_status partial index. Set true to reveal them.",
+        },
+        // ── Phase 4 / 04-04 / GRA-03 (D-15): additive auto-expansion ──
+        // When omitted, search_hybrid behavior is byte-identical to v1.
+        expand: {
+          type: "object",
+          required: ["hops"],
+          description:
+            "Phase 4 (D-15, D-16): auto-attach 1–2 hop typed-edge neighbors as `expansions[]` per hit. Runs AFTER recency/authority rescore (D-16); never participates in score computation; top-K ranking unchanged.",
+          properties: {
+            hops: { type: "number", enum: [1, 2] },
+            direction: {
+              type: "string",
+              enum: ["forward", "backward", "both"],
+              default: "both",
+            },
+            edge_types: {
+              type: "array",
+              items: {
+                type: "string",
+                enum: ["wikilink", "mention", "frontmatter-ref", "hyperlink"],
+              },
+            },
+          },
         },
       },
     },
@@ -905,6 +928,21 @@ export const TOOL_SCHEMAS = {
     authority_weight: z.number().optional().default(0),
     half_life_days: z.number().positive().optional().default(30),
     include_superseded: z.boolean().optional().default(false),
+    // ── Phase 4 / 04-04 / GRA-03 (D-15): additive auto-expansion ──
+    // Nested under a single optional `expand` object per D-15. When
+    // omitted, hybridSearch behavior is byte-identical to v1 (the
+    // guard `if (opts.expand && opts.expandDeps && ...)` at the end of
+    // `src/search/hybrid.ts` short-circuits entirely). The literal-
+    // union for `hops` enforces the D-05 hop cap at the boundary.
+    expand: z
+      .object({
+        hops: z.union([z.literal(1), z.literal(2)]),
+        direction: z.enum(["forward", "backward", "both"]).optional(),
+        edge_types: z
+          .array(z.enum(["wikilink", "mention", "frontmatter-ref", "hyperlink"]))
+          .optional(),
+      })
+      .optional(),
   },
 
   list_backlinks: {
