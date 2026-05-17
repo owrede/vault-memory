@@ -8,29 +8,32 @@ import { describe, expect, it } from "vitest";
 import { TOOLS, TOOL_SCHEMAS, buildToolSchema, type ToolName } from "./tool-registry.js";
 
 describe("TOOLS array", () => {
-  it("has exactly 29 entries (23 v1 + 02-04 record_observation + supersede + 02-05 recall + 03-02 get_outline + 03-03 search_sections + 03-06 assemble_dossier)", () => {
-    expect(TOOLS).toHaveLength(29);
+  it("has exactly 30 entries (23 v1 + 02-04 record_observation + supersede + 02-05 recall + 03-02 get_outline + 03-03 search_sections + 03-04 get_document_bundle + 03-06 assemble_dossier)", () => {
+    expect(TOOLS).toHaveLength(30);
   });
 
-  it("includes record_observation, supersede, recall, get_outline, search_sections, and assemble_dossier with non-empty descriptions", () => {
+  it("includes record_observation, supersede, recall, get_outline, search_sections, get_document_bundle, and assemble_dossier with non-empty descriptions", () => {
     const byName = new Map(TOOLS.map((t) => [t.name, t]));
     const ro = byName.get("record_observation");
     const sup = byName.get("supersede");
     const rc = byName.get("recall");
     const ss = byName.get("search_sections");
     const go = byName.get("get_outline");
+    const gb = byName.get("get_document_bundle");
     const ad = byName.get("assemble_dossier");
     expect(ro).toBeDefined();
     expect(sup).toBeDefined();
     expect(rc).toBeDefined();
     expect(ss).toBeDefined();
     expect(go).toBeDefined();
+    expect(gb).toBeDefined();
     expect(ad).toBeDefined();
     expect((ro?.description ?? "").length).toBeGreaterThan(0);
     expect((sup?.description ?? "").length).toBeGreaterThan(0);
     expect((rc?.description ?? "").length).toBeGreaterThan(0);
     expect((ss?.description ?? "").length).toBeGreaterThan(0);
     expect((go?.description ?? "").length).toBeGreaterThan(0);
+    expect((gb?.description ?? "").length).toBeGreaterThan(0);
     expect((ad?.description ?? "").length).toBeGreaterThan(0);
   });
 
