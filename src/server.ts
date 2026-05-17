@@ -25,7 +25,9 @@ import { OllamaReranker, OnnxReranker } from "./rerank/index.js";
 import type { Reranker } from "./rerank/index.js";
 import { homedir } from "node:os";
 import { join as joinPath } from "node:path";
-import { listBacklinks, listForwardLinks, findBrokenLinks } from "./graph/index.js";
+import { expand, listBacklinks, listForwardLinks, findBrokenLinks } from "./graph/index.js";
+import type { ExpandDirection, ExpandOptions } from "./graph/index.js";
+import type { EdgeType } from "./db/queries/edges.js";
 import { queryFrontmatter, updateFrontmatter } from "./frontmatter/index.js";
 import { suggestFrontmatter } from "./schema/index.js";
 import { ObsidianFsDelivery } from "./adapters/delivery/obsidian-fs/index.js";
@@ -64,7 +66,12 @@ import {
 } from "./indexer/index.js";
 import type { Document, SearchHit, WikilinkRef } from "./types.js";
 import { TOOL_SCHEMAS, TOOLS, buildToolSchema, type ToolName } from "./tool-registry.js";
-import { AdapterRegistry, formatDocId, parseSourceHandle } from "./adapters/registry.js";
+import {
+  AdapterRegistry,
+  formatDocId,
+  parseDocId,
+  parseSourceHandle,
+} from "./adapters/registry.js";
 import { ObsidianFsSource } from "./adapters/source/obsidian-fs/index.js";
 
 const VERSION = "1.0.0";
@@ -817,6 +824,41 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
             ),
         },
         p,
+      );
+    },
+
+    // ── Phase 4 graph tools (Plan 04-03 / GRA-01) ─────────────────────────
+    expand: async (a) => {
+      const p = a as {
+        seed_doc_ids: string[];
+        hops: 1 | 2;
+        direction: ExpandDirection;
+        edge_types?: EdgeType[];
+        filter_properties?: Record<string, unknown>;
+        include_superseded: boolean;
+      };
+      // Cast incoming validated DocId strings to the branded DocId
+      // type via parseDocId; Zod already enforced DOC_ID_PATTERN at
+      // the boundary so this is a no-op brand cast at runtime.
+      const seeds = p.seed_doc_ids.map((s) => parseDocId(s));
+      return expand(
+        {
+          manager,
+          sourceConnectorFor: (vaultName) =>
+            adapterRegistry.resolveSource(
+              parseSourceHandle(`obsidian-fs://${vaultName}`),
+            ),
+        },
+        {
+          seed_doc_ids: seeds,
+          hops: p.hops,
+          direction: p.direction,
+          ...(p.edge_types !== undefined ? { edge_types: p.edge_types } : {}),
+          ...(p.filter_properties !== undefined
+            ? { filter_properties: p.filter_properties }
+            : {}),
+          include_superseded: p.include_superseded,
+        } satisfies ExpandOptions,
       );
     },
 

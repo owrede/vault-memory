@@ -722,6 +722,71 @@ export const TOOLS = [
       },
     },
   },
+  // ── Phase 4 graph tools (Plan 04-03 / GRA-01) ───────────────────────────
+  {
+    name: "expand",
+    description:
+      "Typed-edge BFS retrieval. Returns the typed-edge neighborhood of one or more " +
+      "seed documents as a flat array of citation packets, each carrying " +
+      "`via: {seed_doc_id, hop, edge_type, direction}` provenance. Hops hard-capped " +
+      "at 2 (v2.0.0). Default direction = 'both'. Filterable by edge_type and by " +
+      "document properties (strict equality, no operators). Memory-sink documents " +
+      "(`_memory/...`) surface only when they are already linked from a user note in " +
+      "the result set (per ADR-004 memory-namespace opacity rule). Frontmatter-ref " +
+      "edges are extracted heuristically: `[[...]]` syntax in any property value OR " +
+      "allowlisted property names (`assignee`, `owner`, `project`, `related`, " +
+      "`parent`, `child`, `attendees`, `superseded_by`) matched against " +
+      "`note_aliases`. `include_superseded` defaults to false (Phase 2 D-03 forward-" +
+      "only supersede). Unknown seed_doc_ids do not throw — they are returned in a " +
+      "`warnings: [{seed_doc_id, reason: 'unknown_doc'}]` array. Shortest path wins " +
+      "on dedup; ties broken by (seed_doc_id, edge_type, direction).",
+    inputSchema: {
+      type: "object",
+      required: ["seed_doc_ids", "hops"],
+      properties: {
+        seed_doc_ids: {
+          type: "array",
+          minItems: 1,
+          items: {
+            type: "string",
+            description: "Opaque DocId (e.g. obsidian-fs://<vault>/<path>).",
+          },
+        },
+        hops: {
+          type: "number",
+          enum: [1, 2],
+          description: "Hop cap (1 or 2). v2.0.0 hard-caps at 2.",
+        },
+        direction: {
+          type: "string",
+          enum: ["forward", "backward", "both"],
+          default: "both",
+          description: "Edge traversal direction; default 'both'.",
+        },
+        edge_types: {
+          type: "array",
+          items: {
+            type: "string",
+            enum: ["wikilink", "mention", "frontmatter-ref", "hyperlink"],
+          },
+          description:
+            "Optional filter on edge types; default = all four types.",
+        },
+        filter_properties: {
+          type: "object",
+          additionalProperties: true,
+          description:
+            "Strict-equality predicate on document properties (e.g. {type: 'Project'}).",
+        },
+        include_superseded: {
+          type: "boolean",
+          default: false,
+          description:
+            "When false (default), docs whose properties.status === 'superseded' are dropped.",
+        },
+      },
+    },
+  },
   // ── Phase 3 assembly tools (Plan 03-06) ──────────────────────────────────
   {
     name: "assemble_dossier",
@@ -1085,6 +1150,43 @@ export const TOOL_SCHEMAS = {
       .array(z.string().min(1))
       .optional()
       .describe("Optional vault filter; usually omitted (the DocId names a vault)"),
+  },
+
+  // ── Phase 4 graph tools (Plan 04-03 / GRA-01) ───────────────────────────
+  expand: {
+    seed_doc_ids: z
+      .array(z.string().regex(DOC_ID_PATTERN))
+      .min(1)
+      .describe(
+        "1+ opaque DocIds (e.g. obsidian-fs://<vault>/<path>) — seeds of the BFS.",
+      ),
+    // Hops hard-capped at 2 (D-05) via Zod literal union — `hops: 3`
+    // is rejected at the boundary; the controller does not clamp.
+    hops: z
+      .union([z.literal(1), z.literal(2)])
+      .describe("Hop cap (1 or 2). v2.0.0 hard-caps at 2."),
+    direction: z
+      .enum(["forward", "backward", "both"])
+      .optional()
+      .default("both")
+      .describe("Edge traversal direction; default 'both'."),
+    edge_types: z
+      .array(z.enum(["wikilink", "mention", "frontmatter-ref", "hyperlink"]))
+      .optional()
+      .describe("Optional filter on edge types; default = all four types."),
+    filter_properties: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .describe(
+        "Strict-equality predicate on document properties (e.g. {type: 'Project'}).",
+      ),
+    include_superseded: z
+      .boolean()
+      .optional()
+      .default(false)
+      .describe(
+        "When false (default), docs whose properties.status === 'superseded' are dropped.",
+      ),
   },
 
   // ── Phase 3 assembly tools (Plan 03-06) ─────────────────────────────────

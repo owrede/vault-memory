@@ -8,8 +8,8 @@ import { describe, expect, it } from "vitest";
 import { TOOLS, TOOL_SCHEMAS, buildToolSchema, type ToolName } from "./tool-registry.js";
 
 describe("TOOLS array", () => {
-  it("has exactly 30 entries (23 v1 + 02-04 record_observation + supersede + 02-05 recall + 03-02 get_outline + 03-03 search_sections + 03-04 get_document_bundle + 03-06 assemble_dossier)", () => {
-    expect(TOOLS).toHaveLength(30);
+  it("has exactly 31 entries (23 v1 + 02-04 record_observation + supersede + 02-05 recall + 03-02 get_outline + 03-03 search_sections + 03-04 get_document_bundle + 03-06 assemble_dossier + 04-03 expand)", () => {
+    expect(TOOLS).toHaveLength(31);
   });
 
   it("includes record_observation, supersede, recall, get_outline, search_sections, get_document_bundle, and assemble_dossier with non-empty descriptions", () => {

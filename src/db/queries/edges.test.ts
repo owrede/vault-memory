@@ -460,6 +460,93 @@ describe("EdgesQueries / migration 011", () => {
       });
     });
 
+    // ── Phase 4 / 04-03 (GRA-01 / D-08): edge-type filter ────────────────
+    //
+    // Tests 20–21 from the plan §<behavior>: the optional `edgeTypes`
+    // filter narrows the result to the listed types. The filter is
+    // passed through parameterized placeholders in an IN-clause;
+    // EdgeType is a closed Zod-validated union (T-04-03-04 mitigation).
+
+    it("getBacklinks(noteId, edgeTypes) filters to listed types only", () => {
+      const { a, b, c } = seedNotes(db);
+      // Two backlinks INTO b — one wikilink (from a), one mention (from c).
+      db.edges.insertBatch(a, [
+        {
+          targetNoteId: b,
+          targetPath: "b.md",
+          type: "wikilink",
+          rel: null,
+          anchor: null,
+          lineNumber: 1,
+        },
+      ]);
+      db.edges.insertBatch(c, [
+        {
+          targetNoteId: b,
+          targetPath: null,
+          type: "mention",
+          rel: null,
+          anchor: null,
+          lineNumber: 7,
+          linkText: null,
+        },
+      ]);
+      // No filter → both rows.
+      const all = db.edges.getBacklinks(b);
+      expect(all).toHaveLength(2);
+      // Wikilink-only filter → 1 row.
+      const wikiOnly = db.edges.getBacklinks(b, ["wikilink"]);
+      expect(wikiOnly).toHaveLength(1);
+      expect(wikiOnly[0]?.type).toBe("wikilink");
+      // Two-type filter → both rows.
+      const both = db.edges.getBacklinks(b, ["wikilink", "mention"]);
+      expect(both).toHaveLength(2);
+      // Mention-only filter → 1 row.
+      const mentionOnly = db.edges.getBacklinks(b, ["mention"]);
+      expect(mentionOnly).toHaveLength(1);
+      expect(mentionOnly[0]?.type).toBe("mention");
+      // Empty filter behaves like no filter.
+      const empty = db.edges.getBacklinks(b, []);
+      expect(empty).toHaveLength(2);
+    });
+
+    it("getForwardLinks(noteId, edgeTypes) filters; hyperlink rows preserve raw target_path", () => {
+      const { a, b } = seedNotes(db);
+      // a → b (wikilink, resolved), a → external URL (hyperlink, unresolved).
+      db.edges.insertBatch(a, [
+        {
+          targetNoteId: b,
+          targetPath: "b.md",
+          type: "wikilink",
+          rel: null,
+          anchor: null,
+          lineNumber: 1,
+        },
+        {
+          targetNoteId: null,
+          targetPath: "https://example.com",
+          type: "hyperlink",
+          rel: null,
+          anchor: null,
+          lineNumber: 5,
+        },
+      ]);
+      // No filter → both rows.
+      const all = db.edges.getForwardLinks(a);
+      expect(all).toHaveLength(2);
+      // Hyperlink-only filter → 1 row, raw URL in target_path,
+      // target_doc null (unresolved per Phase 4 D-09).
+      const hyperOnly = db.edges.getForwardLinks(a, ["hyperlink"]);
+      expect(hyperOnly).toHaveLength(1);
+      expect(hyperOnly[0]?.type).toBe("hyperlink");
+      expect(hyperOnly[0]?.targetPath).toBe("https://example.com");
+      expect(hyperOnly[0]?.targetNoteId).toBeNull();
+      // Wikilink-only filter → 1 row, resolved.
+      const wikiOnly = db.edges.getForwardLinks(a, ["wikilink"]);
+      expect(wikiOnly).toHaveLength(1);
+      expect(wikiOnly[0]?.targetNoteId).toBe(b);
+    });
+
     it("resolveBrokenLinks returns rows with target_doc IS NULL", () => {
       const { a } = seedNotes(db);
       db.edges.insertBatch(a, [
