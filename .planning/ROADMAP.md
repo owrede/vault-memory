@@ -14,7 +14,7 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
 - [x] **Phase 1: Adapter extraction & tech-debt-up** - Install adapter seams, bump MCP SDK 1.29 + Zod 4, conformance suite
 - [x] **Phase 2: Memory namespace & provenance contract** - Foundational safety invariant; labeled agent write-back via MemorySink
 - [x] **Phase 3: Bundles + authority/staleness** - Document-tree retrieval, citation packets, recency/authority weights (folded brief Phase 3+4)
-- [ ] **Phase 4: Graph-as-retrieval** - Typed-edge expansion and community clustering
+- [x] **Phase 4: Graph-as-retrieval** - Typed-edge expansion and community clustering (Complete 2026-05-17)
 - [ ] **Phase 5: Compiled brief layer** - Signature differentiator; briefs as documents with source-hash staleness daemon
 - [ ] **Phase 6: Task contract DSL** - YAML+Zod contracts; list/describe/instantiate via MCP
 - [ ] **Phase 7: Visual contract editor (Canvas)** - Obsidian Canvas ↔ YAML contract round-trip
@@ -114,16 +114,16 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
 - [x] 03-06-PLAN.md — `assemble_dossier` MCP tool (type+key resolution, alias path, property rollups)
 - [x] 03-07-PLAN.md — Conformance + source-neutrality proof + phase sign-off
 
-### Phase 4: Graph-as-retrieval
+### Phase 4: Graph-as-retrieval — COMPLETE (2026-05-17)
 **Goal**: Promote backlinks/forward links from navigation tools to retrieval expansion via typed-edge graph traversal and community clustering, enabling Phase 5 brief compilation to use graph-driven source discovery
 **Mode:** mvp
 **Depends on**: Phase 3
 **Requirements**: GRA-01, GRA-02, GRA-03, GRA-04, GRA-05
 **Success Criteria** (what must be TRUE):
-  1. `expand({seed_doc_ids, hops, edge_types?, filter_properties?})` returns typed-edge neighborhoods with metadata; `search_hybrid` accepts `expand: {hops: 1}` for auto-expansion of top-K results
-  2. `cluster({query | seed_doc_ids, method: "edge-community"})` produces deterministic cluster summaries per fixture; opt-in/feature-flagged if computation is slow
-  3. Edges carry an explicit `type` field per ADR-003 — schema supports `wikilink`, `frontmatter-ref`, `mention`, and `hyperlink` types
-  4. Eval fixture includes ≥5 "find me everything related to X" queries that are answered correctly by expansion (precision/recall ≥0.8)
+  1. `expand({seed_doc_ids, hops, edge_types?, filter_properties?})` returns typed-edge neighborhoods with metadata; `search_hybrid` accepts `expand: {hops: 1}` for auto-expansion of top-K results — **MET** (`expand` MCP tool shipped per plan 04-03 with shortest-path `via` dedup + `_memory/` opacity; `search_hybrid({expand: {hops, direction?, edge_types?}})` shipped per plan 04-04 as a strictly additive nested param; per-vault BFS isolation enforced at the `expand()` boundary; pinned by `src/graph/expand.integration.test.ts` + `src/search/hybrid-expand.integration.test.ts`)
+  2. `cluster({query | seed_doc_ids, method: "edge-community"})` produces deterministic cluster summaries per fixture; opt-in/feature-flagged if computation is slow — **MET** (`cluster` MCP tool shipped per plan 04-05 via `graphology` + `graphology-communities-louvain` + `seedrandom`; D-12 determinism enforced at three control points (lexicographic DocId sort + seeded `rng` + smallest-member `cluster_id`); 5000-node hard cap with `force: true` override; pinned by `_queries/cluster.yaml` byte-snapshot)
+  3. Edges carry an explicit `type` field per ADR-003 — schema supports `wikilink`, `frontmatter-ref`, `mention`, and `hyperlink` types — **MET** (migration 011 ships the `edges` table with `CHECK(type IN (...))` per plan 04-01; unified `extractAllEdges` extracts all four types in a single parse pass per plan 04-02; the v2.0.0-pinned `relation: "wikilink"` on assembly tools is now `relation: EdgeType`; `PHASE-4-WIDEN` markers retired)
+  4. Eval fixture includes ≥5 "find me everything related to X" queries that are answered correctly by expansion (precision/recall ≥0.8) — **MET** (`_queries/expand.yaml` ships 8 hand-curated queries covering all four edge types, mixed-type traversal at hops 1 and 2, `_memory/` opacity, and the unknown-seed warning path; all eight queries clear `min_precision >= 0.8 / min_recall >= 0.8`; plus 3 `_queries/search-hybrid-with-expand.yaml` composition queries; plus `_queries/cluster.yaml` determinism snapshot; plus 6 cross-adapter conformance cases — see `docs/v2/PHASE-4-SIGN-OFF.md`)
 **Plans**: 7 plans
 - [x] 04-01-edges-substrate-PLAN.md — migration 011 + EdgesQueries + Database wiring + v1 graph tools additive `type` (GRA-04 substrate)
 - [x] 04-02-edge-extractors-PLAN.md — indexer extracts mention/frontmatter-ref/hyperlink in a single per-note parse pass (GRA-04 indexer)
@@ -131,7 +131,7 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
 - [x] 04-04-search-hybrid-expand-PLAN.md — additive `search_hybrid({expand})` post-rescore attachment (GRA-03)
 - [x] 04-05-cluster-tool-PLAN.md — Louvain wrapper via graphology + seeded RNG + 5000-node hard cap + MCP tool (GRA-02)
 - [x] 04-06-evals-conformance-PLAN.md — `_queries/expand.yaml` + `cluster.yaml` + `search-hybrid-with-expand.yaml` + cross-adapter conformance (GRA-05)
-- [ ] 04-07-phase-gate-PLAN.md — tool-list snapshot regen + full eval + CHANGELOG + STATE + ROADMAP + sign-off doc
+- [x] 04-07-phase-gate-PLAN.md — tool-list snapshot regen + full eval + CHANGELOG + STATE + ROADMAP + sign-off doc
 
 ### Phase 5: Compiled brief layer
 **Goal**: Defeat the 85%-rediscovery failure mode by shipping compiled briefs as first-class `Document`s in `_memory/_briefs/` with deterministic source-hash staleness propagation — vault-memory's signature v2 differentiator
@@ -219,7 +219,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 →
 | 1. Adapter extraction & tech-debt-up | 0/TBD | Not started | - |
 | 2. Memory namespace & provenance contract | 16/16 | Complete   | 2026-05-15 |
 | 3. Bundles + authority/staleness | 0/TBD | Not started | - |
-| 4. Graph-as-retrieval | 6/7 | In Progress|  |
+| 4. Graph-as-retrieval | 7/7 | Complete   | 2026-05-17 |
 | 5. Compiled brief layer | 0/TBD | Not started | - |
 | 6. Task contract DSL | 0/TBD | Not started | - |
 | 7. Visual contract editor (Canvas) | 0/TBD | Not started | - |
