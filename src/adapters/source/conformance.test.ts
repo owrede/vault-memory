@@ -22,6 +22,8 @@ import {
   ALICE_DOC_ID,
   ATLAS_0_DOC_ID,
   LONG_DOC_ID,
+  MEMORY_INNER_DOC_ID,
+  MEMORY_OUTER_DOC_ID,
   blocksToMarkdown,
   makeAssemblyStubDocs,
 } from "../stub/assembly-fixture.js";
@@ -39,6 +41,7 @@ import { chunkNote } from "../../chunker/index.js";
 import { Database } from "../../db/index.js";
 import { WikilinkResolver } from "../../indexer/resolver.js";
 import { buildSectionsForNote } from "../../indexer/indexer.js";
+import { extractAllEdges } from "../../indexer/extract-edges.js";
 import { VaultManager, type Vault } from "../../vault/index.js";
 import { assembleDossier } from "../../assembly/dossier.js";
 import { getOutline } from "../../assembly/outline.js";
@@ -354,6 +357,28 @@ interface AssemblyHarness {
   searchSectionsQuery: string;
   searchSectionsAnchorHeading: string;
   cleanup: () => void;
+  /**
+   * Phase 4 / 04-06 / Task 5 — adapter-specific seed for the new
+   * graph-tool conformance cases. The seed must be a non-memory doc
+   * that has at least one outbound typed edge in the adapter's graph.
+   */
+  graphSeedDocId: string;
+  /**
+   * Optional: a `_memory/...` DocId whose ONLY inbound BFS edge is
+   * from another `_memory/...` doc. When set, the Phase 4 conformance
+   * `_memory` opacity case asserts this DocId does NOT surface in a
+   * 2-hop expand from `graphSeedDocId`. When omitted (e.g. the
+   * Atlas Robotics fixture has no memory→memory chain), the opacity
+   * case is treated as trivially satisfied for this adapter.
+   */
+  occludedMemoryDocId?: string;
+  /**
+   * Optional: a `_memory/...` DocId reachable from the graphSeedDocId
+   * in 1 hop, with a non-memory inbound source. When set, the Phase 4
+   * conformance `_memory` opacity case asserts this DocId DOES surface
+   * (the rule only blocks memory→memory chains, not user→memory).
+   */
+  reachableMemoryDocId?: string;
 }
 
 /**
@@ -417,35 +442,46 @@ async function buildObsidianFsAssemblyHarness(): Promise<AssemblyHarness> {
     }
   }
 
-  // Pass 2 — resolve wikilinks against the populated notes table.
+  // Plan 04-06 / Task 5 — synthesize slug + title aliases for every
+  // `people/<slug>.md` note so the frontmatter-ref Rule (b) resolver
+  // and the mention extractor's candidate set have entries to match
+  // against. See `src/graph/__test_helpers__/atlas-live-fixture.ts`
+  // for the same pattern (test-only; on-disk fixture unchanged).
+  {
+    const personRows = vault.db.handle
+      .prepare(`SELECT id, path, title FROM notes WHERE path LIKE 'people/%'`)
+      .all() as Array<{ id: number; path: string; title: string }>;
+    for (const row of personRows) {
+      const existing = vault.db.aliases.listForNote(row.id);
+      const slug = row.path.replace(/^people\//, "").replace(/\.md$/, "");
+      const merged = new Set<string>([...existing, slug, row.title]);
+      vault.db.aliases.setForNote(row.id, [...merged]);
+    }
+  }
+
+  // Pass 2 — resolve wikilinks against the populated notes table and
+  // run the unified extractor for the full Phase 4 edge mix.
   const resolver = new WikilinkResolver(vault);
   for (const p of parsed) {
     const sourceId = noteIdByPath.get(p.relativePath);
-    if (sourceId === undefined || p.wikilinks.length === 0) continue;
-    const wikilinkInputs = p.wikilinks.map((wl) => {
-      const hit = resolver.resolve(wl.normalizedTarget);
-      return {
-        targetPath: hit?.path ?? wl.normalizedTarget,
-        targetNoteId: hit?.id ?? null,
-        linkText: wl.rawTarget,
-        anchor: wl.anchor,
-        lineNumber: wl.line,
-      };
-    });
-    vault.db.wikilinks.insertBatch(sourceId, wikilinkInputs);
-    // Phase 4 / 04-01 (D-01): dual-write into `edges`.
-    vault.db.edges.insertBatch(
-      sourceId,
-      wikilinkInputs.map((wl) => ({
-        targetNoteId: wl.targetNoteId,
-        targetPath: wl.targetPath,
-        type: "wikilink" as const,
-        rel: null,
-        anchor: wl.anchor,
-        lineNumber: wl.lineNumber,
-        linkText: wl.linkText,
-      })),
-    );
+    if (sourceId === undefined) continue;
+    if (p.wikilinks.length > 0) {
+      const wikilinkInputs = p.wikilinks.map((wl) => {
+        const hit = resolver.resolve(wl.normalizedTarget);
+        return {
+          targetPath: hit?.path ?? wl.normalizedTarget,
+          targetNoteId: hit?.id ?? null,
+          linkText: wl.rawTarget,
+          anchor: wl.anchor,
+          lineNumber: wl.line,
+        };
+      });
+      vault.db.wikilinks.insertBatch(sourceId, wikilinkInputs);
+    }
+    // Phase 4 / 04-06: write the full typed-edge mix (wikilink +
+    // mention + frontmatter-ref + hyperlink) into `edges`.
+    const edges = extractAllEdges(vault, p, resolver);
+    if (edges.length > 0) vault.db.edges.insertBatch(sourceId, edges);
   }
 
   // SourceConnector wiring — production pattern.
@@ -466,6 +502,13 @@ async function buildObsidianFsAssemblyHarness(): Promise<AssemblyHarness> {
     aliasKey: "Alice C.",
     searchSectionsQuery: "reliability",
     searchSectionsAnchorHeading: "Atlas-1 Reliability Program",
+    // Plan 04-06 / Task 5 — Alice has both inbound + outbound edges of
+    // multiple types across the Atlas Robotics fixture; she's the
+    // canonical Phase 4 seed.
+    graphSeedDocId: `obsidian-fs://${VAULT_NAME}/people/alice-chen.md`,
+    // Atlas Robotics has no memory→memory chain (no _memory doc whose
+    // only inbound edge is from another _memory doc). The opacity
+    // assertion is trivially satisfied for this adapter.
     cleanup: () => db.close(),
   };
 }
@@ -535,38 +578,51 @@ function buildStubAssemblyHarness(): AssemblyHarness {
     }
   }
 
-  // Pass 2 — wikilinks (v2.0.0 dossier backlink source). Only edges
-  // with `type === "wikilink"` populate the v1 wikilinks table.
+  // Pass 2 — wikilinks (v2.0.0 dossier backlink source) AND the full
+  // Phase 4 typed-edge mix (wikilink + mention + frontmatter-ref +
+  // hyperlink). The wikilinks v1 table is the dossier's backlink
+  // source; the `edges` table is what expand() / cluster() read.
   for (const d of docs) {
     const sourceId = noteIdByPath.get(pathForDoc(d.id));
     if (sourceId === undefined) continue;
+    if (d.links.length === 0) continue;
+
+    // ── v1 wikilinks (dossier source) ────────────────────────────────
     const wikilinkEdges = d.links.filter((e) => e.type === "wikilink");
-    if (wikilinkEdges.length === 0) continue;
-    const wikilinkInputs = wikilinkEdges.map((e) => {
+    if (wikilinkEdges.length > 0) {
+      const wikilinkInputs = wikilinkEdges.map((e) => {
+        const targetPath = pathForDoc(String(e.target));
+        const targetId = noteIdByPath.get(targetPath);
+        return {
+          targetPath,
+          targetNoteId: targetId ?? null,
+          linkText: targetPath,
+          anchor: null,
+          lineNumber: null,
+        };
+      });
+      vault.db.wikilinks.insertBatch(sourceId, wikilinkInputs);
+    }
+
+    // ── Phase 4 typed-edge writes (all four edge types) ──────────────
+    // Mirrors `extractAllEdges` output shape but pulled directly from
+    // the stub fixture's hand-curated `Document.links` array. Stub
+    // documents already carry the type tag on each link entry, so
+    // there's no extraction pass — just a structural reshape.
+    const edgeInputs = d.links.map((e) => {
       const targetPath = pathForDoc(String(e.target));
       const targetId = noteIdByPath.get(targetPath);
       return {
-        targetPath,
         targetNoteId: targetId ?? null,
-        linkText: targetPath,
+        targetPath,
+        type: e.type,
+        rel: null,
         anchor: null,
         lineNumber: null,
+        linkText: null,
       };
     });
-    vault.db.wikilinks.insertBatch(sourceId, wikilinkInputs);
-    // Phase 4 / 04-01 (D-01): dual-write into `edges`.
-    vault.db.edges.insertBatch(
-      sourceId,
-      wikilinkInputs.map((wl) => ({
-        targetNoteId: wl.targetNoteId,
-        targetPath: wl.targetPath,
-        type: "wikilink" as const,
-        rel: null,
-        anchor: wl.anchor,
-        lineNumber: wl.lineNumber,
-        linkText: wl.linkText,
-      })),
-    );
+    vault.db.edges.insertBatch(sourceId, edgeInputs);
   }
 
   const adapterRegistry = new AdapterRegistry();
@@ -585,6 +641,13 @@ function buildStubAssemblyHarness(): AssemblyHarness {
     // text becomes the heading_path leaf the conformance test pins.
     searchSectionsQuery: "Working style",
     searchSectionsAnchorHeading: "Working style",
+    // Plan 04-06 / Task 5 — Alice is the stub graph seed.
+    graphSeedDocId: ALICE_DOC_ID,
+    // Plan 04-06: Alice → MEMORY_OUTER (1-hop wikilink) → MEMORY_INNER
+    // (2-hop wikilink). MEMORY_OUTER surfaces (non-memory inbound:
+    // Alice); MEMORY_INNER is occluded (memory→memory inbound).
+    reachableMemoryDocId: MEMORY_OUTER_DOC_ID,
+    occludedMemoryDocId: MEMORY_INNER_DOC_ID,
     cleanup: () => db.close(),
   };
 }
@@ -856,6 +919,122 @@ describe.each(assemblyAdapters)("Assembly tools — $name", (adapterCase) => {
       }
       expect(typeof linked.properties).toBe("object");
       expect(linked.properties).not.toBeNull();
+    }
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 4 / 04-06 / Task 5 — Source-neutrality conformance for the new
+// graph tools `expand()` + `cluster()`.
+//
+// Per RESEARCH §"Stub-adapter coverage extension" + Plan 04-06 §<action>:
+//   - Case 1 (expand): A small seed → expand returns expected typed-edge
+//     neighbors with `via.edge_type` drawn from the four-element EdgeType
+//     union, and at least one expansion appears for each adapter's
+//     dominant edge type. P/R thresholds are NOT exercised here — those
+//     live in expand.yaml against obsidian-fs only. This case asserts
+//     SHAPE-PARITY across adapters.
+//   - Case 2 (cluster determinism): Two consecutive cluster() calls
+//     against the same fixture produce byte-identical output (cluster_id
+//     + member_doc_ids per cluster). D-12 step 3 in-process determinism.
+//   - Case 3 (_memory opacity): When the harness declares an
+//     `occludedMemoryDocId` (memory→memory chain), a 2-hop expand from
+//     `graphSeedDocId` must NOT surface it. When the harness declares a
+//     `reachableMemoryDocId` (user→memory inbound), the same expand MUST
+//     surface it. Adapters whose fixture has no memory→memory chain
+//     skip the occlusion assertion (trivially-true), but the reachability
+//     assertion still fires when applicable.
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe.each(assemblyAdapters)("Phase 4 graph tools — $name", (adapterCase) => {
+  let h: AssemblyHarness;
+
+  beforeAll(async () => {
+    h = await adapterCase.build();
+  });
+
+  it("1. expand() returns neighbors with valid via.edge_type values", async () => {
+    const { expand } = await import("../../graph/expand.js");
+    const res = await expand(
+      { manager: h.manager, sourceConnectorFor: h.sourceConnectorFor },
+      {
+        seed_doc_ids: [parseDocId(h.graphSeedDocId)],
+        hops: 1,
+      },
+    );
+    expect(res.warnings).toEqual([]);
+    expect(res.documents.length).toBeGreaterThan(0);
+    const validTypes = new Set(["wikilink", "mention", "frontmatter-ref", "hyperlink"]);
+    for (const doc of res.documents) {
+      expect(validTypes.has(doc.via.edge_type)).toBe(true);
+      expect(doc.via.hop).toBe(1);
+      expect(doc.via.seed_doc_id).toBe(h.graphSeedDocId);
+      // Every expansion carries the full CitationPacketWithVia floor.
+      expect(typeof doc.doc_id).toBe("string");
+      expect(typeof doc.title).toBe("string");
+      expect(typeof doc.hash).toBe("string");
+      expect(typeof doc.properties).toBe("object");
+      expect(doc.properties).not.toBeNull();
+    }
+  });
+
+  it("2. cluster() is deterministic in-process — two calls produce identical output (D-12)", async () => {
+    const { cluster } = await import("../../graph/cluster.js");
+    const opts = {
+      method: "edge-community" as const,
+      seed_doc_ids: [parseDocId(h.graphSeedDocId)],
+    };
+    const deps = {
+      manager: h.manager,
+      sourceConnectorFor: h.sourceConnectorFor,
+      hybridSearch: async () => [],
+    };
+    const a = await cluster(deps, opts);
+    const b = await cluster(deps, opts);
+    expect(a.ok).toBe(true);
+    expect(b.ok).toBe(true);
+    if (!a.ok || !b.ok) return;
+    expect(a.node_count).toBe(b.node_count);
+    const normalize = (
+      r: typeof a,
+    ): Array<{ cluster_id: string; member_doc_ids: string[] }> =>
+      r.clusters.map((c) => ({
+        cluster_id: String(c.cluster_id),
+        member_doc_ids: c.members.map((m) => String(m.doc_id)).sort(),
+      }));
+    expect(normalize(a)).toEqual(normalize(b));
+  });
+
+  it("3. expand() honors the _memory opacity rule (ADR-004)", async () => {
+    const { expand } = await import("../../graph/expand.js");
+    // 2-hop bidirectional from the graph seed.
+    const res = await expand(
+      { manager: h.manager, sourceConnectorFor: h.sourceConnectorFor },
+      {
+        seed_doc_ids: [parseDocId(h.graphSeedDocId)],
+        hops: 2,
+      },
+    );
+    const surfacedDocIds = new Set(res.documents.map((d) => String(d.doc_id)));
+
+    // (a) Occluded `_memory` doc — when the harness declares one, it
+    // MUST NOT appear in the results. Memory→memory chains are
+    // sacrosanct per ADR-004.
+    if (h.occludedMemoryDocId !== undefined) {
+      expect(
+        surfacedDocIds.has(h.occludedMemoryDocId),
+        `_memory opacity rule violated: ${h.occludedMemoryDocId} reached via memory→memory chain`,
+      ).toBe(false);
+    }
+
+    // (b) User-linked `_memory` doc — when the harness declares one,
+    // it MUST appear (user→memory inbound is the SAFE case per
+    // ADR-004; the opacity rule only blocks memory→memory traversal).
+    if (h.reachableMemoryDocId !== undefined) {
+      expect(
+        surfacedDocIds.has(h.reachableMemoryDocId),
+        `${h.reachableMemoryDocId} should surface — it has a non-memory inbound source`,
+      ).toBe(true);
     }
   });
 });

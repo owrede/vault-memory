@@ -40,7 +40,15 @@ check() {
 
   # -a: treat as text (some src files contain UTF-8 em-dash, which BSD grep /
   # ugrep flag as binary and would silently skip without -a).
-  raw=$(grep -arEn "$pattern" src --include='*.ts' --exclude='*.test.ts' 2>/dev/null || true)
+  # --exclude-dir: also skip `__test_helpers__/` (jest-convention dir for
+  # test-only fixture builders that legitimately import raw FS — they
+  # never end up in the production bundle; their imports are part of
+  # test setup, not the seam).
+  raw=$(grep -arEn "$pattern" src \
+    --include='*.ts' \
+    --exclude='*.test.ts' \
+    --exclude-dir='__test_helpers__' \
+    2>/dev/null || true)
   hits=$(printf '%s\n' "$raw" \
     | grep -vE "^$allowed_prefix" \
     | grep -vF "$ESCAPE_MARK" \
