@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: release
-status: phase_planned
-stopped_at: Phase 4 context gathered
-last_updated: "2026-05-17T18:16:05.325Z"
-last_activity: 2026-05-17 -- Phase 04 execution started
+status: phase_complete
+stopped_at: Phase 4 complete
+last_updated: "2026-05-17T22:30:00.000Z"
+last_activity: 2026-05-17 -- Phase 04 complete; sign-off doc + tool-list regen
 progress:
   total_phases: 10
-  completed_phases: 4
-  total_plans: 44
-  completed_plans: 44
-  percent: 40
+  completed_phases: 5
+  total_plans: 51
+  completed_plans: 51
+  percent: 50
 ---
 
 # Project State
@@ -21,15 +21,32 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-14)
 
 **Core value:** Local-first, source-agnostic-ready, agentic knowledge layer over your Obsidian notes — with the memory namespace as a non-negotiable safety invariant.
-**Current focus:** Phase 04 — graph-as-retrieval
+**Current focus:** Phase 05 — compiled brief layer (next)
 
 ## Current Position
 
-Phase: 04 (graph-as-retrieval) — EXECUTING
-Plan: 1 of 7
-Plans: 7 implementation slices, all signed off. Phase 3 sign-off doc at `docs/v2/PHASE-3-SIGN-OFF.md`.
+Phase: 04 (graph-as-retrieval) — COMPLETE (2026-05-17)
+Plan: 7 of 7 (all complete)
+Plans: 7 implementation slices, all signed off. Phase 4 sign-off doc at `docs/v2/PHASE-4-SIGN-OFF.md`.
 
-Phase 3 ships:
+Phase 4 ships:
+
+- 2 new MCP tools: `expand` (typed-edge BFS), `cluster` (Louvain communities, deterministic)
+- Additive `search_hybrid({expand})` nested param — auto-attaches per-hit typed-edge neighbors as `expansions[]`; ranking unchanged
+- Typed-edge storage substrate: `edges` table with 4 edge types (`wikilink`, `mention`, `frontmatter-ref`, `hyperlink`), migration 011 + chunked backfill from v1 `wikilinks`
+- Unified indexer extractor — all four edge types in a single per-note parse pass; `MIN_MENTION_LEN=4` empirically validated (0 raw FPs / 62 notes)
+- Graph result rows widen from `relation: "wikilink"` to `relation: EdgeType` (additive); Phase 3 `PHASE-4-WIDEN` markers retired
+- Strict-equality tool-list snapshot test re-enabled after Plan 04-03 deferral
+- 1211 tests passing (was 1076 at Phase 3 sign-off; +135 net Phase 4)
+- Tool surface 30 → 32 (additive only; 23 v1 + 7 Phase 3 entries content-identical)
+- 3 new deps (Phase 4 plan 04-05): `graphology`, `graphology-communities-louvain`, `seedrandom` — all pure-JS ESM MIT, provenance-verified; bundle 376KB → 392KB
+
+Next: `/gsd-plan-phase 5` — Compiled brief layer (BRF-01..BRF-11).
+Last activity: 2026-05-17 -- Phase 04 complete; sign-off doc + tool-list regen
+
+---
+
+Phase 3 (kept for context, completed 2026-05-17):
 
 - 4 new MCP tools: `get_outline`, `search_sections`, `get_document_bundle`, `assemble_dossier`
 - Additive `search_hybrid` rescore signals (recency, authority, superseded filter)
@@ -41,7 +58,7 @@ Phase 3 ships:
 Next: `/gsd-plan-phase 4` — Graph-as-retrieval (GRA-01..GRA-05).
 Last activity: 2026-05-17 -- Phase 04 execution started
 
-Progress: [████████████░░░░░░░░] 40%
+Progress: [██████████████░░░░░░] 50%
 
 ## Performance Metrics
 
@@ -71,6 +88,12 @@ Progress: [████████████░░░░░░░░] 40%
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
+- Phase 4 D-01: `wikilinks` table preserved alongside new `edges` table for v1 invariance; v3 cleanup will drop the v1 table once no v1 tool reads from it
+- Phase 4 D-12: Louvain determinism enforced at three control points — lexicographic DocId sort before node insertion + `seedrandom('vault-memory-cluster-v1')` rng + `cluster_id = smallest member DocId`. Snapshot-pinned in `_queries/cluster.yaml`
+- Phase 4 D-15: `search_hybrid({expand})` is a strictly additive nested param — guard-and-short-circuit composition keeps v1-baseline byte-identical when omitted; expansion runs AFTER rescore (D-16) and never participates in score
+- Phase 4 D-16: `_memory/` opacity rule enforced at hydration time in `expand()` via visited-map check; O(1) per candidate; memory-sink docs surface only when transitively reachable from a user-note seed
+- Phase 4 A1 (validated): `MIN_MENTION_LEN = 4` produces 0 raw FPs over 62 Atlas-Robotics notes — trip-wire (≤3 FPs/note) satisfied with very wide margin; no bump to 5 needed
+- Phase 4 A4 (validated): library-source read of `graphology-communities-louvain@2.0.2` confirms `randomWalk: true + rng` covers all Louvain entropy sources (randomized node-visit order + random-walk-based reassignment)
 - Roadmap: Fold brief's Phase 4 (authority/staleness) into Phase 3 (bundles) — shared result shape
 - Roadmap: Insert Phase 9 as hard premise-check gate before any v3 Notion work
 - Roadmap: Defer brief's Phase 10 (Notion connector) to v3.0.0 — listed as deferred milestone, not active phase

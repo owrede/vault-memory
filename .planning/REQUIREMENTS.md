@@ -76,11 +76,11 @@ Requirements for the v2.0.0 release of vault-memory. Each maps to a roadmap phas
 
 ### Graph-as-Retrieval (Phase 4 — moved before brief layer)
 
-- [ ] **GRA-01**: `expand({seed_doc_ids, hops: 1|2, edge_types?, filter_properties?})` MCP tool — typed-edge neighborhood with metadata
-- [ ] **GRA-02**: `cluster({query | seed_doc_ids, method: "edge-community"})` MCP tool — community detection on typed edge graph; cluster summaries; deterministic per fixture; opt-in/feature-flagged if slow
-- [ ] **GRA-03**: `search_hybrid` accepts `expand: {hops: 1}` for auto-expansion of top-K results
-- [ ] **GRA-04**: Edges carry explicit `type` field per ADR-003 — schema supports `wikilink`, `frontmatter-ref`, `mention`, `hyperlink`
-- [ ] **GRA-05**: Eval fixture includes ≥5 "find me everything related to X" queries answered with expansion
+- [x] **GRA-01**: `expand({seed_doc_ids, hops: 1|2, edge_types?, filter_properties?})` MCP tool — typed-edge neighborhood with metadata
+- [x] **GRA-02**: `cluster({query | seed_doc_ids, method: "edge-community"})` MCP tool — community detection on typed edge graph; cluster summaries; deterministic per fixture; opt-in/feature-flagged if slow
+- [x] **GRA-03**: `search_hybrid` accepts `expand: {hops: 1}` for auto-expansion of top-K results
+- [x] **GRA-04**: Edges carry explicit `type` field per ADR-003 — schema supports `wikilink`, `frontmatter-ref`, `mention`, `hyperlink`
+- [x] **GRA-05**: Eval fixture includes ≥5 "find me everything related to X" queries answered with expansion
 
 ### Compiled Briefs (Phase 5 — signature differentiator)
 
@@ -201,7 +201,7 @@ Phase mapping (sequential numbering 0–9; brief's Phase 4 folded into Phase 3; 
 | ADP-01 to ADP-15 | Phase 1 | Pending |
 | MEM-01 to MEM-12 | Phase 2 | Complete |
 | ASM-01 to ASM-13 | Phase 3 | Pending |
-| GRA-01 to GRA-05 | Phase 4 | Pending |
+| GRA-01 to GRA-05 | Phase 4 | Complete (2026-05-17 — docs/v2/PHASE-4-SIGN-OFF.md) |
 | BRF-01 to BRF-11 | Phase 5 | Pending |
 | CON-01 to CON-12 | Phase 6 | Pending |
 | CAN-01 to CAN-09 | Phase 7 | Pending |
