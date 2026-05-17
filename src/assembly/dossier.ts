@@ -201,13 +201,32 @@ function readAliases(props: Record<string, unknown>): string[] {
 }
 
 /**
- * Extract the canonical doc-string identity for a `NoteRow`: the
- * `obsidian-fs://<vault>/<path>` URI. This is used both for the
- * deterministic tiebreak (lex-sort) and for the eventual
- * `SourceConnector.readDocument(docId)` call.
+ * Sort-key string for the deterministic tiebreak. NOT a real DocId —
+ * just a stable, vault-scoped, lex-orderable identifier used inside
+ * `findAnchorCandidate` / `findAnchorAcrossVaults`. The scheme prefix
+ * is fixed at `"vault"` so the sort key is identical across adapters
+ * (sort order is the contract, not the prefix). The actual minted
+ * DocId for `readDocument` is derived from the resolving adapter's
+ * scheme — see `schemeFromSource` and the call sites in
+ * `assembleDossier`.
  */
-function noteDocIdString(vaultName: string, notePath: string): string {
-  return `obsidian-fs://${vaultName}/${notePath}`;
+function noteSortKey(vaultName: string, notePath: string): string {
+  return `vault://${vaultName}/${notePath}`;
+}
+
+/**
+ * Extract the scheme portion of a SourceConnector.handle (e.g.
+ * `"obsidian-fs"` from `"obsidian-fs://my-vault"`). Used to mint
+ * adapter-correct DocIds in `assembleDossier` per ASM-12 source-
+ * neutrality (Phase 3 / 03-07): the stub adapter publishes
+ * `stub://memory` and dossier MUST construct linked-document DocIds
+ * with the matching scheme so `StubSource.readDocument(id)` resolves.
+ * Pre-03-07 the scheme was hardcoded to `"obsidian-fs"` which silently
+ * broke non-Obsidian adapters.
+ */
+function schemeFromSource(source: SourceConnector): string {
+  const parts = source.handle.split("://");
+  return parts[0] ?? "obsidian-fs";
 }
 
 // ─── candidate resolution (anchor) ──────────────────────────────────────────
@@ -265,7 +284,7 @@ function findAnchorCandidate(
       vaultName: vault.config.name,
       notePath: row.path,
       title: row.title,
-      sortKey: `${row.title} ${noteDocIdString(vault.config.name, row.path)}`,
+      sortKey: `${row.title} ${noteSortKey(vault.config.name, row.path)}`,
     });
   }
 
@@ -350,8 +369,12 @@ export async function assembleDossier(
   const anchorVault = vaults.find((v) => v.config.name === anchorCandidate.vaultName);
   if (anchorVault === undefined) return emptyResult(args);
   const anchorSource = deps.sourceConnectorFor(anchorCandidate.vaultName);
+  // ASM-12 source-neutrality: derive scheme from the resolving adapter's
+  // handle so non-Obsidian connectors (stub, future Notion) produce
+  // adapter-correct DocIds rather than always emitting 'obsidian-fs://'.
+  const anchorScheme = schemeFromSource(anchorSource);
   const anchorDocId = formatDocId(
-    "obsidian-fs",
+    anchorScheme,
     anchorCandidate.vaultName,
     anchorCandidate.notePath,
   );
@@ -388,7 +411,7 @@ export async function assembleDossier(
   const linkedDocuments: LinkedDocument[] = [];
   for (const bl of backlinkRows) {
     const linkedDocId = formatDocId(
-      "obsidian-fs",
+      anchorScheme,
       anchorCandidate.vaultName,
       bl.sourcePath,
     );

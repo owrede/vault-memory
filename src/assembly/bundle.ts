@@ -293,7 +293,7 @@ export async function getDocumentBundle(
   } catch {
     throw new DocNotFoundError(args.doc_id);
   }
-  const { authority: vaultName, resource: path } = parsed;
+  const { scheme: anchorScheme, authority: vaultName, resource: path } = parsed;
 
   // Optional vault-filter narrowing. The DocId already names a vault;
   // the filter exists for callers asserting a known tenant boundary.
@@ -360,7 +360,7 @@ export async function getDocumentBundle(
   // defensive posture as dossier + recall.
   const backlinks: BacklinkEntry[] = [];
   for (const bl of backlinkRows) {
-    const sourceDocId = formatDocId("obsidian-fs", vaultName, bl.sourcePath);
+    const sourceDocId = formatDocId(anchorScheme, vaultName, bl.sourcePath);
     let linkedDoc: Document;
     try {
       linkedDoc = await source.readDocument(sourceDocId);
@@ -395,7 +395,7 @@ export async function getDocumentBundle(
 
   const forward_links: ForwardLinkEntry[] = [];
   for (const fl of forwardLinkRows) {
-    const targetDocId = formatDocId("obsidian-fs", vaultName, fl.targetPath);
+    const targetDocId = formatDocId(anchorScheme, vaultName, fl.targetPath);
     let linkedDoc: Document;
     try {
       linkedDoc = await source.readDocument(targetDocId);
