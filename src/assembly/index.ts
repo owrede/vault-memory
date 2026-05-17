@@ -25,5 +25,15 @@ export type {
   DossierResult,
   LinkedDocument,
 } from "./dossier.js";
+export { getDocumentBundle } from "./bundle.js";
+export type {
+  BacklinkEntry,
+  BundleAnchor,
+  BundleRecentEdit,
+  BundleResult,
+  ForwardLinkEntry,
+  GetDocumentBundleArgs,
+  GetDocumentBundleDeps,
+} from "./bundle.js";
 export { getOutline, type GetOutlineDeps } from "./outline.js";
 export type { OutlineNode, OutlineResult, GetOutlineArgs } from "./types.js";

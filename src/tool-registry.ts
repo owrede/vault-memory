@@ -684,6 +684,44 @@ export const TOOLS = [
       },
     },
   },
+  // ── Phase 3 assembly tools (Plan 03-04 / ASM-01) ─────────────────────────
+  {
+    name: "get_document_bundle",
+    description:
+      "Document-tree retrieval. Returns a structured bundle for a single document: " +
+      "{ anchor (citation packet + optional status/superseded_by), outline (section tree " +
+      "via buildOutlineTree — same shape as get_outline.root), backlinks (citation packets " +
+      "+ property_snippet + relation:\"wikilink\"), forward_links (same shape; broken links " +
+      "omitted), recent_edits (≤10 most recent audit_log rows mapped to {at, op, client_id, " +
+      "is_memory_sink_write?}) }. Every citation packet is the full 8-field D-01 shape from " +
+      "src/memory/citation-packet.ts. v2.0.0 accepts only depth:1 (one-hop links); the field " +
+      "is zod-pinned to z.literal(1) for forward compatibility. recent_edits is keyed by the " +
+      "anchor's CURRENT note path — pre-rename history is preserved in audit_log but not " +
+      "surfaced here (Phase 4 widens). Unknown doc_id returns " +
+      "{ isError: true, error: \"doc_not_found\", doc_id }.",
+    inputSchema: {
+      type: "object",
+      required: ["doc_id"],
+      properties: {
+        doc_id: {
+          type: "string",
+          description: "Opaque DocId (obsidian-fs://<vault>/<path>) of the anchor document.",
+        },
+        depth: {
+          type: "integer",
+          enum: [1],
+          default: 1,
+          description:
+            "Depth of the link walk. v2.0.0 accepts only depth:1 (one-hop). Phase 4 may widen.",
+        },
+        vaults: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional vault filter; usually omitted (the DocId names a vault).",
+        },
+      },
+    },
+  },
   // ── Phase 3 assembly tools (Plan 03-06) ──────────────────────────────────
   {
     name: "assemble_dossier",
@@ -1026,6 +1064,27 @@ export const TOOL_SCHEMAS = {
       .array(z.string().min(1))
       .optional()
       .describe("Restrict to these vault names; defaults to all configured"),
+  },
+
+  // ── Phase 3 assembly tools (Plan 03-04 / ASM-01) ────────────────────────
+  get_document_bundle: {
+    doc_id: z
+      .string()
+      .regex(DOC_ID_PATTERN)
+      .describe("Opaque DocId (obsidian-fs://<vault>/<path>) of the anchor document"),
+    // v2.0.0 accepts only depth:1. The literal pin guarantees Zod
+    // rejects any other value at the boundary so the controller does
+    // not need to clamp. Phase 4 may widen additively (z.union of
+    // literals, or `z.number().int().min(1).max(2)`).
+    depth: z
+      .literal(1)
+      .optional()
+      .default(1)
+      .describe("Link-walk depth. v2.0.0: only 1 (one-hop). Phase 4 may widen."),
+    vaults: z
+      .array(z.string().min(1))
+      .optional()
+      .describe("Optional vault filter; usually omitted (the DocId names a vault)"),
   },
 
   // ── Phase 3 assembly tools (Plan 03-06) ─────────────────────────────────

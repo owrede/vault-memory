@@ -48,7 +48,7 @@ import {
 } from "./memory/tools/index.js";
 import { searchSections } from "./assembly/search-sections.js";
 import { DocNotFoundError, getOutline } from "./assembly/outline.js";
-import { assembleDossier } from "./assembly/index.js";
+import { assembleDossier, getDocumentBundle } from "./assembly/index.js";
 import { getAuditLog, getIndexRuns } from "./audit/index.js";
 import {
   ObsidianFsChangeFeed,
@@ -809,6 +809,21 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
     assemble_dossier: async (a) => {
       const p = a as { type: string; key: string; vaults?: string[] };
       return assembleDossier(
+        {
+          manager,
+          sourceConnectorFor: (vaultName) =>
+            adapterRegistry.resolveSource(
+              parseSourceHandle(`obsidian-fs://${vaultName}`),
+            ),
+        },
+        p,
+      );
+    },
+
+    // ── Phase 3 assembly tools (Plan 03-04 / ASM-01) ───────────────────────
+    get_document_bundle: async (a) => {
+      const p = a as { doc_id: string; depth?: 1; vaults?: string[] };
+      return getDocumentBundle(
         {
           manager,
           sourceConnectorFor: (vaultName) =>

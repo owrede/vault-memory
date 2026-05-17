@@ -67,8 +67,8 @@ describe("v1 tools/list surface (FND-10)", () => {
     expect(actual).toEqual(pinned);
   });
 
-  it("has exactly 29 tools (23 v1 + 02-04 record_observation + supersede + 02-05 recall + 03-02 get_outline + 03-03 search_sections + 03-06 assemble_dossier)", () => {
-    expect(TOOLS).toHaveLength(29);
+  it("has exactly 30 tools (23 v1 + 02-04 record_observation + supersede + 02-05 recall + 03-02 get_outline + 03-03 search_sections + 03-04 get_document_bundle + 03-06 assemble_dossier)", () => {
+    expect(TOOLS).toHaveLength(30);
   });
 
   it("preserves the 23 v1 baseline tool names byte-identical (Plan 02-04 truth)", () => {
