@@ -38,7 +38,10 @@ describe("assembly-fixture stub Document[]", () => {
 
   it("has 8 documents", () => {
     const docs = makeAssemblyStubDocs();
-    expect(docs).toHaveLength(8);
+    // Plan 04-06 / Task 5 extended the fixture with two `_memory/...`
+    // docs to exercise expand()'s ADR-004 opacity rule against the
+    // stub adapter — bumping the count from 8 to 10.
+    expect(docs).toHaveLength(10);
   });
 
   it("every DocId is in the stub://memory/ namespace", () => {

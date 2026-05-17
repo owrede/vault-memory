@@ -59,6 +59,28 @@ export const LONG_DOC_ID = formatDocId("stub", "memory", "long.md");
 export const Q2_REVIEW_DOC_ID = formatDocId("stub", "memory", "meetings/2026-04-15.md");
 /** The DocId for the sync notes doc — wikilinks to alice. */
 export const SYNC_DOC_ID = formatDocId("stub", "memory", "notes/sync.md");
+/**
+ * Phase 4 / 04-06 — outer `_memory` doc. Inbound wikilink from Alice
+ * (a non-memory source); used by the Plan 04-06 Task 5 conformance
+ * case that pins expand()'s `_memory` opacity rule (ADR-004).
+ */
+export const MEMORY_OUTER_DOC_ID = formatDocId(
+  "stub",
+  "memory",
+  "_memory/observations/outer.md",
+);
+/**
+ * Phase 4 / 04-06 — inner `_memory` doc. Reachable ONLY via
+ * `MEMORY_OUTER_DOC_ID` (memory→memory). At hop 2 from Alice, expand()
+ * must DROP this doc per the `_memory` opacity rule — its
+ * `inboundSourceNoteId` in the BFS visited record is the outer memory
+ * doc, which is also `_memory`-pathed.
+ */
+export const MEMORY_INNER_DOC_ID = formatDocId(
+  "stub",
+  "memory",
+  "_memory/_briefs/inner.md",
+);
 
 /**
  * Build the ~8-document assembly fixture. Returns a fresh array each
@@ -87,7 +109,10 @@ export function makeAssemblyStubDocs(): Document[] {
         aliases: ["Alice C.", "ac"],
         status: "active",
       },
-      links: [],
+      // Phase 4 / 04-06 conformance: Alice outbound-wikilinks to the
+      // outer `_memory` doc, which surfaces in expand() because its
+      // inbound BFS edge originates from a non-memory source (Alice).
+      links: [{ type: "wikilink", target: MEMORY_OUTER_DOC_ID }],
       mtime: 1_700_000_000_000,
       hash: "0xa11ce000000000000000000000000000000000000000000000000000000000a1",
     },
@@ -219,6 +244,51 @@ export function makeAssemblyStubDocs(): Document[] {
       links: [],
       mtime: 1_700_000_007_000,
       hash: "0x10c000000000000000000000000000000000000000000000000000000000010c",
+    },
+
+    // ── 9. Outer `_memory` doc — Plan 04-06 conformance ──
+    //
+    // Reachable from Alice via 1-hop forward wikilink. Its `inboundSource`
+    // in expand()'s BFS visited record is Alice (non-memory), so the
+    // `_memory` opacity rule surfaces it.
+    {
+      id: MEMORY_OUTER_DOC_ID,
+      source: SOURCE,
+      title: "Outer Memory Observation",
+      blocks: [
+        { kind: "heading", level: 1, text: "Outer Memory Observation" },
+        { kind: "paragraph", text: "User-linked memory observation about Alice." },
+      ],
+      properties: { type: "memory.observation" },
+      // Outbound wikilink to the INNER memory doc — establishes the
+      // memory→memory chain that the opacity rule must block.
+      links: [{ type: "wikilink", target: MEMORY_INNER_DOC_ID }],
+      mtime: 1_700_000_008_000,
+      hash: "0xae3700000000000000000000000000000000000000000000000000000000ae37",
+    },
+
+    // ── 10. Inner `_memory` doc — opacity rule victim ──
+    //
+    // Reachable ONLY via the outer `_memory` doc (memory→memory chain).
+    // At hops=2 from Alice, expand() walks Alice→outer→inner, but
+    // inner's `inboundSourceNoteId` is the outer memory doc — a
+    // `_memory` source. The opacity rule (ADR-004 §"memory namespace
+    // is sacrosanct") MUST drop inner from the result set.
+    {
+      id: MEMORY_INNER_DOC_ID,
+      source: SOURCE,
+      title: "Inner Memory Brief",
+      blocks: [
+        { kind: "heading", level: 1, text: "Inner Memory Brief" },
+        {
+          kind: "paragraph",
+          text: "Memory-derived brief; no user note ever links here directly.",
+        },
+      ],
+      properties: { type: "memory.brief" },
+      links: [],
+      mtime: 1_700_000_009_000,
+      hash: "0xae3800000000000000000000000000000000000000000000000000000000ae38",
     },
   ];
 }

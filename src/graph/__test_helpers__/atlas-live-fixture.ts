@@ -234,3 +234,12 @@ export async function buildAtlasLiveFixture(
 export function atlasDocId(vaultRelativePath: string): string {
   return `obsidian-fs://${ATLAS_VAULT_NAME}/${vaultRelativePath}`;
 }
+
+// ── Adapter-seam discipline ────────────────────────────────────────────────
+//
+// This file imports `node:fs`/`node:path` and contains a bare `.md`
+// literal — flagged by `scripts/lint-adapters.sh` invariants I-2, I-3,
+// and I-5 in production code. Test-only fixture builders under
+// `__test_helpers__/` are exempted via the jest-convention exclusion
+// the lint script applies (`--exclude-dir='__test_helpers__'`).
+// Production code paths still go through the obsidian-fs adapter seam.
