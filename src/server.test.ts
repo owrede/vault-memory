@@ -563,8 +563,10 @@ describe("Plan 02-04: MEM-02 (record_observation) + MEM-04 (supersede) end-to-en
     // grows it to 27 (adds `get_outline`); Plan 03-03 grows it to 28
     // (adds `search_sections`); Plan 03-06 grows it to 29 (adds
     // `assemble_dossier`); Plan 03-04 grows it to 30 (adds
-    // `get_document_bundle`). The 23-entry v1 prefix remains byte-identical.
-    expect(TOOLS).toHaveLength(31);
+    // `get_document_bundle`); Plan 04-03 grows it to 31 (adds `expand`);
+    // Plan 04-05 grows it to 32 (adds `cluster`). The 23-entry v1 prefix
+    // remains byte-identical.
+    expect(TOOLS).toHaveLength(32);
 
     const ro = TOOLS.find((t) => t.name === "record_observation");
     const sup = TOOLS.find((t) => t.name === "supersede");
@@ -915,7 +917,7 @@ describe("Plan 02-05: MEM-03 recall end-to-end", () => {
     expect(names).toContain("get_outline");
     expect(names).toContain("assemble_dossier");
     expect(names).toContain("get_document_bundle");
-    expect(TOOLS).toHaveLength(31);
+    expect(TOOLS).toHaveLength(32);
   });
 
   it("recall against the v2 fixture: 'Atlas pilot' returns the live 2026-04-16 doc; the 2026-04-20 superseded doc is hidden", async () => {
@@ -1447,15 +1449,16 @@ describe("Plan 02-06: MCP Resources (MEM-09)", () => {
     }
   });
 
-  it("tools/list count is 30 after Plan 03-02 + 03-03 + 03-04 + 03-06 (Resources still do NOT add tool entries)", async () => {
+  it("tools/list count is 32 after Plan 03-02 + 03-03 + 03-04 + 03-06 + 04-03 + 04-05 (Resources still do NOT add tool entries)", async () => {
     const { TOOLS } = await import("./tool-registry.js");
     // Pin: MCP Resources (memory_stats, list_sinks) project from the
     // sink registry — they MUST NOT manifest as tools. Phase 3 plan
     // 03-02 added `get_outline` (26 → 27), 03-03 added `search_sections`
     // (27 → 28), 03-06 added `assemble_dossier` (28 → 29), and 03-04
-    // added `get_document_bundle` (29 → 30); the resource invariant
-    // still holds at the new count.
-    expect(TOOLS).toHaveLength(31);
+    // added `get_document_bundle` (29 → 30); Plan 04-03 added `expand`
+    // (30 → 31); Plan 04-05 added `cluster` (31 → 32); the resource
+    // invariant still holds at the new count.
+    expect(TOOLS).toHaveLength(32);
     // Spot-check: no memory_stats or list_sinks tool exists.
     const names = TOOLS.map((t) => t.name);
     expect(names).not.toContain("memory_stats");
@@ -1632,9 +1635,9 @@ describe("Plan 04-03: expand MCP tool", () => {
     expect(r.success).toBe(false);
   });
 
-  it("Test 7: TOOLS length is 31 (additive — does not modify v1 tools)", async () => {
+  it("Test 7: TOOLS length is 32 after Plan 04-05 (was 31 after 04-03)", async () => {
     const { TOOLS } = await import("./tool-registry.js");
-    expect(TOOLS).toHaveLength(31);
+    expect(TOOLS).toHaveLength(32);
     // The 23-v1-tool prefix is byte-identical (asserted in baseline.test.ts).
     const names = TOOLS.map((t) => t.name);
     expect(names).toContain("expand");
@@ -1719,5 +1722,93 @@ describe("Plan 04-04: search_hybrid({expand}) Zod + JSON Schema", () => {
     // Mention that hops=1 attaches expansions per hit (so an agent
     // reading the tool list immediately knows the surface).
     expect(tool?.description?.toLowerCase()).toContain("hops");
+  });
+});
+
+// ─── Plan 04-05 (GRA-02) — `cluster` tool registration ────────────────────
+//
+// Validates the `cluster` MCP tool's Zod boundary, JSON Schema entry,
+// description text, and TOOLS-length bump (31 → 32).
+describe("Plan 04-05: cluster MCP tool", () => {
+  it("Test 1: cluster is registered in TOOLS with a long-form description", async () => {
+    const { TOOLS } = await import("./tool-registry.js");
+    const tool = TOOLS.find((t) => t.name === "cluster");
+    expect(tool).toBeDefined();
+    expect((tool?.description ?? "").length).toBeGreaterThan(0);
+    // Description MUST cover Louvain, determinism, hard cap, cluster_id.
+    expect(tool?.description?.toLowerCase()).toContain("louvain");
+    expect(tool?.description?.toLowerCase()).toContain("graphology");
+    expect(tool?.description?.toLowerCase()).toContain("deterministic");
+    expect(tool?.description).toContain("5000"); // D-13 hard cap
+    expect(tool?.description?.toLowerCase()).toContain("smallest member");
+  });
+
+  it("Test 2: Zod rejects method other than 'edge-community'", async () => {
+    const { buildToolSchema } = await import("./tool-registry.js");
+    const schema = buildToolSchema("cluster");
+    const r = schema.safeParse({
+      seed_doc_ids: ["obsidian-fs://v/a.md"],
+      method: "label-propagation", // not in the closed literal
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("Test 3: Zod accepts query-only and seed_doc_ids-only inputs but rejects neither", async () => {
+    const { buildToolSchema } = await import("./tool-registry.js");
+    const schema = buildToolSchema("cluster");
+    // query-only path
+    const r1 = schema.safeParse({ query: "atlas", method: "edge-community" });
+    expect(r1.success).toBe(true);
+    // seed_doc_ids-only path
+    const r2 = schema.safeParse({
+      seed_doc_ids: ["obsidian-fs://v/a.md"],
+      method: "edge-community",
+    });
+    expect(r2.success).toBe(true);
+    // Neither — must reject.
+    const r3 = schema.safeParse({ method: "edge-community" });
+    expect(r3.success).toBe(false);
+  });
+
+  it("Test 4: Zod accepts optional query_top_k + force booleans", async () => {
+    const { buildToolSchema } = await import("./tool-registry.js");
+    const schema = buildToolSchema("cluster");
+    const r1 = schema.safeParse({
+      query: "atlas",
+      method: "edge-community",
+      query_top_k: 100,
+      force: true,
+    });
+    expect(r1.success).toBe(true);
+    const r2 = schema.safeParse({
+      seed_doc_ids: ["obsidian-fs://v/a.md"],
+      method: "edge-community",
+      force: true,
+    });
+    expect(r2.success).toBe(true);
+    // query_top_k out of range → reject.
+    const r3 = schema.safeParse({
+      query: "x",
+      method: "edge-community",
+      query_top_k: 9999,
+    });
+    expect(r3.success).toBe(false);
+  });
+
+  it("Test 5: Zod rejects malformed seed_doc_ids (DOC_ID_PATTERN regex)", async () => {
+    const { buildToolSchema } = await import("./tool-registry.js");
+    const schema = buildToolSchema("cluster");
+    const r = schema.safeParse({
+      seed_doc_ids: ["not-a-uri"],
+      method: "edge-community",
+    });
+    expect(r.success).toBe(false);
+  });
+
+  it("Test 6: TOOLS length is 32 (additive — 31 → 32)", async () => {
+    const { TOOLS } = await import("./tool-registry.js");
+    expect(TOOLS).toHaveLength(32);
+    const names = TOOLS.map((t) => t.name);
+    expect(names).toContain("cluster");
   });
 });

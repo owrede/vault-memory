@@ -3037,6 +3037,242 @@ var init_expand = __esm({
 import Graph from "graphology";
 import louvain from "graphology-communities-louvain";
 import seedrandom from "seedrandom";
+async function cluster(deps, opts) {
+  if (opts.query !== void 0 && opts.seed_doc_ids !== void 0) {
+    return {
+      ok: false,
+      reason: "both_seeds_and_query",
+      hint: "Pass exactly one of `query` or `seed_doc_ids`; not both."
+    };
+  }
+  if (opts.query === void 0 && opts.seed_doc_ids === void 0) {
+    return {
+      ok: false,
+      reason: "both_seeds_and_query",
+      hint: "Pass exactly one of `query` or `seed_doc_ids`."
+    };
+  }
+  let seedDocIds = [];
+  let vault = null;
+  let vaultName = null;
+  let scheme = null;
+  if (opts.query !== void 0) {
+    const limit = opts.query_top_k ?? 50;
+    const allVaults = deps.manager.list();
+    if (allVaults.length === 0) {
+      return { ok: true, clusters: [], node_count: 0 };
+    }
+    const firstVault = allVaults[0];
+    if (!firstVault) {
+      return { ok: true, clusters: [], node_count: 0 };
+    }
+    const hits = await deps.hybridSearch(firstVault, opts.query, limit);
+    const ids = [];
+    for (const h of hits) {
+      if (h.doc_id !== void 0) ids.push(h.doc_id);
+    }
+    seedDocIds = ids;
+  } else {
+    seedDocIds = opts.seed_doc_ids ?? [];
+  }
+  if (seedDocIds.length === 0) {
+    return { ok: true, clusters: [], node_count: 0 };
+  }
+  const expansion = await expand(
+    {
+      manager: deps.manager,
+      sourceConnectorFor: deps.sourceConnectorFor
+    },
+    { seed_doc_ids: seedDocIds, hops: 1, direction: "both" }
+  );
+  const allDocIdsSet = /* @__PURE__ */ new Set();
+  for (const s of seedDocIds) allDocIdsSet.add(s);
+  for (const d of expansion.documents) allDocIdsSet.add(d.doc_id);
+  const sortedDocIds = Array.from(allDocIdsSet).sort();
+  if (vault === null) {
+    const firstId = sortedDocIds[0];
+    if (firstId === void 0) {
+      return { ok: true, clusters: [], node_count: 0 };
+    }
+    try {
+      const parsed = parseDocId(firstId);
+      const dec = decomposeDocId(parsed);
+      vault = deps.manager.require(dec.authority);
+      vaultName = dec.authority;
+      scheme = dec.scheme;
+    } catch {
+      return { ok: true, clusters: [], node_count: 0 };
+    }
+  }
+  const docIdToNoteId = /* @__PURE__ */ new Map();
+  const noteIdToDocId = /* @__PURE__ */ new Map();
+  for (const docId of sortedDocIds) {
+    try {
+      const parsed = parseDocId(docId);
+      const dec = decomposeDocId(parsed);
+      if (dec.authority !== vaultName) continue;
+      const note = vault.db.notes.getByPath(dec.resource);
+      if (!note) continue;
+      docIdToNoteId.set(docId, note.id);
+      noteIdToDocId.set(note.id, docId);
+    } catch {
+      continue;
+    }
+  }
+  const resolvedDocIds = Array.from(docIdToNoteId.keys()).sort();
+  if (resolvedDocIds.length > NODE_CAP && !opts.force) {
+    return {
+      ok: false,
+      reason: "node_count_exceeded",
+      node_count: resolvedDocIds.length,
+      threshold: NODE_CAP,
+      hint: "pass force:true to compute"
+    };
+  }
+  if (resolvedDocIds.length === 0) {
+    return { ok: true, clusters: [], node_count: 0 };
+  }
+  if (resolvedDocIds.length === 1) {
+    const singleId = resolvedDocIds[0];
+    if (singleId === void 0) {
+      return { ok: true, clusters: [], node_count: 0 };
+    }
+    const cp = await hydratePacket(deps, scheme, vaultName, singleId, vault);
+    if (cp === null) {
+      return { ok: true, clusters: [], node_count: 0 };
+    }
+    return {
+      ok: true,
+      node_count: 1,
+      clusters: [
+        {
+          cluster_id: singleId,
+          size: 1,
+          members: [cp],
+          summary: { top_types: [], top_titles: [], edge_density: 0 }
+        }
+      ]
+    };
+  }
+  const g = new Graph({ type: "undirected", multi: false });
+  for (const docId of resolvedDocIds) g.addNode(docId);
+  const sortedNoteIds = resolvedDocIds.map((d) => docIdToNoteId.get(d));
+  const edges = vault.db.edges.getAllForNodes(sortedNoteIds);
+  for (const e of edges) {
+    const srcDocId = noteIdToDocId.get(e.sourceDoc);
+    const tgtDocId = noteIdToDocId.get(e.targetDoc);
+    if (!srcDocId || !tgtDocId) continue;
+    if (srcDocId === tgtDocId) continue;
+    const a = srcDocId < tgtDocId ? srcDocId : tgtDocId;
+    const b = srcDocId < tgtDocId ? tgtDocId : srcDocId;
+    if (g.hasEdge(a, b)) continue;
+    g.addEdge(a, b, { weight: 1 });
+  }
+  const rng = seedrandom(LOUVAIN_SEED);
+  const detailed = louvain.detailed(g, {
+    rng,
+    randomWalk: true
+  });
+  const communities = detailed.communities;
+  const byCommunity = /* @__PURE__ */ new Map();
+  for (const [nodeId, communityIdx] of Object.entries(communities)) {
+    const docId = nodeId;
+    const arr = byCommunity.get(communityIdx);
+    if (arr === void 0) byCommunity.set(communityIdx, [docId]);
+    else arr.push(docId);
+  }
+  const clusters = [];
+  for (const [, memberDocIds] of byCommunity) {
+    const sortedMembers = [...memberDocIds].sort();
+    const firstMember = sortedMembers[0];
+    if (firstMember === void 0) continue;
+    const clusterId = firstMember;
+    const members = [];
+    for (const docId of sortedMembers) {
+      const cp = await hydratePacket(deps, scheme, vaultName, docId, vault);
+      if (cp !== null) members.push(cp);
+    }
+    if (members.length === 0) continue;
+    const summary = computeSummary(members, sortedMembers, g);
+    clusters.push({
+      cluster_id: clusterId,
+      size: members.length,
+      members,
+      summary
+    });
+  }
+  clusters.sort((a, b) => a.cluster_id < b.cluster_id ? -1 : a.cluster_id > b.cluster_id ? 1 : 0);
+  return { ok: true, clusters, node_count: resolvedDocIds.length };
+}
+async function hydratePacket(deps, scheme, vaultName, docId, _vault) {
+  const source = (() => {
+    try {
+      return deps.sourceConnectorFor(vaultName);
+    } catch {
+      return null;
+    }
+  })();
+  if (!source) return null;
+  const canonicalDocId = formatDocId(scheme, vaultName, decomposeDocId(parseDocId(docId)).resource);
+  let doc;
+  try {
+    doc = await source.readDocument(canonicalDocId);
+  } catch {
+    return null;
+  }
+  return toCitationPacket(doc, displayUrlFor(canonicalDocId, source));
+}
+function computeSummary(members, sortedDocIds, g) {
+  const size = members.length;
+  const typeCounts = /* @__PURE__ */ new Map();
+  for (const m of members) {
+    const t = m.properties.type;
+    if (typeof t !== "string") continue;
+    typeCounts.set(t, (typeCounts.get(t) ?? 0) + 1);
+  }
+  const topTypes = Array.from(typeCounts.entries()).sort((a, b) => {
+    if (a[1] !== b[1]) return b[1] - a[1];
+    return a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0;
+  }).slice(0, 5).map(([type, count]) => ({ type, count }));
+  const memberSet = new Set(sortedDocIds);
+  const degreeByDocId = /* @__PURE__ */ new Map();
+  for (const docId of sortedDocIds) {
+    if (!g.hasNode(docId)) {
+      degreeByDocId.set(docId, 0);
+      continue;
+    }
+    let d = 0;
+    for (const neighbor of g.neighbors(docId)) {
+      if (memberSet.has(neighbor)) d += 1;
+    }
+    degreeByDocId.set(docId, d);
+  }
+  const titleEntries = members.map((m) => ({
+    doc_id: m.doc_id,
+    title: m.title,
+    degree: degreeByDocId.get(m.doc_id) ?? 0
+  }));
+  titleEntries.sort((a, b) => {
+    if (a.degree !== b.degree) return b.degree - a.degree;
+    return a.doc_id < b.doc_id ? -1 : a.doc_id > b.doc_id ? 1 : 0;
+  });
+  const topTitles = titleEntries.slice(0, 3).map(({ title, degree }) => ({ title, degree }));
+  let edgeDensity = 0;
+  if (size >= 2) {
+    let intraEdgeCount = 0;
+    for (const docId of sortedDocIds) {
+      if (!g.hasNode(docId)) continue;
+      for (const neighbor of g.neighbors(docId)) {
+        if (!memberSet.has(neighbor)) continue;
+        if (docId < neighbor) intraEdgeCount += 1;
+      }
+    }
+    const possible = size * (size - 1) / 2;
+    edgeDensity = possible > 0 ? intraEdgeCount / possible : 0;
+  }
+  return { top_types: topTypes, top_titles: topTitles, edge_density: edgeDensity };
+}
+var NODE_CAP, LOUVAIN_SEED;
 var init_cluster = __esm({
   "src/graph/cluster.ts"() {
     "use strict";
@@ -3044,6 +3280,8 @@ var init_cluster = __esm({
     init_registry();
     init_citation_packet();
     init_expand();
+    NODE_CAP = 5e3;
+    LOUVAIN_SEED = "vault-memory-cluster-v1";
   }
 });
 
@@ -9764,6 +10002,44 @@ var init_tool_registry = __esm({
           }
         }
       },
+      // ── Phase 4 graph tools (Plan 04-05 / GRA-02) ───────────────────────────
+      {
+        name: "cluster",
+        description: "Community detection over the typed-edge graph via Louvain modularity (Blondel et al. 2008) using `graphology` + `graphology-communities-louvain`. Deterministic: same input produces byte-identical cluster_id assignment via DocId-sorted node insertion + seeded RNG (`vault-memory-cluster-v1`). cluster_id = smallest member DocId per community. Hard-capped at 5000 nodes; pass `force: true` to override. Either `query` (composes search_hybrid + expand 1-hop) OR `seed_doc_ids` (uses provided seeds + induced 1-hop neighborhood); not both \u2014 passing both returns {ok:false, reason:'both_seeds_and_query'}. Returns per-cluster {cluster_id, size, members[], summary: {top_types, top_titles, edge_density}}. No LLM enrichment \u2014 summary fields are pure-deterministic computations (LLM enrichment is Phase 5 brief layer's job). _memory opacity inherited from expand() (Plan 04-03).",
+        inputSchema: {
+          type: "object",
+          required: ["method"],
+          properties: {
+            query: {
+              type: "string",
+              description: "Natural-language query. When set, composes search_hybrid + expand(hops=1, both). Mutually exclusive with seed_doc_ids."
+            },
+            seed_doc_ids: {
+              type: "array",
+              minItems: 1,
+              items: { type: "string" },
+              description: "1+ opaque DocIds. When set, cluster() uses these seeds + their induced 1-hop neighborhood. Mutually exclusive with query."
+            },
+            method: {
+              type: "string",
+              enum: ["edge-community"],
+              description: "Clustering algorithm. v2.0.0 supports only 'edge-community' (Louvain)."
+            },
+            query_top_k: {
+              type: "integer",
+              minimum: 1,
+              maximum: 200,
+              default: 50,
+              description: "Only used in the query path: how many top hits to retrieve before expansion. Default 50."
+            },
+            force: {
+              type: "boolean",
+              default: false,
+              description: "Bypass the 5000-node hard cap. When false (default), oversized inputs return {ok:false, reason:'node_count_exceeded'}."
+            }
+          }
+        }
+      },
       // ── Phase 3 assembly tools (Plan 03-06) ──────────────────────────────────
       {
         name: "assemble_dossier",
@@ -10012,6 +10288,22 @@ var init_tool_registry = __esm({
           "When false (default), docs whose properties.status === 'superseded' are dropped."
         )
       },
+      // ── Phase 4 graph tools (Plan 04-05 / GRA-02) ───────────────────────────
+      //
+      // The cluster tool's schema is unusual: it requires EXACTLY ONE of
+      // `query` or `seed_doc_ids` (mutual exclusion per D-15a). Zod can't
+      // model "exactly one" in a raw shape directly — we declare the union
+      // of both shapes in `SCHEMA_BUILDERS` below; here we publish the raw
+      // shape so the MCP SDK's `tools/list` JSON Schema projection still
+      // works. The runtime path goes through `buildToolSchema("cluster")`
+      // which calls the SCHEMA_BUILDERS entry.
+      cluster: {
+        query: z6.string().min(1).optional(),
+        seed_doc_ids: z6.array(z6.string().regex(DOC_ID_PATTERN2)).min(1).optional(),
+        method: z6.literal("edge-community"),
+        query_top_k: z6.number().int().positive().max(200).optional().default(50),
+        force: z6.boolean().optional().default(false)
+      },
       // ── Phase 3 assembly tools (Plan 03-06) ─────────────────────────────────
       assemble_dossier: {
         type: z6.string().min(1).describe(
@@ -10026,7 +10318,19 @@ var init_tool_registry = __esm({
     SCHEMA_BUILDERS = {
       suggest_frontmatter: () => z6.object(TOOL_SCHEMAS.suggest_frontmatter).refine((v) => v.path !== void 0 || v.content !== void 0, {
         message: "suggest_frontmatter requires either `path` or `content`"
-      })
+      }),
+      // Plan 04-05 / D-15a — EXACTLY ONE of `query` or `seed_doc_ids` must
+      // be present. The runtime path also returns a structured
+      // {ok:false, reason:'both_seeds_and_query'} error when both are set,
+      // so this Zod refinement is the early-rejection gate at the MCP
+      // boundary (cluster's internal validator handles the same case for
+      // direct callers that bypass Zod).
+      cluster: () => z6.object(TOOL_SCHEMAS.cluster).refine(
+        (v) => v.query !== void 0 && v.seed_doc_ids === void 0 || v.query === void 0 && v.seed_doc_ids !== void 0,
+        {
+          message: "cluster requires EXACTLY ONE of `query` or `seed_doc_ids` (D-15a mutual exclusion)"
+        }
+      )
     };
   }
 });
@@ -10552,6 +10856,49 @@ async function serve(options = {}) {
         }
       );
     },
+    // ── Phase 4 graph tools (Plan 04-05 / GRA-02) ─────────────────────────
+    cluster: async (a) => {
+      const p = a;
+      let opts;
+      if (p.query !== void 0) {
+        opts = {
+          query: p.query,
+          method: "edge-community",
+          ...p.query_top_k !== void 0 ? { query_top_k: p.query_top_k } : {},
+          ...p.force !== void 0 ? { force: p.force } : {}
+        };
+      } else {
+        const seeds = (p.seed_doc_ids ?? []).map((s) => parseDocId(s));
+        opts = {
+          seed_doc_ids: seeds,
+          method: "edge-community",
+          ...p.force !== void 0 ? { force: p.force } : {}
+        };
+      }
+      return cluster(
+        {
+          manager,
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
+            parseSourceHandle(`obsidian-fs://${vaultName}`)
+          ),
+          // Bind hybridSearch at call time — avoids the
+          // src/graph/cluster.ts → src/search/hybrid.ts circular
+          // import. The injected callback returns SearchHit[]; the
+          // dispatcher already has `ollama` + `defaultModel` in scope.
+          hybridSearch: async (vault, query, limit) => hybridSearch({
+            query,
+            embeddingModel: defaultModel,
+            ollama,
+            vaults: [vault],
+            topK: limit,
+            includeBreakdown: false,
+            ...reranker ? { reranker } : {},
+            displayUrlFor: (vaultName, notePath) => displayUrl(adapterRegistry, vaultName, notePath)
+          })
+        },
+        opts
+      );
+    },
     // ── Phase 3 assembly tools (Plan 03-04 / ASM-01) ───────────────────────
     get_document_bundle: async (a) => {
       const p = a;
@@ -10570,7 +10917,7 @@ async function serve(options = {}) {
     const name = tool.name;
     const handler = handlers[name];
     const schema = TOOL_SCHEMAS[name];
-    const needsRefinementCheck = name === "suggest_frontmatter";
+    const needsRefinementCheck = name === "suggest_frontmatter" || name === "cluster";
     server.registerTool(
       name,
       { description: tool.description, inputSchema: schema },

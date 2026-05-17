@@ -25,8 +25,19 @@ import { OllamaReranker, OnnxReranker } from "./rerank/index.js";
 import type { Reranker } from "./rerank/index.js";
 import { homedir } from "node:os";
 import { join as joinPath } from "node:path";
-import { expand, listBacklinks, listForwardLinks, findBrokenLinks } from "./graph/index.js";
-import type { ExpandDeps, ExpandDirection, ExpandOptions } from "./graph/index.js";
+import {
+  cluster,
+  expand,
+  listBacklinks,
+  listForwardLinks,
+  findBrokenLinks,
+} from "./graph/index.js";
+import type {
+  ClusterOptions,
+  ExpandDeps,
+  ExpandDirection,
+  ExpandOptions,
+} from "./graph/index.js";
 import type { EdgeType } from "./db/queries/edges.js";
 import { queryFrontmatter, updateFrontmatter } from "./frontmatter/index.js";
 import { suggestFrontmatter } from "./schema/index.js";
@@ -880,6 +891,64 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
       );
     },
 
+    // ── Phase 4 graph tools (Plan 04-05 / GRA-02) ─────────────────────────
+    cluster: async (a) => {
+      const p = a as {
+        query?: string;
+        seed_doc_ids?: string[];
+        method: "edge-community";
+        query_top_k?: number;
+        force?: boolean;
+      };
+      // Build a ClusterOptions discriminated value. Zod's mutual-
+      // exclusion refinement has already rejected both-present /
+      // neither-present inputs by the time we reach this handler, but
+      // the runtime cluster() function performs the same validation as
+      // a defense-in-depth check for direct (non-MCP) callers.
+      let opts: ClusterOptions;
+      if (p.query !== undefined) {
+        opts = {
+          query: p.query,
+          method: "edge-community",
+          ...(p.query_top_k !== undefined ? { query_top_k: p.query_top_k } : {}),
+          ...(p.force !== undefined ? { force: p.force } : {}),
+        };
+      } else {
+        const seeds = (p.seed_doc_ids ?? []).map((s) => parseDocId(s));
+        opts = {
+          seed_doc_ids: seeds,
+          method: "edge-community",
+          ...(p.force !== undefined ? { force: p.force } : {}),
+        };
+      }
+      return cluster(
+        {
+          manager,
+          sourceConnectorFor: (vaultName) =>
+            adapterRegistry.resolveSource(
+              parseSourceHandle(`obsidian-fs://${vaultName}`),
+            ),
+          // Bind hybridSearch at call time — avoids the
+          // src/graph/cluster.ts → src/search/hybrid.ts circular
+          // import. The injected callback returns SearchHit[]; the
+          // dispatcher already has `ollama` + `defaultModel` in scope.
+          hybridSearch: async (vault, query, limit) =>
+            hybridSearch({
+              query,
+              embeddingModel: defaultModel,
+              ollama,
+              vaults: [vault],
+              topK: limit,
+              includeBreakdown: false,
+              ...(reranker ? { reranker } : {}),
+              displayUrlFor: (vaultName, notePath) =>
+                displayUrl(adapterRegistry, vaultName, notePath),
+            }),
+        },
+        opts,
+      );
+    },
+
     // ── Phase 3 assembly tools (Plan 03-04 / ASM-01) ───────────────────────
     get_document_bundle: async (a) => {
       const p = a as { doc_id: string; depth?: 1; vaults?: string[] };
@@ -909,8 +978,10 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
     // suggest_frontmatter layers an extra refinement on top of its raw
     // shape; the SDK only accepts a raw shape here, so we register the
     // shape directly and let the handler re-validate with the refined
-    // schema (`buildToolSchema`) for the cross-field check.
-    const needsRefinementCheck = name === "suggest_frontmatter";
+    // schema (`buildToolSchema`) for the cross-field check. The same
+    // pattern applies to `cluster` (D-15a mutual exclusion between
+    // `query` and `seed_doc_ids`).
+    const needsRefinementCheck = name === "suggest_frontmatter" || name === "cluster";
     server.registerTool(
       name,
       { description: tool.description, inputSchema: schema },
