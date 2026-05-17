@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: release
 status: phase_planned
-stopped_at: Phase 4 planned (7 plans ready for execution)
-last_updated: "2026-05-17T18:00:00.000Z"
-last_activity: 2026-05-17
+stopped_at: Phase 4 context gathered
+last_updated: "2026-05-17T18:16:05.325Z"
+last_activity: 2026-05-17 -- Phase 04 execution started
 progress:
   total_phases: 10
   completed_phases: 4
@@ -21,11 +21,12 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-14)
 
 **Core value:** Local-first, source-agnostic-ready, agentic knowledge layer over your Obsidian notes — with the memory namespace as a non-negotiable safety invariant.
-**Current focus:** Phase 4 — Graph-as-retrieval (planning not yet started)
+**Current focus:** Phase 04 — graph-as-retrieval
 
 ## Current Position
 
-Phase: 3 — **COMPLETE** (2026-05-17)
+Phase: 04 (graph-as-retrieval) — EXECUTING
+Plan: 1 of 7
 Plans: 7 implementation slices, all signed off. Phase 3 sign-off doc at `docs/v2/PHASE-3-SIGN-OFF.md`.
 
 Phase 3 ships:
@@ -38,7 +39,7 @@ Phase 3 ships:
 - Tool surface 26 → 30 (additive only; 23 v1 entries byte-identical)
 
 Next: `/gsd-plan-phase 4` — Graph-as-retrieval (GRA-01..GRA-05).
-Last activity: 2026-05-17
+Last activity: 2026-05-17 -- Phase 04 execution started
 
 Progress: [████████████░░░░░░░░] 40%
 
