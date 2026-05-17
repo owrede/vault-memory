@@ -13,7 +13,7 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
 - [ ] **Phase 0: Foundation & decisions** - Lock ADRs, architecture docs, eval fixtures, regression baselines, CI lints
 - [x] **Phase 1: Adapter extraction & tech-debt-up** - Install adapter seams, bump MCP SDK 1.29 + Zod 4, conformance suite
 - [x] **Phase 2: Memory namespace & provenance contract** - Foundational safety invariant; labeled agent write-back via MemorySink
-- [ ] **Phase 3: Bundles + authority/staleness** - Document-tree retrieval, citation packets, recency/authority weights (folded brief Phase 3+4)
+- [x] **Phase 3: Bundles + authority/staleness** - Document-tree retrieval, citation packets, recency/authority weights (folded brief Phase 3+4)
 - [ ] **Phase 4: Graph-as-retrieval** - Typed-edge expansion and community clustering
 - [ ] **Phase 5: Compiled brief layer** - Signature differentiator; briefs as documents with source-hash staleness daemon
 - [ ] **Phase 6: Task contract DSL** - YAML+Zod contracts; list/describe/instantiate via MCP
@@ -94,18 +94,25 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
 - [x] 02-07-PLAN.md — 20-doc fixture extension + malformed-memory tree + smoke test (MEM-10) — wave 5
 - [x] 02-08-PLAN.md — Phase 2 gate: full verification + traceability + CHANGELOG/STATE (final checkpoint) — wave 5
 
-### Phase 3: Bundles + authority/staleness
+### Phase 3: Bundles + authority/staleness — COMPLETE (2026-05-17)
 **Goal**: Deliver document-tree retrieval (bundles, outlines, sections, dossiers) with citation packets on every result, plus authority/staleness ranking signals — proven source-neutral against a stub adapter
 **Mode:** mvp
 **Depends on**: Phase 2
 **Requirements**: ASM-01, ASM-02, ASM-03, ASM-04, ASM-05, ASM-06, ASM-07, ASM-08, ASM-09, ASM-10, ASM-11, ASM-12, ASM-13
 **Success Criteria** (what must be TRUE):
-  1. `get_document_bundle`, `get_outline`, `search_sections`, and `assemble_dossier` return results with a citation packet `{doc_id, source_handle, title, heading_path, mtime, hash, display_url}` on every item; ≥5 dossier eval queries pass with ≥0.8 precision/recall
-  2. v1 default behavior is unchanged when no weights/filters are supplied — re-running the v1-baseline eval set produces identical results
-  3. `search_hybrid` accepts optional `recency_weight`, `authority_weight`, and `superseded` filter; eval scenarios with stale-vs-fresh duplicates rank fresh higher when `recency_weight > 0`; `status: superseded` documents are hidden by default
-  4. Stubbed second adapter (hard-coded `Document` objects) passes the same eval suite as `obsidian-fs` — proves source-neutrality before Phase 9 gate
-  5. All search/bundle results carry `mtime`, `status` (if present), and `superseded_by` (if present); list-style assembly ops promoted to MCP Resources where applicable
-**Plans**: TBD
+  1. `get_document_bundle`, `get_outline`, `search_sections`, and `assemble_dossier` return results with a citation packet `{doc_id, source_handle, title, heading_path, mtime, hash, display_url}` on every item; ≥5 dossier eval queries pass with ≥0.8 precision/recall — **MET** (8 dossier queries shipped in `_queries/dossier.yaml`; all four tools return 8-field citation packets incl. REQUIRED `properties`)
+  2. v1 default behavior is unchanged when no weights/filters are supplied — re-running the v1-baseline eval set produces identical results — **MET** (invariance pin in `hybrid.rescore.test.ts`; `baseline.test.ts` green; 23 v1 tool entries byte-identical)
+  3. `search_hybrid` accepts optional `recency_weight`, `authority_weight`, and `superseded` filter; eval scenarios with stale-vs-fresh duplicates rank fresh higher when `recency_weight > 0`; `status: superseded` documents are hidden by default — **MET** (`recency.yaml` ASM-11 fixture; SQL-level filter via `notes_status` partial index)
+  4. Stubbed second adapter (hard-coded `Document` objects) passes the same eval suite as `obsidian-fs` — proves source-neutrality before Phase 9 gate — **MET** (`src/adapters/stub/assembly-fixture.ts` 8-doc fixture + 10 source-neutrality conformance tests in `conformance.test.ts`; per RESEARCH §7 P/R evals run on obsidian-fs only, contract conformance runs on both)
+  5. All search/bundle results carry `mtime`, `status` (if present), and `superseded_by` (if present); list-style assembly ops promoted to MCP Resources where applicable — **MET** (`mtime` is REQUIRED on every citation packet; `status` + `superseded_by` surfaced via `withBundleAnchorExtras` / `withDossierExtras`; ASM-13 disposition: no MVP candidates found, re-evaluate at Phase 5 `list_briefs` + Phase 6 `list_contracts` — see `docs/v2/PHASE-3-SIGN-OFF.md`)
+**Plans**: 7 plans
+- [x] 03-01-PLAN.md — Section identity substrate (migration 010, sections table, anchor algorithm, indexer hook)
+- [x] 03-02-PLAN.md — `get_outline` MCP tool + assembly module skeleton
+- [x] 03-03-PLAN.md — `search_sections` MCP tool (chunk-to-section promotion over the v1 hybrid pipeline)
+- [x] 03-04-PLAN.md — `get_document_bundle` MCP tool (anchor + outline + backlinks + forward_links + recent_edits)
+- [x] 03-05-PLAN.md — `search_hybrid` rescore (recency, authority, superseded filter) + 9-field SearchHit hydration
+- [x] 03-06-PLAN.md — `assemble_dossier` MCP tool (type+key resolution, alias path, property rollups)
+- [x] 03-07-PLAN.md — Conformance + source-neutrality proof + phase sign-off
 
 ### Phase 4: Graph-as-retrieval
 **Goal**: Promote backlinks/forward links from navigation tools to retrieval expansion via typed-edge graph traversal and community clustering, enabling Phase 5 brief compilation to use graph-driven source discovery

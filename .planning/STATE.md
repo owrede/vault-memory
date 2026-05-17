@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: release
-status: ready_to_execute
-stopped_at: Phase 3 planned, ready to execute
-last_updated: "2026-05-16T13:55:00.000Z"
-last_activity: 2026-05-16
+status: phase_complete
+stopped_at: Phase 3 complete (7/7 slices); ready for Phase 4 planning
+last_updated: "2026-05-17T10:00:00.000Z"
+last_activity: 2026-05-17
 progress:
   total_phases: 10
-  completed_phases: 3
-  total_plans: 30
-  completed_plans: 37
-  percent: 30
+  completed_phases: 4
+  total_plans: 37
+  completed_plans: 44
+  percent: 40
 ---
 
 # Project State
@@ -21,23 +21,25 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-14)
 
 **Core value:** Local-first, source-agnostic-ready, agentic knowledge layer over your Obsidian notes — with the memory namespace as a non-negotiable safety invariant.
-**Current focus:** Phase 3 — bundles + authority/staleness
+**Current focus:** Phase 4 — Graph-as-retrieval (planning not yet started)
 
 ## Current Position
 
-Phase: 3
-Plans: 9 implementation + 7 gap-closure = 16 total. Implementation done (02-01..02-08 signed off, 825 tests pass). Gap plans verified by gsd-plan-checker.
+Phase: 3 — **COMPLETE** (2026-05-17)
+Plans: 7 implementation slices, all signed off. Phase 3 sign-off doc at `docs/v2/PHASE-3-SIGN-OFF.md`.
 
-Gap plans (02-09..02-15) close all 16 findings from 02-REVIEW.md:
+Phase 3 ships:
+- 4 new MCP tools: `get_outline`, `search_sections`, `get_document_bundle`, `assemble_dossier`
+- Additive `search_hybrid` rescore signals (recency, authority, superseded filter)
+- Section identity substrate (migration 010 + ADR-003 H-7 anchors)
+- Source-neutrality conformance suite (ASM-12) parameterized over obsidian-fs + stub adapters
+- 1076 tests passing (was 903 at Phase 2 sign-off; +173 net)
+- Tool surface 26 → 30 (additive only; 23 v1 entries byte-identical)
 
-- Wave 9 (5 parallel): 02-09 (CR-01), 02-11 (CR-03), 02-12 (WR-01..03), 02-13 (WR-04/07 + IN-04 + types.ts consolidation), 02-15 (IN-01..03/05)
-- Wave 10 (depends_on [02-13]): 02-10 (CR-02 + WR-06)
-- Wave 11 (depends_on [02-10]): 02-14 (WR-05 + WR-08)
+Next: `/gsd-plan-phase 4` — Graph-as-retrieval (GRA-01..GRA-05).
+Last activity: 2026-05-17
 
-Next: `/gsd-execute-phase 2 --gaps-only` → verifier subagent → phase seal → Phase 3.
-Last activity: 2026-05-15
-
-Progress: [████████░░] 80%
+Progress: [████████████░░░░░░░░] 40%
 
 ## Performance Metrics
 
