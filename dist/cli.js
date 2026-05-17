@@ -3033,6 +3033,20 @@ var init_expand = __esm({
   }
 });
 
+// src/graph/cluster.ts
+import Graph from "graphology";
+import louvain from "graphology-communities-louvain";
+import seedrandom from "seedrandom";
+var init_cluster = __esm({
+  "src/graph/cluster.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_registry();
+    init_citation_packet();
+    init_expand();
+  }
+});
+
 // src/graph/index.ts
 var init_graph2 = __esm({
   "src/graph/index.ts"() {
@@ -3040,6 +3054,7 @@ var init_graph2 = __esm({
     init_esm_shims();
     init_graph();
     init_expand();
+    init_cluster();
   }
 });
 
