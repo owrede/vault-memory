@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: release
-status: ready_to_plan
-stopped_at: Phase 5 context gathered
-last_updated: "2026-05-18T07:51:29.350Z"
-last_activity: 2026-05-17
+status: ready_to_execute
+stopped_at: Phase 5 planned (4 MVP slices)
+last_updated: "2026-05-18T12:00:00.000Z"
+last_activity: 2026-05-18
 progress:
   total_phases: 10
   completed_phases: 5
-  total_plans: 51
+  total_plans: 55
   completed_plans: 51
   percent: 50
 ---
@@ -26,8 +26,17 @@ See: .planning/PROJECT.md (updated 2026-05-14)
 ## Current Position
 
 Phase: 5
-Plan: Not started
-Plans: 7 implementation slices, all signed off. Phase 4 sign-off doc at `docs/v2/PHASE-4-SIGN-OFF.md`.
+Plan: 4 MVP slices planned, plan-checker verdict CONCERNS → patched (zero blockers).
+Plans: 7 implementation slices from Phase 4, all signed off. Phase 4 sign-off doc at `docs/v2/PHASE-4-SIGN-OFF.md`.
+
+Phase 5 plan set (`.planning/phases/05-compiled-brief-layer/`):
+- 05-01 foundations — ADR-005, migration 013, default-brief-v1 contract, types, chunker, Wave 0 stubs
+- 05-02 compile + get — full LLM ladder (Sampling/Ollama/prepared_text/error), body validator, D-12 supersede chain
+- 05-03 staleness daemon — lockfile (PID liveness), ChangeFeed subscriber, startup scan, rename grace-window
+- 05-04 Resource + gate — list_briefs Resource, BRF-11 cross-adapter conformance, snapshot regen, PHASE-5-SIGN-OFF
+Coverage: all 11 BRF requirements + all 13 D-XX locked decisions + all 5 ROADMAP success criteria.
+Tool count delta: 32 → 34 (REL-08 retirement deferred to Phase 8).
+Next: `/gsd:execute-phase 5`.
 
 Phase 4 ships:
 
