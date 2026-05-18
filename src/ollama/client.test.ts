@@ -183,6 +183,107 @@ describe("OllamaClient.healthCheck", () => {
   });
 });
 
+describe("OllamaClient.chat", () => {
+  it("makes a POST to /api/chat with {model, messages, stream:false, options}", async () => {
+    const fetchMock: FetchMock = vi.fn(async () =>
+      jsonResponse({
+        model: "llama3.2",
+        message: { role: "assistant", content: "hi back" },
+        done: true,
+      }),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new OllamaClient({ batchSize: 10, retries: 0 });
+    const res = await client.chat({
+      model: "llama3.2",
+      messages: [{ role: "user", content: "hi" }],
+      options: { num_predict: 100 },
+    });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("http://localhost:11434/api/chat");
+    expect(init.method).toBe("POST");
+    const body = JSON.parse(init.body as string) as Record<string, unknown>;
+    expect(body).toEqual({
+      model: "llama3.2",
+      messages: [{ role: "user", content: "hi" }],
+      stream: false,
+      options: { num_predict: 100 },
+    });
+
+    expect(res.model).toBe("llama3.2");
+    expect(res.message.role).toBe("assistant");
+    expect(res.message.content).toBe("hi back");
+  });
+
+  it("retries on 500 and eventually succeeds", async () => {
+    let attempts = 0;
+    const fetchMock: FetchMock = vi.fn(async () => {
+      attempts++;
+      if (attempts < 3) return textResponse("server fail", 500);
+      return jsonResponse({
+        model: "m",
+        message: { role: "assistant", content: "ok" },
+      });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new OllamaClient({ batchSize: 10, retries: 3 });
+    const res = await client.chat({
+      model: "m",
+      messages: [{ role: "user", content: "hi" }],
+    });
+    expect(attempts).toBe(3);
+    expect(res.message.content).toBe("ok");
+  });
+
+  it("throws OllamaHttpError after retries exhausted on 4xx", async () => {
+    const fetchMock: FetchMock = vi.fn(async () => textResponse("bad request", 400));
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new OllamaClient({ batchSize: 10, retries: 0 });
+    await expect(
+      client.chat({ model: "m", messages: [{ role: "user", content: "x" }] }),
+    ).rejects.toMatchObject({ name: "OllamaHttpError", status: 400 });
+  });
+
+  it("propagates AbortError when the request times out", async () => {
+    const fetchMock: FetchMock = vi.fn((_url, init) => {
+      return new Promise<Response>((_resolve, reject) => {
+        const signal = (init as RequestInit).signal as AbortSignal | undefined;
+        if (signal) {
+          signal.addEventListener("abort", () => {
+            const err = new Error("aborted");
+            err.name = "AbortError";
+            reject(err);
+          });
+        }
+      });
+    });
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new OllamaClient({ batchSize: 10, retries: 1, timeoutMs: 10 });
+    await expect(
+      client.chat({ model: "m", messages: [{ role: "user", content: "x" }] }),
+    ).rejects.toMatchObject({ name: "AbortError" });
+  });
+
+  it("Zod-validates the response — malformed payload throws schema error", async () => {
+    const fetchMock: FetchMock = vi.fn(async () =>
+      // Missing message.content — schema rejects.
+      jsonResponse({ model: "m", message: { role: "assistant" } }),
+    );
+    globalThis.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new OllamaClient({ batchSize: 10, retries: 0 });
+    await expect(
+      client.chat({ model: "m", messages: [{ role: "user", content: "x" }] }),
+    ).rejects.toBeDefined();
+  });
+});
+
 describe("OllamaClient.modelExists", () => {
   function mockTags(names: string[]): FetchMock {
     return vi.fn(async () => jsonResponse({ models: names.map((name) => ({ name })) }));
