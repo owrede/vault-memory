@@ -59,7 +59,7 @@ import {
   handleRecordObservation,
   handleSupersede,
 } from "./memory/tools/index.js";
-import { handleCompileBrief } from "./brief/index.js";
+import { handleCompileBrief, handleGetBrief } from "./brief/index.js";
 import { searchSections } from "./assembly/search-sections.js";
 import { DocNotFoundError, getOutline } from "./assembly/outline.js";
 import { assembleDossier, getDocumentBundle } from "./assembly/index.js";
@@ -780,13 +780,24 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
       }
       return result;
     },
-    get_brief: async (_a) => {
-      // Slice 2 wires the tool surface; the handler implementation
-      // (D-13 decision tree + supersede-chain follow) lands in the
-      // 5-02-03 commit. This placeholder remains green at type-check
-      // time so the dispatch table compiles even if the runtime
-      // handler is staged in a follow-up commit.
-      return { brief: null, reason: "not_implemented" };
+    get_brief: async (a) => {
+      const p = a as {
+        vault: string;
+        target: string;
+        max_age_days?: number;
+        allow_stale?: boolean;
+      };
+      return handleGetBrief(
+        {
+          memorySinkRegistry,
+          manager,
+          sourceConnectorFor: (vaultName) =>
+            adapterRegistry.resolveSource(
+              parseSourceHandle(`obsidian-fs://${vaultName}`),
+            ),
+        },
+        p,
+      );
     },
 
     // ── Phase 3 assembly tools (Plan 03-02 / ASM-02) ───────────────────────
