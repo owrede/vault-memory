@@ -144,6 +144,12 @@ and lives in a labeled `MemorySink`.
 - [ ] End-to-end test: Obsidian vault + Notion workspace, dossier from Notion, brief sourced from Notion written to Obsidian memory sink, staleness when Notion page edited
 - [ ] No Phase 1–8 tool modified — only adapter modules and config grew
 
+### Anticipated (IDEAS — not decisions)
+
+**v3.x: `postgres-fs` storage adapter** — A `SourceConnector` / `DeliveryAdapter` / `ChangeFeed` implementation backed by Postgres (`pgvector` for embeddings, `pg_trgm` or ParadeDB for BM25). Preserves the single-user-runtime model — each user connects their own `vault-memory serve` to their own Postgres DB (self-hosted or Supabase / Neon / RDS). Listed because the adapter seams make it technically additive; not committed. See ROADMAP.md "Phase 11" and REQUIREMENTS.md "PGS-*". **Evaluated 2026-05-18:** Ghost.build was considered as an alternative path and rejected (cloud-only, no retrieval primitives, violates local-first). `postgres-fs` is a *storage adapter*, not a managed service.
+
+**v4.0.0: Multi-user agent knowledge layer ("hive-mind")** — Lifts the single-user-runtime constraint. Strategic thesis: humans express via content (their natural mode); agents read with full provenance / authority / freshness signals; agents contribute back via labeled MemorySinks; the substrate compounds — every contribution becomes a citable source for future work across the team. Postgres+pgvector is the likely (not certain) storage substrate because Postgres has mature row-level security and multi-tenant patterns. Entire line is exploratory. Listed because several v2 design decisions (opaque DocIds, content-stable ChunkIds, provenance-on-every-agent-write, MCP-as-canonical) are load-bearing for v4 even though they were made for v2's own reasons — documenting v4-as-anticipated tells future-you why these choices are worth defending. **No v4 code until v2.0.0 ships, v3.0.0 ships, a credible signal exists, and a v4 brief is authored.** See ROADMAP.md "v4.0.0 — Anticipated" and REQUIREMENTS.md "MUL-*".
+
 ### Out of Scope
 
 - **Cloud sync or hosted service** — local-first is the brand. No telemetry, no API keys for v2.
@@ -152,7 +158,7 @@ and lives in a labeled `MemorySink`.
 - **Breaking v1.x tool shapes or behavior** — backwards compatibility is non-negotiable until a major version. Net-new tools get net-new names.
 - **Obsidian plugin distribution** — Phase 8's plugin (if built) is bundled with the repo, not published to the Obsidian community plugin store this milestone.
 - **Non-MCP delivery surfaces** (REST, GraphQL, websocket, native UI) — MCP is the canonical contract per AGENT_AGNOSTIC. Out of scope for v2.
-- **Multi-user / collaboration / sharing** — single-user, single-machine product. Per-machine memory sink. No CRDTs, no remote sync.
+- **Multi-user / collaboration / sharing** in v2 — single-user-runtime over shared-vault substrate (see Constraints → Deployment model). No CRDTs, no shared runtime, no auth in v2. The multi-user-shared-runtime case is anticipated as v4.0.0 (see "Anticipated" above) but explicitly **not** part of v2.
 
 ## Context
 
@@ -227,6 +233,16 @@ or other MCP clients. Maintainer authors the brief and stewards architecture; GS
 - **No premature LLM coupling.** vault-memory has not historically called any LLM
   beyond embeddings. Phase 6 (briefs) is the first place this could change and
   requires an ADR.
+- **Deployment model — single-user-runtime over shared-vault substrate.** This is
+  load-bearing for all of v2 and v3. The Obsidian vault may be synced across users
+  via Syncthing / iCloud / git / Dropbox (the sync substrate is outside vault-memory's
+  concern), but each user runs their own `vault-memory serve` locally with their own
+  `~/.vault-memory/` (config, SQLite DBs, locks, Ollama, models). Briefs, observations,
+  and contracts sync via the filesystem; each user's local runtime independently
+  indexes the synced content and computes its own staleness view. Content-stable
+  ChunkIds (Phase 5 D-04) are what make this work cross-user without coordination —
+  both users compute identical chunk fragments over the same source text. The v4.0.0
+  hive-mind line is what would lift this constraint; v2 and v3 hold it.
 
 ## Key Decisions
 
