@@ -57,3 +57,9 @@ export {
   type PeerMcpClientConfig,
   type ClientFactory,
 } from "./mcp-clients.js";
+export {
+  verbDispatcher,
+  type VerbDeps,
+  type VerbDispatchOpts,
+} from "./verbs/index.js";
+export { callMcpVerb } from "./verbs/mcp-extension.js";
