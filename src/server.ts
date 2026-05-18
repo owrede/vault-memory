@@ -59,7 +59,11 @@ import {
   handleRecordObservation,
   handleSupersede,
 } from "./memory/tools/index.js";
-import { handleCompileBrief, handleGetBrief } from "./brief/index.js";
+import {
+  BriefStalenessDaemon,
+  handleCompileBrief,
+  handleGetBrief,
+} from "./brief/index.js";
 import { searchSections } from "./assembly/search-sections.js";
 import { DocNotFoundError, getOutline } from "./assembly/outline.js";
 import { assembleDossier, getDocumentBundle } from "./assembly/index.js";
@@ -288,6 +292,17 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
   // VaultWatcher) is also wired into each VaultWatcher below.
   const watchers = new Map<string, VaultWatcher>();
 
+  // ─── Brief staleness daemons (Phase 5 / BRF-05..BRF-08) ────────────────────
+  //
+  // One daemon per vault, started after MemorySinkRegistry + catchup. Each
+  // daemon subscribes to the same per-vault `ObsidianFsChangeFeed` the
+  // VaultWatcher uses; ChangeFeed fan-out is documented (snapshot-then-
+  // iterate per change-feed.ts:218), so multiple handlers per feed are
+  // safe by contract. Lock contention is a NORMAL multi-MCP-client
+  // outcome: the second server logs a structured WARN and serves
+  // search/read/write identically.
+  const briefDaemons = new Map<string, BriefStalenessDaemon>();
+
   // Codex MEDIUM-3: catch-up reconciliation can take seconds on large vaults
   // (re-embedding modified notes). We defer it until after MCP `connect()` so
   // the tool list responds immediately and the LLM doesn't time out waiting
@@ -327,10 +342,58 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
       });
       await watcher.start();
       watchers.set(vault.config.name, watcher);
+
+      // ── Phase 5 / D-07/D-08: brief staleness daemon ──────────────────
+      //
+      // Subscribes to the same ObsidianFsChangeFeed as the VaultWatcher.
+      // Lock contention is logged as structured WARN to stderr; the
+      // server continues to serve search/read/write — only the daemon
+      // subscription is gated (D-08 multi-MCP-client norm).
+      const feed = changeFeeds.get(vault.config.name);
+      if (feed) {
+        const daemon = new BriefStalenessDaemon();
+        try {
+          await daemon.start(vault, feed, {
+            memorySinkRegistry,
+            deliveryAdapterFor: (vaultName) =>
+              adapterRegistry.resolveDelivery(
+                parseSourceHandle(`obsidian-fs://${vaultName}`),
+              ),
+            sourceConnectorFor: (vaultName) =>
+              adapterRegistry.resolveSource(
+                parseSourceHandle(`obsidian-fs://${vaultName}`),
+              ),
+            log: (m) =>
+              process.stderr.write(
+                `[brief-daemon:${vault.config.name}] ${m}\n`,
+              ),
+          });
+          briefDaemons.set(vault.config.name, daemon);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          process.stderr.write(
+            `[brief-daemon:${vault.config.name}] start failed: ${message}\n`,
+          );
+        }
+      }
     }
   };
 
   const shutdown = async (): Promise<void> => {
+    // Phase 5 (Plan 05-03): dispose brief staleness daemons FIRST so
+    // no in-flight ChangeEvents land mid-shutdown. Then drain + stop
+    // watchers; finally close change-feeds (the underlying chokidar
+    // watcher). Lock release happens inside daemon.shutdown() — a
+    // crashed shutdown that fails here leaves the lock for the
+    // PID-liveness stale-detection on next boot.
+    for (const d of briefDaemons.values()) {
+      try {
+        await d.shutdown();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`[brief-daemon] shutdown error: ${message}\n`);
+      }
+    }
     for (const w of watchers.values()) {
       await w.drain();
       await w.stop();

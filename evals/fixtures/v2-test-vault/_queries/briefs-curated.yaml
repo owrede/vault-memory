@@ -36,4 +36,42 @@ queries:
       BRF-10 floor — compile a brief over an 11-doc Atlas-1 corpus
       (mix of project notes, status updates, meeting, observations)
       and verify it can be retrieved via get_brief immediately after.
-      Staleness flip is tested in slice 3.
+      Staleness flip is tested by the atlas-1-staleness-flip scenario
+      below.
+
+  - id: atlas-1-staleness-flip
+    query: "Q3 status of Atlas-1 with a staleness-flip scenario"
+    target: atlas-1-staleness-flip
+    purpose: >
+      BRF-10 staleness guarantee — compile a brief; modify one source
+      doc; replay the ChangeEvent through the daemon handler; assert
+      the brief flips to status:stale with the modified DocId in
+      changed_sources within one change-feed cycle.
+    max_tokens: 2000
+    source_doc_ids:
+      - obsidian-fs://v2-test-vault/projects/atlas-1.md
+      - obsidian-fs://v2-test-vault/projects/atlas-1-perception-stack.md
+      - obsidian-fs://v2-test-vault/projects/atlas-1-warehouse-task-library.md
+      - obsidian-fs://v2-test-vault/projects/atlas-1-reliability-program.md
+      - obsidian-fs://v2-test-vault/status_updates/atlas-1-new-update.md
+      - obsidian-fs://v2-test-vault/status_updates/atlas-1-old-update.md
+      - obsidian-fs://v2-test-vault/meetings/2026-04-17-atlas-1-build-review.md
+      - obsidian-fs://v2-test-vault/_memory/status-updates/2026-04-19-atlas-1-uptime-progress.md
+      - obsidian-fs://v2-test-vault/_memory/observations/2026-04-16-atlas-1-pilot-count-reduced.md
+      - obsidian-fs://v2-test-vault/_memory/observations/2026-04-20-atlas-1-pilot-target-was-12.md
+    staleness_scenario:
+      modify_source: obsidian-fs://v2-test-vault/projects/atlas-1.md
+      # The test harness rewrites the chunks row text for the modified
+      # source (synthetic — production rewrites the file and the
+      # indexer/watcher updates the chunks row first), then drives the
+      # daemon handler with `{kind:"update", id:<modify_source>}` and
+      # asserts brief flips to stale within one change-feed cycle.
+    expected_after_modify:
+      status: stale
+      changed_sources_contains:
+        - obsidian-fs://v2-test-vault/projects/atlas-1.md
+    rationale: >
+      BRF-10 staleness guarantee — modify one source doc; brief flips
+      to status:stale within one change-feed cycle. Daemon detects
+      chunk-hash divergence and writes via delivery.update with
+      expectedHash OCC.
