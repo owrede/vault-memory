@@ -954,6 +954,45 @@ function runMigration013(db: BetterSqlite3Database, _ctx: MigrationContext): voi
   `);
 }
 
+/**
+ * Migration 014 — Phase 6 / Q-AUD: contract_audit table.
+ *
+ * DDL-only (no backfill — contract_audit is greenfield). Mirrors the
+ * additive substrate pattern from `runMigration013` (Phase 5, brief_sources).
+ *
+ * Rationale (Q-AUD): orchestration steps cannot live in `write_audit`
+ * because `write_audit.note_id INTEGER NOT NULL` foreign-key constraint
+ * blocks rows that don't correspond to a vault note (orchestration rows
+ * may reference DocIds, peer-MCP outputs, or load errors with no
+ * note_id). Same wall Phase 5 daemon hit per RESEARCH §Don't Hand-Roll.
+ *
+ * Stores only `{kind, contract, verb, step_alias, vault, ts, error_message}`
+ * — never step output payloads (Security pattern §I; Invariant C-5 in
+ * ADR-006). Peer-MCP outputs may contain sensitive data; we explicitly
+ * do not capture them.
+ *
+ * Adapter-seam discipline: no `fs`, `path`, `gray-matter`, or `chokidar`
+ * imports anywhere in this function.
+ */
+function runMigration014(db: BetterSqlite3Database, _ctx: MigrationContext): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS contract_audit (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      kind          TEXT NOT NULL,
+      contract      TEXT,
+      verb          TEXT,
+      step_alias    TEXT,
+      vault         TEXT,
+      ts            INTEGER NOT NULL,
+      error_message TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_contract_audit_kind_ts
+      ON contract_audit(kind, ts);
+    CREATE INDEX IF NOT EXISTS idx_contract_audit_verb
+      ON contract_audit(verb);
+  `);
+}
+
 export const MIGRATIONS: readonly Migration[] = [
   {
     version: 1,
@@ -1023,5 +1062,10 @@ export const MIGRATIONS: readonly Migration[] = [
     description:
       "chunks.chunk_id_fragment + brief_sources + daemon_state (Phase 5 / BRF-* / D-04..D-06 / D-09)",
     run: runMigration013,
+  },
+  {
+    version: 14,
+    description: "contract_audit table — Phase 6 / CON-* / Q-AUD",
+    run: runMigration014,
   },
 ];

@@ -14,6 +14,7 @@ import { AliasesQueries } from "./queries/aliases.js";
 import { SectionsQueries } from "./queries/sections.js";
 import { BriefSourcesQueries } from "./queries/brief_sources.js";
 import { DaemonStateQueries } from "./queries/daemon_state.js";
+import { ContractAuditQueries } from "./queries/contract-audit.js";
 
 /**
  * SQLite wrapper for a single vault.
@@ -42,6 +43,8 @@ export class Database {
   readonly briefSources: BriefSourcesQueries;
   /** Phase 5 / D-09: staleness-daemon cursor query namespace. */
   readonly daemonState: DaemonStateQueries;
+  /** Phase 6 / Q-AUD: task-contract orchestration audit query namespace. */
+  readonly contractAudit: ContractAuditQueries;
 
   /**
    * Name of the vault this DB belongs to, or `undefined` for `:memory:` /
@@ -88,6 +91,10 @@ export class Database {
     // against tables already created by migration 013.
     this.briefSources = new BriefSourcesQueries(this.handle);
     this.daemonState = new DaemonStateQueries(this.handle);
+    // Phase 6 / Q-AUD: contract orchestration audit. Construction is
+    // independent — only prepares statements against the table already
+    // created by migration 014.
+    this.contractAudit = new ContractAuditQueries(this.handle);
   }
 
   static async open(dbPath: string, vaultName?: string): Promise<Database> {
