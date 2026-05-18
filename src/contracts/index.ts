@@ -42,3 +42,7 @@ export {
   type StartedContractRegistry,
   type RegistryChangeKind,
 } from "./loader.js";
+export {
+  syncAutoRegistered,
+  type SyncAutoRegisteredOpts,
+} from "./auto-register.js";
