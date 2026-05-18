@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: release
 status: Phase 05 complete
-stopped_at: Phase 5 context gathered
-last_updated: "2026-05-18T11:48:21.312Z"
+stopped_at: Phase 6 context gathered
+last_updated: "2026-05-18T13:15:40.493Z"
 last_activity: 2026-05-18 -- Phase 05 marked complete
 progress:
   total_phases: 10
@@ -160,7 +160,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-18T07:51:29.343Z
-Stopped at: Phase 5 context gathered
-Resume file: .planning/phases/05-compiled-brief-layer/05-CONTEXT.md
+Last session: 2026-05-18T13:15:40.482Z
+Stopped at: Phase 6 context gathered
+Resume file: .planning/phases/06-task-contract-dsl/06-CONTEXT.md
 Next: `/gsd-execute-phase 3`
