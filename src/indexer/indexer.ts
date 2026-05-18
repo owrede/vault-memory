@@ -12,6 +12,7 @@ import { randomUUID } from "node:crypto";
 import { scanVault } from "../adapters/source/obsidian-fs/scanner.js";
 import { parseNote } from "../adapters/source/obsidian-fs/parser.js";
 import { chunkNote } from "../chunker/index.js";
+import { computeChunkIdFragment } from "../chunker/chunk-id.js";
 import { OllamaClient } from "../ollama/index.js";
 import type { Vault } from "../vault/index.js";
 import type {
@@ -243,7 +244,10 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
         continue;
       }
 
-      // Insert chunks first to get IDs
+      // Insert chunks first to get IDs.
+      // Phase 5 / D-05: compute chunk_id_fragment via the canonical
+      // helper (`src/chunker/chunk-id.ts`) at every insert path.
+      // Scattered createHash calls are an anti-pattern (RESEARCH §Pitfall 14).
       const chunkInputs = chunks.map((c) => ({
         idx: c.idx,
         text: c.text,
@@ -251,6 +255,7 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
         startOffset: c.startOffset,
         endOffset: c.endOffset,
         tokenCount: c.tokenCount,
+        chunkIdFragment: computeChunkIdFragment(c.text),
       }));
       const chunkIds = vault.db.chunks.insertBatch(noteId, chunkInputs);
 

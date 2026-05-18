@@ -194,6 +194,13 @@ export interface ChunkRow {
   start_offset: number;
   end_offset: number;
   token_count: number;
+  /**
+   * Phase 5 / D-04 / D-05: content-stable chunk identity fragment.
+   * Populated by chunker at insert and by `runMigration013` for legacy
+   * rows. NEVER empty after migration 013 (NOT NULL default '' is the
+   * schema floor; chunker guarantees populate at insert time).
+   */
+  chunk_id_fragment: string;
 }
 
 export interface ModelRow {
