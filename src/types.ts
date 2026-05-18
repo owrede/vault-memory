@@ -76,6 +76,40 @@ export interface BriefConfig {
   ollama?: BriefOllamaConfig;
 }
 
+/**
+ * Phase 6 / D-A1b: peer-MCP client invocation descriptor.
+ *
+ * One entry per `[contracts.mcp_clients.<name>]` block in config.toml.
+ * `command` is the executable path; `args` are passed verbatim to
+ * `child_process.spawn(command, args)` (NO shell — Plan 06-03 enforces).
+ * `env` is layered on top of the inherited process env at spawn time.
+ */
+export interface ContractsMcpClientConfig {
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+}
+
+/**
+ * Phase 6 / D-A1b: per-vault `[contracts]` block (ADR-006 §Decision 1).
+ *
+ * All fields have defaults — a config.toml with no `[contracts]` block
+ * parses to this shape unchanged (backwards-compat per Example 5).
+ *
+ *   auto_register_tools  D-A1b — per-vault gate (default OFF)
+ *   tool_prefix          D-A1c — A7 .min(1); default "vm_"
+ *   step_timeout_seconds Q-TIMEOUT — peer-MCP-only; default 30
+ *   defaults             D-A4b — handle→URI fallback map
+ *   mcp_clients          D-A2a — peer-MCP server registry
+ */
+export interface ContractsConfig {
+  auto_register_tools: boolean;
+  tool_prefix: string;
+  step_timeout_seconds: number;
+  defaults: Record<string, string>;
+  mcp_clients: Record<string, ContractsMcpClientConfig>;
+}
+
 export interface AppConfig {
   server: ServerConfig;
   vaults: VaultConfig[];
@@ -85,6 +119,8 @@ export interface AppConfig {
   memory_sinks: MemorySinkConfigEntry[];
   /** Phase 5: optional `[brief]` block (D-10 LLM ladder tier 2). */
   brief?: BriefConfig;
+  /** Phase 6: optional `[contracts]` block (ADR-006 §Decision 1). */
+  contracts: ContractsConfig;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
