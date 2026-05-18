@@ -179,12 +179,9 @@ Plans:
   2. Round-trip acceptance: YAML → canvas → recompile is semantically equivalent after canonicalization (reframed from "byte-equal modulo whitespace"); three reference canvases ship in `examples/canvas-contracts/`
   3. Spike resolves the canonical direction — default recommendation is file-watcher recompile (hash-gated via v1 SuppressionSet to prevent infinite loops), with descope path to "Canvas as view, YAML as authoring" if spike fails
   4. Canvas templates include palette nodes for every available assembly tool from Phases 3–5; documentation and screencast walkthrough are published
-**Plans:** 4 plans
+**Plans:** TBD — not yet planned
 Plans:
-- [x] 06-01-foundations-PLAN.md — ADR-006 + migration 014 contract_audit + [contracts] config block + type catalog + $ref resolver + buildInputSchema + ContractRegistry + slug + Zod ContractFileSchema + Wave-0 stubs
-- [x] 06-02-loader-registry-hot-reload-PLAN.md — startContractRegistry (boot scan + ChangeFeed hot reload per D-LOAD) + syncAutoRegistered dynamic tool registration (D-A1) + register_contracts_as_tools tool + snapshot regen (34 -> 35)
-- [x] 06-03-instantiate-describe-verbs-PLAN.md — resolveTemplate (D-A2c) + PeerMcpRegistry (D-A2a peer-MCP, Pitfall F4) + verbDispatcher (11 baseline + literal + mcp:// with Q-TIMEOUT) + instantiateContract orchestrator (CON-06, all 11 InstantiateError reasons) + describeContract (CON-05, Q-DESCRIBE) + snapshot regen (35 -> 37)
-- [ ] 06-04-reference-contracts-evals-gate-PLAN.md — 3 reference contracts (CON-07) + 4 eval scenarios (CON-08, CON-10) + stub-parity conformance + non-Claude smoketest extension (CON-09) + list_contracts & list_contract_verbs MCP Resources (CON-04, D-A2b) + PHASE-6-SIGN-OFF + CHANGELOG + ROADMAP checkbox
+- TBD — run `/gsd:plan-phase 7` to populate this list
 **UI hint**: yes
 
 ### Phase 8: Polish, eval suite, v2.0.0 release
@@ -198,12 +195,9 @@ Plans:
   3. README rewritten around the new pitch ("agentic knowledge layer over Obsidian; more sources coming"); Roadmap section names Phase 9/v3 explicitly; maintainer signs off on README
   4. `MIGRATION-V1-TO-V2.md` documents SDK 1.29 and Zod 4 major bumps for downstream library consumers; tool API delta is additive only (no breaking changes)
   5. Tool surface inventory is ≤32 tools (with MCP Resources promotion) or ≤40 tools (without) at v2.0.0 ship
-**Plans:** 4 plans
+**Plans:** TBD — not yet planned
 Plans:
-- [x] 06-01-foundations-PLAN.md — ADR-006 + migration 014 contract_audit + [contracts] config block + type catalog + $ref resolver + buildInputSchema + ContractRegistry + slug + Zod ContractFileSchema + Wave-0 stubs
-- [x] 06-02-loader-registry-hot-reload-PLAN.md — startContractRegistry (boot scan + ChangeFeed hot reload per D-LOAD) + syncAutoRegistered dynamic tool registration (D-A1) + register_contracts_as_tools tool + snapshot regen (34 -> 35)
-- [ ] 06-03-instantiate-describe-verbs-PLAN.md — resolveTemplate (D-A2c) + PeerMcpRegistry (D-A2a peer-MCP, Pitfall F4) + verbDispatcher (11 baseline + literal + mcp:// with Q-TIMEOUT) + instantiateContract orchestrator (CON-06, all 11 InstantiateError reasons) + describeContract (CON-05, Q-DESCRIBE) + snapshot regen (35 -> 37)
-- [ ] 06-04-reference-contracts-evals-gate-PLAN.md — 3 reference contracts (CON-07) + 4 eval scenarios (CON-08, CON-10) + stub-parity conformance + non-Claude smoketest extension (CON-09) + list_contracts & list_contract_verbs MCP Resources (CON-04, D-A2b) + PHASE-6-SIGN-OFF + CHANGELOG + ROADMAP checkbox
+- TBD — run `/gsd:plan-phase 8` to populate this list
 
 ### Phase 9: Pre-Phase-10 premise check (HARD GATE)
 **Goal**: Verify that the architectural premise for the v3 multi-source line still holds — adapter seams unbroken, ADRs unviolated, conformance suite green, capability descriptors well-tested — before any Notion code is written
@@ -215,12 +209,9 @@ Plans:
   2. Adversarial-review sub-agent confirms ADRs 001–004 remain unviolated by code shipped in Phases 2–8; any findings are closed before sign-off
   3. Stub-adapter conformance suite is green on `main`; capability-descriptor test coverage meets the agreed threshold for plugin-architecture promotion
   4. Maintainer signs off explicitly: Phase 10 (v3 Notion connector work) is cleared to begin; without this sign-off, no v3 code is written
-**Plans:** 4 plans
+**Plans:** TBD — not yet planned
 Plans:
-- [x] 06-01-foundations-PLAN.md — ADR-006 + migration 014 contract_audit + [contracts] config block + type catalog + $ref resolver + buildInputSchema + ContractRegistry + slug + Zod ContractFileSchema + Wave-0 stubs
-- [ ] 06-02-loader-registry-hot-reload-PLAN.md — startContractRegistry (boot scan + ChangeFeed hot reload per D-LOAD) + syncAutoRegistered dynamic tool registration (D-A1) + register_contracts_as_tools tool + snapshot regen (34 -> 35)
-- [ ] 06-03-instantiate-describe-verbs-PLAN.md — resolveTemplate (D-A2c) + PeerMcpRegistry (D-A2a peer-MCP, Pitfall F4) + verbDispatcher (11 baseline + literal + mcp:// with Q-TIMEOUT) + instantiateContract orchestrator (CON-06, all 11 InstantiateError reasons) + describeContract (CON-05, Q-DESCRIBE) + snapshot regen (35 -> 37)
-- [ ] 06-04-reference-contracts-evals-gate-PLAN.md — 3 reference contracts (CON-07) + 4 eval scenarios (CON-08, CON-10) + stub-parity conformance + non-Claude smoketest extension (CON-09) + list_contracts & list_contract_verbs MCP Resources (CON-04, D-A2b) + PHASE-6-SIGN-OFF + CHANGELOG + ROADMAP checkbox
+- TBD — run `/gsd:plan-phase 9` to populate this list
 
 ## Deployment model — load-bearing assumption for all phases
 
