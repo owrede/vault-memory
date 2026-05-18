@@ -8,8 +8,8 @@ import { describe, expect, it } from "vitest";
 import { TOOLS, TOOL_SCHEMAS, buildToolSchema, type ToolName } from "./tool-registry.js";
 
 describe("TOOLS array", () => {
-  it("has exactly 35 entries (34 prior + 06-02 register_contracts_as_tools)", () => {
-    expect(TOOLS).toHaveLength(35);
+  it("has exactly 37 entries (34 prior + 06-02 register_contracts_as_tools + 06-03 describe_contract + instantiate_contract)", () => {
+    expect(TOOLS).toHaveLength(37);
   });
 
   it("register_contracts_as_tools is registered with optional vault arg + D-A1 description", () => {

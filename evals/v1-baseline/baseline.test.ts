@@ -74,8 +74,8 @@ describe("v1 tools/list surface (FND-10)", () => {
     expect(actual).toEqual(pinned);
   });
 
-  it("has exactly 35 tools (34 prior + 06-02 register_contracts_as_tools)", () => {
-    expect(TOOLS).toHaveLength(35);
+  it("has exactly 37 tools (34 prior + 06-02 register_contracts_as_tools + 06-03 describe_contract + instantiate_contract)", () => {
+    expect(TOOLS).toHaveLength(37);
   });
 
   it("preserves the 23 v1 baseline tool names byte-identical (Plan 02-04 truth)", () => {
