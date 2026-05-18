@@ -17,7 +17,7 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
 - [x] **Phase 4: Graph-as-retrieval** - Typed-edge expansion and community clustering (Complete 2026-05-17)
 - [x] **Phase 5: Compiled brief layer** - Signature differentiator; briefs as documents with source-hash staleness daemon (Complete 2026-05-18)
 - [x] **Phase 6: Task contract DSL** - YAML+Zod contracts; list/describe/instantiate via MCP (completed 2026-05-18)
-- [ ] **Phase 7: Visual contract editor (Canvas)** - Obsidian Canvas ↔ YAML contract round-trip
+- [ ] **Phase 7: vault-memory Obsidian plugin (contract editor + chrome)** - Obsidian plugin with Variant-C visual editor over a custom `.contract` format (forked jsoncanvas renderer) emitting Phase 6 YAML; ships with settings, key-ring secrets, manual reindex, stats, and connector management
 - [ ] **Phase 8: Polish, eval suite, v2.0.0 release** - Release gate; CI eval suite; npm publish
 - [ ] **Phase 9: Pre-Phase-10 premise check (HARD GATE)** - Verify seams, ADR conformance, capability descriptors before any v3 work
 
@@ -169,16 +169,17 @@ Plans:
 - [x] 06-03-instantiate-describe-verbs-PLAN.md — resolveTemplate (D-A2c) + PeerMcpRegistry (D-A2a peer-MCP, Pitfall F4) + verbDispatcher (11 baseline + literal + mcp:// with Q-TIMEOUT) + instantiateContract orchestrator (CON-06, all 11 InstantiateError reasons) + describeContract (CON-05, Q-DESCRIBE) + snapshot regen (35 -> 37)
 - [x] 06-04-reference-contracts-evals-gate-PLAN.md — 3 reference contracts (CON-07) + 4 eval scenarios (CON-08, CON-10) + stub-parity conformance + non-Claude smoketest extension (CON-09) + list_contracts & list_contract_verbs MCP Resources (CON-04, D-A2b) + PHASE-6-SIGN-OFF + CHANGELOG + ROADMAP checkbox
 
-### Phase 7: Visual contract editor (Canvas)
-**Goal**: Deliver an Obsidian Canvas authoring surface that round-trips to/from the YAML contract DSL, with file-watcher recompilation as the default path (full plugin reserved for spike-outcome decision)
+### Phase 7: vault-memory Obsidian plugin (contract editor + chrome)
+**Goal**: Ship an Obsidian plugin (`vault-memory`) that delivers a structured visual editor for Phase 6 task contracts via a custom `.contract` file format and a forked jsoncanvas.org renderer, plus the surrounding chrome — settings panel, key-ring–backed secrets (Obsidian safeStorage / Schlüsselbund), manual reindex trigger, basic stats, and connector management UI — making the v2.0.0 Agentic Knowledge Layer discoverable and operable from inside Obsidian.
 **Mode:** mvp
 **Depends on**: Phase 6
-**Requirements**: CAN-01, CAN-02, CAN-03, CAN-04, CAN-05, CAN-06, CAN-07, CAN-08, CAN-09
+**Requirements**: CAN-01, CAN-02, CAN-03, CAN-04, CAN-05, CAN-06, CAN-07, CAN-08, CAN-09, CAN-10, PLG-01, PLG-02, PLG-03, PLG-04, PLG-05
 **Success Criteria** (what must be TRUE):
-  1. Canvas-to-contract compiler parses Obsidian's `.canvas` JSON, validates the graph, and emits a valid YAML contract; contract-to-canvas decompiler completes the round-trip
-  2. Round-trip acceptance: YAML → canvas → recompile is semantically equivalent after canonicalization (reframed from "byte-equal modulo whitespace"); three reference canvases ship in `examples/canvas-contracts/`
-  3. Spike resolves the canonical direction — default recommendation is file-watcher recompile (hash-gated via v1 SuppressionSet to prevent infinite loops), with descope path to "Canvas as view, YAML as authoring" if spike fails
-  4. Canvas templates include palette nodes for every available assembly tool from Phases 3–5; documentation and screencast walkthrough are published
+  1. Obsidian plugin scaffolded and installable (community-plugin layout + sideload-capable), registering a custom view for the `.contract` file extension; opening a `.contract` file in Obsidian launches the editor
+  2. Visual contract editor (Variant C — palette + canvas + properties inspector) renders/edits the custom `.contract` JSON format and emits a valid Phase 6 YAML contract on save; round-trip `.contract` → `.yaml` → `.contract` is semantically equivalent after canonicalization; three reference `.contract` files ship in `examples/contracts/` matching the three Phase 6 reference contracts (meeting-prep, project-status, code-review-brief)
+  3. Plugin chrome ships in v2.0.0: settings panel exposing core vault-memory tunables (Ollama URL, embedding model, indexer config), key-ring–backed secret storage for MCP/cloud credentials via Obsidian safeStorage, manual reindex trigger (full + per-vault) with progress feedback, read-only stats panel (index size, last-index timestamp, model dimensions, audit_log counts), and connector management UI for peer MCP clients
+  4. Watcher reuses v1 `SuppressionSet` (per CAN-08) to hot-reload `_contracts/*.yaml` into the Phase 6 `ContractRegistry` without recompile loops; `.yaml` emission by the plugin and `.yaml` re-read by the server are serialized through the suppression gate
+  5. Pre-implementation spike (jsoncanvas-fork viability) lands as ADR + working prototype: forks the jsoncanvas.org renderer (license verified MIT-compatible), demonstrates one reference contract rendered in a real Obsidian plugin view, decides go/no-go on the fork before bulk editor work begins; documentation + screencast walkthrough cover plugin install, editor usage, settings, secrets, and one end-to-end contract authoring flow
 **Plans:** TBD — not yet planned
 Plans:
 - TBD — run `/gsd:plan-phase 7` to populate this list

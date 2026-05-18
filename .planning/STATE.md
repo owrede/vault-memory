@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: release
 status: ready_to_plan
-stopped_at: Phase 06 complete (4/4) — ready to discuss Phase 7
-last_updated: 2026-05-18T18:42:39.596Z
-last_activity: 2026-05-18 -- Phase 06 execution started
+stopped_at: Phase 6 context gathered
+last_updated: "2026-05-18T20:28:42.538Z"
+last_activity: 2026-05-18
 progress:
   total_phases: 10
   completed_phases: 4
@@ -100,6 +100,10 @@ Progress: [██████████████░░░░░░] 50%
 *Updated after each plan completion*
 
 ## Accumulated Context
+
+### Roadmap Evolution
+
+- Phase 7 edited: renamed: 'Visual contract editor (Canvas)' → 'vault-memory Obsidian plugin (contract editor + chrome)'; goal + all success criteria rewritten to plugin / .contract / Variant-C / expanded-chrome framing per discuss-phase decisions (07-DISCUSS-CHECKPOINT.json); requirements list flagged for rewrite
 
 ### Decisions
 

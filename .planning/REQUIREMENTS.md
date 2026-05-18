@@ -111,17 +111,33 @@ Requirements for the v2.0.0 release of vault-memory. Each maps to a roadmap phas
 - [ ] **CON-11**: Decision (Phase 6 ADR): whether contracts surface as MCP Tools, MCP Prompts, or both
 - [ ] **CON-12**: New runtime dep: `yaml ^2.6` added (with rationale doc)
 
-### Visual Contract Editor — Canvas (Phase 7 — spike-gated)
+### vault-memory Obsidian Plugin — Contract Editor + Chrome (Phase 7)
 
-- [ ] **CAN-01**: Spike resolves canonical direction — default recommendation: file-watcher recompile, NOT full Obsidian plugin; descope to "Canvas as view, YAML as authoring" if spike fails
-- [ ] **CAN-02**: Canvas-to-contract compiler — parses Obsidian's `.canvas` JSON, validates the graph, emits YAML contract
-- [ ] **CAN-03**: Contract-to-canvas decompiler (round-trip)
-- [ ] **CAN-04**: Canvas templates with palette nodes for each available assembly tool
-- [ ] **CAN-05**: Optional Obsidian plugin OR CLI scaffolder bootstrapping new contract canvases (decision: spike outcome)
-- [ ] **CAN-06**: Three reference canvases in `examples/canvas-contracts/`
-- [ ] **CAN-07**: Round-trip acceptance — semantically equivalent after canonicalization (reframed from "byte-equal modulo whitespace")
-- [ ] **CAN-08**: Hash-gated watcher reuses v1 `SuppressionSet` to prevent infinite recompile loops
-- [ ] **CAN-09**: Documentation + screencast walkthrough
+**Architecture pivot (2026-05-18):** Per `.planning/phases/07-visual-contract-editor-canvas/07-DISCUSS-CHECKPOINT.json`, Phase 7 ships an **Obsidian plugin** with a structured visual editor (Variant C — palette + canvas + properties inspector). The editor uses a **custom `.contract` JSON file format** (typed for vault-memory contracts) rendered by a **forked jsoncanvas.org renderer**. `.yaml` is the build artifact emitted on every `.contract` save. Obsidian's built-in `.canvas` format is NOT used for authoring. The original spike question ("plugin vs file-watcher?") is resolved at plan time toward the plugin path; the live spike (CAN-10) is now scoped to jsoncanvas-fork viability.
+
+#### Editor + round-trip (CAN-*)
+
+- [ ] **CAN-01**: Obsidian plugin (`vault-memory`) scaffolded with the standard community-plugin layout (`manifest.json`, `main.ts`, `styles.css`, `versions.json`); installable via Obsidian community plugin store AND sideload (`.obsidian/plugins/vault-memory/`)
+- [ ] **CAN-02**: `.contract` → Phase 6 YAML emitter — plugin writes a valid `_contracts/<name>.yaml` (Zod-parsable by Phase 6 `ContractFileSchema`) for every `.contract` save; emission is hash-gated through v1 `SuppressionSet` (see CAN-08)
+- [ ] **CAN-03**: Phase 6 YAML → `.contract` importer — plugin imports any existing `_contracts/*.yaml` into a `.contract` for editing; round-trip is loss-less for all Phase 6 ADR-006 contract fields (`version`, `name`, `description`, `inputs`, `sources`, `sinks`, `assembly`, `output_shape`, `write_back`, `required`, peer-MCP refs)
+- [ ] **CAN-04**: Palette covers the full Phase 6 verb surface — all 11 baseline verbs (`read_note`, `search_hybrid`, `search_sections`, `query_frontmatter`, `list_backlinks`, `get_outline`, `recall`, `expand`, `cluster`, `compile_brief`, `get_brief`), the `literal` escape-hatch, and a generic `mcp://` palette entry that expands declared peer-MCP verbs from `[contracts.mcp_clients]`
+- [ ] **CAN-05**: Plugin registers a custom view via `registerView('vault-memory-contract-editor', ...)` plus `registerExtensions(['contract'], 'vault-memory-contract-editor')`; opening a `.contract` file in Obsidian launches the visual editor (palette + canvas + properties inspector) automatically
+- [ ] **CAN-06**: Three reference `.contract` files ship in `examples/contracts/` corresponding to the three Phase 6 reference contracts (`meeting-prep.contract`, `project-status.contract`, `code-review-brief.contract`); each opens cleanly in the editor and emits a `.yaml` byte-comparable to the Phase 6 reference YAML
+- [ ] **CAN-07**: Round-trip acceptance — `.contract` → `.yaml` → `.contract` is semantically equivalent after canonicalization (canonicalization rules documented in the Phase 7 ADR); YAML comments are preserved via `yaml ^2.6` round-trip mode per Phase 6 CON-01; node positions in `.contract` are canonicalized on save
+- [ ] **CAN-08**: Hash-gated watcher reuses v1 `SuppressionSet` (`src/adapters/change-feed/obsidian-fs/suppression.ts`) to prevent recompile loops between the plugin's `.yaml` emissions and the Phase 6 `_contracts/` `ChangeFeed` subscriber that hot-reloads `ContractRegistry`
+- [ ] **CAN-09**: Documentation + screencast walkthrough — covers plugin install (community store + sideload), opening / editing / saving `.contract` files, the three reference contracts, settings panel tour, secrets entry via the key-ring panel, manual reindex, and one end-to-end contract authoring flow ending in a `instantiate_contract` call
+
+#### Spike — jsoncanvas-fork viability (CAN-10)
+
+- [ ] **CAN-10**: Pre-implementation spike resolves whether the jsoncanvas.org renderer can be forked cleanly as the `.contract` editor view; **deliverable**: a Phase 7 ADR (`docs/v2/adr/007-contract-editor.md`) + a working prototype Obsidian plugin rendering one reference contract (e.g. `meeting-prep.contract`) in a `registerView` view using forked renderer code, plus a verified MIT-compatible license check on the upstream jsoncanvas repo. **Go/no-go gate**: if the fork is non-viable (renderer too coupled to the `.canvas` format, license incompatible, etc.), Phase 7 escalates to a re-discuss to choose between (a) building the renderer from scratch (Phase 7 grows substantially) or (b) descoping to one of the discussed alternative variants (A/B/D) in `.planning/phases/07-visual-contract-editor-canvas/design-variants/`
+
+#### Plugin chrome (PLG-*)
+
+- [ ] **PLG-01**: Settings panel — Obsidian-native settings tab (`PluginSettingTab`) exposes core vault-memory tunables: Ollama URL (default `http://localhost:11434`), embedding model selection (free-text or dropdown from a small known list), indexer batch size, reranker enable/disable, default vault selection. Settings persist via Obsidian `loadData()` / `saveData()`. Changes are pushed to the running `vault-memory serve` process via MCP tool calls (no manual restart required for hot-swappable settings; restart-required settings clearly flagged in UI)
+- [ ] **PLG-02**: Key-ring–backed secrets storage — secrets (MCP client tokens, cloud-service API keys, peer-MCP server credentials) are stored via Obsidian's `safeStorage` API (Electron-backed OS keychain — macOS Keychain / Schlüsselbund, Windows Credential Locker, libsecret on Linux); plaintext secrets never persist in `data.json` or the vault. Plugin offers UI to add/list/remove named secrets; secrets are referenced from settings or connector configs by name only
+- [ ] **PLG-03**: Manual reindex trigger — settings-adjacent action invokes full and per-vault reindex via MCP tool calls to the running `vault-memory serve`; live progress feedback (notes parsed / chunks embedded / errors); reindex respects `SuppressionSet` to avoid colliding with watcher activity
+- [ ] **PLG-04**: Read-only stats panel — surfaces per-vault snapshot of index size (notes + chunks), last-index timestamp, embedding model + dimensions, audit_log row counts (by `kind`), peer-MCP client connection status, contract count + last-load status. Read via MCP tool calls; refreshable on demand; no write operations from this panel
+- [ ] **PLG-05**: Connector management UI — list/add/remove peer MCP clients declared in `[contracts.mcp_clients]`; reads + writes `~/.vault-memory/config.toml` (or proxies through an MCP config-mutation tool, planner decides); displays peer-MCP capability descriptors (which verbs each peer exposes); credentials referenced from PLG-02 secrets by name (never inline). Future cloud-source connectors plug into the same UI scaffold
 
 ### Release & Polish (Phase 8 — v2.0.0)
 
@@ -239,7 +255,8 @@ Phase mapping (sequential numbering 0–9; brief's Phase 4 folded into Phase 3; 
 | GRA-01 to GRA-05 | Phase 4 | Complete (2026-05-17 — docs/v2/PHASE-4-SIGN-OFF.md) |
 | BRF-01 to BRF-11 | Phase 5 | Pending |
 | CON-01 to CON-12 | Phase 6 | Pending |
-| CAN-01 to CAN-09 | Phase 7 | Pending |
+| CAN-01 to CAN-10 | Phase 7 | Pending |
+| PLG-01 to PLG-05 | Phase 7 | Pending |
 | REL-01 to REL-09 | Phase 8 | Pending |
 | GAT-01 to GAT-05 | Phase 9 | Pending |
 | NOT-01 to NOT-07 | v3.0.0 (deferred) | Deferred |
