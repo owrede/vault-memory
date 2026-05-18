@@ -197,15 +197,108 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
   4. Maintainer signs off explicitly: Phase 10 (v3 Notion connector work) is cleared to begin; without this sign-off, no v3 code is written
 **Plans**: TBD
 
+## Deployment model — load-bearing assumption for all phases
+
+**vault-memory v2 is single-user-runtime over a shared-vault substrate.** This is not a deployment detail; it is the assumption several v2 design choices rest on, and the framing that everything beyond v2 either extends or replaces.
+
+- **Storage substrate (shared):** The Obsidian vault — a directory of `.md` files plus `_memory/`, `_briefs/`, `_contracts/`, `.memory-sink` sentinels — is synced across users via Syncthing / iCloud / git / Dropbox. The sync substrate is **outside vault-memory's concern**; vault-memory sees a filesystem.
+- **Runtime (per-user):** Each user runs their own `vault-memory serve` process locally. Each has their own `~/.vault-memory/` (config.toml, SQLite DBs, locks, models). Each indexes the synced vault independently into their local SQLite. Each user's agent talks to that user's local MCP server.
+- **What's shared via the sync substrate, not the runtime:** Source notes (user-authored); briefs in `_memory/_briefs/`; memory observations in `_memory/`; task contracts in `_contracts/`. When user A's `compile_brief` writes a brief, Syncthing/git syncs it to user B's machine; B's `chokidar` watcher indexes it; B's daemon evaluates staleness for **B's** view of the source docs.
+- **What's runtime-local, never shared:** SQLite DBs (chunks, embeddings, edges, FTS5, brief_sources, daemon_state); embedding vectors (each user re-embeds locally via their own Ollama); lock files; audit log; cross-encoder ONNX models.
+- **Why content-stable ChunkIds matter cross-user:** Phase 5 D-04 (`<n>` = `first-7-of-sha256(NFC(chunk_text))`) is not just a single-user nicety. Both users compute the same fragments over the same source text, so user B's daemon can interpret user A's brief's `source_hashes` map without re-coordination. Ordinal `<n>` would have made every brief look perpetually stale to everyone except its author.
+- **Conflict resolution lives in the sync substrate, not vault-memory.** When two users compile briefs with the same `target` concurrently, git/Syncthing handles the file-level conflict (merge markers or last-write-wins). vault-memory itself sees only whichever file ended up on disk.
+
+The v3 and v4 lines below are framed against this baseline.
+
 ## v3.0.0 — Deferred
 
 The following work is **out of v2 scope** and tracked for the v3.0.0 line. It is listed here so the maintainer and users have visibility into what comes after v2.0.0; it does not count against v2 phase progress.
+
+**v3.0.0 preserves the single-user-runtime model.** Everything in v3 is about widening the *storage substrate* (more source types, more delivery targets) — never about sharing the runtime between users. Multi-user is a v4 question (see below).
 
 ### Phase 10 (v3.0.0): Notion connector & multi-source proof
 **Status**: Deferred — gated by Phase 9 sign-off
 **Goal (sketch)**: Ship the first non-Obsidian source/delivery/change-feed adapter (Notion), promoting the adapter seams from "interfaces with one implementation" to a real plugin architecture; resolve the 14 open ADRs (005–01x) on identity stability, link resolution, property equivalence, granularity, write semantics, auth, watch, rate limits, embedding strategy, cross-source memory, caching, sync, Notion sinks, and capability discovery
 **Tracked requirements (v3, not v2)**: NOT-01 through NOT-07 (Notion connector); DMN-01 through DMN-03 (MCP daemon mode, v2.1.x or v3.0.0); TPC-01 through TPC-03 (third-party connectors, post-v3)
 **Premise check**: Phase 9 of this roadmap. No v3 code is written until Phase 9 passes.
+
+### Phase 11 (v3.x, IDEA — not a decision): `postgres-fs` storage adapter
+**Status**: Idea — not committed; surfaces a path, does not lock it in
+**Why it's listed here:** The adapter seams Phase 1 introduced (`SourceConnector` / `DeliveryAdapter` / `ChangeFeed`) make this technically additive. If a power user's vault grows past what local SQLite comfortably indexes (rough mental model: 100k+ notes, multi-GB embeddings), or if a user wants their vault-memory state backed by hosted Postgres (Supabase, Neon, RDS) for backup / cross-device availability, a `postgres-fs` adapter would let them swap storage without rewriting the retrieval layer.
+
+**What it would (probably) ship:**
+- `src/adapters/source/postgres-fs.ts` reading Obsidian vault files but indexing into Postgres (`pgvector` for embeddings, `pg_trgm` or `pg_search`/ParadeDB for BM25, native B-tree indexes for the edges/brief_sources reverse-index tables)
+- `src/adapters/delivery/postgres-fs.ts` and `src/adapters/change-feed/postgres-fs.ts` — same seam contracts, Postgres-backed
+- A migration tool moving an existing SQLite vault DB to Postgres (one-shot, additive — SQLite remains the default)
+
+**Explicit non-goals for v3.x:**
+- **Still single-user-runtime.** A `postgres-fs` adapter does not share runtime between users. Each user connects their `vault-memory serve` to their own Postgres database (or their own schema in a shared one). No auth, no ACL, no row-level security in v3.
+- **Not "Ghost.build" or any other agent-DB SaaS.** Evaluated 2026-05-18 and rejected: cloud-only, no retrieval primitives, no local-first path, violates the v2 brand constraint. `postgres-fs` is a *storage adapter*, not a managed service.
+- **Not pgvector evangelism.** SQLite + sqlite-vec stays the default. Postgres is an option for users who need it.
+
+**Open ADRs (v3 territory, do not author until premise check passes):**
+- ADR-PGS-01 — connection model (per-user-per-vault DB? shared schema-per-user? cloud-hosted vs self-hosted?)
+- ADR-PGS-02 — vector extension choice (`pgvector` baseline vs `pgvectorscale` for scale)
+- ADR-PGS-03 — BM25 path (`pg_trgm` good-enough vs ParadeDB `pg_search` for parity with SQLite FTS5)
+- ADR-PGS-04 — migration semantics (one-shot SQLite → Postgres dump? shadow-write during transition? rollback story?)
+- ADR-PGS-05 — synchronous-vs-async (today `better-sqlite3` is sync; Postgres clients are async — does this ripple through `src/db/queries/*.ts`?)
+
+**Premise check (gates Phase 11 from starting):** Phase 9 (v2 hard gate) still passes after the postgres-fs work; adapter seams unviolated; CI greps zero outside adapters; capability descriptors still well-tested.
+
+**Tracked requirements:** PGS-01 through PGS-NN (placeholder — to be defined when/if this is promoted from idea to commitment).
+
+## v4.0.0 — Anticipated (IDEAS, not decisions)
+
+**v4.0.0 is a different product line, not v3 with more storage options.** Everything in this section is a sketch of where vault-memory *could* go, not a roadmap. The purpose of listing v4 here is so future-you (and contributors) understand the lineage of design decisions: certain v2 choices (opaque DocIds, adapter seams, content-stable ChunkIds, provenance-on-every-agent-write, MCP-as-canonical-interface) were made anticipating that v4 might happen, even if v4 never ships.
+
+### The framing: from per-user-runtime to hive-mind
+
+vault-memory v1–v3 sits between *a user* and *their agent*. The user thinks, writes, and organizes; the agent reads that content and acts on the user's behalf. The agent's effectiveness is bounded by what *one human's* expression has captured.
+
+v4 asks: **what if vault-memory sat between *a group* and *their shared swarm of agents*?** A team of humans contributes content the way a hive of bees contributes to comb — each member's work accumulates into a larger body of knowledge that any member (human or agent) can draw on to achieve more than they could alone. The "magic ingredient" is not better LLMs or better vector search; it's a substrate where:
+
+- **Humans express via content** — their natural mode (writing, organizing, linking notes), unchanged from v2
+- **Agents read that content with full provenance, authority, and freshness signals** — knowing whose work is whose, what's authoritative, what's stale, what's been superseded
+- **Agents contribute back into the same substrate via labeled MemorySinks** — observations, briefs, dossiers — each carrying provenance attributing them to the agent and (new in v4) the user-on-whose-behalf the agent acted
+- **The substrate compounds** — every human contribution and every agent contribution becomes a citable source for future work, with the staleness daemon ensuring no one acts on rotted context
+
+The product question v4 answers: *how do humans and agents collaborate in a shared knowledge environment, with the same safety and provenance guarantees that v2 established for single-user use?*
+
+### Why v4 is "different product line," not "v3 with auth"
+
+The v2 → v3 path is **additive at the adapter seam**: more sources, more delivery targets, same runtime model. A `postgres-fs` adapter doesn't touch Phase 2's MemorySink invariants or Phase 5's brief layer. It's a storage swap.
+
+The v3 → v4 path is **architectural rework** because nearly every design decision made under "single-user-runtime" assumes a single agent identity. v4 has to redesign:
+
+- **Identity & authentication** — currently zero. v4 needs principals (humans and agents), auth (OAuth? OIDC? mTLS?), agent-on-behalf-of-user delegation
+- **Access control on MemorySinks** — currently a single sentinel marks a folder agent-writable. v4 needs per-principal ACLs: "agent X acting for user Y may write to memory sink Z"
+- **Per-user provenance** — currently `source: agent` is enough. v4 needs `source: agent`, `agent_id`, `acted_for_user`, `acted_at_principal` — and validators that enforce it
+- **Concurrent-write conflict resolution** — currently delegated to the sync substrate (git/Syncthing). v4 with a shared runtime needs application-level resolution (CRDTs? operational transforms? last-writer-wins with notification?)
+- **Multi-tenant briefs** — when user A compiles a brief in a shared environment, does user B see it? Always? Opt-in? Only briefs B has permission to read?
+- **Authority signals across users** — Phase 3's `authority_weight` currently has no meaning. In v4, "alice's notes about Atlas are authoritative; bob's are speculative" becomes a query-time signal
+- **The staleness daemon becomes a coordinator** — currently a single in-process daemon per user. In v4, one daemon per shared environment, or a distributed daemon protocol, or per-user daemons that gossip
+- **Audit log becomes per-principal** — who-did-what-when across the entire hive, not just one user's view
+
+**Postgres+pgvector is the *likely* (not certain) storage substrate for v4** — not because of vector search (sqlite-vec already does that), but because Postgres has row-level security, mature multi-tenant patterns, async clients suited to a shared server, and an enterprise migration story. The `postgres-fs` work in v3.x is what makes v4 *implementable* — but it does not by itself make v4 *real*. v4 is everything *above* the storage layer that v2/v3 didn't have to think about.
+
+### Why we're capturing this now, not when v4 starts
+
+Two reasons:
+
+1. **Several v2 design decisions are load-bearing for v4 even though they were made for v2's own reasons.** Opaque `DocId`s, the `Document.properties` PropertyBag, content-stable ChunkIds, MemorySink-as-handle-not-path, provenance-on-every-agent-write, MCP-as-canonical-interface — all of these are necessary-but-not-sufficient for v4. If we'd made the *other* choice at any of those forks, v4 would require a v2 rewrite first. Documenting v4-as-anticipated tells future-you why these choices were worth defending against pressure to simplify them.
+2. **The v2 → v4 path likely runs *through* v3, not around it.** v3's `postgres-fs` adapter is the substrate v4 needs; v3's Notion connector proves the seam discipline that v4's multi-principal ACL layer relies on. Knowing v4 is on the horizon shapes how aggressively we hold the line on Phase 9's premise check.
+
+### What v4 is NOT
+
+- **Not a cloud SaaS pivot.** Self-host MUST remain a first-class deployment. v4 adds *multi-user* as a capability; it does not remove *local-first* as a deployment option. A team running v4 on their own infrastructure must be possible.
+- **Not a CRDT product.** vault-memory is not Notion / Roam / Logseq. The hive-mind framing is about *shared knowledge*, not *real-time co-editing*. Conflict resolution may use CRDTs internally, but co-editing is not a feature.
+- **Not a chat / messaging substrate.** Agents communicate via reading and writing content, not via direct message-passing. The "hive" coordinates through accumulated content, not real-time signals.
+- **Not a hosted LLM service.** MCP Sampling still routes LLM calls back to the caller's environment. vault-memory in v4 is a knowledge layer with multi-user semantics; it is not an LLM provider.
+- **Not committed.** This entire v4 section is exploratory. No v4 code is written until (a) v2.0.0 ships, (b) v3.0.0 ships, (c) a credible signal exists that the hive-mind use case is real and underserved, and (d) a v4 brief equivalent to the v2 brief has been authored and locked.
+
+### Tracked requirements (placeholder)
+
+**MUL-01 through MUL-NN — to be defined when/if v4 is promoted from idea to commitment.** Topics the v4 brief would need to resolve: principal/identity model, ACL semantics, agent-on-behalf-of-user delegation, multi-tenant MemorySink namespacing, concurrent-write resolution, cross-user authority signals, distributed/centralized staleness coordination, audit log scoping, opt-in/opt-out brief sharing, cross-principal supersede semantics, hive-wide eval discipline.
 
 ## Progress
 
