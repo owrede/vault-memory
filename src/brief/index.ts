@@ -39,3 +39,9 @@ export {
   type LlmStrategy,
 } from "./llm-ladder.js";
 export { validateAndPatchBody } from "./body-validator.js";
+export {
+  handleCompileBrief,
+  type CompileBriefArgs,
+  type CompileBriefDeps,
+  type CompileBriefResult,
+} from "./compile.js";
