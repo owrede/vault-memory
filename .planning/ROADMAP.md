@@ -162,11 +162,11 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
   3. Override mechanism is proven — pointing a contract at the stub connector via `source_overrides` yields the same shaped output as `obsidian-fs`, demonstrating handle-based portability
   4. Contract schema (`version`, `name`, `inputs`, `sources`, `assembly`, `output_shape`, `write_back`) is Zod-4 validated; variable handle pattern (`{{default_source}}`) works in all reference contracts; comments are preserved on round-trip
   5. Phase 6 ADR documents the Tools vs Prompts decision; `yaml ^2.6` is the only net-new runtime dependency
-**Plans:** 2/4 plans executed
+**Plans:** 3/4 plans executed
 Plans:
 - [x] 06-01-foundations-PLAN.md — ADR-006 + migration 014 contract_audit + [contracts] config block + type catalog + $ref resolver + buildInputSchema + ContractRegistry + slug + Zod ContractFileSchema + Wave-0 stubs
 - [x] 06-02-loader-registry-hot-reload-PLAN.md — startContractRegistry (boot scan + ChangeFeed hot reload per D-LOAD) + syncAutoRegistered dynamic tool registration (D-A1) + register_contracts_as_tools tool + snapshot regen (34 -> 35)
-- [ ] 06-03-instantiate-describe-verbs-PLAN.md — resolveTemplate (D-A2c) + PeerMcpRegistry (D-A2a peer-MCP, Pitfall F4) + verbDispatcher (11 baseline + literal + mcp:// with Q-TIMEOUT) + instantiateContract orchestrator (CON-06, all 11 InstantiateError reasons) + describeContract (CON-05, Q-DESCRIBE) + snapshot regen (35 -> 37)
+- [x] 06-03-instantiate-describe-verbs-PLAN.md — resolveTemplate (D-A2c) + PeerMcpRegistry (D-A2a peer-MCP, Pitfall F4) + verbDispatcher (11 baseline + literal + mcp:// with Q-TIMEOUT) + instantiateContract orchestrator (CON-06, all 11 InstantiateError reasons) + describeContract (CON-05, Q-DESCRIBE) + snapshot regen (35 -> 37)
 - [ ] 06-04-reference-contracts-evals-gate-PLAN.md — 3 reference contracts (CON-07) + 4 eval scenarios (CON-08, CON-10) + stub-parity conformance + non-Claude smoketest extension (CON-09) + list_contracts & list_contract_verbs MCP Resources (CON-04, D-A2b) + PHASE-6-SIGN-OFF + CHANGELOG + ROADMAP checkbox
 
 ### Phase 7: Visual contract editor (Canvas)
@@ -182,7 +182,7 @@ Plans:
 **Plans:** 4 plans
 Plans:
 - [x] 06-01-foundations-PLAN.md — ADR-006 + migration 014 contract_audit + [contracts] config block + type catalog + $ref resolver + buildInputSchema + ContractRegistry + slug + Zod ContractFileSchema + Wave-0 stubs
-- [ ] 06-02-loader-registry-hot-reload-PLAN.md — startContractRegistry (boot scan + ChangeFeed hot reload per D-LOAD) + syncAutoRegistered dynamic tool registration (D-A1) + register_contracts_as_tools tool + snapshot regen (34 -> 35)
+- [x] 06-02-loader-registry-hot-reload-PLAN.md — startContractRegistry (boot scan + ChangeFeed hot reload per D-LOAD) + syncAutoRegistered dynamic tool registration (D-A1) + register_contracts_as_tools tool + snapshot regen (34 -> 35)
 - [ ] 06-03-instantiate-describe-verbs-PLAN.md — resolveTemplate (D-A2c) + PeerMcpRegistry (D-A2a peer-MCP, Pitfall F4) + verbDispatcher (11 baseline + literal + mcp:// with Q-TIMEOUT) + instantiateContract orchestrator (CON-06, all 11 InstantiateError reasons) + describeContract (CON-05, Q-DESCRIBE) + snapshot regen (35 -> 37)
 - [ ] 06-04-reference-contracts-evals-gate-PLAN.md — 3 reference contracts (CON-07) + 4 eval scenarios (CON-08, CON-10) + stub-parity conformance + non-Claude smoketest extension (CON-09) + list_contracts & list_contract_verbs MCP Resources (CON-04, D-A2b) + PHASE-6-SIGN-OFF + CHANGELOG + ROADMAP checkbox
 **UI hint**: yes
@@ -200,7 +200,7 @@ Plans:
   5. Tool surface inventory is ≤32 tools (with MCP Resources promotion) or ≤40 tools (without) at v2.0.0 ship
 **Plans:** 4 plans
 Plans:
-- [ ] 06-01-foundations-PLAN.md — ADR-006 + migration 014 contract_audit + [contracts] config block + type catalog + $ref resolver + buildInputSchema + ContractRegistry + slug + Zod ContractFileSchema + Wave-0 stubs
+- [x] 06-01-foundations-PLAN.md — ADR-006 + migration 014 contract_audit + [contracts] config block + type catalog + $ref resolver + buildInputSchema + ContractRegistry + slug + Zod ContractFileSchema + Wave-0 stubs
 - [ ] 06-02-loader-registry-hot-reload-PLAN.md — startContractRegistry (boot scan + ChangeFeed hot reload per D-LOAD) + syncAutoRegistered dynamic tool registration (D-A1) + register_contracts_as_tools tool + snapshot regen (34 -> 35)
 - [ ] 06-03-instantiate-describe-verbs-PLAN.md — resolveTemplate (D-A2c) + PeerMcpRegistry (D-A2a peer-MCP, Pitfall F4) + verbDispatcher (11 baseline + literal + mcp:// with Q-TIMEOUT) + instantiateContract orchestrator (CON-06, all 11 InstantiateError reasons) + describeContract (CON-05, Q-DESCRIBE) + snapshot regen (35 -> 37)
 - [ ] 06-04-reference-contracts-evals-gate-PLAN.md — 3 reference contracts (CON-07) + 4 eval scenarios (CON-08, CON-10) + stub-parity conformance + non-Claude smoketest extension (CON-09) + list_contracts & list_contract_verbs MCP Resources (CON-04, D-A2b) + PHASE-6-SIGN-OFF + CHANGELOG + ROADMAP checkbox
@@ -339,7 +339,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 →
 | 3. Bundles + authority/staleness | 0/TBD | Not started | - |
 | 4. Graph-as-retrieval | 7/7 | Complete   | 2026-05-17 |
 | 5. Compiled brief layer | 4/4 | Complete   | 2026-05-18 |
-| 6. Task contract DSL | 2/4 | In Progress|  |
+| 6. Task contract DSL | 3/4 | In Progress|  |
 | 7. Visual contract editor (Canvas) | 0/TBD | Not started | - |
 | 8. Polish, eval suite, v2.0.0 release | 0/TBD | Not started | - |
 | 9. Pre-Phase-10 premise check (HARD GATE) | 0/TBD | Not started | - |
