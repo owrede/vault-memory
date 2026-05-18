@@ -1,12 +1,48 @@
-# Phase 5 / BRF-11 cross-adapter source-neutrality eval.
+# Phase 5 / BRF-11 — cross-adapter source-neutrality eval.
 #
-# The 20-document staleness scenario parametrized over BOTH the
-# `obsidian-fs` ChangeFeed AND the stub ChangeFeed. Proves the brief
-# layer (compile_brief, get_brief, the staleness daemon) is
-# source-neutral — a hypothetical Notion ChangeFeed in v3 would slot
-# in via the same `feed.subscribe()` contract with no brief-layer
-# code changes.
-#
-# Populated in slice 4 (Plan 05-04) alongside the daemon and the
-# stub-ChangeFeed conformance extension.
-queries: []
+# The same staleness scenario is replayed against BOTH the obsidian-fs
+# ChangeFeed AND the stub ChangeFeed; identical outcomes prove the
+# brief layer (compile_brief / get_brief / BriefStalenessDaemon) has
+# NO obsidian-fs-specific branches. The authoritative cross-adapter
+# assertion lives in `src/adapters/source/conformance.test.ts` (Plan
+# 05-04, BRF-11 suite): 4 test cases × 2 adapters = 8 test runs.
+# This YAML is a documentation + regression-hook companion — when
+# Phase 10 adds the Notion adapter, the same scenario can be replayed
+# against it for free.
+
+tool: list_briefs
+queries:
+  - id: atlas-staleness-stub-conformance
+    query: BRF-11 source-neutrality — identical staleness outcomes across adapters
+    adapters: [obsidian-fs, stub]
+    events:
+      - type: compile
+        target: atlas-stub-test
+        source_doc_ids:
+          - obsidian-fs://atlas/projects/Atlas-1.md
+          - obsidian-fs://atlas/projects/Atlas-2.md
+        purpose: BRF-11 source-neutrality test
+        prepared_text: |
+          # Brief: Atlas Stub Test
+
+          ## Synthesis
+          This brief cites [[Atlas-1]] and [[Atlas-2]].
+
+      - type: modify_source
+        doc_id: obsidian-fs://atlas/projects/Atlas-1.md
+        new_content_suffix: |2
+
+          ## Update from BRF-11 test
+          Modified content.
+
+      - type: expect_stale
+        target: atlas-stub-test
+        changed_sources_contains:
+          - obsidian-fs://atlas/projects/Atlas-1.md
+
+    rationale: >
+      BRF-11 guarantee — the same staleness scenario passes when the
+      stub connector is used as the change-feed source. Proves the
+      daemon and brief-layer code do not assume obsidian-fs-specific
+      behavior; the future Notion adapter (Phase 10) inherits BRF-11
+      coverage for free.
