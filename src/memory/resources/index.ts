@@ -24,3 +24,11 @@ export const RESOURCE_URI_MEMORY_STATS = "vault-memory://memory/stats";
  * slices can import it without scaffolding work.
  */
 export const RESOURCE_URI_LIST_BRIEFS = "vault-memory://briefs";
+
+/**
+ * Phase 6 / Plan 06-04 (CON-04 + D-A2b): contract discovery + verb-usage
+ * Resources. The `{vault}` suffix is appended at registration time per
+ * the SDK 1.29 Resource template pattern.
+ */
+export const RESOURCE_URI_LIST_CONTRACTS = "vault-memory://contracts";
+export const RESOURCE_URI_LIST_CONTRACT_VERBS = "vault-memory://contract-verbs";
