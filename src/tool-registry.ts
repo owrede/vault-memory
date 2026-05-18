@@ -987,6 +987,26 @@ export const TOOLS = [
       },
     },
   },
+  // ── Phase 6 task-contract DSL (Plan 06-02 / D-A1 escape valve) ───────────
+  {
+    name: "register_contracts_as_tools",
+    description:
+      "Explicit-control escape valve (D-A1) — scans the per-vault contract " +
+      "registry and updates the dynamic MCP tool list (registers new contracts " +
+      "as vm_<name> tools, unregisters removed ones) regardless of the " +
+      "[contracts.auto_register_tools] config gate. Always callable. " +
+      "Returns a per-vault diff of {registered, unregistered}. Omit `vault` " +
+      "to apply to every configured vault.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        vault: {
+          type: "string",
+          description: "Vault name; omit to apply to all vaults.",
+        },
+      },
+    },
+  },
 ] as const;
 
 export type ToolName = (typeof TOOLS)[number]["name"];
@@ -1463,6 +1483,15 @@ export const TOOL_SCHEMAS = {
       .array(z.string().min(1))
       .optional()
       .describe("Restrict to these vault names; defaults to all configured"),
+  },
+
+  // ── Phase 6 task-contract DSL (Plan 06-02 / D-A1 escape valve) ─────────
+  register_contracts_as_tools: {
+    vault: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Vault name; omit to apply to all vaults"),
   },
 } as const satisfies Record<string, ZodRawShape>;
 

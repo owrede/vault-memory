@@ -91,6 +91,12 @@ import {
   parseSourceHandle,
 } from "./adapters/registry.js";
 import { ObsidianFsSource } from "./adapters/source/obsidian-fs/index.js";
+import {
+  startContractRegistry,
+  syncAutoRegistered,
+  type StartedContractRegistry,
+} from "./contracts/index.js";
+import type { RegisteredTool } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 const VERSION = "1.0.0";
 
@@ -104,6 +110,7 @@ export type BootstrapPhase =
   | "load_config"
   | "open_vaults"
   | "register_memory_sinks"
+  | "start_contract_registries"
   | "start_catchup"
   | "connect_transport";
 
@@ -382,6 +389,18 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
   };
 
   const shutdown = async (): Promise<void> => {
+    // Phase 6 (Plan 06-02): dispose ContractRegistry feed subscriptions
+    // BEFORE the brief daemons + watchers so no contract reload races
+    // with mid-shutdown disposal. The dispose() call is synchronous and
+    // unsubscribes the per-vault ChangeFeed handler.
+    for (const state of contractRegistries.values()) {
+      try {
+        state.started.dispose();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`[contract-registry] dispose error: ${message}\n`);
+      }
+    }
     // Phase 5 (Plan 05-03): dispose brief staleness daemons FIRST so
     // no in-flight ChangeEvents land mid-shutdown. Then drain + stop
     // watchers; finally close change-feeds (the underlying chokidar
@@ -423,6 +442,35 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
   // `server.server.getClientVersion()` returns the client's `Implementation`
   // object — the `name` field is what we use for audit-log attribution.
   serverRef = server;
+
+  // ─── Phase 6 (Plan 06-02) — per-vault ContractRegistry state ─────────────
+  //
+  // The map is created BEFORE the TOOLS loop so the `register_contracts_as_tools`
+  // handler can capture it via closure. The registries themselves are
+  // populated by `startContractRegistry({...})` AFTER all v1+v2 tools are
+  // registered (so `syncAutoRegistered` is invoking `server.registerTool`
+  // on an already-initialized server instance — RegisteredTool handles
+  // are preserved per-vault for later remove() calls).
+  //
+  // `instantiateHandler` is a Plan-06-03 forward reference; today it is a
+  // stub that returns `not_yet_implemented`. The stub is only invoked when
+  // an auto-registered `vm_<name>` tool is CALLED — not when it is
+  // registered (registration is what Plan 06-02 ships).
+  const contractRegistries = new Map<
+    string,
+    {
+      started: StartedContractRegistry;
+      registered: Map<string, RegisteredTool>;
+    }
+  >();
+  const instantiateHandler = async (
+    _name: string,
+    _args: unknown,
+  ): Promise<unknown> => ({
+    ok: false,
+    reason: "not_yet_implemented",
+    note: "instantiate_contract lands in Plan 06-03",
+  });
 
   // ─── registerTool × 23 (SDK 1.29, plan 01-05 task 07) ─────────────────────
   //
@@ -1100,6 +1148,59 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
         p,
       );
     },
+
+    // ── Phase 6 task-contract DSL (Plan 06-02 / D-A1 escape valve) ─────────
+    //
+    // Scans the per-vault contract registries and forces a sync of the
+    // dynamic MCP tool list — regardless of [contracts.auto_register_tools]
+    // (which is what makes this the explicit-control escape valve).
+    // Returns per-vault diffs so the caller can confirm what landed.
+    register_contracts_as_tools: async (a) => {
+      const p = a as { vault?: string };
+      const targetVaults = p.vault !== undefined ? [p.vault] : manager.list().map((v) => v.config.name);
+      if (p.vault !== undefined) {
+        const v = manager.list().find((vault) => vault.config.name === p.vault);
+        if (v === undefined) {
+          return { ok: false, reason: "unknown_vault", vault: p.vault };
+        }
+      }
+      const results: {
+        vault: string;
+        registered: string[];
+        unregistered: string[];
+      }[] = [];
+      const prefix = config.contracts.tool_prefix;
+      for (const vname of targetVaults) {
+        const state = contractRegistries.get(vname);
+        if (state === undefined) continue;
+        const v = manager.list().find((vault) => vault.config.name === vname);
+        if (v === undefined) continue;
+        const before = new Set(state.registered.keys());
+        // FORCED enabled:true — explicit-control escape valve (D-A1).
+        syncAutoRegistered(
+          server,
+          state.started.registry,
+          prefix,
+          state.registered,
+          { enabled: true, instantiateHandler },
+        );
+        const after = new Set(state.registered.keys());
+        results.push({
+          vault: vname,
+          registered: Array.from(after).filter((n) => !before.has(n)),
+          unregistered: Array.from(before).filter((n) => !after.has(n)),
+        });
+      }
+      if (p.vault !== undefined) {
+        const single = results[0] ?? {
+          vault: p.vault,
+          registered: [],
+          unregistered: [],
+        };
+        return { ok: true, ...single };
+      }
+      return { ok: true, vaults: results };
+    },
   };
 
   // Wire each TOOLS entry through registerTool. The SDK runs the Zod
@@ -1235,6 +1336,70 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
       };
     },
   );
+
+  // ─── Phase 6 (Plan 06-02) — start per-vault ContractRegistry ─────────────
+  //
+  // Boot scan + ChangeFeed hot-reload subscriber per vault. The boot scan
+  // is light (yaml@2.9 parse over a handful of contract YAMLs) and runs
+  // synchronously here so the registry is populated before any client
+  // request lands. The ChangeFeed subscription is the third concurrent
+  // subscriber on the per-vault ObsidianFsChangeFeed (alongside the
+  // VaultWatcher from Phase 1 and the BriefStalenessDaemon from Phase 5).
+  // Lock contention is N/A — the ContractRegistry holds no lockfile.
+  //
+  // When [contracts.auto_register_tools] is true, an initial sync runs
+  // after the boot scan completes, registering one MCP tool per parsed
+  // contract (prefix from `config.contracts.tool_prefix`). Subsequent
+  // ChangeFeed events trigger another sync via the onRegistryChange hook.
+  onPhase("start_contract_registries");
+  for (const vault of manager.list()) {
+    const feed = changeFeeds.get(vault.config.name);
+    if (feed === undefined) continue;
+    const source = adapterRegistry.resolveSource(
+      parseSourceHandle(`obsidian-fs://${vault.config.name}`),
+    );
+    const registeredHandles = new Map<string, RegisteredTool>();
+    let started: StartedContractRegistry;
+    try {
+      // eslint-disable-next-line prefer-const
+      started = await startContractRegistry({
+        vault,
+        feed,
+        source,
+        auditDeps: { contractAudit: vault.db.contractAudit },
+        onRegistryChange: () => {
+          if (config.contracts.auto_register_tools) {
+            syncAutoRegistered(
+              server,
+              started.registry,
+              config.contracts.tool_prefix,
+              registeredHandles,
+              { enabled: true, instantiateHandler },
+            );
+          }
+        },
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(
+        `[contract-registry:${vault.config.name}] start failed: ${message}\n`,
+      );
+      continue;
+    }
+    if (config.contracts.auto_register_tools) {
+      syncAutoRegistered(
+        server,
+        started.registry,
+        config.contracts.tool_prefix,
+        registeredHandles,
+        { enabled: true, instantiateHandler },
+      );
+    }
+    contractRegistries.set(vault.config.name, {
+      started,
+      registered: registeredHandles,
+    });
+  }
 
   onPhase("connect_transport");
   const transport = new StdioServerTransport();

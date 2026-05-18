@@ -8,8 +8,26 @@ import { describe, expect, it } from "vitest";
 import { TOOLS, TOOL_SCHEMAS, buildToolSchema, type ToolName } from "./tool-registry.js";
 
 describe("TOOLS array", () => {
-  it("has exactly 34 entries (32 prior + 05-02 compile_brief + get_brief)", () => {
-    expect(TOOLS).toHaveLength(34);
+  it("has exactly 35 entries (34 prior + 06-02 register_contracts_as_tools)", () => {
+    expect(TOOLS).toHaveLength(35);
+  });
+
+  it("register_contracts_as_tools is registered with optional vault arg + D-A1 description", () => {
+    const tool = TOOLS.find((t) => t.name === "register_contracts_as_tools");
+    expect(tool).toBeDefined();
+    // Description mentions the escape valve and the dynamic tool list
+    // (the contract is the tool's discoverability surface).
+    expect(tool!.description).toMatch(/escape valve/i);
+    expect(tool!.description).toMatch(/auto_register_tools/);
+    expect(tool!.inputSchema).toEqual({
+      type: "object",
+      properties: {
+        vault: {
+          type: "string",
+          description: "Vault name; omit to apply to all vaults.",
+        },
+      },
+    });
   });
 
   it("includes record_observation, supersede, recall, get_outline, search_sections, get_document_bundle, and assemble_dossier with non-empty descriptions", () => {
