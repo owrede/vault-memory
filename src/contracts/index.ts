@@ -1,9 +1,8 @@
 /**
- * src/contracts barrel — Plan 06-01 surface only.
+ * src/contracts barrel — Plans 06-01 / 06-02 / 06-03 surface.
  *
- * Loader, templates, mcp-clients, verbs, instantiate, describe,
- * auto-register, resources, eval-runner land in Plans 06-02/03/04 and
- * are NOT re-exported here yet.
+ * Plan 06-04 adds: resources (vault-memory://contract-verbs/{vault})
+ * and the reference-contracts test fixtures.
  */
 
 export type {
@@ -70,3 +69,9 @@ export {
   type InstantiateBundle,
   type InstantiateResult,
 } from "./instantiate.js";
+export {
+  describeContract,
+  type DescribeDeps,
+  type DescribeArgs,
+  type DescribeResult,
+} from "./describe.js";
