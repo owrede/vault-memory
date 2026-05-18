@@ -46,3 +46,8 @@ export {
   syncAutoRegistered,
   type SyncAutoRegisteredOpts,
 } from "./auto-register.js";
+export {
+  resolveTemplate,
+  type TemplateBindings,
+  type TemplateResolveResult,
+} from "./templates.js";
