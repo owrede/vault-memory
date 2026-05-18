@@ -36,3 +36,9 @@ export {
   type VerbUsageRow,
 } from "./audit.js";
 export { ContractFileSchema, type ContractFileShape } from "./schema.js";
+export {
+  startContractRegistry,
+  type StartContractRegistryOpts,
+  type StartedContractRegistry,
+  type RegistryChangeKind,
+} from "./loader.js";
