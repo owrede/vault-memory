@@ -31,6 +31,27 @@ const VaultConfigSchema = z.object({
   exclude_globs: z.array(z.string()).optional(),
 });
 
+/**
+ * Phase 5 / D-10 ladder tier 2: per-vault Ollama brief-compile config.
+ *
+ * `[brief.ollama] model = "..."` opts the vault into Tier 2 of the
+ * capability-first LLM ladder. The MCP Sampling tier (Tier 1) is
+ * checked first per-call; this block is only consulted when Sampling
+ * is not available. Strictly localhost (existing OllamaClient binds
+ * to `http://localhost:11434`).
+ *
+ * Schema is OPTIONAL: backwards-compatible. Existing v1.x configs
+ * without `[brief]` still parse identically; the ladder simply
+ * skips Tier 2 and tries Tier 3 (`prepared_text`) → Tier 4
+ * (structured error). See ADR-005 §"Capability-first LLM ladder".
+ */
+const BriefOllamaConfigSchema = z.object({
+  model: z.string().min(1),
+});
+const BriefConfigSchema = z.object({
+  ollama: BriefOllamaConfigSchema.optional(),
+});
+
 // Phase 2: optional [memory] and [[memory_sinks]] blocks.
 //
 // The handle string is intentionally NOT validated against
@@ -54,6 +75,9 @@ const AppConfigSchema = z.object({
   vaults: z.array(VaultConfigSchema).optional().default([]),
   memory: MemoryConfigSchema.optional(),
   memory_sinks: z.array(MemorySinkConfigSchema).optional().default([]),
+  // Phase 5 / D-10 tier 2 (ADR-005). Backwards-compatible: existing
+  // configs without `[brief]` parse identically.
+  brief: BriefConfigSchema.optional(),
 });
 
 const DEFAULT_CONFIG: AppConfig = {
@@ -98,6 +122,71 @@ export async function loadConfig(path: string = configPath()): Promise<AppConfig
     },
     vaults: validated.vaults,
     memory: validated.memory,
-    memory_sinks: validated.memory_sinks,
+    // Phase 5 / ADR-005 §"Sub-folder MemorySink ordering": sort the
+    // memory_sinks array by path-specificity (longest resource first)
+    // so `MemorySinkRegistry.findSinkContaining` (startsWith over
+    // insertion order, src/memory/registry.ts:190-202) resolves
+    // sub-folder sinks BEFORE their parents. Concretely:
+    // `_memory/_briefs/` MUST be registered before `_memory/` so a
+    // brief write routes into the brief-specific sink (bound to
+    // `default-brief-v1`, accepts `status: "stale"`) instead of the
+    // parent (bound to `default-memory-v1`, rejects `"stale"`).
+    memory_sinks: sortSinksByPathSpecificity(validated.memory_sinks),
+    brief: validated.brief,
   };
+}
+
+/**
+ * Phase 5: sort `[[memory_sinks]]` so more-specific paths come first.
+ *
+ * The `handle` shape is `<scheme>://<authority>/<resource>` (ADR-001
+ * URI form). Path-specificity is measured by the length of the
+ * `<resource>` portion — longer resources are more specific and MUST
+ * register first. Comparator is stable (Array.prototype.sort is
+ * stable in V8 ≥ Node 12); equal-length resources preserve their
+ * declaration order.
+ *
+ * Pitfall 1 mitigation (ADR-005): without this normalization, a TOML
+ * that declares `_memory/` before `_memory/_briefs/` would route
+ * brief writes through the parent sink's `default-memory-v1`
+ * contract, which rejects `status: "stale"`.
+ */
+function sortSinksByPathSpecificity<T extends { handle: string }>(
+  sinks: T[],
+): T[] {
+  // Compute the resource length once per sink — avoids re-parsing
+  // inside the comparator (n*log(n) calls).
+  type Tagged = { sink: T; resourceLength: number; order: number };
+  const tagged: Tagged[] = sinks.map((s, i) => ({
+    sink: s,
+    resourceLength: extractResourceLength(s.handle),
+    order: i,
+  }));
+  tagged.sort((a, b) => {
+    // Primary: longer resource (more specific) first.
+    if (a.resourceLength !== b.resourceLength) {
+      return b.resourceLength - a.resourceLength;
+    }
+    // Secondary: preserve declaration order on ties (defensive — V8
+    // sort is already stable but the explicit tie-breaker documents
+    // the intent).
+    return a.order - b.order;
+  });
+  return tagged.map((t) => t.sink);
+}
+
+/**
+ * Extract the `<resource>` portion length from a `<scheme>://<authority>/<resource>`
+ * handle. Returns 0 for malformed handles — they fall to the bottom
+ * of the sorted list, which is harmless because malformed handles
+ * are caught downstream by `parseMemorySinkHandle` in
+ * `src/memory/sink.ts`.
+ */
+function extractResourceLength(handle: string): number {
+  const schemeEnd = handle.indexOf("://");
+  if (schemeEnd === -1) return 0;
+  const afterScheme = handle.slice(schemeEnd + 3);
+  const firstSlash = afterScheme.indexOf("/");
+  if (firstSlash === -1) return 0;
+  return afterScheme.length - (firstSlash + 1);
 }

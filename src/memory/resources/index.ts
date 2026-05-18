@@ -18,3 +18,9 @@ export type { MemoryStatsResource, MemoryStatsEntry } from "./memory-stats.js"; 
 /** Canonical resource URIs. */
 export const RESOURCE_URI_LIST_SINKS = "vault-memory://memory/sinks";
 export const RESOURCE_URI_MEMORY_STATS = "vault-memory://memory/stats";
+/**
+ * Phase 5 / BRF-09: brief discovery via MCP Resource. Registered by
+ * slice 4 (Plan 05-04); the URI constant lands in slice 1 so later
+ * slices can import it without scaffolding work.
+ */
+export const RESOURCE_URI_LIST_BRIEFS = "vault-memory://briefs";

@@ -1,0 +1,12 @@
+# Phase 5 / BRF-10 primary eval (D-02).
+#
+# Hand-curated source_doc_ids per query — decouples brief-layer
+# correctness from Phase 4 graph-layer correctness. Each entry pins
+# the exact set of source documents the brief should be compiled from
+# (no cluster() / expand() in the loop), so a graph regression cannot
+# masquerade as a brief regression.
+#
+# Populated in slice 3 (Plan 05-03) once `compile_brief` + the
+# staleness daemon are working end-to-end against the Atlas Robotics
+# fixture vault.
+queries: []

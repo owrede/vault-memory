@@ -17,6 +17,7 @@
  */
 
 import { DEFAULT_MEMORY_V1 } from "./default-v1.js";
+import { DEFAULT_BRIEF_V1 } from "./default-brief-v1.js";
 import {
   __cacheContract,
   __getCachedContract,
@@ -26,10 +27,14 @@ import {
 } from "./loader.js";
 import type { MemoryContract } from "./types.js";
 
-// Pre-seed the cache with the hardcoded baseline so `getContract` can
-// look it up uniformly without a `if (name === "default-memory-v1")`
+// Pre-seed the cache with the hardcoded baselines so `getContract` can
+// look them up uniformly without a `if (name === "default-memory-v1")`
 // special case at every call site.
 __cacheContract("default-memory-v1", DEFAULT_MEMORY_V1);
+// Phase 5 / Pitfall 1 resolution: register a separate contract for
+// briefs with widened status enum and brief-specific required keys.
+// See ADR-005 §"New default-brief-v1 contract".
+__cacheContract("default-brief-v1", DEFAULT_BRIEF_V1);
 
 /**
  * Synchronous lookup. Returns the named contract from the in-process
@@ -50,13 +55,13 @@ export function getContract(name: string): MemoryContract {
 }
 
 function otherCachedNames(excluding: string): string {
-  // For diagnostics only — list any names cached besides default-memory-v1
-  // and the excluded name; helps users notice typos when they have many
-  // contracts loaded.
+  // For diagnostics only — list any names cached besides
+  // default-memory-v1 / default-brief-v1 and the excluded name;
+  // helps users notice typos when they have many contracts loaded.
   const names: string[] = [];
   // Pull from the cache through the loader's internal accessor — the
   // cache map itself is intentionally not exported.
-  for (const candidate of ["default-memory-v1"]) {
+  for (const candidate of ["default-memory-v1", "default-brief-v1"]) {
     if (candidate === excluding) continue;
     if (__getCachedContract(candidate)) names.push(candidate);
   }
@@ -71,6 +76,7 @@ function otherCachedNames(excluding: string): string {
 
 export {
   DEFAULT_MEMORY_V1,
+  DEFAULT_BRIEF_V1,
   loadContractFromDisk,
   MemoryContractInvalidError,
   MemoryContractNotFoundError,

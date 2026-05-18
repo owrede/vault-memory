@@ -61,6 +61,21 @@ export interface MemorySinkConfigEntry {
   contract: string;
 }
 
+/**
+ * Phase 5 / D-10 tier 2: per-vault Ollama brief-compile config.
+ *
+ * `[brief.ollama]` block — opt-in. When present, the LLM ladder's
+ * Tier 2 (`OllamaClient.chat`) is reachable; when absent, the ladder
+ * skips to Tier 3 (`prepared_text`) or Tier 4 (structured error).
+ * See ADR-005 §"Capability-first LLM ladder".
+ */
+export interface BriefOllamaConfig {
+  model: string;
+}
+export interface BriefConfig {
+  ollama?: BriefOllamaConfig;
+}
+
 export interface AppConfig {
   server: ServerConfig;
   vaults: VaultConfig[];
@@ -68,6 +83,8 @@ export interface AppConfig {
   memory?: MemoryConfig;
   /** Phase 2: `[[memory_sinks]]` array; empty when unconfigured. */
   memory_sinks: MemorySinkConfigEntry[];
+  /** Phase 5: optional `[brief]` block (D-10 LLM ladder tier 2). */
+  brief?: BriefConfig;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
