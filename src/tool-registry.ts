@@ -577,6 +577,81 @@ export const TOOLS = [
       },
     },
   },
+  // ── Phase 5 brief tools (Plan 05-02 / BRF-03) ────────────────────────────
+  {
+    name: "compile_brief",
+    description:
+      "Compile a brief from caller-supplied source documents and write it to the briefs sink. " +
+      "Resolves the LLM via the D-10 capability-first ladder (MCP Sampling → local Ollama → " +
+      "caller `prepared_text` → structured error). Enforces D-11 wikilink emission per source " +
+      "(appends a `## Sources` footer when the LLM omits them) and writes through DeliveryAdapter. " +
+      "On target collision, auto-supersedes the prior brief via the Phase 2 supersede chain (D-12).",
+    inputSchema: {
+      type: "object",
+      required: ["vault", "target", "source_doc_ids", "purpose"],
+      properties: {
+        vault: { type: "string", description: "Vault name (registered in [vaults] config)" },
+        target: {
+          type: "string",
+          description: "Stable cross-version handle for the brief (e.g. 'atlas-q3').",
+        },
+        source_doc_ids: {
+          type: "array",
+          items: { type: "string" },
+          minItems: 1,
+          maxItems: 50,
+          description: "DocIds the brief is compiled from; deduped, capped at 50 (D-03).",
+        },
+        purpose: {
+          type: "string",
+          minLength: 1,
+          maxLength: 500,
+          description: "Free-form purpose; bounded so list_briefs stays scannable.",
+        },
+        max_tokens: {
+          type: "integer",
+          minimum: 1,
+          default: 2000,
+          description: "Hint for the LLM ladder; default 2000.",
+        },
+        prepared_text: {
+          type: "string",
+          description:
+            "D-10 tier 3 fallback when no LLM is reachable — verbatim body to stitch in.",
+        },
+        sink: {
+          type: "string",
+          description: "Override the default `_memory/_briefs` sink.",
+        },
+      },
+    },
+  },
+  {
+    name: "get_brief",
+    description:
+      "Look up a brief by target slug. D-13 decision tree: staleness dominates; age is " +
+      "independent; follow the supersede chain to the terminal brief. Returns null when the " +
+      "caller MUST recompile (stale + !allow_stale OR too_old + !allow_stale).",
+    inputSchema: {
+      type: "object",
+      required: ["vault", "target"],
+      properties: {
+        vault: { type: "string", description: "Vault name (registered in [vaults] config)" },
+        target: { type: "string", description: "Stable cross-version handle for the brief." },
+        max_age_days: {
+          type: "integer",
+          minimum: 0,
+          description: "Reject briefs older than this many days unless allow_stale=true.",
+        },
+        allow_stale: {
+          type: "boolean",
+          default: false,
+          description:
+            "When true, return briefs flagged stale or too_old with annotation rather than null.",
+        },
+      },
+    },
+  },
   // ── Phase 3 assembly tools (Plan 03-02 / ASM-02) ─────────────────────────
   {
     name: "get_outline",
@@ -1166,6 +1241,60 @@ export const TOOL_SCHEMAS = {
       .string()
       .min(1)
       .describe("Why the old document is being retired; written to superseded_reason"),
+  },
+
+  // ── Phase 5 brief tools (Plan 05-02 / BRF-03, BRF-04) ───────────────────
+  compile_brief: {
+    vault: z.string().min(1).describe("Vault name (registered in [vaults] config block)"),
+    target: z
+      .string()
+      .min(1)
+      .describe("Stable cross-version handle for the brief (e.g. 'atlas-q3')"),
+    source_doc_ids: z
+      .array(z.string().regex(DOC_ID_PATTERN))
+      .min(1)
+      .max(50)
+      .describe("DocIds the brief is compiled from; deduped, capped at 50 (D-03)"),
+    purpose: z
+      .string()
+      .min(1)
+      .max(500)
+      .describe("Free-form purpose; bounded so list_briefs stays scannable"),
+    max_tokens: z
+      .number()
+      .int()
+      .positive()
+      .optional()
+      .default(2000)
+      .describe("Hint for the LLM ladder; default 2000"),
+    prepared_text: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("D-10 tier 3 fallback when no LLM is reachable — verbatim body to stitch in"),
+    sink: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Override the default `_memory/_briefs` sink"),
+  },
+
+  get_brief: {
+    vault: z.string().min(1).describe("Vault name (registered in [vaults] config block)"),
+    target: z.string().min(1).describe("Stable cross-version handle for the brief"),
+    max_age_days: z
+      .number()
+      .int()
+      .nonnegative()
+      .optional()
+      .describe("Reject briefs older than this many days unless allow_stale=true"),
+    allow_stale: z
+      .boolean()
+      .optional()
+      .default(false)
+      .describe(
+        "When true, return briefs flagged stale or too_old with annotation rather than null",
+      ),
   },
 
   // ── Phase 3 assembly tools (Plan 03-02 / ASM-02) ────────────────────────

@@ -566,7 +566,8 @@ describe("Plan 02-04: MEM-02 (record_observation) + MEM-04 (supersede) end-to-en
     // `get_document_bundle`); Plan 04-03 grows it to 31 (adds `expand`);
     // Plan 04-05 grows it to 32 (adds `cluster`). The 23-entry v1 prefix
     // remains byte-identical.
-    expect(TOOLS).toHaveLength(32);
+    // Plan 05-02 grows it to 34 (adds `compile_brief` + `get_brief`).
+    expect(TOOLS).toHaveLength(34);
 
     const ro = TOOLS.find((t) => t.name === "record_observation");
     const sup = TOOLS.find((t) => t.name === "supersede");
@@ -917,7 +918,8 @@ describe("Plan 02-05: MEM-03 recall end-to-end", () => {
     expect(names).toContain("get_outline");
     expect(names).toContain("assemble_dossier");
     expect(names).toContain("get_document_bundle");
-    expect(TOOLS).toHaveLength(32);
+    // Plan 05-02 grows it to 34 (adds `compile_brief` + `get_brief`).
+    expect(TOOLS).toHaveLength(34);
   });
 
   it("recall against the v2 fixture: 'Atlas pilot' returns the live 2026-04-16 doc; the 2026-04-20 superseded doc is hidden", async () => {
@@ -1458,7 +1460,8 @@ describe("Plan 02-06: MCP Resources (MEM-09)", () => {
     // added `get_document_bundle` (29 → 30); Plan 04-03 added `expand`
     // (30 → 31); Plan 04-05 added `cluster` (31 → 32); the resource
     // invariant still holds at the new count.
-    expect(TOOLS).toHaveLength(32);
+    // Plan 05-02 grows it to 34 (adds `compile_brief` + `get_brief`).
+    expect(TOOLS).toHaveLength(34);
     // Spot-check: no memory_stats or list_sinks tool exists.
     const names = TOOLS.map((t) => t.name);
     expect(names).not.toContain("memory_stats");
@@ -1637,7 +1640,8 @@ describe("Plan 04-03: expand MCP tool", () => {
 
   it("Test 7: TOOLS length is 32 after Plan 04-05 (was 31 after 04-03)", async () => {
     const { TOOLS } = await import("./tool-registry.js");
-    expect(TOOLS).toHaveLength(32);
+    // Plan 05-02 grows it to 34 (adds `compile_brief` + `get_brief`).
+    expect(TOOLS).toHaveLength(34);
     // The 23-v1-tool prefix is byte-identical (asserted in baseline.test.ts).
     const names = TOOLS.map((t) => t.name);
     expect(names).toContain("expand");
@@ -1807,7 +1811,8 @@ describe("Plan 04-05: cluster MCP tool", () => {
 
   it("Test 6: TOOLS length is 32 (additive — 31 → 32)", async () => {
     const { TOOLS } = await import("./tool-registry.js");
-    expect(TOOLS).toHaveLength(32);
+    // Plan 05-02 grows it to 34 (adds `compile_brief` + `get_brief`).
+    expect(TOOLS).toHaveLength(34);
     const names = TOOLS.map((t) => t.name);
     expect(names).toContain("cluster");
   });

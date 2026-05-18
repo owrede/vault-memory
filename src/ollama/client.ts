@@ -32,6 +32,60 @@ const TagsResponseSchema = z.object({
 });
 
 /**
+ * Phase 5 / D-10 tier 2 — `/api/chat` REST response.
+ *
+ * Mirrors `EmbedResponseSchema` shape: Zod-validated at the HTTP boundary,
+ * thrown errors percolate up through `withRetry` so the same isRetryable
+ * predicate (network + 5xx + AbortError) drives the same retry policy.
+ *
+ * Optional fields (`done`, `total_duration`, `eval_count`) appear on
+ * non-streaming responses and are kept as opaque metadata; the brief
+ * compile path only consults `message.content` + `model`.
+ */
+const ChatResponseSchema = z.object({
+  model: z.string(),
+  message: z.object({
+    role: z.literal("assistant"),
+    content: z.string(),
+  }),
+  done: z.boolean().optional(),
+  total_duration: z.number().optional(),
+  eval_count: z.number().optional(),
+});
+
+/**
+ * Chat-message role union. Same shape Ollama and the MCP Sampling spec
+ * use; the brief LLM ladder builds tier-2 requests with one `system`
+ * message and one `user` message.
+ */
+export interface ChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
+
+/**
+ * Chat request shape (POST `/api/chat`). Mirrors the v1 `embed()`
+ * request shape: pure data, no internal client state. `stream: false`
+ * is set inside `chat()` (we do not expose streaming on this surface).
+ *
+ * `options.num_predict` maps to Ollama's max-tokens equivalent and is
+ * how the LLM ladder forwards `max_tokens` from `compile_brief`.
+ */
+export interface ChatRequest {
+  model: string;
+  messages: ChatMessage[];
+  options?: {
+    num_predict?: number;
+    temperature?: number;
+  };
+}
+
+export interface ChatResponse {
+  model: string;
+  message: ChatMessage;
+}
+
+/**
  * Error thrown for non-2xx HTTP responses. Retried automatically for 5xx.
  */
 export class OllamaHttpError extends Error {
@@ -132,6 +186,49 @@ export class OllamaClient {
         const json: unknown = await response.json();
         const parsed = EmbedResponseSchema.parse(json);
         return { embeddings: parsed.embeddings, model: parsed.model };
+      },
+      { retries: this.retries, shouldRetry: isRetryable },
+    );
+  }
+
+  /**
+   * Phase 5 / D-10 tier 2 — synchronous chat completion via `/api/chat`.
+   *
+   * Single round-trip, non-streaming (`stream: false`). Mirrors the
+   * `embed()` shape verbatim: `withRetry` wrapper, `fetchWithTimeout`,
+   * `OllamaHttpError` on non-2xx after retry exhaustion, `isRetryable`
+   * predicate (5xx + AbortError + network errors).
+   *
+   * The LLM ladder (`src/brief/llm-ladder.ts`) is the only production
+   * caller; we keep the method on the same class so the shared retry /
+   * timeout / endpoint config are honored without re-plumbing.
+   */
+  async chat(request: ChatRequest): Promise<ChatResponse> {
+    return withRetry(
+      async () => {
+        const body = JSON.stringify({
+          model: request.model,
+          messages: request.messages,
+          stream: false,
+          options: request.options,
+        });
+        const response = await this.fetchWithTimeout(`${this.endpoint}/api/chat`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+        });
+
+        if (!response.ok) {
+          const text = await response.text().catch(() => "");
+          throw new OllamaHttpError(
+            response.status,
+            `Ollama /api/chat returned ${response.status}: ${text}`,
+          );
+        }
+
+        const json: unknown = await response.json();
+        const parsed = ChatResponseSchema.parse(json);
+        return { model: parsed.model, message: parsed.message };
       },
       { retries: this.retries, shouldRetry: isRetryable },
     );

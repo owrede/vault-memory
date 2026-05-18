@@ -6,7 +6,34 @@
 # (no cluster() / expand() in the loop), so a graph regression cannot
 # masquerade as a brief regression.
 #
-# Populated in slice 3 (Plan 05-03) once `compile_brief` + the
-# staleness daemon are working end-to-end against the Atlas Robotics
-# fixture vault.
-queries: []
+# Slice 2 (Plan 05-02) populates this with at least one Atlas Robotics
+# query covering ≥ 10 source docs. Slice 3 adds staleness scenarios on
+# top of the primary query.
+queries:
+  - id: atlas-1-state-of-project
+    query: "Q3 status of Atlas-1 Robotics"
+    target: atlas-1-state-of-project
+    purpose: >
+      Quarterly state-of-the-project snapshot for Atlas-1: program
+      status, perception stack, warehouse task library, reliability
+      program, recent builds, pilot count, and uptime.
+    max_tokens: 2000
+    source_doc_ids:
+      - obsidian-fs://v2-test-vault/projects/atlas-1.md
+      - obsidian-fs://v2-test-vault/projects/atlas-1-perception-stack.md
+      - obsidian-fs://v2-test-vault/projects/atlas-1-warehouse-task-library.md
+      - obsidian-fs://v2-test-vault/projects/atlas-1-reliability-program.md
+      - obsidian-fs://v2-test-vault/references/atlas-1-component-spec.md
+      - obsidian-fs://v2-test-vault/status_updates/atlas-1-new-update.md
+      - obsidian-fs://v2-test-vault/status_updates/atlas-1-old-update.md
+      - obsidian-fs://v2-test-vault/meetings/2026-04-17-atlas-1-build-review.md
+      - obsidian-fs://v2-test-vault/_memory/status-updates/2026-04-19-atlas-1-uptime-progress.md
+      - obsidian-fs://v2-test-vault/_memory/observations/2026-04-16-atlas-1-pilot-count-reduced.md
+      - obsidian-fs://v2-test-vault/_memory/observations/2026-04-20-atlas-1-pilot-target-was-12.md
+    expected_must_contain:
+      - "Atlas-1"
+    rationale: >
+      BRF-10 floor — compile a brief over an 11-doc Atlas-1 corpus
+      (mix of project notes, status updates, meeting, observations)
+      and verify it can be retrieved via get_brief immediately after.
+      Staleness flip is tested in slice 3.

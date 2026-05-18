@@ -29,3 +29,25 @@ export {
   decomposeChunkId,
   type ChunkId,
 } from "./chunk-id.js";
+
+// ── Slice 2 (Plan 05-02) — LLM ladder + body validator ──────────────
+export {
+  resolveLlmStrategy,
+  compileWithLlm,
+  BriefLlmUnavailableError,
+  BriefLlmSamplingRefusedError,
+  type LlmStrategy,
+} from "./llm-ladder.js";
+export { validateAndPatchBody } from "./body-validator.js";
+export {
+  handleCompileBrief,
+  type CompileBriefArgs,
+  type CompileBriefDeps,
+  type CompileBriefResult,
+} from "./compile.js";
+export {
+  handleGetBrief,
+  type GetBriefArgs,
+  type GetBriefDeps,
+  type GetBriefResult,
+} from "./get.js";
