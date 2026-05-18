@@ -169,6 +169,41 @@ Deferred to a future release (vault-memory v3.0.0 line, opening to non-Obsidian 
 - **TPC-02**: Capability-handshake at load time
 - **TPC-03**: Subprocess isolation option for untrusted connectors
 
+### `postgres-fs` Storage Adapter (v3.x — IDEA, not a decision)
+
+Status: anticipated; not committed. Surfaces a path for users who outgrow local SQLite or want hosted Postgres backing (Supabase / Neon / RDS) without giving up the local-first runtime. See ROADMAP.md "Phase 11" for framing. Preserves single-user-runtime; **not** a multi-user feature.
+
+- **PGS-01**: ADRs PGS-01..PGS-05 resolving the open questions (connection model, vector extension choice, BM25 path, migration semantics, sync-vs-async query layer)
+- **PGS-02**: `src/adapters/source/postgres-fs.ts` — Postgres-backed source connector reading Obsidian vault files but indexing into Postgres
+- **PGS-03**: `src/adapters/delivery/postgres-fs.ts` — Postgres-backed delivery adapter; MemorySink invariants preserved
+- **PGS-04**: `src/adapters/change-feed/postgres-fs.ts` — change-feed backed by `LISTEN`/`NOTIFY` or polling (TBD per PGS-ADR)
+- **PGS-05**: Vector extension via `pgvector` baseline; `pgvectorscale` as upgrade path for scale
+- **PGS-06**: BM25 path via `pg_trgm` (good-enough) or ParadeDB `pg_search` (parity with SQLite FTS5) — choice gated by ADR-PGS-03
+- **PGS-07**: One-shot migration tool `vault-memory migrate-to-postgres` — copies a SQLite vault DB to Postgres; SQLite remains the default backend after migration; rollback path documented
+- **PGS-08**: All Phase 2–9 capabilities (memory namespace, briefs, graph, contracts) work against `postgres-fs` with no tool surface change
+- **PGS-09**: Cross-adapter conformance suite extended — `postgres-fs` passes the same suite as `obsidian-fs` and stub; Phase 9 premise check still green after PGS work
+- **PGS-10**: Documentation covers self-host Postgres + hosted (Supabase / Neon / RDS) connection paths; no telemetry; no cloud-only assumption
+
+### Multi-User Agent Knowledge Layer (v4.0.0 — IDEAS, not decisions)
+
+Status: anticipated only; entire section is exploratory. Lifts the single-user-runtime constraint and introduces shared runtime semantics: identity, ACL, per-principal provenance, conflict resolution, multi-tenant briefs. The "hive-mind" framing (humans express via content; agents read with provenance, contribute back into the substrate with provenance) is the strategic thesis. **No v4 code is written until v2.0.0 ships, v3.0.0 ships, a credible signal exists for the use case, and a v4 brief has been authored and locked.** See ROADMAP.md "v4.0.0 — Anticipated" for full framing.
+
+- **MUL-01**: Principal/identity model — humans + agents as first-class principals; auth via OAuth / OIDC / mTLS (choice TBD by v4 brief)
+- **MUL-02**: Agent-on-behalf-of-user delegation — every agent action attributable to a specific human principal
+- **MUL-03**: ACL on MemorySinks — per-principal read/write/admin grants; row-level security at the storage layer if backed by Postgres
+- **MUL-04**: Per-principal provenance schema — `source: agent` extended with `agent_id`, `acted_for_user`, `acted_at_principal`; validator enforces at `DeliveryAdapter.write()`
+- **MUL-05**: Concurrent-write conflict resolution — application-level (CRDT? OT? last-writer-wins with notification?); decision TBD by v4 brief
+- **MUL-06**: Multi-tenant brief sharing — opt-in / opt-out semantics; cross-principal `get_brief` visibility rules
+- **MUL-07**: Cross-principal authority signals — Phase 3 `authority_weight` extended with per-principal weighting ("alice's Atlas notes authoritative; bob's speculative")
+- **MUL-08**: Distributed or centralized staleness coordination — single hive-wide daemon vs federated per-principal daemons (choice TBD by v4 brief)
+- **MUL-09**: Per-principal audit log scoping — who-did-what-when across the hive; principals see their own writes plus admin-grantable cross-principal visibility
+- **MUL-10**: Cross-principal supersede semantics — when alice's agent supersedes a brief bob's agent compiled, does bob get notified? Who has authority to supersede across principal boundaries?
+- **MUL-11**: Hive-wide eval discipline — fixture environment with ≥3 human principals + ≥3 agents; eval scenarios covering all of MUL-03..MUL-10
+- **MUL-12**: Self-host remains first-class — a team running v4 on their own infrastructure must be possible; cloud SaaS path is *one* deployment, never the only one
+- **MUL-13**: MCP-as-canonical-interface preserved — multi-user does NOT mean REST/GraphQL/websocket delivery surfaces; MCP stays the canonical agent contract per AGENT_AGNOSTIC.md
+- **MUL-14**: No real-time co-editing — vault-memory is not Notion / Roam / Logseq; coordination happens through accumulated content, not real-time signals
+- **MUL-15**: No bundled hosted LLM — MCP Sampling routes LLM calls back to caller's environment; vault-memory in v4 is a knowledge layer, not an LLM provider
+
 ## Out of Scope
 
 Explicitly excluded for v2.0.0. Documented to prevent scope creep.
@@ -210,14 +245,18 @@ Phase mapping (sequential numbering 0–9; brief's Phase 4 folded into Phase 3; 
 | NOT-01 to NOT-07 | v3.0.0 (deferred) | Deferred |
 | DMN-01 to DMN-03 | v2.1.x / v3.0.0 (deferred) | Deferred |
 | TPC-01 to TPC-03 | post-v3 (deferred) | Deferred |
+| PGS-01 to PGS-10 | v3.x (IDEA, not committed) | Anticipated |
+| MUL-01 to MUL-15 | v4.0.0 (IDEAS, not committed) | Anticipated |
 
 **Coverage:**
 - v1 requirements: 114 total
 - Mapped to phases 0–9: 114 ✓
 - Unmapped: 0 ✓
 - v2/v3 deferred: 13 (NOT-* + DMN-* + TPC-*)
+- v3.x anticipated (idea, not committed): 10 (PGS-*)
+- v4.0.0 anticipated (ideas, not committed): 15 (MUL-*)
 
-(Brief's Phase 4 folded into Phase 3 — shared result shape: `mtime`/`status`/`superseded_by` on `Document.properties`. Brief's Phase 9.5 promoted to a real hard gate, renumbered to Phase 9 for sequential clarity. Brief's Phase 10 deferred to v3.0.0.)
+(Brief's Phase 4 folded into Phase 3 — shared result shape: `mtime`/`status`/`superseded_by` on `Document.properties`. Brief's Phase 9.5 promoted to a real hard gate, renumbered to Phase 9 for sequential clarity. Brief's Phase 10 deferred to v3.0.0. PGS-* and MUL-* added 2026-05-18 as anticipated work — explicitly flagged as ideas not decisions; no commitment until v2.0.0 ships and v4 brief is authored.)
 
 ---
 *Requirements defined: 2026-05-14*
