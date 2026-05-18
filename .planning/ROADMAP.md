@@ -15,7 +15,7 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
 - [x] **Phase 2: Memory namespace & provenance contract** - Foundational safety invariant; labeled agent write-back via MemorySink
 - [x] **Phase 3: Bundles + authority/staleness** - Document-tree retrieval, citation packets, recency/authority weights (folded brief Phase 3+4)
 - [x] **Phase 4: Graph-as-retrieval** - Typed-edge expansion and community clustering (Complete 2026-05-17)
-- [ ] **Phase 5: Compiled brief layer** - Signature differentiator; briefs as documents with source-hash staleness daemon
+- [x] **Phase 5: Compiled brief layer** - Signature differentiator; briefs as documents with source-hash staleness daemon (Complete 2026-05-18)
 - [ ] **Phase 6: Task contract DSL** - YAML+Zod contracts; list/describe/instantiate via MCP
 - [ ] **Phase 7: Visual contract editor (Canvas)** - Obsidian Canvas ↔ YAML contract round-trip
 - [ ] **Phase 8: Polish, eval suite, v2.0.0 release** - Release gate; CI eval suite; npm publish
@@ -134,17 +134,22 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
 - [x] 04-07-phase-gate-PLAN.md — tool-list snapshot regen + full eval + CHANGELOG + STATE + ROADMAP + sign-off doc
 
 ### Phase 5: Compiled brief layer
+**Status:** ✅ shipped 2026-05-18 — 34 tools + 3 Resources; all 11 BRF requirements green; signature differentiator operational. See `docs/v2/PHASE-5-SIGN-OFF.md`.
 **Goal**: Defeat the 85%-rediscovery failure mode by shipping compiled briefs as first-class `Document`s in `_memory/_briefs/` with deterministic source-hash staleness propagation — vault-memory's signature v2 differentiator
 **Mode:** mvp
 **Depends on**: Phase 4
 **Requirements**: BRF-01, BRF-02, BRF-03, BRF-04, BRF-05, BRF-06, BRF-07, BRF-08, BRF-09, BRF-10, BRF-11
 **Success Criteria** (what must be TRUE):
-  1. After compiling a brief for a 20-document project, modifying one source flips the brief to `stale: true` within one change-feed cycle (verified by eval); the same scenario passes when the stub adapter is the change-feed source — proving source-neutrality
-  2. `compile_brief` resolves its LLM strategy via the documented ladder MCP Sampling → local Ollama → caller-passed text (per the Phase 5 ADR); vault-memory never bundles a remote LLM SDK
-  3. `get_brief({target, max_age_days?, allow_stale?})` returns a fresh brief, or `stale: true` with the changed-source list, or null forcing recompile; `list_briefs` is exposed as an MCP Resource (not Tool)
-  4. Staleness daemon subscribes via `ChangeFeed.subscribe()`, runs single-owner enforced by `~/.vault-memory/locks/<vault>.lock`, replays missed events on startup, and preserves brief→source links across rename events
-  5. Briefs are `Document`s in `_memory/_briefs/` with properties `compiled_from`, `compiled_at`, chunk-level `source_hashes`, `confidence`, `target`, `purpose`; brief writes route through `DeliveryAdapter`
-**Plans**: TBD
+  1. After compiling a brief for a 20-document project, modifying one source flips the brief to `stale: true` within one change-feed cycle (verified by eval); the same scenario passes when the stub adapter is the change-feed source — proving source-neutrality — **MET** (`_queries/briefs-curated.yaml` + `_queries/briefs-staleness-stub.yaml`; `conformance.test.ts` BRF-11 block runs 4 cases × 2 adapters)
+  2. `compile_brief` resolves its LLM strategy via the documented ladder MCP Sampling → local Ollama → caller-passed text (per the Phase 5 ADR); vault-memory never bundles a remote LLM SDK — **MET** (ADR-005 + `src/brief/llm-ladder.ts`; `bash scripts/lint-adapters.sh` green)
+  3. `get_brief({target, max_age_days?, allow_stale?})` returns a fresh brief, or `stale: true` with the changed-source list, or null forcing recompile; `list_briefs` is exposed as an MCP Resource (not Tool) — **MET** (`src/brief/get.ts` D-13 + `src/brief/resources.ts` at `vault-memory://briefs`)
+  4. Staleness daemon subscribes via `ChangeFeed.subscribe()`, runs single-owner enforced by `~/.vault-memory/locks/<vault>.lock`, replays missed events on startup, and preserves brief→source links across rename events — **MET** (`src/brief/daemon.ts` + `src/brief/lock.ts`; `daemon.test.ts` + conformance BRF-11 block)
+  5. Briefs are `Document`s in `_memory/_briefs/` with properties `compiled_from`, `compiled_at`, chunk-level `source_hashes`, `confidence`, `target`, `purpose`; brief writes route through `DeliveryAdapter` — **MET** (`src/brief/compile.ts` + `default-brief-v1` MemoryContract; `compile.test.ts` Test 13 YAML round-trip)
+**Plans**:
+- [x] 05-01-foundations-PLAN.md — ADR-005 + migration 013 + ChunkId brand + source-hashes helpers + `default-brief-v1` contract (BRF-01, BRF-02)
+- [x] 05-02-compile-and-get-PLAN.md — OllamaClient.chat() + LLM ladder (D-10) + body validator (D-11) + `compile_brief` (D-12 supersede) + `get_brief` (D-13) + `briefs-curated.yaml` (BRF-03, BRF-04, BRF-10)
+- [x] 05-03-staleness-daemon-PLAN.md — Lockfile + `BriefStalenessDaemon` (startup scan + ChangeFeed subscribe + rename grace) + server daemon bootstrap + cluster-driven brief eval (BRF-05, BRF-06, BRF-07, BRF-08)
+- [x] 05-04-phase-gate-PLAN.md — `list_briefs` MCP Resource + cross-adapter conformance + `briefs-staleness-stub.yaml` + tools-list snapshot regen + PHASE-5-SIGN-OFF + ROADMAP flip (BRF-09, BRF-11)
 
 ### Phase 6: Task contract DSL
 **Goal**: Ship declarative task contracts as YAML documents (Zod-validated) in `_contracts/`, addressable by name, instantiable via MCP, with handle-based source/sink portability that sets the v3 multi-source template
