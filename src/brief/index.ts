@@ -61,3 +61,8 @@ export {
   type LockAcquired,
   type LockContended,
 } from "./lock.js";
+export {
+  BriefStalenessDaemon,
+  type DaemonDeps,
+  type DaemonStartResult,
+} from "./daemon.js";
