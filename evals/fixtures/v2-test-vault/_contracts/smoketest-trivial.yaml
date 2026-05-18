@@ -1,0 +1,48 @@
+# Trivial reference contract — CON-09 smoketest anchor.
+# Uses literal-only assembly to avoid requiring an LLM in CI environments.
+# The three "real" reference contracts (meeting-prep, project-status,
+# code-review-brief) ship for describe_contract validation; this one
+# exists so the smoketest can prove end-to-end instantiation without
+# resolving the LLM ladder.
+version: 1
+name: smoketest-trivial
+description: |
+  Trivial contract for the CON-09 non-Claude smoketest. Uses literal-only
+  assembly to avoid requiring an LLM in CI environments.
+inputs:
+  message:
+    type: string
+    description: Message to embed in the trivial brief body.
+required: [message]
+sources:
+  default_source:
+    handle: "obsidian-fs://test-vault"
+    required: false
+sinks:
+  default_sink:
+    handle: "_memory/_briefs"
+    required: true
+assembly:
+  - as: payload
+    verb: literal
+    value: "{{inputs.message}}"
+output_shape:
+  type: object
+  properties:
+    steps:
+      type: object
+    write_back:
+      type: object
+      properties:
+        doc_id:
+          type: string
+      required: [doc_id]
+  required: [write_back]
+write_back:
+  sink: "{{default_sink}}"
+  document_kind: custom
+  properties:
+    target: smoketest-trivial
+    source: agent
+    purpose: "CON-09 smoketest output"
+  body_from: "{{payload}}"
