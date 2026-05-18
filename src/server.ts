@@ -51,6 +51,7 @@ import {
   readListSinks,
   readMemoryStats,
   RESOURCE_URI_LIST_SINKS,
+  RESOURCE_URI_LIST_BRIEFS,
   RESOURCE_URI_MEMORY_STATS,
   type MemorySinkConfig,
 } from "./memory/index.js";
@@ -63,6 +64,7 @@ import {
   BriefStalenessDaemon,
   handleCompileBrief,
   handleGetBrief,
+  readListBriefs,
 } from "./brief/index.js";
 import { searchSections } from "./assembly/search-sections.js";
 import { DocNotFoundError, getOutline } from "./assembly/outline.js";
@@ -1189,6 +1191,49 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
         },
       ],
     }),
+  );
+
+  // ─── Plan 05-04 (BRF-09) — list_briefs MCP Resource ───────────────────────
+  //
+  // Discovery surface for compiled briefs. Filtered by optional `?target=`
+  // query parameter (substring match on `properties.target`). The read
+  // handler is a pure function over `MemorySinkRegistry + VaultManager +
+  // SourceConnector` — see `src/brief/resources.ts`.
+  server.registerResource(
+    "briefs",
+    RESOURCE_URI_LIST_BRIEFS,
+    {
+      title: "Compiled briefs",
+      description:
+        "Discovery of compiled briefs by target. Supports optional `?target=<pattern>` " +
+        "substring filter on `properties.target`. Includes `active`, `stale`, and " +
+        "`superseded` entries so callers can build their own filter / inspect the " +
+        "supersede chain. BRF-09.",
+      mimeType: "application/json",
+    },
+    async (uri) => {
+      const target = uri.searchParams.get("target") ?? undefined;
+      const payload = await readListBriefs(
+        {
+          registry: memorySinkRegistry,
+          manager,
+          sourceConnectorFor: (vaultName) =>
+            adapterRegistry.resolveSource(
+              parseSourceHandle(`obsidian-fs://${vaultName}`),
+            ),
+        },
+        target !== undefined ? { target } : {},
+      );
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify(payload, null, 2),
+          },
+        ],
+      };
+    },
   );
 
   onPhase("connect_transport");
