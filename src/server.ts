@@ -94,7 +94,11 @@ import { ObsidianFsSource } from "./adapters/source/obsidian-fs/index.js";
 import {
   startContractRegistry,
   syncAutoRegistered,
+  PeerMcpRegistry,
+  instantiateContract,
+  describeContract,
   type StartedContractRegistry,
+  type InstantiateDeps,
 } from "./contracts/index.js";
 import type { RegisteredTool } from "@modelcontextprotocol/sdk/server/mcp.js";
 
@@ -401,6 +405,17 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
         process.stderr.write(`[contract-registry] dispose error: ${message}\n`);
       }
     }
+    // Plan 06-03 (Pitfall F4) — kill peer-MCP child processes BEFORE
+    // brief daemons + watchers + change-feeds drain. `shutdown()`
+    // disposes each `PeerMcpClient`, which invokes `transport.close()`
+    // → `child.kill()`. Idempotent; safe to call even when no clients
+    // were configured.
+    try {
+      await peerMcpRegistry.shutdown();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[peer-mcp-registry] shutdown error: ${message}\n`);
+    }
     // Phase 5 (Plan 05-03): dispose brief staleness daemons FIRST so
     // no in-flight ChangeEvents land mid-shutdown. Then drain + stop
     // watchers; finally close change-feeds (the underlying chokidar
@@ -452,10 +467,11 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
   // on an already-initialized server instance — RegisteredTool handles
   // are preserved per-vault for later remove() calls).
   //
-  // `instantiateHandler` is a Plan-06-03 forward reference; today it is a
-  // stub that returns `not_yet_implemented`. The stub is only invoked when
-  // an auto-registered `vm_<name>` tool is CALLED — not when it is
-  // registered (registration is what Plan 06-02 ships).
+  // The contractRegistries map carries one StartedContractRegistry per
+  // vault plus a mutable RegisteredTool handle map for the dynamic
+  // `vm_*` auto-registered tools. The Plan 06-02 stub `instantiateHandler`
+  // is replaced (Plan 06-03 Task 5) by a closure over the per-vault
+  // `buildInstantiateDeps` helper below.
   const contractRegistries = new Map<
     string,
     {
@@ -463,14 +479,436 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
       registered: Map<string, RegisteredTool>;
     }
   >();
+
+  // ─── Phase 6 (Plan 06-03) — peer-MCP registry + buildInstantiateDeps ─────
+  //
+  // ONE PeerMcpRegistry shared across all vaults (peer-MCP servers in
+  // `[contracts.mcp_clients]` are vault-independent — a `mcp://gh/list_issues`
+  // verb invocation does the same thing regardless of which vault's
+  // contract triggered it). The registry boots BEFORE the per-vault
+  // contract registries so each `buildInstantiateDeps(vault)` closure
+  // captures the same registry instance.
+  //
+  // Failures during `peerMcpRegistry.start(...)` are NON-FATAL (CONTEXT.md
+  // Claude's Discretion + PeerMcpRegistry semantics): individual clients
+  // mark themselves unavailable with a stderr WARN. The server keeps booting.
+  //
+  // SIGTERM/SIGINT cleanup: the existing shutdown() at line ~391 already
+  // runs on those signals; we wire `peerMcpRegistry.shutdown()` into it
+  // below (Pitfall F4 — kill child processes on parent exit).
+  const peerMcpRegistry = new PeerMcpRegistry();
+
+  /**
+   * Build per-vault `InstantiateDeps` for `instantiate_contract`. Each
+   * baseline-verb thunk re-uses the existing Phase 1-5 handler functions;
+   * arguments are passed through verbatim post-template-resolution (the
+   * contract author is responsible for matching each verb's signature
+   * per the JSDoc block in `src/contracts/verbs/index.ts`).
+   */
+  const buildInstantiateDeps = (vault: Vault): InstantiateDeps => {
+    const state = contractRegistries.get(vault.config.name);
+    if (state === undefined) {
+      throw new Error(
+        `ContractRegistry not initialized for vault "${vault.config.name}"`,
+      );
+    }
+    return {
+      vault,
+      registry: state.started.registry,
+      memorySinks: memorySinkRegistry,
+      delivery: adapterRegistry.resolveDelivery(
+        parseSourceHandle(`obsidian-fs://${vault.config.name}`),
+      ),
+      contractAudit: vault.db.contractAudit,
+      configDefaults: config.contracts.defaults,
+      stepTimeoutSeconds: config.contracts.step_timeout_seconds,
+      peerMcpRegistry,
+      // The baseline verbs use the same args the contract YAML supplied
+      // (post-template-resolution). Each thunk forwards to the existing
+      // Phase 1-5 handler in the v1+v2 toolset. Contract authors match
+      // each verb's signature per RESEARCH §A9.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      hybridSearch: async (args: any) => {
+        const p = args as {
+          query: string;
+          vaults?: string[];
+          top_k?: number;
+          rrf_k?: number;
+          exclude_paths?: string[];
+          recency_weight?: number;
+          authority_weight?: number;
+          half_life_days?: number;
+          include_superseded?: boolean;
+        };
+        return handleSearchHybrid(
+          manager,
+          ollama,
+          defaultModel,
+          activeVault,
+          p.query,
+          p.vaults ?? [vault.config.name],
+          p.top_k ?? 10,
+          p.rrf_k ?? 60,
+          p.exclude_paths,
+          reranker,
+          p.recency_weight ?? 0,
+          p.authority_weight ?? 0,
+          p.half_life_days ?? 30,
+          p.include_superseded ?? false,
+        );
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handleExpand: async (args: any) => {
+        const p = args as {
+          seed_doc_ids: string[];
+          hops: 1 | 2;
+          direction?: ExpandDirection;
+          edge_types?: EdgeType[];
+          filter_properties?: Record<string, unknown>;
+          include_superseded?: boolean;
+        };
+        const seeds = p.seed_doc_ids.map((s) => parseDocId(s));
+        return expand(
+          {
+            manager,
+            sourceConnectorFor: (vaultName) =>
+              adapterRegistry.resolveSource(
+                parseSourceHandle(`obsidian-fs://${vaultName}`),
+              ),
+          },
+          {
+            seed_doc_ids: seeds,
+            hops: p.hops,
+            direction: p.direction ?? "both",
+            ...(p.edge_types !== undefined ? { edge_types: p.edge_types } : {}),
+            ...(p.filter_properties !== undefined
+              ? { filter_properties: p.filter_properties }
+              : {}),
+            include_superseded: p.include_superseded ?? false,
+          } satisfies ExpandOptions,
+        );
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handleCluster: async (args: any) => {
+        const p = args as {
+          query?: string;
+          seed_doc_ids?: string[];
+          vault?: string;
+          method?: "edge-community";
+          query_top_k?: number;
+          force?: boolean;
+        };
+        let opts: ClusterOptions;
+        if (p.query !== undefined) {
+          opts = {
+            query: p.query,
+            method: "edge-community",
+            ...(p.vault !== undefined ? { vault: p.vault } : { vault: vault.config.name }),
+            ...(p.query_top_k !== undefined ? { query_top_k: p.query_top_k } : {}),
+            ...(p.force !== undefined ? { force: p.force } : {}),
+          };
+        } else {
+          const seeds = (p.seed_doc_ids ?? []).map((s) => parseDocId(s));
+          opts = {
+            seed_doc_ids: seeds,
+            method: "edge-community",
+            ...(p.force !== undefined ? { force: p.force } : {}),
+          };
+        }
+        return cluster(
+          {
+            manager,
+            sourceConnectorFor: (vaultName) =>
+              adapterRegistry.resolveSource(
+                parseSourceHandle(`obsidian-fs://${vaultName}`),
+              ),
+            hybridSearch: async (v, query, limit) =>
+              hybridSearch({
+                query,
+                embeddingModel: defaultModel,
+                ollama,
+                vaults: [v],
+                topK: limit,
+                includeBreakdown: false,
+                ...(reranker ? { reranker } : {}),
+                displayUrlFor: (vaultName, notePath) =>
+                  displayUrl(adapterRegistry, vaultName, notePath),
+              }),
+          },
+          opts,
+        );
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handleRecall: async (args: any) => {
+        const p = args as {
+          query: string;
+          min_confidence?: "direct" | "inferred" | "uncertain";
+          types?: string[];
+          max_age_days?: number;
+          sink?: string;
+          limit?: number;
+          vaults?: string[];
+        };
+        const packets = await handleRecall(
+          {
+            memorySinkRegistry,
+            manager,
+            sourceConnectorFor: (vaultName) =>
+              adapterRegistry.resolveSource(
+                parseSourceHandle(`obsidian-fs://${vaultName}`),
+              ),
+            searchHybrid: async (input) =>
+              hybridSearch({
+                query: input.query,
+                embeddingModel: defaultModel,
+                ollama,
+                vaults: input.vaults,
+                topK: input.topK,
+                rrfK: 60,
+                includeBreakdown: false,
+              }),
+          },
+          { ...p, vaults: p.vaults ?? [vault.config.name] },
+        );
+        return { packets, count: packets.length };
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handleCompileBrief: async (args: any) => {
+        const p = args as {
+          vault?: string;
+          target: string;
+          source_doc_ids: string[];
+          purpose: string;
+          max_tokens?: number;
+          prepared_text?: string;
+          sink?: string;
+        };
+        return handleCompileBrief(
+          {
+            memorySinkRegistry,
+            manager,
+            deliveryAdapterFor: (vaultName) =>
+              adapterRegistry.resolveDelivery(
+                parseSourceHandle(`obsidian-fs://${vaultName}`),
+              ),
+            sourceConnectorFor: (vaultName) =>
+              adapterRegistry.resolveSource(
+                parseSourceHandle(`obsidian-fs://${vaultName}`),
+              ),
+            server,
+            ollama,
+            briefConfig: config.brief,
+          },
+          { ...p, vault: p.vault ?? vault.config.name },
+        );
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handleGetBrief: async (args: any) => {
+        const p = args as {
+          vault?: string;
+          target: string;
+          max_age_days?: number;
+          allow_stale?: boolean;
+        };
+        return handleGetBrief(
+          {
+            memorySinkRegistry,
+            manager,
+            sourceConnectorFor: (vaultName) =>
+              adapterRegistry.resolveSource(
+                parseSourceHandle(`obsidian-fs://${vaultName}`),
+              ),
+          },
+          { ...p, vault: p.vault ?? vault.config.name },
+        );
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handleQueryFrontmatter: async (args: any) => {
+        const p = args as {
+          vault?: string;
+          where: Record<string, unknown>;
+          limit?: number;
+        };
+        const v = p.vault ? manager.require(p.vault) : vault;
+        return queryFrontmatter(v, {
+          where: p.where as Record<string, never>,
+          limit: p.limit ?? 100,
+        });
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handleListBacklinks: async (args: any) => {
+        const p = args as { vault?: string; path: string };
+        const v = p.vault ? manager.require(p.vault) : vault;
+        return { backlinks: listBacklinks(v, p.path) };
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handleGetOutline: async (args: any) => {
+        const p = args as { doc_id: string; vaults?: string[] };
+        return getOutline(
+          {
+            manager,
+            sourceConnectorFor: (vaultName) =>
+              adapterRegistry.resolveSource(
+                parseSourceHandle(`obsidian-fs://${vaultName}`),
+              ),
+          },
+          p,
+        );
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handleSearchSections: async (args: any) => {
+        const p = args as {
+          query: string;
+          limit?: number;
+          vaults?: string[];
+          recency_weight?: number;
+          authority_weight?: number;
+          include_superseded?: boolean;
+        };
+        // Default scope: caller's vault (the one the contract is bound to).
+        const targetVaults: Vault[] = p.vaults
+          ? p.vaults.map((name) => manager.require(name))
+          : [vault];
+        const results = await searchSections(
+          {
+            searchHybrid: async (input) =>
+              hybridSearch({
+                query: input.query,
+                embeddingModel: defaultModel,
+                ollama,
+                vaults: input.vaults
+                  ? input.vaults.map((name) => manager.require(name))
+                  : targetVaults,
+                topK: input.topK,
+                rrfK: 60,
+                includeBreakdown: false,
+              }),
+            sectionForHit: (vaultName, notePath, chunkIdx) => {
+              let v: Vault;
+              try {
+                v = manager.require(vaultName);
+              } catch {
+                return null;
+              }
+              const note = v.db.notes.getByPath(notePath);
+              if (!note) return null;
+              const chunks = v.db.chunks.getByNote(note.id);
+              const chunk = chunks.find((c) => c.idx === chunkIdx);
+              if (!chunk) return null;
+              const section = v.db.sections.findContainingChunk(note.id, chunk.id);
+              if (!section) return null;
+              let headingPath: string[];
+              try {
+                const parsed = JSON.parse(section.heading_path);
+                headingPath = Array.isArray(parsed) ? (parsed as string[]) : [];
+              } catch {
+                headingPath = [];
+              }
+              return {
+                noteId: note.id,
+                anchor: section.anchor,
+                headingPath,
+                chunkIdFirst: section.chunk_id_first ?? Number.MAX_SAFE_INTEGER,
+              };
+            },
+            readDocument: async (vaultName, notePath) => {
+              const docId = formatDocId("obsidian-fs", vaultName, notePath);
+              return adapterRegistry
+                .resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`))
+                .readDocument(docId);
+            },
+            displayUrlFor: (docId, vaultName) => {
+              const source = adapterRegistry.resolveSource(
+                parseSourceHandle(`obsidian-fs://${vaultName}`),
+              );
+              return source.formatDisplayUrl?.(docId) ?? docId;
+            },
+          },
+          {
+            query: p.query,
+            limit: p.limit ?? 10,
+            ...(p.vaults !== undefined ? { vaults: p.vaults } : {}),
+            ...(p.recency_weight !== undefined ? { recency_weight: p.recency_weight } : {}),
+            ...(p.authority_weight !== undefined
+              ? { authority_weight: p.authority_weight }
+              : {}),
+            ...(p.include_superseded !== undefined
+              ? { include_superseded: p.include_superseded }
+              : {}),
+          },
+        );
+        return { results, count: results.length };
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handleReadNote: async (args: any) => {
+        const p = args as { vault?: string; path: string };
+        return handleReadNote(
+          adapterRegistry,
+          p.vault ?? vault.config.name,
+          p.path,
+        );
+      },
+    };
+  };
+
+  /**
+   * Resolve the target vault for `describe_contract` / `instantiate_contract`.
+   * Single-vault setups: use the only configured vault. Multi-vault setups:
+   * the caller MUST pass `vault`; otherwise return the WARNING-6
+   * `ambiguous_vault` envelope (12th reason in InstantiateError).
+   */
+  const resolveContractVault = (
+    vaultArg: string | undefined,
+  ):
+    | { ok: true; vault: Vault }
+    | { ok: false; reason: "ambiguous_vault"; available_vaults: string[] }
+    | { ok: false; reason: "unknown_vault"; vault: string } => {
+    const list = manager.list();
+    if (vaultArg !== undefined) {
+      const v = list.find((x) => x.config.name === vaultArg);
+      if (v === undefined) {
+        return { ok: false, reason: "unknown_vault", vault: vaultArg };
+      }
+      return { ok: true, vault: v };
+    }
+    if (list.length === 1) {
+      const only = list[0];
+      if (only === undefined) {
+        return { ok: false, reason: "ambiguous_vault", available_vaults: [] };
+      }
+      return { ok: true, vault: only };
+    }
+    return {
+      ok: false,
+      reason: "ambiguous_vault",
+      available_vaults: list.map((v) => v.config.name),
+    };
+  };
+
+  /**
+   * Bound to auto-registered `vm_*` tools. Each auto-registered tool's
+   * callback (see `syncAutoRegistered` in `src/contracts/auto-register.ts`)
+   * passes the contract name + the caller args through this closure. We
+   * route to `instantiateContract` using the per-vault deps captured at
+   * register time — single-vault deployments are the v2.0.0 norm; multi-
+   * vault setups will surface `ambiguous_vault` until per-vault
+   * tool-prefixing lands in a future slice.
+   */
   const instantiateHandler = async (
-    _name: string,
-    _args: unknown,
-  ): Promise<unknown> => ({
-    ok: false,
-    reason: "not_yet_implemented",
-    note: "instantiate_contract lands in Plan 06-03",
-  });
+    name: string,
+    args: unknown,
+  ): Promise<unknown> => {
+    const resolved = resolveContractVault(undefined);
+    if (!resolved.ok) return resolved;
+    const inputs = ((args as { inputs?: Record<string, unknown> })?.inputs ?? {}) as Record<
+      string,
+      unknown
+    >;
+    return instantiateContract(buildInstantiateDeps(resolved.vault), {
+      name,
+      inputs,
+    });
+  };
 
   // ─── registerTool × 23 (SDK 1.29, plan 01-05 task 07) ─────────────────────
   //
@@ -1201,6 +1639,56 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
       }
       return { ok: true, vaults: results };
     },
+
+    // ── Phase 6 task-contract DSL (Plan 06-03 / CON-05, Q-DESCRIBE) ────────
+    //
+    // Pure function over the per-vault ContractRegistry. Returns
+    // {ok:true, json_schema, summary} or one of the sealed
+    // InstantiateError reasons (`unknown_contract`, `ambiguous_vault`,
+    // `unknown_vault`). NO LLM, NO side effects.
+    describe_contract: async (a) => {
+      const p = a as { name: string; vault?: string };
+      const resolved = resolveContractVault(p.vault);
+      if (!resolved.ok) return resolved;
+      const state = contractRegistries.get(resolved.vault.config.name);
+      if (state === undefined) {
+        // Defense-in-depth: a vault without a contract registry happens
+        // only if `start_contract_registries` skipped it (no change-feed)
+        // — surface as unknown_contract for the caller.
+        return { ok: false, reason: "unknown_contract", name: p.name };
+      }
+      return describeContract(
+        { registry: state.started.registry },
+        { name: p.name },
+      );
+    },
+
+    // ── Phase 6 task-contract DSL (Plan 06-03 / CON-06) ────────────────────
+    //
+    // Replaces the Plan 06-02 stub. Routes through the per-vault deps
+    // built by `buildInstantiateDeps`. On multi-vault setups, the caller
+    // MUST pass `vault` — otherwise we return the WARNING-6
+    // `ambiguous_vault` envelope (12th reason in the closed
+    // InstantiateError union).
+    instantiate_contract: async (a) => {
+      const p = a as {
+        name: string;
+        inputs: Record<string, unknown>;
+        source_overrides?: Record<string, string>;
+        sink_overrides?: Record<string, string>;
+        vault?: string;
+      };
+      const resolved = resolveContractVault(p.vault);
+      if (!resolved.ok) return resolved;
+      return instantiateContract(buildInstantiateDeps(resolved.vault), {
+        name: p.name,
+        inputs: p.inputs,
+        ...(p.source_overrides !== undefined
+          ? { source_overrides: p.source_overrides }
+          : {}),
+        ...(p.sink_overrides !== undefined ? { sink_overrides: p.sink_overrides } : {}),
+      });
+    },
   };
 
   // Wire each TOOLS entry through registerTool. The SDK runs the Zod
@@ -1352,6 +1840,16 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
   // contract (prefix from `config.contracts.tool_prefix`). Subsequent
   // ChangeFeed events trigger another sync via the onRegistryChange hook.
   onPhase("start_contract_registries");
+  // Plan 06-03 — boot the peer-MCP registry BEFORE per-vault contract
+  // registries so each vault's instantiate deps share the same registry.
+  // Failures inside `start()` are non-fatal — individual clients mark
+  // themselves unavailable + log to stderr (Pitfall F4 mitigation).
+  try {
+    await peerMcpRegistry.start(config.contracts.mcp_clients);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`[peer-mcp-registry] start failed: ${message}\n`);
+  }
   for (const vault of manager.list()) {
     const feed = changeFeeds.get(vault.config.name);
     if (feed === undefined) continue;

@@ -1007,6 +1007,77 @@ export const TOOLS = [
       },
     },
   },
+  // ── Phase 6 task-contract DSL (Plan 06-03 / CON-05, Q-DESCRIBE) ──────────
+  {
+    name: "describe_contract",
+    description:
+      "Return the input JSON Schema + an auto-generated markdown summary for a " +
+      "contract (Q-DESCRIBE). Pure function — does not execute the contract. " +
+      "Summary lists Inputs / Sources / Sinks / Assembly (numbered) / write_back / " +
+      "Output Shape. Omit `vault` on single-vault setups; on multi-vault setups, " +
+      "pass `vault` to disambiguate (returns `{ok:false, reason:'ambiguous_vault'}` " +
+      "otherwise).",
+    inputSchema: {
+      type: "object",
+      required: ["name"],
+      properties: {
+        name: {
+          type: "string",
+          description: "Registered contract name (see register_contracts_as_tools).",
+        },
+        vault: {
+          type: "string",
+          description: "Vault name; omit on single-vault setups.",
+        },
+      },
+    },
+  },
+  // ── Phase 6 task-contract DSL (Plan 06-03 / CON-06) ──────────────────────
+  {
+    name: "instantiate_contract",
+    description:
+      "Execute a registered contract end-to-end. Zod-validates inputs against the " +
+      "contract's inputZodSchema (additionalProperties:false rejects typos). " +
+      "Resolves source/sink overrides per D-A4b default chain (explicit → config → " +
+      "contract literal → error if required); sinks are MemorySink-only per D-A4c " +
+      "(MEM-05 invariant un-bypassable). Runs each assembly step through verbDispatcher " +
+      "with template resolution + named-binding accumulation. write_back routes through " +
+      "DeliveryAdapter.write() (MEM-05 chokepoint). Returns the Q-OUTPUT bundle " +
+      "{steps, write_back} on success OR a structured InstantiateError envelope " +
+      "(12 sealed reasons per ADR-006 §Decision 7). Omit `vault` on single-vault " +
+      "setups; multi-vault setups require it (returns `ambiguous_vault` otherwise).",
+    inputSchema: {
+      type: "object",
+      required: ["name"],
+      properties: {
+        name: {
+          type: "string",
+          description: "Registered contract name.",
+        },
+        inputs: {
+          type: "object",
+          additionalProperties: true,
+          description: "Contract inputs; validated against the contract's inputZodSchema.",
+        },
+        source_overrides: {
+          type: "object",
+          additionalProperties: { type: "string" },
+          description:
+            "Override declared source handles by handle name (e.g. {default_source: 'obsidian-fs://x'}).",
+        },
+        sink_overrides: {
+          type: "object",
+          additionalProperties: { type: "string" },
+          description:
+            "Override declared sink handles by handle name. Targets MUST resolve through MemorySinkRegistry (D-A4c).",
+        },
+        vault: {
+          type: "string",
+          description: "Vault name; omit on single-vault setups.",
+        },
+      },
+    },
+  },
 ] as const;
 
 export type ToolName = (typeof TOOLS)[number]["name"];
@@ -1492,6 +1563,44 @@ export const TOOL_SCHEMAS = {
       .min(1)
       .optional()
       .describe("Vault name; omit to apply to all vaults"),
+  },
+
+  // ── Phase 6 task-contract DSL (Plan 06-03 / CON-05, Q-DESCRIBE) ────────
+  describe_contract: {
+    name: z
+      .string()
+      .min(1)
+      .describe("Registered contract name (see register_contracts_as_tools)"),
+    vault: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Vault name; omit on single-vault setups"),
+  },
+
+  // ── Phase 6 task-contract DSL (Plan 06-03 / CON-06) ────────────────────
+  instantiate_contract: {
+    name: z.string().min(1).describe("Registered contract name"),
+    inputs: z
+      .record(z.string(), z.unknown())
+      .optional()
+      .default({})
+      .describe("Contract inputs; validated against the contract's inputZodSchema"),
+    source_overrides: z
+      .record(z.string(), z.string())
+      .optional()
+      .describe("Override declared source handles by handle name"),
+    sink_overrides: z
+      .record(z.string(), z.string())
+      .optional()
+      .describe(
+        "Override declared sink handles by handle name. Targets MUST resolve through MemorySinkRegistry (D-A4c).",
+      ),
+    vault: z
+      .string()
+      .min(1)
+      .optional()
+      .describe("Vault name; omit on single-vault setups"),
   },
 } as const satisfies Record<string, ZodRawShape>;
 

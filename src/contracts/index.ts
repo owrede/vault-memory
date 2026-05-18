@@ -1,9 +1,8 @@
 /**
- * src/contracts barrel — Plan 06-01 surface only.
+ * src/contracts barrel — Plans 06-01 / 06-02 / 06-03 surface.
  *
- * Loader, templates, mcp-clients, verbs, instantiate, describe,
- * auto-register, resources, eval-runner land in Plans 06-02/03/04 and
- * are NOT re-exported here yet.
+ * Plan 06-04 adds: resources (vault-memory://contract-verbs/{vault})
+ * and the reference-contracts test fixtures.
  */
 
 export type {
@@ -46,3 +45,33 @@ export {
   syncAutoRegistered,
   type SyncAutoRegisteredOpts,
 } from "./auto-register.js";
+export {
+  resolveTemplate,
+  type TemplateBindings,
+  type TemplateResolveResult,
+} from "./templates.js";
+export {
+  PeerMcpRegistry,
+  type PeerMcpClient,
+  type PeerMcpClientConfig,
+  type ClientFactory,
+} from "./mcp-clients.js";
+export {
+  verbDispatcher,
+  type VerbDeps,
+  type VerbDispatchOpts,
+} from "./verbs/index.js";
+export { callMcpVerb } from "./verbs/mcp-extension.js";
+export {
+  instantiateContract,
+  type InstantiateDeps,
+  type InstantiateArgs,
+  type InstantiateBundle,
+  type InstantiateResult,
+} from "./instantiate.js";
+export {
+  describeContract,
+  type DescribeDeps,
+  type DescribeArgs,
+  type DescribeResult,
+} from "./describe.js";
