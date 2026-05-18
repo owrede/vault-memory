@@ -1113,18 +1113,23 @@ Pick option 1. Phase 8 plan 08-XX can include the additional promotion.
 | A8 | The MCP client's Sampling capability is **structurally** present (any object on `caps.sampling`) — not a feature-flag boolean | Pattern: LLM Ladder | Verified at `types.d.ts:572` — `sampling: z.ZodOptional<z.ZodObject<{...}>>` means presence ⇒ declared. **No further capability negotiation needed.** |
 | A9 | The MCP SDK `Server.createMessage()` ASYNCHRONOUSLY round-trips to the client and throws on user denial / client refusal | Pattern: LLM Ladder | Cited by SDK docs and inferred from JSON-RPC nature; **plan 05-02 should add a try/catch around `createMessage` to translate any throw into a `BriefLlmSamplingRefusedError`** |
 
-## Open Questions
+## Open Questions (RESOLVED)
+
+> All four open questions resolved by plan-checker review before execution. Each question carries an inline `**RESOLVED:**` marker pointing to the plan task that implements it.
 
 1. **Slice 2 vs Slice 3 boundary for the staleness ladder.** The MVP slice recommendation in §Summary puts the full ladder (Sampling + Ollama + prepared_text + structured error) in slice 2. But if slice 2 wants to be even thinner, it could ship **only** Sampling (the recommended default for Claude Code) and defer Ollama + prepared_text to slice 4. Tradeoff: slice 2 demos end-to-end against any Sampling-capable MCP client (Claude Code, Inspector); slice 4 widens compatibility.
    - **What we know:** Sampling alone is enough to prove the architecture.
    - **What's unclear:** Whether the planner wants a working Ollama path in slice 2 for offline/dev iteration.
-   - **Recommendation:** Defer the planner-call. Researcher lean is full ladder in slice 2 + structured-error path tested at slice-2 sign-off ("no LLM configured" returns `{ok: false, reason: "no_llm_strategy_available"}` cleanly).
+   - **RESOLVED:** Full ladder ships in slice 2 — 05-02 Task 5-02-01 implements Sampling + Ollama + prepared_text + structured error tiers together. Structured-error path tested at slice-2 sign-off ("no LLM configured" returns `{ok: false, reason: "no_llm_strategy_available"}` cleanly).
 
-2. **`max_age_days` units and semantics in `get_brief`.** CONTEXT D-13 specifies the decision tree but not the unit precision. Days as integer? Fractional days? Seconds? Lean: **integer days**, computed as `Math.floor((Date.now() - compiled_at_ms) / 86_400_000)`. Test boundary: a brief compiled exactly 24 hours ago is age 1, not age 0.
+2. **`max_age_days` units and semantics in `get_brief`.** CONTEXT D-13 specifies the decision tree but not the unit precision. Days as integer? Fractional days? Seconds?
+   - **RESOLVED:** Integer days, computed as `Math.floor((Date.now() - Date.parse(compiled_at)) / 86_400_000)` — implemented in 05-02 Task 5-02-03 (`get_brief` decision tree). Test boundary: a brief compiled exactly 24 hours ago is age 1, not age 0.
 
-3. **`compile_brief` input validation for `source_doc_ids` membership.** D-01 says "validate they're all in the same vault as target" — but `target` is a slug, not a DocId. Resolution: the vault is taken from the call-site's `vault_name` context (per existing tool dispatch), and all `source_doc_ids` must `decomposeDocId(id).authority === vault.config.name`. Reject with `{ok: false, reason: "cross_vault_sources", offending: [...]}` otherwise.
+3. **`compile_brief` input validation for `source_doc_ids` membership.** D-01 says "validate they're all in the same vault as target" — but `target` is a slug, not a DocId.
+   - **RESOLVED:** Vault taken from call-site's `vault_name` context (per existing tool dispatch); all `source_doc_ids` validated via `decomposeDocId(id).authority === vault.config.name`. Reject with `{ok: false, reason: "cross_vault_sources", offending: [...]}` otherwise. Implemented in 05-02 Task 5-02-02 behavior 6 + action step 3.
 
-4. **Whether the daemon's startup full scan blocks the MCP server's `tools/list` response.** Today, `startCatchupAndWatchers()` is fire-and-forget (`src/server.ts:1077`) AFTER `server.connect(transport)`. Daemon start should plug into the same post-connect callback — startup scan runs in the background, agent-visible tools are usable immediately. **Plan 05-03 ordering:** `startCatchupAndWatchers` → `startBriefDaemons` in the same fire-and-forget chain.
+4. **Whether the daemon's startup full scan blocks the MCP server's `tools/list` response.** Today, `startCatchupAndWatchers()` is fire-and-forget (`src/server.ts:1077`) AFTER `server.connect(transport)`.
+   - **RESOLVED:** Daemon start plugs into the same post-connect fire-and-forget callback — startup scan runs in the background; agent-visible tools are usable immediately. **Plan 05-03 Task 5-03-03 step 2** places `startBriefDaemons` after `startCatchupAndWatchers` in the same fire-and-forget chain.
 
 ## Environment Availability
 
