@@ -46,9 +46,18 @@ import * as path from "node:path";
 import type { Document, DocId, SourceHandle, VaultConfig, WikilinkRef } from "../../../types.js";
 import type { DocumentRef, ListOptions, SourceCapabilities, SourceConnector } from "../types.js";
 import { formatDocId, parseSourceHandle } from "../../registry.js";
-import { scanVault } from "./scanner.js";
+import { scanVault, scanContractFiles } from "./scanner.js";
 import { parseNote } from "./parser.js";
 import { computeBodyHash } from "./hash.js";
+
+/**
+ * Phase 6 / Plan 06-04 — task-contract YAML path matcher. Mirrors
+ * `CONTRACT_PATH_REGEX` in `src/contracts/types.ts` (Pitfall F3
+ * non-recursion). YAML files under `_contracts/` are enumerated +
+ * read through the SourceConnector seam so the contract loader's
+ * boot scan + ChangeFeed paths see real on-disk YAML.
+ */
+const CONTRACT_PATH_RE = /^_contracts\/[^/]+\.yaml$/;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ObsidianFsSource
@@ -78,9 +87,18 @@ export class ObsidianFsSource implements SourceConnector {
 
   async *listDocuments(opts?: ListOptions): AsyncIterable<DocumentRef> {
     const excludeOverlay = opts?.excludeGlobs;
-    const files = await scanVault(this.vault.path, {
+    const mdFiles = await scanVault(this.vault.path, {
       ...(excludeOverlay ? { excludeGlobs: excludeOverlay } : {}),
     });
+    // Phase 6 / Plan 06-04 — yield task-contract YAML files alongside .md
+    // notes. The contract loader's boot scan + ChangeFeed paths filter by
+    // CONTRACT_PATH_REGEX inside `src/contracts/loader.ts`, so unrelated
+    // consumers (indexer, watcher, search) that filter on `.md` extension
+    // are unaffected. The indexer uses scanVault() directly (not this
+    // method) so its .md-only contract is preserved.
+    const yamlFiles = await scanContractFiles(this.vault.path);
+    const files = mdFiles.concat(yamlFiles);
+    files.sort();
     const since = opts?.since;
     const limit = opts?.limit;
     let yielded = 0;
@@ -103,6 +121,29 @@ export class ObsidianFsSource implements SourceConnector {
   async readDocument(id: DocId): Promise<Document> {
     const rel = this.docIdToPath(id);
     const abs = this.absPath(rel);
+
+    // Phase 6 / Plan 06-04 — task-contract YAML branch. parseNote()
+    // assumes markdown + frontmatter; it would mis-parse a YAML
+    // contract file. Return the raw text as a single paragraph block
+    // with no properties; the contract loader (`src/contracts/loader.ts`)
+    // is the only consumer and parses the body via `yaml@2.9`.
+    if (CONTRACT_PATH_RE.test(rel)) {
+      const body = await fs.readFile(abs, "utf-8");
+      const stat = await fs.stat(abs);
+      const hash = computeBodyHash(body);
+      return {
+        id,
+        source: this.handle,
+        title: rel,
+        blocks: [{ kind: "paragraph", text: body }],
+        properties: {},
+        links: [],
+        mtime: Math.floor(stat.mtimeMs),
+        hash,
+        display_url: this.formatDisplayUrl(id),
+      };
+    }
+
     const parsed = await parseNote(abs, this.vault.path);
 
     // D-05: surface wikilinks as Document.properties.wikilinks: WikilinkRef[]
