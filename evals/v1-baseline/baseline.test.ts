@@ -61,11 +61,12 @@ const FIXTURE_VAULT = join(__dirname, "..", "fixtures", "v2-test-vault");
 describe("v1 tools/list surface (FND-10)", () => {
   // Plan 04-07: snapshot regenerated with the full Phase 4 additive diff
   // (2 new tools `expand` + `cluster`, plus a nested `expand` param on
-  // `search_hybrid`). Plan 05-02: snapshot regen DEFERRED to slice 4 —
-  // one regen covers compile_brief + get_brief + list_briefs together.
-  // The strict-equality test is skipped until then; the 23 v1 prefix
-  // assertion below remains the byte-identity guarantee.
-  it.skip("matches the pinned snapshot exactly (regen deferred to Plan 05-04)", () => {
+  // `search_hybrid`). Plan 05-04: snapshot regenerated additively with
+  // `compile_brief` + `get_brief`. `list_briefs` is a Resource, not a
+  // Tool — registered through `server.registerResource` and NOT part
+  // of this `tools/list` snapshot (separate MCP discovery surface).
+  // Drift is enforced via byte-equality below.
+  it("matches the pinned snapshot exactly", () => {
     const actual = { tools: TOOLS };
     const pinned = JSON.parse(
       readFileSync(join(__dirname, "tools-list.snapshot.json"), "utf-8"),
