@@ -198,3 +198,182 @@ describe("loadConfig — Phase 5 brief block + sub-folder sink ordering", () => 
     expect(config.memory_sinks[1]?.name).toBe("second");
   });
 });
+
+/**
+ * Phase 6 / ADR-006 §Decision 1: `[contracts]` block.
+ *
+ * Backwards-compat invariant: every v1.x config.toml parses identically
+ * with `config.contracts` populated to the documented defaults.
+ */
+describe("loadConfig — Phase 6 [contracts] block", () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "vm-config-contracts-"));
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  async function seed(toml: string): Promise<string> {
+    const path = join(tmpDir, "config.toml");
+    await writeFile(path, toml, "utf-8");
+    return path;
+  }
+
+  it("Test 1: config without [contracts] yields documented defaults", async () => {
+    const path = await seed(
+      [
+        "[[vaults]]",
+        "name = 'atlas'",
+        "path = '/vaults/atlas'",
+      ].join("\n"),
+    );
+    const config = await loadConfig(path);
+    expect(config.contracts).toEqual({
+      auto_register_tools: false,
+      tool_prefix: "vm_",
+      step_timeout_seconds: 30,
+      defaults: {},
+      mcp_clients: {},
+    });
+  });
+
+  it("Test 2: [contracts] overrides specific fields", async () => {
+    const path = await seed(
+      [
+        "[[vaults]]",
+        "name = 'atlas'",
+        "path = '/vaults/atlas'",
+        "",
+        "[contracts]",
+        "auto_register_tools = true",
+        "tool_prefix = 'x_'",
+      ].join("\n"),
+    );
+    const config = await loadConfig(path);
+    expect(config.contracts.auto_register_tools).toBe(true);
+    expect(config.contracts.tool_prefix).toBe("x_");
+    // Untouched fields keep defaults
+    expect(config.contracts.step_timeout_seconds).toBe(30);
+    expect(config.contracts.defaults).toEqual({});
+    expect(config.contracts.mcp_clients).toEqual({});
+  });
+
+  it("Test 3: empty tool_prefix is REJECTED (A7 .min(1))", async () => {
+    const path = await seed(
+      [
+        "[contracts]",
+        "tool_prefix = ''",
+      ].join("\n"),
+    );
+    await expect(loadConfig(path)).rejects.toThrow();
+  });
+
+  it("Test 4: tool_prefix '1bad' (leading digit) REJECTED", async () => {
+    const path = await seed(
+      [
+        "[contracts]",
+        "tool_prefix = '1bad'",
+      ].join("\n"),
+    );
+    await expect(loadConfig(path)).rejects.toThrow();
+  });
+
+  it("Test 5: [contracts.defaults] populates the handle→URI map", async () => {
+    const path = await seed(
+      [
+        "[contracts.defaults]",
+        "default_source = 'obsidian-fs://my-vault'",
+      ].join("\n"),
+    );
+    const config = await loadConfig(path);
+    expect(config.contracts.defaults).toEqual({
+      default_source: "obsidian-fs://my-vault",
+    });
+  });
+
+  it("Test 6: [contracts.mcp_clients.<name>] populates command + args", async () => {
+    const path = await seed(
+      [
+        "[contracts.mcp_clients.gh]",
+        "command = 'gh-mcp-server'",
+        "args = ['--config', '/p']",
+      ].join("\n"),
+    );
+    const config = await loadConfig(path);
+    expect(config.contracts.mcp_clients.gh).toBeDefined();
+    expect(config.contracts.mcp_clients.gh?.command).toBe("gh-mcp-server");
+    expect(config.contracts.mcp_clients.gh?.args).toEqual(["--config", "/p"]);
+    expect(config.contracts.mcp_clients.gh?.env).toBeUndefined();
+  });
+
+  it("Test 7: step_timeout_seconds = 0 REJECTED (positive int)", async () => {
+    const path = await seed(
+      [
+        "[contracts]",
+        "step_timeout_seconds = 0",
+      ].join("\n"),
+    );
+    await expect(loadConfig(path)).rejects.toThrow();
+  });
+
+  it("Test 8: step_timeout_seconds = -5 REJECTED", async () => {
+    const path = await seed(
+      [
+        "[contracts]",
+        "step_timeout_seconds = -5",
+      ].join("\n"),
+    );
+    await expect(loadConfig(path)).rejects.toThrow();
+  });
+
+  it("Test 9: mcp_clients.<name>.command empty string REJECTED", async () => {
+    const path = await seed(
+      [
+        "[contracts.mcp_clients.bad]",
+        "command = ''",
+      ].join("\n"),
+    );
+    await expect(loadConfig(path)).rejects.toThrow();
+  });
+
+  it("Test 10: a previously-stored v1 config (no [contracts]) backwards-compat regression", async () => {
+    // Mirrors a v1.x config.toml shape verbatim — must parse with the
+    // documented contracts defaults injected.
+    const path = await seed(
+      [
+        "[server]",
+        "log_level = 'info'",
+        "ollama_endpoint = 'http://localhost:11434'",
+        "",
+        "[[vaults]]",
+        "name = 'atlas'",
+        "path = '/vaults/atlas'",
+        "embedding_model = 'qwen3-embedding'",
+      ].join("\n"),
+    );
+    const config = await loadConfig(path);
+    // Existing v1 fields parse identically:
+    expect(config.vaults).toHaveLength(1);
+    expect(config.vaults[0]?.name).toBe("atlas");
+    expect(config.server.log_level).toBe("info");
+    // Phase 6 contracts defaults injected:
+    expect(config.contracts.auto_register_tools).toBe(false);
+    expect(config.contracts.tool_prefix).toBe("vm_");
+    expect(config.contracts.step_timeout_seconds).toBe(30);
+  });
+
+  it("Test 11: missing config file (ENOENT) returns DEFAULT_CONFIG with contracts defaults", async () => {
+    const path = join(tmpDir, "does-not-exist.toml");
+    const config = await loadConfig(path);
+    expect(config.contracts).toEqual({
+      auto_register_tools: false,
+      tool_prefix: "vm_",
+      step_timeout_seconds: 30,
+      defaults: {},
+      mcp_clients: {},
+    });
+  });
+});

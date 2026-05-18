@@ -52,6 +52,65 @@ const BriefConfigSchema = z.object({
   ollama: BriefOllamaConfigSchema.optional(),
 });
 
+/**
+ * Phase 6 / ADR-006 §Decision 1: `[contracts]` block (per-vault gate).
+ *
+ * Backwards-compatible: a config.toml with no `[contracts]` block parses
+ * to the documented defaults via `.optional().default(...)` at the
+ * AppConfigSchema attach site.
+ *
+ * Trust scope (T-06-01-04 disposition: accept): `mcp_clients.<name>.command`
+ * is the same trust level as the rest of `~/.vault-memory/config.toml`
+ * (user-owned). Plan 06-03 uses `child_process.spawn(command, args)` with
+ * NO shell — args pass verbatim. Documented in ADR-006 §Threat Model.
+ */
+const ContractsMcpClientConfigSchema = z.object({
+  command: z.string().min(1).describe("Peer MCP server executable path"),
+  args: z.array(z.string()).optional(),
+  env: z.record(z.string(), z.string()).optional(),
+});
+
+const ContractsConfigSchema = z.object({
+  auto_register_tools: z
+    .boolean()
+    .default(false)
+    .describe(
+      "D-A1b — per-vault gate for auto-registering contracts as MCP Tools",
+    ),
+  tool_prefix: z
+    .string()
+    .min(1)
+    .regex(/^[a-z_][a-z0-9_]*$/)
+    .default("vm_")
+    .describe(
+      "D-A1c — slug prefix for auto-registered tool names; A7 enforces non-empty",
+    ),
+  step_timeout_seconds: z
+    .number()
+    .int()
+    .positive()
+    .default(30)
+    .describe(
+      "Q-TIMEOUT — applied only to peer-MCP verbs (baseline verbs use their own discipline)",
+    ),
+  defaults: z
+    .record(z.string(), z.string())
+    .default({})
+    .describe("D-A4b — default chain step 2: handle → URI fallback"),
+  mcp_clients: z
+    .record(z.string(), ContractsMcpClientConfigSchema)
+    .default({})
+    .describe("D-A2a — peer MCP clients vault-memory connects to as an MCP client"),
+});
+
+const DEFAULT_CONTRACTS_CONFIG = {
+  auto_register_tools: false,
+  tool_prefix: "vm_",
+  step_timeout_seconds: 30,
+  defaults: {},
+  mcp_clients: {},
+} as const;
+
 // Phase 2: optional [memory] and [[memory_sinks]] blocks.
 //
 // The handle string is intentionally NOT validated against
@@ -78,6 +137,9 @@ const AppConfigSchema = z.object({
   // Phase 5 / D-10 tier 2 (ADR-005). Backwards-compatible: existing
   // configs without `[brief]` parse identically.
   brief: BriefConfigSchema.optional(),
+  // Phase 6 / ADR-006 §Decision 1. Backwards-compatible: configs without
+  // `[contracts]` resolve to DEFAULT_CONTRACTS_CONFIG.
+  contracts: ContractsConfigSchema.optional().default(DEFAULT_CONTRACTS_CONFIG),
 });
 
 const DEFAULT_CONFIG: AppConfig = {
@@ -88,6 +150,7 @@ const DEFAULT_CONFIG: AppConfig = {
   },
   vaults: [],
   memory_sinks: [],
+  contracts: { ...DEFAULT_CONTRACTS_CONFIG },
 };
 
 export function configPath(): string {
@@ -133,6 +196,7 @@ export async function loadConfig(path: string = configPath()): Promise<AppConfig
     // parent (bound to `default-memory-v1`, rejects `"stale"`).
     memory_sinks: sortSinksByPathSpecificity(validated.memory_sinks),
     brief: validated.brief,
+    contracts: validated.contracts,
   };
 }
 
