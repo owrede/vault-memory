@@ -51,3 +51,9 @@ export {
   type TemplateBindings,
   type TemplateResolveResult,
 } from "./templates.js";
+export {
+  PeerMcpRegistry,
+  type PeerMcpClient,
+  type PeerMcpClientConfig,
+  type ClientFactory,
+} from "./mcp-clients.js";
