@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: release
-status: Phase 05 complete
-stopped_at: Phase 6 context gathered
-last_updated: "2026-05-18T13:15:40.493Z"
-last_activity: 2026-05-18 -- Phase 05 marked complete
+status: Phase 06 planned
+stopped_at: Phase 6 plans patched (CONCERNS resolved)
+last_updated: "2026-05-18T14:16:52.084374Z"
+last_activity: 2026-05-18 -- Phase 6 plans patched against plan-checker concerns (WARNING 1/2/4/5/6 + VALIDATION extraction)
 progress:
   total_phases: 10
   completed_phases: 4
-  total_plans: 57
+  total_plans: 61
   completed_plans: 55
   percent: 40
 ---
@@ -21,24 +21,29 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-14)
 
 **Core value:** Local-first, source-agnostic-ready, agentic knowledge layer over your Obsidian notes — with the memory namespace as a non-negotiable safety invariant.
-**Current focus:** Phase 5 — compiled brief layer
+**Current focus:** Phase 6 — task contract DSL
 
 ## Current Position
 
-Phase: 05 — COMPLETE
-Plan: 4 MVP slices planned, plan-checker verdict CONCERNS → patched (zero blockers).
-Plans: 7 implementation slices from Phase 4, all signed off. Phase 4 sign-off doc at `docs/v2/PHASE-4-SIGN-OFF.md`.
+Phase: 06 — PLANNED (ready for /gsd:execute-phase 6)
+Plan: 4 MVP slices planned. Coverage: all 12 CON-* requirements + all 13 locked decisions (D-A1..D-LOAD) + all 5 ROADMAP success criteria.
 
-Phase 5 plan set (`.planning/phases/05-compiled-brief-layer/`):
+Phase 6 plan set (`.planning/phases/06-task-contract-dsl/`):
 
-- 05-01 foundations — ADR-005, migration 013, default-brief-v1 contract, types, chunker, Wave 0 stubs
-- 05-02 compile + get — full LLM ladder (Sampling/Ollama/prepared_text/error), body validator, D-12 supersede chain
-- 05-03 staleness daemon — lockfile (PID liveness), ChangeFeed subscriber, startup scan, rename grace-window
-- 05-04 Resource + gate — list_briefs Resource, BRF-11 cross-adapter conformance, snapshot regen, PHASE-5-SIGN-OFF
+- 06-01 foundations — ADR-006, migration 014 (contract_audit), [contracts] config block, type catalog + $ref resolver + buildInputSchema (Pitfall F1/F2/A3), ContractRegistry first-wins, slugifier, payload-free audit writer, ContractFileSchema, 9 Wave-0 stubs
+- 06-02 loader + hot reload — startContractRegistry (boot scan + ChangeFeed third subscriber per D-LOAD, CON-01 round-trip), syncAutoRegistered diff-based dynamic tool registration (D-A1, Pattern 4), register_contracts_as_tools always-callable escape valve, snapshot regen 34 → 35
+- 06-03 instantiate + describe + verbs — resolveTemplate ~50 LOC mustache (D-A2c, C-7 template injection invariant), PeerMcpRegistry with Symbol.dispose (D-A2a, Pitfall F4), verbDispatcher 11-baseline + literal + mcp:// with Q-TIMEOUT (peer-MCP only), instantiateContract orchestrator (CON-06, all 11 InstantiateError closed-enum reasons, MEM-05 un-bypassable per C-2), describeContract pure Q-DESCRIBE renderer (CON-05), snapshot regen 35 → 37
+- 06-04 reference contracts + evals + sign-off — 3 reference contracts (meeting-prep / project-status / code-review-brief; CON-07) anchored to verified Atlas Robotics fixture docs, smoketest-trivial.yaml LLM-free companion for CON-09, 4 eval scenario YAMLs (CON-08 + CON-10), stub-parity conformance extension (CON-10), non-Claude smoketest extension (CON-09), list_contracts + list_contract_verbs MCP Resources (CON-04 + D-A2b), PHASE-6-SIGN-OFF + CHANGELOG + ROADMAP checkbox
 
-Coverage: all 11 BRF requirements + all 13 D-XX locked decisions + all 5 ROADMAP success criteria.
-Tool count delta: 32 → 34 (REL-08 retirement deferred to Phase 8).
-Next: `/gsd:execute-phase 5`.
+Coverage: CON-01..CON-12 (12/12); decisions D-A1, D-A1b, D-A1c, D-A2a, D-A2b, D-A2c, D-A3a, D-A3b, D-A4a, D-A4b, D-A4c, D-LOAD all materialized; ROADMAP success criteria 1-5 all mapped to specific tests.
+Tool count delta: 34 → 37 (REL-08 retirement deferred to Phase 8 per Pitfall F7).
+MCP Resources delta: +2 (list_contracts, list_contract_verbs); do NOT count toward REL-08 budget.
+Zero net-new runtime dependencies (yaml@^2.9.0, zod@^4.4.3, @modelcontextprotocol/sdk@^1.29.x all pre-installed).
+Next: `/gsd:execute-phase 6`.
+
+---
+
+Phase 5 (kept for context, completed 2026-05-18):
 
 Phase 4 ships:
 
