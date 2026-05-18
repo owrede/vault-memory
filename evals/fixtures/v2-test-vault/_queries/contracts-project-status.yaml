@@ -1,0 +1,23 @@
+# CON-08 eval — project-status contract against Atlas Robotics fixture.
+description: project-status contract against Atlas Robotics fixture
+scenarios:
+  - name: atlas-1-status
+    contract: project-status
+    inputs:
+      project_key: "atlas-1"
+      freshness_days: 30
+    expected_output_shape:
+      type: object
+      properties:
+        steps:
+          type: object
+        write_back:
+          type: object
+          properties:
+            doc_id:
+              type: string
+          required: [doc_id]
+      required: [write_back]
+    expected_write_back:
+      sink: "_memory/_briefs"
+      properties_required: [target, source, purpose]

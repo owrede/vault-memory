@@ -1,0 +1,25 @@
+# CON-08 eval — code-review-brief contract against Atlas Robotics fixture.
+# Uses a build-review meeting doc as the pr_doc_id since no PR fixture
+# exists; the contract takes any DocId.
+description: code-review-brief contract against Atlas Robotics fixture
+scenarios:
+  - name: atlas-1-build-review
+    contract: code-review-brief
+    inputs:
+      pr_doc_id: "obsidian-fs://test-vault/meetings/2026-04-17-atlas-1-build-review.md"
+      search_query: "atlas-1 perception stack"
+    expected_output_shape:
+      type: object
+      properties:
+        steps:
+          type: object
+        write_back:
+          type: object
+          properties:
+            doc_id:
+              type: string
+          required: [doc_id]
+      required: [write_back]
+    expected_write_back:
+      sink: "_memory/_briefs"
+      properties_required: [target, source, purpose]
