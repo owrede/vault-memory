@@ -318,7 +318,7 @@ Phases execute in numeric order: 0 → 1 → 2 → 3 → 4 → 5 → 6 → 7 →
 | 2. Memory namespace & provenance contract | 16/16 | Complete   | 2026-05-15 |
 | 3. Bundles + authority/staleness | 0/TBD | Not started | - |
 | 4. Graph-as-retrieval | 7/7 | Complete   | 2026-05-17 |
-| 5. Compiled brief layer | 0/TBD | Not started | - |
+| 5. Compiled brief layer | 4/4 | Complete   | 2026-05-18 |
 | 6. Task contract DSL | 0/TBD | Not started | - |
 | 7. Visual contract editor (Canvas) | 0/TBD | Not started | - |
 | 8. Polish, eval suite, v2.0.0 release | 0/TBD | Not started | - |
