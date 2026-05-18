@@ -34,6 +34,8 @@ import {
 import { computeChunkIdFragment } from "../../../../src/chunker/chunk-id.js";
 import { handleCompileBrief } from "../../../../src/brief/compile.js";
 import { handleGetBrief } from "../../../../src/brief/get.js";
+import { BriefStalenessDaemon } from "../../../../src/brief/daemon.js";
+import { StubChangeFeed } from "../../../../src/adapters/stub/change-feed.js";
 import type {
   Document,
   DocId,
@@ -50,6 +52,14 @@ interface BriefsCuratedQuery {
   max_tokens?: number;
   expected_must_contain?: string[];
   rationale?: string;
+  /** Slice 3 / BRF-10 — staleness scenario sub-block. */
+  staleness_scenario?: {
+    modify_source: string;
+  };
+  expected_after_modify?: {
+    status?: string;
+    changed_sources_contains?: string[];
+  };
 }
 
 interface BriefsCuratedYaml {
@@ -144,7 +154,7 @@ function seedSources(vault: Vault, docIds: readonly string[]) {
     const id = parseDocId(raw);
     const { resource } = decomposeDocId(id);
     const text = `seed text for ${resource}`;
-    const noteId = vault.db.notes.upsertByPath({
+    const { id: noteId, isNew } = vault.db.notes.upsertByPath({
       path: resource,
       content: text,
       frontmatter: null,
@@ -154,7 +164,13 @@ function seedSources(vault: Vault, docIds: readonly string[]) {
       mtime: Date.now(),
       wordCount: text.split(/\s+/).length,
       vaultName: VAULT_NAME,
-    }).id;
+    });
+    // Idempotent seeding: when the same path is seeded twice across
+    // queries, drop the prior chunks row first so insertBatch doesn't
+    // hit the UNIQUE(note_id, idx) constraint.
+    if (!isNew) {
+      vault.db.chunks.deleteByNote(noteId);
+    }
     vault.db.chunks.insertBatch(noteId, [
       {
         idx: 0,
@@ -195,6 +211,120 @@ describe("Phase 5 / BRF-10 — briefs-curated.yaml end-to-end", () => {
     const yaml = await loadYaml();
     const large = yaml.queries.filter((q) => q.source_doc_ids.length >= 10);
     expect(large.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("BRF-10 staleness scenario: modify a source → brief flips to status:stale within one change-feed cycle", async () => {
+    const yaml = await loadYaml();
+    const scenario = yaml.queries.find(
+      (q) => q.staleness_scenario !== undefined,
+    );
+    if (!scenario || !scenario.staleness_scenario) {
+      // Skip if no staleness scenario is configured (forward-compat).
+      return;
+    }
+    const fixture = await buildFixture();
+    try {
+      seedSources(fixture.vault, scenario.source_doc_ids);
+
+      // Step 1 — compile the brief and confirm it lands active.
+      const compile = await handleCompileBrief(
+        {
+          memorySinkRegistry: fixture.registry,
+          manager: fixture.manager,
+          deliveryAdapterFor: () => fixture.delivery,
+          sourceConnectorFor: () => fixture.source,
+          server: stubServer(),
+          ollama: stubOllama("stale-scenario brief body") as never,
+          briefConfig: { ollama: { model: "llama3.2" } },
+        },
+        {
+          vault: VAULT_NAME,
+          target: scenario.target,
+          source_doc_ids: scenario.source_doc_ids,
+          purpose: scenario.purpose,
+          max_tokens: scenario.max_tokens ?? 2000,
+        },
+      );
+      expect(compile.ok).toBe(true);
+      if (!compile.ok) return;
+      const briefId = compile.doc_id as DocId;
+      expect(fixture.docs.get(briefId)?.properties.status).toBe("active");
+
+      // Step 2 — start the daemon against a StubChangeFeed so we drive
+      // events deterministically.
+      const feed = new StubChangeFeed();
+      const lockRoot = await mkdtemp(join(tmpdir(), "vm-brf10-lock-"));
+      try {
+        const daemon = new BriefStalenessDaemon();
+        await daemon.start(fixture.vault, feed, {
+          memorySinkRegistry: fixture.registry,
+          deliveryAdapterFor: () => fixture.delivery,
+          sourceConnectorFor: () => fixture.source,
+          lockRootOverride: lockRoot,
+          log: () => {},
+        });
+
+        // Step 3 — rewrite the source's chunk text (synthetic — production
+        // would have the indexer rewrite the chunks row after the file
+        // changes; we simulate that DB state) and emit one ChangeEvent.
+        const modifiedId = parseDocId(scenario.staleness_scenario.modify_source);
+        const { resource } = decomposeDocId(modifiedId);
+        const note = fixture.vault.db.notes.getByPath(resource);
+        if (!note) throw new Error(`fixture missing note: ${resource}`);
+        const newText = `mutated text for ${resource} (timestamp ${Date.now()})`;
+        fixture.vault.db.chunks.deleteByNote(note.id);
+        fixture.vault.db.chunks.insertBatch(note.id, [
+          {
+            idx: 0,
+            text: newText,
+            headingPath: null,
+            startOffset: 0,
+            endOffset: newText.length,
+            tokenCount: 4,
+            chunkIdFragment: computeChunkIdFragment(newText),
+          },
+        ]);
+
+        // Step 4 — one change-feed cycle.
+        feed.emit({ kind: "update", id: modifiedId, at: Date.now() });
+        // Wait for the async handler to settle.
+        await new Promise((r) => setImmediate(r));
+        await new Promise((r) => setImmediate(r));
+
+        // Step 5 — assert the brief is now stale and changed_sources
+        // includes the modified DocId.
+        const get = await handleGetBrief(
+          {
+            memorySinkRegistry: fixture.registry,
+            manager: fixture.manager,
+            sourceConnectorFor: () => fixture.source,
+          },
+          {
+            vault: VAULT_NAME,
+            target: scenario.target,
+            allow_stale: true,
+          },
+        );
+        expect(get.brief).not.toBeNull();
+        if (get.brief !== null) {
+          expect(get.brief.properties.status).toBe("stale");
+          if (scenario.expected_after_modify?.changed_sources_contains) {
+            for (const expected of scenario.expected_after_modify
+              .changed_sources_contains) {
+              expect(get.brief.properties.changed_sources).toEqual(
+                expect.arrayContaining([expected]),
+              );
+            }
+          }
+        }
+
+        await daemon.shutdown();
+      } finally {
+        await rm(lockRoot, { recursive: true, force: true });
+      }
+    } finally {
+      await fixture.cleanup();
+    }
   });
 
   it("compile_brief + get_brief round-trip succeeds for every curated query", async () => {

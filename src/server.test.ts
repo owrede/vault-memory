@@ -1817,3 +1817,192 @@ describe("Plan 04-05: cluster MCP tool", () => {
     expect(names).toContain("cluster");
   });
 });
+
+// ─── Plan 05-03 — BriefStalenessDaemon bootstrap wiring ──────────────
+//
+// Tests focus on the daemon's lock contention semantics + shutdown
+// ordering. End-to-end bootstrap is exercised by the daemon's own
+// test file + the briefs-curated.test.ts staleness scenario; the
+// concerns here are specific to how the server wires the daemon
+// into its lifecycle.
+
+describe("Plan 05-03: BriefStalenessDaemon bootstrap wiring", () => {
+  it("Test 1: a second daemon against the same vault returns acquired:false + serves identically", async () => {
+    const { mkdtemp, rm } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { BriefStalenessDaemon, tryAcquireLock } = await import(
+      "./brief/index.js"
+    );
+    const { StubChangeFeed } = await import("./adapters/stub/change-feed.js");
+    const { StubDelivery } = await import("./adapters/stub/delivery.js");
+    const { StubSource } = await import("./adapters/stub/source.js");
+    const { MemorySinkRegistry, parseMemorySinkHandle } = await import(
+      "./memory/index.js"
+    );
+    const { provisionSink } = await import(
+      "./adapters/delivery/obsidian-fs/sentinel.js"
+    );
+
+    const VAULT_NAME = "test-vault-bootstrap";
+    const vaultDir = await mkdtemp(join(tmpdir(), "vm-bootstrap-vault-"));
+    const lockRoot = await mkdtemp(join(tmpdir(), "vm-bootstrap-lock-"));
+    try {
+      const db = new Database(":memory:", VAULT_NAME);
+      db.migrate();
+      const vault = {
+        config: {
+          name: VAULT_NAME,
+          path: vaultDir,
+          write_enabled: true,
+        },
+        db,
+        dbPath: ":memory:",
+      };
+
+      const registry = new MemorySinkRegistry();
+      const handle = parseMemorySinkHandle(
+        `obsidian-fs://${VAULT_NAME}/_memory/_briefs/`,
+      );
+      await registry.registerMemorySinks(
+        [
+          {
+            name: "_memory/_briefs",
+            handle,
+            contract: "default-brief-v1",
+          },
+        ],
+        {
+          resolveVaultAbsolutePath: () => vaultDir,
+          provisioner: async (sink, vaultAbs) => {
+            await provisionSink(sink, vaultAbs, { version: "test" });
+          },
+        },
+      );
+
+      const docs = new Map();
+      const delivery = new StubDelivery(docs, registry);
+      const source = new StubSource(docs);
+      const feed = new StubChangeFeed();
+
+      // First daemon acquires the lock.
+      const daemonA = new BriefStalenessDaemon();
+      const resA = await daemonA.start(vault, feed, {
+        memorySinkRegistry: registry,
+        deliveryAdapterFor: () => delivery,
+        sourceConnectorFor: () => source,
+        lockRootOverride: lockRoot,
+        log: () => {},
+      });
+      expect(resA.acquired).toBe(true);
+      expect(daemonA.isOwner).toBe(true);
+
+      // Second daemon: contended, returns acquired:false.
+      const daemonB = new BriefStalenessDaemon();
+      const warns: string[] = [];
+      const resB = await daemonB.start(vault, feed, {
+        memorySinkRegistry: registry,
+        deliveryAdapterFor: () => delivery,
+        sourceConnectorFor: () => source,
+        lockRootOverride: lockRoot,
+        log: (m) => warns.push(m),
+      });
+      expect(resB.acquired).toBe(false);
+      expect(daemonB.isOwner).toBe(false);
+      expect(
+        warns.some((m) => m.includes("daemon_already_owned")),
+      ).toBe(true);
+
+      // Sanity: server B (no daemon subscription) can still re-acquire
+      // the lock after server A shuts down — that's the multi-MCP-client
+      // recovery contract.
+      await daemonA.shutdown();
+      const recovered = await tryAcquireLock(VAULT_NAME, {
+        rootOverride: lockRoot,
+      });
+      expect(recovered.acquired).toBe(true);
+    } finally {
+      await rm(vaultDir, { recursive: true, force: true });
+      await rm(lockRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("Test 2: shutdown disposes the daemon's subscription BEFORE releasing the lock", async () => {
+    const { mkdtemp, rm } = await import("node:fs/promises");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { BriefStalenessDaemon, tryAcquireLock } = await import(
+      "./brief/index.js"
+    );
+    const { StubChangeFeed } = await import("./adapters/stub/change-feed.js");
+    const { StubDelivery } = await import("./adapters/stub/delivery.js");
+    const { StubSource } = await import("./adapters/stub/source.js");
+    const { MemorySinkRegistry, parseMemorySinkHandle } = await import(
+      "./memory/index.js"
+    );
+    const { provisionSink } = await import(
+      "./adapters/delivery/obsidian-fs/sentinel.js"
+    );
+
+    const VAULT_NAME = "test-vault-shutdown";
+    const vaultDir = await mkdtemp(join(tmpdir(), "vm-shutdown-vault-"));
+    const lockRoot = await mkdtemp(join(tmpdir(), "vm-shutdown-lock-"));
+    try {
+      const db = new Database(":memory:", VAULT_NAME);
+      db.migrate();
+      const vault = {
+        config: {
+          name: VAULT_NAME,
+          path: vaultDir,
+          write_enabled: true,
+        },
+        db,
+        dbPath: ":memory:",
+      };
+      const registry = new MemorySinkRegistry();
+      const handle = parseMemorySinkHandle(
+        `obsidian-fs://${VAULT_NAME}/_memory/_briefs/`,
+      );
+      await registry.registerMemorySinks(
+        [
+          {
+            name: "_memory/_briefs",
+            handle,
+            contract: "default-brief-v1",
+          },
+        ],
+        {
+          resolveVaultAbsolutePath: () => vaultDir,
+          provisioner: async (sink, vaultAbs) => {
+            await provisionSink(sink, vaultAbs, { version: "test" });
+          },
+        },
+      );
+      const docs = new Map();
+      const delivery = new StubDelivery(docs, registry);
+      const source = new StubSource(docs);
+      const feed = new StubChangeFeed();
+
+      const daemon = new BriefStalenessDaemon();
+      await daemon.start(vault, feed, {
+        memorySinkRegistry: registry,
+        deliveryAdapterFor: () => delivery,
+        sourceConnectorFor: () => source,
+        lockRootOverride: lockRoot,
+        log: () => {},
+      });
+      expect(daemon.isOwner).toBe(true);
+
+      await daemon.shutdown();
+      // After shutdown: lock released, ownership flag cleared.
+      expect(daemon.isOwner).toBe(false);
+      const acquire = await tryAcquireLock(VAULT_NAME, {
+        rootOverride: lockRoot,
+      });
+      expect(acquire.acquired).toBe(true);
+    } finally {
+      await rm(vaultDir, { recursive: true, force: true });
+      await rm(lockRoot, { recursive: true, force: true });
+    }
+  });
+});

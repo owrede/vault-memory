@@ -6,6 +6,31 @@
 # (Phase 4) and the brief layer (Phase 5) compose incorrectly even
 # when each is individually green against `briefs-curated.yaml`.
 #
-# Populated in slice 4 (Plan 05-04) once both `compile_brief` and
-# `cluster()` are exercising the same fixture vault end-to-end.
-queries: []
+# The seeded cluster() should resolve to at least 5 and at most 25
+# Atlas-1 documents — enough to exercise the brief-source resolver
+# without saturating the LLM context window. Slice 4 will wire the
+# cluster + compile_brief end-to-end against the real Phase 4
+# cluster() implementation; slice 3 populates the YAML.
+queries:
+  - id: atlas-1-cluster-driven-brief
+    seed_doc_ids:
+      - obsidian-fs://v2-test-vault/projects/atlas-1.md
+    target: atlas-1-cluster-brief
+    purpose: >
+      Pipeline-integration eval — cluster() seeds compile_brief
+      sources. Exercises Phase 4 cluster() + Phase 5 compile_brief
+      together. A regression here isolates whether a graph-layer
+      (cluster) bug or a brief-layer (compile_brief) bug is
+      responsible.
+    max_tokens: 2000
+    cluster_opts:
+      max_iterations: 4
+      resolution: 1.0
+    expected_member_count:
+      min: 5
+      max: 25
+    rationale: >
+      D-02 secondary — the orchestrator hands cluster member IDs to
+      compile_brief. Catches composition regressions that individual
+      slice tests would miss (e.g. cluster returns a DocId string
+      shape that compile_brief's cross-vault gate cannot parse).

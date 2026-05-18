@@ -51,3 +51,18 @@ export {
   type GetBriefDeps,
   type GetBriefResult,
 } from "./get.js";
+
+// ── Slice 3 (Plan 05-03) — staleness daemon + lockfile primitive ────
+export {
+  tryAcquireLock,
+  releaseLock,
+  isProcessAlive,
+  type LockResult,
+  type LockAcquired,
+  type LockContended,
+} from "./lock.js";
+export {
+  BriefStalenessDaemon,
+  type DaemonDeps,
+  type DaemonStartResult,
+} from "./daemon.js";
