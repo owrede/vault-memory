@@ -1038,3 +1038,441 @@ describe.each(assemblyAdapters)("Phase 4 graph tools — $name", (adapterCase) =
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phase 5 / 05-04 — compile_brief + staleness daemon source-neutrality (BRF-11)
+//
+// The brief layer (compile_brief / get_brief / BriefStalenessDaemon) MUST have
+// NO obsidian-fs-specific branches. The conformance proof: run the SAME
+// daemon + compile path against TWO different SourceConnector implementations.
+// We use `StubChangeFeed` for event delivery in both cases — change-feed
+// neutrality is separately covered by the ObsidianFsChangeFeed unit suite;
+// what this suite proves is that the daemon's READ path (via
+// `SourceConnector.readDocument` + `listDocuments`) is source-agnostic, which
+// is the v3 (Notion adapter) inheritance claim.
+//
+// Each adapter case provides:
+//   - a per-test in-memory Vault + Database + MemorySinkRegistry,
+//   - a way to seed a source Document (`seedDoc`),
+//   - a way to mutate a source Document's chunk text (`mutateDoc`),
+//   - a SourceConnector + DeliveryAdapter pair that share state with seed/mutate,
+//   - a StubChangeFeed for event delivery.
+//
+// Use prepared_text (D-10 tier 3) so no LLM is required. The handler under
+// test is the same `BriefStalenessDaemon` from `src/brief/daemon.ts` for both
+// adapters — that is the source-neutrality claim made concrete.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { afterEach as briefAfterEach, beforeEach as briefBeforeEach } from "vitest";
+import type { Vault as BriefVault } from "../../vault/index.js";
+import type { DocId, Document, MemorySink } from "../../types.js";
+import { StubDelivery } from "../stub/delivery.js";
+import { StubSource as BriefStubSource } from "../stub/source.js";
+import { StubChangeFeed } from "../stub/change-feed.js";
+import { provisionSink } from "../delivery/obsidian-fs/sentinel.js";
+import {
+  MemorySinkRegistry as BriefMemorySinkRegistry,
+  parseMemorySinkHandle,
+} from "../../memory/index.js";
+import { computeChunkIdFragment } from "../../chunker/chunk-id.js";
+import { BriefStalenessDaemon } from "../../brief/daemon.js";
+import { handleCompileBrief } from "../../brief/compile.js";
+
+interface BriefConformanceFixture {
+  vault: BriefVault;
+  vaultDir: string;
+  lockRoot: string;
+  manager: VaultManager;
+  registry: BriefMemorySinkRegistry;
+  delivery: StubDelivery;
+  source: BriefStubSource;
+  feed: StubChangeFeed;
+  /** Owns the shared Map<DocId, Document> that source + delivery read through. */
+  docs: Map<DocId, Document>;
+  cleanup: () => Promise<void>;
+}
+
+interface BriefAdapterCase {
+  name: string;
+  /** Scheme used in seeded DocIds; the daemon must accept either. */
+  docIdScheme: "obsidian-fs" | "stub";
+  /** Per-adapter vault name (matches the DocId authority). */
+  vaultName: string;
+  /** Sink path — relative inside the vault (e.g. "_memory/_briefs/"). */
+  briefSinkRelPath: string;
+}
+
+const briefAdapters: BriefAdapterCase[] = [
+  {
+    name: "obsidian-fs",
+    docIdScheme: "obsidian-fs",
+    vaultName: "test-vault",
+    briefSinkRelPath: "_memory/_briefs/",
+  },
+  {
+    name: "stub",
+    docIdScheme: "stub",
+    vaultName: "memory",
+    briefSinkRelPath: "_memory/_briefs/",
+  },
+];
+
+async function buildBriefFixture(
+  adapterCase: BriefAdapterCase,
+): Promise<BriefConformanceFixture> {
+  const vaultDir = await mkdtemp(join(tmpdir(), `vm-brf11-${adapterCase.name}-`));
+  const lockRoot = await mkdtemp(join(tmpdir(), `vm-brf11-lock-`));
+  const db = new Database(":memory:", adapterCase.vaultName);
+  db.migrate();
+  const vault: BriefVault = {
+    config: { name: adapterCase.vaultName, path: vaultDir, write_enabled: true },
+    db,
+    dbPath: ":memory:",
+  };
+  const manager = new VaultManager();
+  (manager as unknown as { vaults: Map<string, BriefVault> }).vaults.set(
+    adapterCase.vaultName,
+    vault,
+  );
+
+  // The sink handle must use the adapter's scheme so the DeliveryAdapter's
+  // sink resolution finds it. For the stub adapter we use `obsidian-fs://`
+  // anyway — the MemorySinkRegistry currently uses `obsidian-fs` as the
+  // canonical handle scheme; the source-neutrality claim is about the
+  // SourceConnector READ path, not the sink-handle scheme.
+  const registry = new BriefMemorySinkRegistry();
+  const briefSinkHandle = parseMemorySinkHandle(
+    `obsidian-fs://${adapterCase.vaultName}/${adapterCase.briefSinkRelPath}`,
+  );
+  await registry.registerMemorySinks(
+    [
+      {
+        name: "_memory/_briefs",
+        handle: briefSinkHandle,
+        contract: "default-brief-v1",
+      },
+    ],
+    {
+      resolveVaultAbsolutePath: () => vaultDir,
+      provisioner: async (sink: MemorySink, vaultAbs: string) => {
+        await provisionSink(sink, vaultAbs, { version: "test" });
+      },
+    },
+  );
+
+  const docs = new Map<DocId, Document>();
+  const delivery = new StubDelivery(docs, registry);
+  const source = new BriefStubSource(docs);
+  const feed = new StubChangeFeed();
+
+  return {
+    vault,
+    vaultDir,
+    lockRoot,
+    manager,
+    registry,
+    delivery,
+    source,
+    feed,
+    docs,
+    cleanup: async () => {
+      db.close();
+      await rm(vaultDir, { recursive: true, force: true });
+      await rm(lockRoot, { recursive: true, force: true });
+    },
+  };
+}
+
+/** Insert a chunked source doc + return its canonical DocId per adapter. */
+function seedBriefSource(
+  vault: BriefVault,
+  adapterCase: BriefAdapterCase,
+  path: string,
+  text: string,
+): DocId {
+  const noteId = vault.db.notes.upsertByPath({
+    path,
+    content: text,
+    frontmatter: null,
+    title: path,
+    hash: `h-${path}`,
+    bodyHash: `b-${path}`,
+    mtime: Date.now(),
+    wordCount: text.split(/\s+/).length,
+    vaultName: vault.config.name,
+  }).id;
+  vault.db.chunks.insertBatch(noteId, [
+    {
+      idx: 0,
+      text,
+      headingPath: null,
+      startOffset: 0,
+      endOffset: text.length,
+      tokenCount: text.split(/\s+/).length,
+      chunkIdFragment: computeChunkIdFragment(text),
+    },
+  ]);
+  return parseDocId(
+    `${adapterCase.docIdScheme}://${vault.config.name}/${path}`,
+  );
+}
+
+/** Mutate a source doc's chunk text — replaces the row in-place. */
+function mutateBriefSource(vault: BriefVault, path: string, newText: string): void {
+  const note = vault.db.notes.getByPath(path);
+  if (!note) throw new Error(`unknown note: ${path}`);
+  vault.db.chunks.deleteByNote(note.id);
+  vault.db.chunks.insertBatch(note.id, [
+    {
+      idx: 0,
+      text: newText,
+      headingPath: null,
+      startOffset: 0,
+      endOffset: newText.length,
+      tokenCount: newText.split(/\s+/).length,
+      chunkIdFragment: computeChunkIdFragment(newText),
+    },
+  ]);
+}
+
+function briefTick(): Promise<void> {
+  return new Promise((r) => setImmediate(r));
+}
+
+describe.each(briefAdapters)(
+  "compile_brief + staleness daemon (BRF-11 source-neutrality, $name)",
+  (adapterCase) => {
+    let fixture: BriefConformanceFixture;
+
+    briefBeforeEach(async () => {
+      fixture = await buildBriefFixture(adapterCase);
+    });
+
+    briefAfterEach(async () => {
+      await fixture.cleanup();
+    });
+
+    function daemonDeps() {
+      return {
+        memorySinkRegistry: fixture.registry,
+        deliveryAdapterFor: () => fixture.delivery,
+        sourceConnectorFor: () => fixture.source,
+        lockRootOverride: fixture.lockRoot,
+        log: () => {},
+      };
+    }
+
+    async function compile(
+      target: string,
+      sourceIds: DocId[],
+      preparedText: string,
+    ): Promise<DocId> {
+      const res = await handleCompileBrief(
+        {
+          memorySinkRegistry: fixture.registry,
+          manager: fixture.manager,
+          deliveryAdapterFor: () => fixture.delivery,
+          sourceConnectorFor: () => fixture.source,
+          // Tier-3 prepared_text path — no MCP server / Ollama needed.
+          server: { server: { getClientCapabilities: () => undefined } } as never,
+          ollama: undefined as never,
+          briefConfig: {},
+        },
+        {
+          vault: adapterCase.vaultName,
+          target,
+          source_doc_ids: sourceIds,
+          purpose: "BRF-11 conformance",
+          prepared_text: preparedText,
+        },
+      );
+      if (!res.ok) throw new Error(`compile failed: ${JSON.stringify(res)}`);
+      return res.doc_id as DocId;
+    }
+
+    it("1. flips a brief to stale when its source chunk content diverges", async () => {
+      const sourcePath = "projects/atlas-1.md";
+      const d1 = seedBriefSource(
+        fixture.vault,
+        adapterCase,
+        sourcePath,
+        "Atlas-1 original content",
+      );
+      const briefId = await compile(
+        "atlas",
+        [d1],
+        "Brief about Atlas-1 source.",
+      );
+      expect(fixture.docs.get(briefId)!.properties.status).toBe("active");
+
+      const daemon = new BriefStalenessDaemon();
+      await daemon.start(fixture.vault, fixture.feed, daemonDeps());
+
+      // Mutate the source behind the daemon's back, then emit an update event.
+      mutateBriefSource(fixture.vault, sourcePath, "Atlas-1 mutated content");
+      fixture.feed.emit({ kind: "update", id: d1, at: Date.now() });
+      await briefTick();
+      await briefTick();
+
+      const after = fixture.docs.get(briefId)!;
+      expect(after.properties.status).toBe("stale");
+      expect(after.properties.changed_sources).toEqual(
+        expect.arrayContaining([d1]),
+      );
+
+      await daemon.shutdown();
+    });
+
+    it("2. startup full scan recovers missed events (BRF-07)", async () => {
+      const sourcePath = "projects/atlas-2.md";
+      const d1 = seedBriefSource(
+        fixture.vault,
+        adapterCase,
+        sourcePath,
+        "Atlas-2 original content",
+      );
+      const briefId = await compile(
+        "atlas-2",
+        [d1],
+        "Brief about Atlas-2 source.",
+      );
+
+      // Mutate source while NO daemon is running — the divergence is
+      // recorded only in the chunks table; the brief is still active.
+      mutateBriefSource(
+        fixture.vault,
+        sourcePath,
+        "Atlas-2 mutated while daemon was down",
+      );
+      expect(fixture.docs.get(briefId)!.properties.status).toBe("active");
+
+      // Boot the daemon — startup full scan must detect the divergence.
+      const daemon = new BriefStalenessDaemon();
+      await daemon.start(fixture.vault, fixture.feed, daemonDeps());
+
+      const after = fixture.docs.get(briefId)!;
+      expect(after.properties.status).toBe("stale");
+      expect(after.properties.changed_sources).toEqual(
+        expect.arrayContaining([d1]),
+      );
+
+      await daemon.shutdown();
+    });
+
+    it("3. delete event past grace-window marks affected briefs stale", async () => {
+      let clock = 5_000_000;
+      const sourcePath = "projects/atlas-3.md";
+      const d1 = seedBriefSource(
+        fixture.vault,
+        adapterCase,
+        sourcePath,
+        "Atlas-3 original content",
+      );
+      const briefId = await compile(
+        "atlas-3",
+        [d1],
+        "Brief about Atlas-3 source.",
+      );
+
+      const daemon = new BriefStalenessDaemon();
+      await daemon.start(fixture.vault, fixture.feed, {
+        ...daemonDeps(),
+        now: () => clock,
+      });
+
+      // Emit delete; before grace-window expires the brief is still active.
+      fixture.feed.emit({ kind: "delete", id: d1, at: clock });
+      await briefTick();
+      expect(fixture.docs.get(briefId)!.properties.status).toBe("active");
+
+      // Simulate the indexer's removeNote completing.
+      const note = fixture.vault.db.notes.getByPath(sourcePath);
+      if (note) fixture.vault.db.chunks.deleteByNote(note.id);
+
+      // Advance past 5s grace-window + drain pending deletes.
+      clock += 6_000;
+      await daemon.drainPending();
+      await briefTick();
+
+      const after = fixture.docs.get(briefId)!;
+      expect(after.properties.status).toBe("stale");
+      expect(after.properties.changed_sources).toEqual(
+        expect.arrayContaining([d1]),
+      );
+
+      await daemon.shutdown();
+    });
+
+    it("4. rename via delete+create within grace-window preserves brief→source link (BRF-08)", async () => {
+      const ORIG_PATH = "projects/atlas-4.md";
+      const NEW_PATH = "projects/atlas-4-renamed.md";
+      const TEXT = "Atlas-4 canonical content";
+      const d1 = seedBriefSource(fixture.vault, adapterCase, ORIG_PATH, TEXT);
+      const briefId = await compile("atlas-4", [d1], "Brief about Atlas-4 source.");
+
+      // Reverse-index has one row pointing at d1.
+      expect(
+        fixture.vault.db.briefSources.briefsForChunkDoc(d1).length,
+      ).toBe(1);
+
+      let clock = 8_000_000;
+      const daemon = new BriefStalenessDaemon();
+      await daemon.start(fixture.vault, fixture.feed, {
+        ...daemonDeps(),
+        now: () => clock,
+      });
+
+      // Delete event for old; daemon enters grace-window.
+      fixture.feed.emit({ kind: "delete", id: d1, at: clock });
+      await briefTick();
+      await briefTick();
+
+      // Move chunk row: new path + same text + same fragment.
+      const oldNote = fixture.vault.db.notes.getByPath(ORIG_PATH);
+      if (oldNote) {
+        fixture.vault.db.notes.upsertByPath({
+          path: NEW_PATH,
+          content: TEXT,
+          frontmatter: null,
+          title: NEW_PATH,
+          hash: `h-${NEW_PATH}`,
+          bodyHash: `b-${NEW_PATH}`,
+          mtime: Date.now(),
+          wordCount: TEXT.split(/\s+/).length,
+          vaultName: adapterCase.vaultName,
+        });
+        const newNoteRow = fixture.vault.db.notes.getByPath(NEW_PATH)!;
+        fixture.vault.db.chunks.insertBatch(newNoteRow.id, [
+          {
+            idx: 0,
+            text: TEXT,
+            headingPath: null,
+            startOffset: 0,
+            endOffset: TEXT.length,
+            tokenCount: TEXT.split(/\s+/).length,
+            chunkIdFragment: computeChunkIdFragment(TEXT),
+          },
+        ]);
+        fixture.vault.db.chunks.deleteByNote(oldNote.id);
+      }
+
+      clock += 100; // Still within grace-window.
+      const newId = parseDocId(
+        `${adapterCase.docIdScheme}://${adapterCase.vaultName}/${NEW_PATH}`,
+      );
+      fixture.feed.emit({ kind: "create", id: newId, at: clock });
+      await briefTick();
+
+      // Brief NOT marked stale — rename heuristic rewrote the chunk_doc_id.
+      expect(fixture.docs.get(briefId)!.properties.status).toBe("active");
+      expect(fixture.vault.db.briefSources.briefsForChunkDoc(d1).length).toBe(0);
+      expect(
+        fixture.vault.db.briefSources.briefsForChunkDoc(newId).length,
+      ).toBe(1);
+
+      await daemon.shutdown();
+    });
+  },
+);

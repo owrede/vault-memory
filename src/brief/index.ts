@@ -66,3 +66,12 @@ export {
   type DaemonDeps,
   type DaemonStartResult,
 } from "./daemon.js";
+
+// ── Slice 4 (Plan 05-04) — list_briefs MCP Resource (BRF-09) ────────
+export { readListBriefs } from "./resources.js";
+export type {
+  ListBriefsResource,
+  ListBriefEntry,
+  ListBriefsOpts,
+  ListBriefsDeps,
+} from "./resources.js";

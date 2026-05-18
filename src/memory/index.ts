@@ -45,6 +45,7 @@ export {
   readListSinks,
   readMemoryStats,
   RESOURCE_URI_LIST_SINKS,
+  RESOURCE_URI_LIST_BRIEFS,
   RESOURCE_URI_MEMORY_STATS,
 } from "./resources/index.js";
 export type {
