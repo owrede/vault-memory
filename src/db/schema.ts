@@ -11,6 +11,7 @@
  */
 
 import { backfillSectionsFromChunks } from "../sections/backfill.js";
+import { computeChunkIdFragment } from "../chunker/chunk-id.js";
 
 /**
  * Context passed to every function-style migration. New optional fields can be
@@ -834,6 +835,125 @@ function runMigration012(db: BetterSqlite3Database, _ctx: MigrationContext): voi
   }
 }
 
+/**
+ * Migration 013 — Phase 5 / BRF-* / D-04..D-06 / D-09.
+ *
+ * Three additive substrates land at this version:
+ *
+ *   A) `chunks.chunk_id_fragment TEXT NOT NULL DEFAULT ''` column +
+ *      chunked backfill (10k rows per batch, mirrors `runMigration008`).
+ *      Per D-04/D-05 the fragment is `sha256(NFC(LF-normalized,
+ *      trimEnd(text))).slice(0,7)`. The canonical computation lives in
+ *      `src/chunker/chunk-id.ts` so the migration and the chunker share
+ *      a single source of truth (anti-pattern: scattered createHash
+ *      calls — see RESEARCH §Pitfall 14).
+ *
+ *   B) `brief_sources(brief_doc_id, chunk_id_fragment, chunk_doc_id,
+ *      recorded_hash)` reverse-index table per D-06 with
+ *      UNIQUE(brief_doc_id, chunk_id_fragment) and indexes on
+ *      `(chunk_doc_id)` and `(chunk_id_fragment)`. Populated on brief
+ *      write in slice 2 (Plan 05-02); rows deleted on brief
+ *      delete/supersede. Staleness check on a ChangeEvent for `doc_id D`
+ *      becomes O(log N) — `SELECT brief_doc_id FROM brief_sources WHERE
+ *      chunk_doc_id = D AND recorded_hash != <current chunk hash>`.
+ *
+ *   C) `daemon_state(vault_name PRIMARY KEY, last_seen_doc_mtime)` per
+ *      D-09. Used by the staleness daemon (Plan 05-03) for the hybrid
+ *      replay strategy: startup full scan (correctness floor) + cursor
+ *      for steady-state diagnostic ("is my daemon current?").
+ *
+ * Step ordering inside the runner's outer transaction:
+ *   A.1 — DDL idempotency for `chunks.chunk_id_fragment` column-add
+ *         (PRAGMA introspection per `runMigration009:489-497`).
+ *   A.2 — Zero-row short-circuit (mirrors `runMigration008:447-450`)
+ *         on `COUNT(*) WHERE chunk_id_fragment = ''` so fresh DBs and
+ *         already-backfilled DBs both skip the scan.
+ *   A.3 — Chunked backfill at CHUNK = 10_000 (matches
+ *         `runMigration011:701`). Pagination via `id > @after_id ORDER
+ *         BY id ASC LIMIT 10000`. Each batch wraps a transaction so a
+ *         multi-second backfill on a 100k+ chunk vault does not freeze
+ *         the event loop (better-sqlite3 is synchronous).
+ *   B.   — `CREATE TABLE IF NOT EXISTS brief_sources` + indexes.
+ *   C.   — `CREATE TABLE IF NOT EXISTS daemon_state`.
+ *
+ * Adapter-seam discipline: no `fs`, `path`, `gray-matter`, or
+ * `chokidar` imports anywhere in this function. The chunker helper
+ * imported here is itself pure (`src/chunker/chunk-id.ts`).
+ */
+function runMigration013(db: BetterSqlite3Database, _ctx: MigrationContext): void {
+  // ── Step A.1: chunks.chunk_id_fragment column-add (idempotent) ─────
+  const cols = db.prepare("PRAGMA table_info(chunks)").all() as Array<{
+    name: string;
+  }>;
+  const hasColumn = cols.some((c) => c.name === "chunk_id_fragment");
+  if (!hasColumn) {
+    db.exec(
+      "ALTER TABLE chunks ADD COLUMN chunk_id_fragment TEXT NOT NULL DEFAULT ''",
+    );
+  }
+
+  // ── Step A.2: zero-row short-circuit ──────────────────────────────
+  // Skip the backfill scan entirely on fresh `:memory:` DBs and on
+  // re-runs against an already-backfilled DB. Mirrors
+  // runMigration008:447-450.
+  const pending = db
+    .prepare<[], { c: number }>(
+      "SELECT COUNT(*) AS c FROM chunks WHERE chunk_id_fragment = ''",
+    )
+    .get();
+  if (pending && pending.c > 0) {
+    // ── Step A.3: chunked backfill at 10k rows/batch ────────────────
+    const CHUNK = 10_000;
+    const update = db.prepare(
+      "UPDATE chunks SET chunk_id_fragment = ? WHERE id = ?",
+    );
+    const select = db.prepare<
+      [number],
+      { id: number; text: string }
+    >(
+      "SELECT id, text FROM chunks WHERE id > ? AND chunk_id_fragment = '' ORDER BY id ASC LIMIT 10000",
+    );
+    let afterId = 0;
+    while (true) {
+      const rows = select.all(afterId);
+      if (rows.length === 0) break;
+      const tx = db.transaction((batch: { id: number; text: string }[]) => {
+        for (const row of batch) {
+          update.run(computeChunkIdFragment(row.text), row.id);
+        }
+      });
+      tx(rows);
+      const last = rows[rows.length - 1];
+      if (!last) break;
+      afterId = last.id;
+      if (rows.length < CHUNK) break;
+    }
+  }
+
+  // ── Step B: brief_sources reverse-index table + indexes ───────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS brief_sources (
+      brief_doc_id      TEXT NOT NULL,
+      chunk_id_fragment TEXT NOT NULL,
+      chunk_doc_id      TEXT NOT NULL,
+      recorded_hash     TEXT NOT NULL,
+      UNIQUE(brief_doc_id, chunk_id_fragment)
+    );
+    CREATE INDEX IF NOT EXISTS idx_brief_sources_chunk_doc
+      ON brief_sources(chunk_doc_id);
+    CREATE INDEX IF NOT EXISTS idx_brief_sources_fragment
+      ON brief_sources(chunk_id_fragment);
+  `);
+
+  // ── Step C: daemon_state single-row-per-vault state ───────────────
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS daemon_state (
+      vault_name           TEXT PRIMARY KEY,
+      last_seen_doc_mtime  INTEGER NOT NULL
+    );
+  `);
+}
+
 export const MIGRATIONS: readonly Migration[] = [
   {
     version: 1,
@@ -897,5 +1017,11 @@ export const MIGRATIONS: readonly Migration[] = [
     description:
       "widen idx_edges_unique to include target_path/rel/line_number; re-run wikilink backfill (CR-01)",
     run: runMigration012,
+  },
+  {
+    version: 13,
+    description:
+      "chunks.chunk_id_fragment + brief_sources + daemon_state (Phase 5 / BRF-* / D-04..D-06 / D-09)",
+    run: runMigration013,
   },
 ];

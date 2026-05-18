@@ -61,6 +61,21 @@ export interface MemorySinkConfigEntry {
   contract: string;
 }
 
+/**
+ * Phase 5 / D-10 tier 2: per-vault Ollama brief-compile config.
+ *
+ * `[brief.ollama]` block — opt-in. When present, the LLM ladder's
+ * Tier 2 (`OllamaClient.chat`) is reachable; when absent, the ladder
+ * skips to Tier 3 (`prepared_text`) or Tier 4 (structured error).
+ * See ADR-005 §"Capability-first LLM ladder".
+ */
+export interface BriefOllamaConfig {
+  model: string;
+}
+export interface BriefConfig {
+  ollama?: BriefOllamaConfig;
+}
+
 export interface AppConfig {
   server: ServerConfig;
   vaults: VaultConfig[];
@@ -68,6 +83,8 @@ export interface AppConfig {
   memory?: MemoryConfig;
   /** Phase 2: `[[memory_sinks]]` array; empty when unconfigured. */
   memory_sinks: MemorySinkConfigEntry[];
+  /** Phase 5: optional `[brief]` block (D-10 LLM ladder tier 2). */
+  brief?: BriefConfig;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -194,6 +211,13 @@ export interface ChunkRow {
   start_offset: number;
   end_offset: number;
   token_count: number;
+  /**
+   * Phase 5 / D-04 / D-05: content-stable chunk identity fragment.
+   * Populated by chunker at insert and by `runMigration013` for legacy
+   * rows. NEVER empty after migration 013 (NOT NULL default '' is the
+   * schema floor; chunker guarantees populate at insert time).
+   */
+  chunk_id_fragment: string;
 }
 
 export interface ModelRow {
@@ -345,6 +369,56 @@ export interface SearchHit {
  * Compile-time enforcement: tests/types/docid-brand.test-d.ts. See ADR-001.
  */
 export type DocId = string & { readonly __brand: "DocId" };
+
+/**
+ * Phase 5 / D-04: branded `ChunkId` — `<DocId>#chunk-<fragment>` where
+ * `<fragment>` is 7 hex chars of `sha256(NFC(LF-normalized,
+ * trimEnd(text)))`. NOMINAL (branded). Sole validating parser:
+ * `parseChunkId` in `src/brief/chunk-id.ts`.
+ *
+ * Worked example (D-04):
+ *   obsidian-fs://atlas/projects/Atlas-1.md#chunk-a3f5b2c
+ */
+export type ChunkId = string & { readonly __brand: "ChunkId" };
+
+/**
+ * Phase 5: brief lifecycle states. `default-brief-v1` enum widens
+ * `default-memory-v1`'s base (`active|superseded|archived`) with
+ * `"stale"` per ADR-005 §"New default-brief-v1 contract".
+ *
+ * Type is declared here so consumers can import the union without
+ * pulling in the contract module (avoids cycles).
+ */
+export type BriefStatus = "active" | "stale" | "superseded" | "archived";
+
+/**
+ * Phase 5: the `source_hashes` value type — versioned-API hash inclusion
+ * per ADR-003 H-6. Format: `"sha256:<hex>"` (v2.0.0 always sha256). The
+ * prefix is part of the contract — a future v3 hash flavour switch
+ * (blake3 / xxhash) replaces the prefix in a single documented
+ * migration.
+ */
+export type BriefSourceHash = string;
+
+/**
+ * Phase 5: convenience interface naming the brief-shaped subset of a
+ * `Document`. Briefs are stored as ordinary Documents with these
+ * properties (Phase 1 ADR-003 §"Document shape" stays the canonical
+ * content type — `properties: Record<string, unknown>` subsumes this
+ * shape). The interface is opt-in: assembly tools may keep using
+ * `Document` directly; consumers that want type-narrowing import this.
+ */
+export interface Brief {
+  doc_id: DocId;
+  target: string;
+  purpose: string;
+  compiled_from: DocId[];
+  compiled_at: string;
+  source_hashes: Record<ChunkId, BriefSourceHash>;
+  status: BriefStatus;
+  superseded_by: DocId | null;
+  changed_sources?: DocId[];
+}
 
 /**
  * Opaque source-handle — `<scheme>://<authority>` — names a registered

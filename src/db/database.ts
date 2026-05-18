@@ -12,6 +12,8 @@ import { ModelsQueries } from "./queries/models.js";
 import { FtsQueries } from "./queries/fts.js";
 import { AliasesQueries } from "./queries/aliases.js";
 import { SectionsQueries } from "./queries/sections.js";
+import { BriefSourcesQueries } from "./queries/brief_sources.js";
+import { DaemonStateQueries } from "./queries/daemon_state.js";
 
 /**
  * SQLite wrapper for a single vault.
@@ -36,6 +38,10 @@ export class Database {
   readonly aliases: AliasesQueries;
   /** Phase 3 / 03-01: materialized `sections` table query namespace. */
   readonly sections: SectionsQueries;
+  /** Phase 5 / BRF-* / D-06: brief→chunk reverse-index query namespace. */
+  readonly briefSources: BriefSourcesQueries;
+  /** Phase 5 / D-09: staleness-daemon cursor query namespace. */
+  readonly daemonState: DaemonStateQueries;
 
   /**
    * Name of the vault this DB belongs to, or `undefined` for `:memory:` /
@@ -77,6 +83,11 @@ export class Database {
     this.fts = new FtsQueries(this.handle);
     this.aliases = new AliasesQueries(this.handle);
     this.sections = new SectionsQueries(this.handle);
+    // Phase 5 / BRF-* / D-06 + D-09: brief reverse-index + daemon
+    // cursor. Construction is independent — only prepares statements
+    // against tables already created by migration 013.
+    this.briefSources = new BriefSourcesQueries(this.handle);
+    this.daemonState = new DaemonStateQueries(this.handle);
   }
 
   static async open(dbPath: string, vaultName?: string): Promise<Database> {

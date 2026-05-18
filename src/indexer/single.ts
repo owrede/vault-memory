@@ -13,6 +13,7 @@ import type { Vault } from "../vault/index.js";
 import type { OllamaClient } from "../ollama/index.js";
 import { parseNote } from "../adapters/source/obsidian-fs/parser.js";
 import { chunkNote } from "../chunker/index.js";
+import { computeChunkIdFragment } from "../chunker/chunk-id.js";
 import { extractAliases } from "./indexer.js";
 import { WikilinkResolver } from "./resolver.js";
 import { extractAllEdges } from "./extract-edges.js";
@@ -206,6 +207,9 @@ export async function indexNote(options: IndexNoteOptions): Promise<IndexNoteRes
       startOffset: c.startOffset,
       endOffset: c.endOffset,
       tokenCount: c.tokenCount,
+      // Phase 5 / D-05: canonical chunk-fragment via the chunker helper
+      // (single source of truth — see src/chunker/chunk-id.ts).
+      chunkIdFragment: computeChunkIdFragment(c.text),
     })),
   );
 

@@ -1,0 +1,12 @@
+# Phase 5 / BRF-11 cross-adapter source-neutrality eval.
+#
+# The 20-document staleness scenario parametrized over BOTH the
+# `obsidian-fs` ChangeFeed AND the stub ChangeFeed. Proves the brief
+# layer (compile_brief, get_brief, the staleness daemon) is
+# source-neutral — a hypothetical Notion ChangeFeed in v3 would slot
+# in via the same `feed.subscribe()` contract with no brief-layer
+# code changes.
+#
+# Populated in slice 4 (Plan 05-04) alongside the daemon and the
+# stub-ChangeFeed conformance extension.
+queries: []

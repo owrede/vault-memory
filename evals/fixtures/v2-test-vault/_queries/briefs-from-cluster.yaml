@@ -1,0 +1,11 @@
+# Phase 5 / BRF-10 pipeline-integration eval (D-02 secondary).
+#
+# Tests the realistic agent calling pattern: `cluster({seed: target})`
+# → take the resulting cluster members as `source_doc_ids` →
+# `compile_brief`. This catches regressions where the graph layer
+# (Phase 4) and the brief layer (Phase 5) compose incorrectly even
+# when each is individually green against `briefs-curated.yaml`.
+#
+# Populated in slice 4 (Plan 05-04) once both `compile_brief` and
+# `cluster()` are exercising the same fixture vault end-to-end.
+queries: []
