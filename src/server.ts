@@ -12,7 +12,10 @@
  * Phase 3 will add: write_note, update_frontmatter, audit_log
  */
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import {
+  McpServer,
+  ResourceTemplate,
+} from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type BetterSqlite3 from "better-sqlite3";
 import { loadConfig } from "./config/index.js";
@@ -53,6 +56,8 @@ import {
   RESOURCE_URI_LIST_SINKS,
   RESOURCE_URI_LIST_BRIEFS,
   RESOURCE_URI_MEMORY_STATS,
+  RESOURCE_URI_LIST_CONTRACTS,
+  RESOURCE_URI_LIST_CONTRACT_VERBS,
   type MemorySinkConfig,
 } from "./memory/index.js";
 import {
@@ -97,6 +102,8 @@ import {
   PeerMcpRegistry,
   instantiateContract,
   describeContract,
+  readListContracts,
+  readListContractVerbs,
   type StartedContractRegistry,
   type InstantiateDeps,
 } from "./contracts/index.js";
@@ -1813,6 +1820,107 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
         },
         target !== undefined ? { target } : {},
       );
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify(payload, null, 2),
+          },
+        ],
+      };
+    },
+  );
+
+  // ─── Phase 6 (Plan 06-04) — contract MCP Resources ───────────────────────
+  //
+  // Two Resources expose contract metadata for discovery (CON-04) and
+  // verb-usage promotion signals (D-A2b). Both use the SDK 1.29
+  // `ResourceTemplate` pattern with a `{vault}` URI variable so each
+  // per-vault contract registry surfaces as its own readable URI.
+  //
+  // Resources do NOT count toward the REL-08 tool budget per Phase 5
+  // BRF-09 precedent. They are listed under `resources/list` in the
+  // MCP protocol, not `tools/list`.
+  server.registerResource(
+    "contracts",
+    new ResourceTemplate(`${RESOURCE_URI_LIST_CONTRACTS}/{vault}`, {
+      list: undefined,
+    }),
+    {
+      title: "Task contracts",
+      description:
+        "Discovery of task contracts available in a vault (CON-04). Each entry " +
+        "carries name, description, source/sink counts, and write_back boolean. " +
+        "Optional `?source=<prefix>` filters to contracts declaring a source " +
+        "whose handle starts with the given prefix.",
+      mimeType: "application/json",
+    },
+    async (uri, variables) => {
+      const vault = String(variables.vault ?? "");
+      const state = contractRegistries.get(vault);
+      if (state === undefined) {
+        return {
+          contents: [
+            {
+              uri: uri.href,
+              mimeType: "application/json",
+              text: JSON.stringify({ error: `unknown vault: ${vault}` }),
+            },
+          ],
+        };
+      }
+      const source = uri.searchParams.get("source") ?? undefined;
+      const payload = readListContracts(
+        { registry: state.started.registry, vaultName: vault },
+        source !== undefined ? { source } : {},
+      );
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify(payload, null, 2),
+          },
+        ],
+      };
+    },
+  );
+
+  server.registerResource(
+    "contract-verbs",
+    new ResourceTemplate(`${RESOURCE_URI_LIST_CONTRACT_VERBS}/{vault}`, {
+      list: undefined,
+    }),
+    {
+      title: "Contract verbs",
+      description:
+        "List baseline assembly verbs + custom (mcp://) verbs in use, with " +
+        "invocation_count + last_seen aggregated from contract_audit (D-A2b). " +
+        "Baseline verbs are constant per ADR-006 §Decision 3.",
+      mimeType: "application/json",
+    },
+    async (uri, variables) => {
+      const vault = String(variables.vault ?? "");
+      // Look up the per-vault contractAudit directly through the manager
+      // rather than via the contractRegistries map — the audit table is
+      // populated regardless of whether the registry boot scan succeeded.
+      const vaultRef = manager.list().find((vt) => vt.config.name === vault);
+      if (vaultRef === undefined) {
+        return {
+          contents: [
+            {
+              uri: uri.href,
+              mimeType: "application/json",
+              text: JSON.stringify({ error: `unknown vault: ${vault}` }),
+            },
+          ],
+        };
+      }
+      const payload = readListContractVerbs({
+        contractAudit: vaultRef.db.contractAudit,
+        vaultName: vault,
+      });
       return {
         contents: [
           {

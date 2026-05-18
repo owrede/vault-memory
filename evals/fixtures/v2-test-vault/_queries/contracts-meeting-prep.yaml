@@ -1,0 +1,25 @@
+# CON-08 eval — meeting-prep contract against the Atlas Robotics fixture.
+# RESEARCH Example 8. Q-CI-LLM resolution: compile_brief is mocked at
+# eval-runner time (deterministic, LLM-free).
+description: meeting-prep contract against Atlas Robotics fixture
+scenarios:
+  - name: q2-okr-review
+    contract: meeting-prep
+    inputs:
+      meeting_doc_id: "obsidian-fs://test-vault/meetings/2026-04-15-q2-okr-review.md"
+      context_hops: 1
+    expected_output_shape:
+      type: object
+      properties:
+        steps:
+          type: object
+        write_back:
+          type: object
+          properties:
+            doc_id:
+              type: string
+          required: [doc_id]
+      required: [write_back]
+    expected_write_back:
+      sink: "_memory/_briefs"
+      properties_required: [target, source, purpose]

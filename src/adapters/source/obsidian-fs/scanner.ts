@@ -25,6 +25,39 @@ export async function scanVault(rootPath: string, options?: ScanOptions): Promis
   return results;
 }
 
+/**
+ * Phase 6 / Plan 06-04 — Enumerate task-contract YAML files directly under
+ * `_contracts/` (non-recursive; CONTRACT_PATH_REGEX = `^_contracts/[^/]+\.yaml$`).
+ *
+ * Kept separate from `scanVault` because the indexer assumes `scanVault`
+ * yields only `.md` files; broadening that would cascade through the
+ * markdown parser. Contract YAML enumeration is a separate seam exposed
+ * to `ObsidianFsSource.listDocuments` so the contract loader's boot scan
+ * sees real YAML on disk.
+ *
+ * Returns absolute paths sorted lexicographically.
+ */
+export async function scanContractFiles(rootPath: string): Promise<string[]> {
+  const root = path.resolve(rootPath);
+  const contractsDir = path.join(root, "_contracts");
+  let entries: import("node:fs").Dirent[];
+  try {
+    entries = await fs.readdir(contractsDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const results: string[] = [];
+  for (const entry of entries) {
+    // Pitfall F3 — non-recursive; `_contracts/memory/*.yaml` belongs to
+    // the Phase 2 MemoryContract loader, not the task-contract loader.
+    if (!entry.isFile()) continue;
+    if (!entry.name.toLowerCase().endsWith(".yaml")) continue;
+    results.push(path.join(contractsDir, entry.name));
+  }
+  results.sort();
+  return results;
+}
+
 async function walk(root: string, dir: string, matchers: RegExp[], out: string[]): Promise<void> {
   let entries: import("node:fs").Dirent[];
   try {

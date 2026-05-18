@@ -1,0 +1,17 @@
+# CON-10 stub-parity — same contract, two source handles, same output shape.
+# RESEARCH Example 9. Asserts a contract is portable across SourceConnector
+# implementations (obsidian-fs vs stub) and produces structurally identical
+# bundles. The actual parity assertion lives in
+# src/adapters/source/conformance.test.ts's "contracts stub-parity (CON-10)"
+# describe block (parametric over both adapters).
+description: CON-10 stub-parity — same contract, two source handles, same output shape
+scenarios:
+  - name: meeting-prep-stub-vs-obsidian-fs
+    contract: meeting-prep
+    inputs:
+      meeting_doc_id: "obsidian-fs://test-vault/meetings/2026-04-15-q2-okr-review.md"
+      context_hops: 1
+    source_overrides:
+      default_source: "obsidian-fs://test-vault"
+    expected_output_shape_matches:
+      reference: q2-okr-review

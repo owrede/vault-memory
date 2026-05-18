@@ -41,12 +41,15 @@ export { displayUrlFor, toCitationPacket } from "./citation-packet.js";
 export type { CitationPacket } from "./citation-packet.js";
 
 // Plan 02-06 (MEM-09) — MCP Resources for sink listing + per-sink stats.
+// Plan 06-04 (CON-04 + D-A2b) — contract Resource URI constants live alongside.
 export {
   readListSinks,
   readMemoryStats,
   RESOURCE_URI_LIST_SINKS,
   RESOURCE_URI_LIST_BRIEFS,
   RESOURCE_URI_MEMORY_STATS,
+  RESOURCE_URI_LIST_CONTRACTS,
+  RESOURCE_URI_LIST_CONTRACT_VERBS,
 } from "./resources/index.js";
 export type {
   ListSinksResource,

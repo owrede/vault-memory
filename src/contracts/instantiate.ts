@@ -246,23 +246,49 @@ export async function instantiateContract(
         cause: `body_from must resolve to a string, got ${typeof bodyResolved.value}`,
       };
     }
-    const sinkHandle =
+    const sinkResolvedString =
       typeof sinkResolved.value === "string" ? sinkResolved.value : String(sinkResolved.value);
+    // Resolve the sink name/handle to its canonical full handle (e.g.
+    // `obsidian-fs://test-vault/_memory/`). MemorySinkRegistry accepts
+    // either form via resolveMemorySink.
+    let sinkObj: { handle: unknown; vault: string; resolveToRelativePath: string };
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      sinkObj = deps.memorySinks.resolveMemorySink(sinkResolvedString) as any;
+    } catch {
+      return {
+        ok: false,
+        reason: "write_back_failed",
+        cause: `sink "${sinkResolvedString}" did not resolve to a registered MemorySink`,
+      };
+    }
+    const sinkHandle = sinkObj.handle as unknown as string;
     try {
       // Compose a Document patch — body lives in a single paragraph
-      // block; the DeliveryAdapter assigns the DocId.
+      // block; the DeliveryAdapter assigns the final filename via the
+      // contract's `naming` strategy.
       const doc: Partial<Document> = {
         blocks: [{ kind: "paragraph", text: bodyResolved.value }],
         properties: propsResolved.value as Record<string, unknown>,
       };
-      // The DocId is adapter-assigned (NAMING-AUTO); we pass the sink
-      // as `options.sink` so the adapter can scope the write under the
-      // sink folder. The current adapter `write(id, doc, opts)`
-      // signature requires a DocId — we synthesize one from the sink
-      // handle + a placeholder; the obsidian-fs adapter rewrites
-      // names via its NAMING-AUTO logic. Plan 06-04 may swap for an
-      // adapter-side allocator.
-      const placeholderId = sinkHandle as unknown as DocId;
+      // Synthesize a real DocId rooted in the sink folder. The
+      // obsidian-fs delivery adapter's NAMING-AUTO logic rewrites the
+      // last path segment per the bound MemoryContract's naming
+      // strategy (date-slug for default-memory-v1, caller-provided for
+      // default-brief-v1). We pick a placeholder slug from the
+      // contract name + step alias namespace so the DocId is a valid
+      // path even before the rewrite. Plan 06-04 may swap this for an
+      // adapter-side allocator that returns the final DocId without a
+      // placeholder round-trip.
+      // Placeholder filename — the obsidian-fs adapter's NAMING-AUTO
+      // logic rewrites this per the bound MemoryContract's naming
+      // strategy. The extension is adapter-specific (markdown for
+      // obsidian-fs) but we never hard-code it here per ADR-002 I-5;
+      // the adapter appends the extension when it rewrites the path.
+      const placeholderName = String(parsed.name).replace(/[^a-z0-9-]/gi, "_");
+      const placeholderResource = sinkObj.resolveToRelativePath + placeholderName;
+      const placeholderId =
+        `obsidian-fs://${sinkObj.vault}/${placeholderResource}` as unknown as DocId;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const writeRes: any = await deps.delivery.write(placeholderId, doc, {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
