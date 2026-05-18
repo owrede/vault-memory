@@ -63,3 +63,10 @@ export {
   type VerbDispatchOpts,
 } from "./verbs/index.js";
 export { callMcpVerb } from "./verbs/mcp-extension.js";
+export {
+  instantiateContract,
+  type InstantiateDeps,
+  type InstantiateArgs,
+  type InstantiateBundle,
+  type InstantiateResult,
+} from "./instantiate.js";

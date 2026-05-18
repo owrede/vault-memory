@@ -37,12 +37,22 @@
 
 /**
  * Binding table consumed by `resolveTemplate`. `inputs` carries the
- * caller-supplied + resolved-source/sink values; `steps` accumulates
- * named-binding outputs as the orchestrator iterates the assembly array.
+ * caller-supplied values (resolves under `{{inputs.<name>}}`); `steps`
+ * accumulates named-binding outputs (resolves under `{{<alias>.<field>}}`);
+ * `handles` carries resolved source/sink handles (resolves directly
+ * under `{{<handle_name>}}` without prefix, per RESEARCH Example 1).
+ *
+ * `handles` is internal to the orchestrator's binding step — it is
+ * accessible from templates but NOT returned in the `bundle.steps`
+ * field. The orchestrator merges it into the lookup root alongside
+ * `steps` so contract YAML authors can write `{{default_sink}}`
+ * without an `inputs.` prefix.
  */
 export interface TemplateBindings {
   inputs: Record<string, unknown>;
   steps: Record<string, unknown>;
+  /** Resolved source/sink handles. Accessible as bare `{{handle_name}}`. */
+  handles?: Record<string, unknown>;
 }
 
 /**
@@ -74,12 +84,15 @@ function lookup(path: string, bindings: TemplateBindings): unknown {
   if (segments.length === 0) return undefined;
   // Unified namespace per RESEARCH Example 2:
   //   `{{inputs.<name>}}` resolves through the `inputs` object;
-  //   `{{<step_alias>.<field>}}` resolves through `steps[<alias>]`.
+  //   `{{<step_alias>.<field>}}` resolves through `steps[<alias>]`;
+  //   `{{<handle_name>}}` resolves through `handles[<handle_name>]`.
   // Build the root by exposing the `inputs` object directly AND
-  // spreading the steps map so each step alias is a top-level key.
+  // spreading both the steps map and the (optional) handles map so each
+  // alias is a top-level key.
   const root: Record<string, unknown> = {
     inputs: bindings.inputs,
     ...bindings.steps,
+    ...(bindings.handles ?? {}),
   };
   let cur: unknown = root;
   for (const seg of segments) {
