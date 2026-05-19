@@ -1,0 +1,19 @@
+{
+  "$schema": "./marketplace-sync.schema.json",
+  "marketplace": {
+    "repo": "owrede/inim-store",
+    "local_path": "../inim-store",
+    "marketplace_json_path": ".claude-plugin/marketplace.json",
+    "plugins_dir": "plugins"
+  },
+  "skills": [
+    {
+      "source": "skills/install-vault-memory",
+      "plugin_name": "install-vault-memory",
+      "category": "development",
+      "homepage": "https://github.com/owrede/vault-memory",
+      "license": "MIT",
+      "keywords": ["vault-memory", "obsidian", "mcp", "installer"]
+    }
+  ]
+}
