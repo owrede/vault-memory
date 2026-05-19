@@ -1207,13 +1207,16 @@ function backfillSectionsFromChunks(db) {
     "SELECT * FROM chunks WHERE note_id = ? ORDER BY id ASC"
   );
   const insertSection = db.prepare(`
-    INSERT INTO sections
+    INSERT OR IGNORE INTO sections
       (note_id, anchor, heading_path, heading_text, level,
        parent_id, ord, chunk_id_first, chunk_id_last, created_at)
     VALUES
       (@note_id, @anchor, @heading_path, @heading_text, @level,
        @parent_id, @ord, @chunk_id_first, @chunk_id_last, @created_at)
   `);
+  const lookupExistingSection = db.prepare(
+    "SELECT id FROM sections WHERE note_id = ? AND anchor = ?"
+  );
   let backfilled = 0;
   const now = Date.now();
   for (const note of notesRows) {
@@ -1249,7 +1252,12 @@ function backfillSectionsFromChunks(db) {
         created_at: now
       };
       const info = insertSection.run(row);
-      insertedIds.push(Number(info.lastInsertRowid));
+      if (info.changes > 0) {
+        insertedIds.push(Number(info.lastInsertRowid));
+      } else {
+        const existing2 = lookupExistingSection.get(note.id, s.anchor);
+        insertedIds.push(existing2 ? Number(existing2.id) : null);
+      }
     }
     backfilled++;
   }

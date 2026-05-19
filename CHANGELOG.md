@@ -176,6 +176,10 @@ The following five v1 tools are deprecated in v2.0.0 and promoted to MCP Resourc
 
 ## [Unreleased]
 
+### Fixed
+
+- **Migration 010 — `UNIQUE constraint failed: sections.note_id, sections.anchor`** crash blocking v0.9.x/v1.0.0 → v2.0.0-rc.1 upgrade for any user whose vault contains heading-only sibling sections (e.g. template scaffolds with repeated `## TODO` headings whose body slot is empty). `extractSections` produces identical content-hash anchors for sections with identical `(heading_text, body)` pairs, and the `INSERT INTO sections` was plain so the second sibling aborted the migration transaction — leaving every CLI command unreachable for every configured vault until the bad DB was removed from `config.toml`. `backfillSectionsFromChunks` now uses `INSERT OR IGNORE`; on collision the surviving row's id is looked up and reused so the `insertedIds` slot still resolves later children's `parent_id` correctly. See `ISSUE-migration-010-duplicate-anchor.md`.
+
 ### Added
 
 - **Task Contract DSL (Phase 6, ADR-006)** — declarative YAML contracts under `_contracts/<name>.yaml`, addressable by name, instantiable via MCP, with handle-based source/sink portability. Contracts use a closed assembly verb enum (11 baseline + `literal` + `mcp://<server>/<tool>` peer extension), `{{template}}` step composition, JSON-Schema-with-`$ref` inputs, MemorySink-only sinks (un-bypassable per D-A4c), and ChangeFeed hot reload (D-LOAD). See `docs/v2/PHASE-6-SIGN-OFF.md` + `docs/v2/adr/006-task-contract-dsl.md`.

@@ -120,6 +120,79 @@ describe("backfillSectionsFromChunks", () => {
     expect(before).toBe(0);
   });
 
+  it("(regression: ISSUE-migration-010-duplicate-anchor) duplicate-anchor siblings do NOT crash the migration", () => {
+    // Anchors are content-addressed: sha256(heading_text + "\n" + body).
+    // The simplest real-world trigger is heading-only sections — two
+    // sibling headings with no body between them have identical
+    // (heading_text, body="") inputs and therefore identical anchors.
+    // Common in v1 vaults: template scaffolds with repeated placeholder
+    // headings like "## TODO\n## TODO\n", outline-only notes still
+    // waiting for body content, auto-generated note skeletons.
+    //
+    // Before the INSERT-OR-IGNORE fix, the second sibling's insert
+    // raised SqliteError: UNIQUE constraint failed and aborted migration
+    // 010 for the whole DB, locking every CLI command out for every
+    // configured vault (see ISSUE-migration-010-duplicate-anchor.md).
+    const content = "# Project\n\n## TODO\n\n## TODO\n\n## TODO\n";
+    const nid = seedNote("dup.md", content);
+
+    // Sanity: heading-only siblings really do produce duplicate anchors.
+    // If this assert ever fails (e.g. extractSections grew anchor
+    // de-duplication via slug-suffixing), the regression test becomes a
+    // moot positive — leave it in place; the underlying bug is fixed
+    // upstream.
+    const blocks = markdownToSectionBlocks(content);
+    const sections = extractSections(blocks);
+    const todoAnchors = sections.filter((s) => s.heading_text === "TODO").map((s) => s.anchor);
+    expect(todoAnchors).toHaveLength(3);
+    expect(new Set(todoAnchors).size).toBe(1); // all three collapse to one anchor
+
+    // The migration must NOT throw.
+    expect(() => backfillSectionsFromChunks(db.handle)).not.toThrow();
+
+    const rows = db.sections.getByNote(nid);
+    // 4 sections were derived (H1 Project + 3× H2 TODO), but
+    // UNIQUE(note_id, anchor) collapses the three TODOs into 1.
+    expect(rows).toHaveLength(2);
+    expect(rows.map((r) => r.heading_text)).toEqual(["Project", "TODO"]);
+    // The surviving TODO row keeps its parent_id pointing at "Project".
+    expect(rows[1]!.parent_id).toBe(rows[0]!.id);
+  });
+
+  it("(regression) duplicate-anchor in a deeper subtree still resolves later siblings' parent_id", () => {
+    // Stress the parent-linkage code path: after a duplicate-anchor
+    // collision the insertedIds slot must point at the surviving row's
+    // id so any later child node can still resolve its parent_id. If
+    // the slot were left as null/undefined, the next child's parent_id
+    // would be NULL instead of the surviving row's id, silently
+    // breaking the section tree even when the migration itself succeeded.
+    //
+    // Layout: two heading-only "## Notes" siblings (collision) followed
+    // by a child "### Detail" with body. Detail's parent_index in
+    // sectionInfos points at the LAST "Notes" entry — which after the
+    // collision must resolve to the same surviving row id, not to
+    // garbage.
+    const content =
+      "# Doc\n\n## Notes\n\n## Notes\n\n### Detail\n\ndeep.\n";
+    const nid = seedNote("deep.md", content);
+
+    expect(() => backfillSectionsFromChunks(db.handle)).not.toThrow();
+
+    const rows = db.sections.getByNote(nid);
+    // H1 Doc + 1 surviving Notes + H3 Detail = 3 sections
+    expect(rows).toHaveLength(3);
+    const doc = rows.find((r) => r.heading_text === "Doc")!;
+    const notes = rows.find((r) => r.heading_text === "Notes")!;
+    const detail = rows.find((r) => r.heading_text === "Detail")!;
+    expect(doc.parent_id).toBeNull();
+    expect(notes.parent_id).toBe(doc.id);
+    // Critical: Detail's parent must resolve to the SURVIVING Notes row,
+    // not NULL or a stale rowid. Pre-fix, the collapsed slot would have
+    // contained whatever info.lastInsertRowid returned for an aborted
+    // insert — poisoning the parent_id linkage.
+    expect(detail.parent_id).toBe(notes.id);
+  });
+
   it("preserves chunk_id_first/last when chunks exist for the note", () => {
     const content = "# H\n\nbody.\n";
     const nid = seedNote("a.md", content);
