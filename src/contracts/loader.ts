@@ -53,6 +53,8 @@ import { resolveRefs } from "./json-schema-ref.js";
 import { ContractRegistry } from "./registry.js";
 import { recordContractLoadError, type ContractAuditDeps } from "./audit.js";
 import { decomposeDocId } from "../adapters/registry.js";
+import { sha256 } from "../adapters/source/obsidian-fs/hash.js";
+import type { SuppressionSet } from "../adapters/change-feed/obsidian-fs/suppression.js";
 import type { Vault } from "../vault/index.js";
 import type { SourceConnector } from "../adapters/source/types.js";
 import type {
@@ -76,6 +78,31 @@ export interface StartContractRegistryOpts {
   source: SourceConnector;
   auditDeps: ContractAuditDeps;
   onRegistryChange?: (kind: RegistryChangeKind) => void;
+  /**
+   * Phase 7 / Plan 07-07 / CAN-08. Shared SuppressionSet from the server
+   * bootstrap. When provided, `handleChangeEvent` calls
+   * `suppression.consume(file, hash)` BEFORE re-validating; suppressed
+   * events with a matching hash short-circuit (no reload, no audit row,
+   * no `onExternalReload` fire). When omitted, behavior matches Phase 6
+   * (every event re-validates).
+   *
+   * @see ../adapters/change-feed/obsidian-fs/suppression.ts — the
+   *      hash-keyed `consume(path, hash)` semantics.
+   */
+  suppression?: SuppressionSet;
+  /**
+   * Phase 7 / Plan 07-07 / CAN-08. Fires AFTER a non-suppressed
+   * create/update reload successfully re-registers the contract. The
+   * server bootstrap uses this to emit the
+   * `vault-memory://contracts/reloaded` MCP Resource notification so
+   * the plugin's `ReloadNotifier` can surface an "External edit
+   * detected — reload editor?" prompt without polling.
+   *
+   * Receives the contract file path (vault-relative `_contracts/<n>.yaml`).
+   * NOT fired on parse failures, NOT fired on suppressed events, NOT
+   * fired on delete (the plugin treats deletes as a separate concern).
+   */
+  onExternalReload?: (file: string) => void;
 }
 
 export interface StartedContractRegistry {
@@ -155,6 +182,11 @@ async function handleChangeEvent(
   fileToName: Map<string, string>,
 ): Promise<void> {
   // Rename — adapter-native rename event. Handle as delete-old + create-new.
+  // Renames are NOT suppression candidates (the plugin's YAML emit never
+  // emits a rename event — only a create/update on the YAML path) so we
+  // skip the suppression check here. `onExternalReload` does NOT fire on
+  // rename; the plugin's open .contract view stays bound to its own
+  // file path and the user's intent is unambiguous when they rename.
   if (event.kind === "rename") {
     const oldResource = decomposeDocId(event.old_id).resource;
     const newResource = decomposeDocId(event.new_id).resource;
@@ -183,19 +215,48 @@ async function handleChangeEvent(
     }
     case "create":
     case "update": {
+      // Phase 7 / CAN-08 — hash-keyed echo suppression. Read the on-disk
+      // body once, compute SHA-256, and ask the SuppressionSet whether
+      // this event is the echo of a plugin-driven write. If yes, drop
+      // silently (no audit row, no registry mutation, no callback fire).
+      // If no, fall through to the existing re-validate path.
+      //
+      // We read the body here (rather than inside loadFromFeed) because
+      // the suppression check needs the hash up-front. The body is
+      // re-used downstream so the read isn't wasted.
+      let text: string;
+      try {
+        const doc = await opts.source.readDocument(event.id);
+        text = extractText(doc);
+      } catch (err) {
+        recordContractLoadError(opts.auditDeps, {
+          file: resource,
+          error_message: messageOf(err),
+          vault: opts.vault.config.name,
+        });
+        return;
+      }
+
+      if (opts.suppression !== undefined) {
+        const hash = sha256(text);
+        if (opts.suppression.consume(resource, hash)) {
+          // Echo of an own-write — drop silently per CAN-08 D-WATCH-PLUGIN-OUT.
+          return;
+        }
+      }
+
       // For `update` semantics, drop the prior registration of this file
       // first so the new YAML can re-register (D-LOAD replace).
       if (event.kind === "update") {
         deleteByFile(resource, registry, fileToName, opts);
       }
-      const ok = await loadFromFeed(
-        event.id,
-        resource,
-        opts,
-        registry,
-        fileToName,
-      );
-      if (ok) opts.onRegistryChange?.(event.kind);
+      const ok = parseAndRegister(text, resource, opts, registry, fileToName);
+      if (ok) {
+        opts.onRegistryChange?.(event.kind);
+        // CAN-08 D-WATCH-SERVER-NOTIFY — surface non-suppressed
+        // external edits to subscribers (the plugin's ReloadNotifier).
+        opts.onExternalReload?.(resource);
+      }
       return;
     }
   }

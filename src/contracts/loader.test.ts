@@ -11,9 +11,11 @@
 
 import { describe, it, expect, beforeEach } from "vitest";
 import { parseDocument } from "yaml";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { Database } from "../db/database.js";
 import { parseDocId, parseSourceHandle } from "../adapters/registry.js";
+import { SuppressionSet } from "../adapters/change-feed/obsidian-fs/suppression.js";
 import { startContractRegistry, type RegistryChangeKind } from "./loader.js";
 import type { ContractAuditDeps } from "./audit.js";
 import type { Vault } from "../vault/index.js";
@@ -460,6 +462,130 @@ describe("startContractRegistry (D-LOAD, CON-01 round-trip)", () => {
     const errs = db.contractAudit.listByKind("contract_load_error");
     expect(errs.length).toBe(1);
     expect(errs[0]!.errorMessage).toContain("duplicate_name");
+    started.dispose();
+  });
+
+  // ─── Phase 7 / Plan 07-07 / CAN-08 — hash-keyed echo suppression ───
+  // RESEARCH §6 Pitfall 2: Phase 6 loader did not honor SuppressionSet.
+  // Plan 07-07 closes the gap by calling `consume(file, hash)` BEFORE
+  // re-validating. The new `onExternalReload` callback surfaces
+  // non-suppressed reloads to the server bootstrap so it can emit the
+  // `vault-memory://contracts/reloaded` MCP notification.
+
+  function sha256Hex(s: string): string {
+    return createHash("sha256").update(s, "utf8").digest("hex");
+  }
+
+  it("Test 16 (CAN-08): suppressed write with matching hash does NOT trigger reload", async () => {
+    const suppression = new SuppressionSet({ ttlMs: 5000 });
+    source.put("_contracts/foo.yaml", renameYaml(MEETING_PREP_YAML, "foo"));
+    const externalReloads: string[] = [];
+    const started = await startContractRegistry({
+      vault,
+      feed,
+      source,
+      auditDeps,
+      suppression,
+      onRegistryChange: (k) => changeLog.push(k),
+      onExternalReload: (p) => externalReloads.push(p),
+    });
+    // Boot scan loaded the contract from disk.
+    expect(started.registry.get("foo")).toBeDefined();
+    const fooDescBefore = started.registry.get("foo")!.description;
+
+    // Simulate the plugin's own-write: it registered the suppression
+    // entry BEFORE writing the YAML, so when the ChangeFeed event
+    // arrives the hash matches and we skip reload.
+    const updatedYaml = renameYaml(MEETING_PREP_YAML, "foo").replace(
+      "description: Prepare for a meeting using context and recent observations.",
+      "description: PLUGIN_OWN_WRITE",
+    );
+    source.put("_contracts/foo.yaml", updatedYaml);
+    suppression.add("_contracts/foo.yaml", { hash: sha256Hex(updatedYaml) });
+    await feed.emit({
+      kind: "update",
+      id: makeDocId("_contracts/foo.yaml"),
+      at: Date.now(),
+    });
+
+    // Suppressed: registry should NOT have been updated; no
+    // onExternalReload fire; no onRegistryChange fire (after boot).
+    expect(started.registry.get("foo")!.description).toBe(fooDescBefore);
+    expect(externalReloads).toEqual([]);
+    expect(changeLog).toEqual(["boot"]);
+    expect(db.contractAudit.listByKind("contract_load_error")).toEqual([]);
+    started.dispose();
+  });
+
+  it("Test 17 (CAN-08): non-suppressed write reloads AND fires onExternalReload", async () => {
+    const suppression = new SuppressionSet({ ttlMs: 5000 });
+    source.put("_contracts/foo.yaml", renameYaml(MEETING_PREP_YAML, "foo"));
+    const externalReloads: string[] = [];
+    const started = await startContractRegistry({
+      vault,
+      feed,
+      source,
+      auditDeps,
+      suppression,
+      onRegistryChange: (k) => changeLog.push(k),
+      onExternalReload: (p) => externalReloads.push(p),
+    });
+
+    // No suppression registered — emulates a user editing the .yaml in
+    // another editor while the plugin's editor view is open.
+    const updatedYaml = renameYaml(MEETING_PREP_YAML, "foo").replace(
+      "description: Prepare for a meeting using context and recent observations.",
+      "description: EXTERNAL_EDIT",
+    );
+    source.put("_contracts/foo.yaml", updatedYaml);
+    await feed.emit({
+      kind: "update",
+      id: makeDocId("_contracts/foo.yaml"),
+      at: Date.now(),
+    });
+
+    expect(started.registry.get("foo")!.description).toBe("EXTERNAL_EDIT");
+    expect(externalReloads).toEqual(["_contracts/foo.yaml"]);
+    expect(changeLog).toEqual(["boot", "update"]);
+    started.dispose();
+  });
+
+  it("Test 18 (CAN-08): suppression with mismatched hash still reloads (and preserves entry)", async () => {
+    const suppression = new SuppressionSet({ ttlMs: 5000 });
+    source.put("_contracts/foo.yaml", renameYaml(MEETING_PREP_YAML, "foo"));
+    const externalReloads: string[] = [];
+    const started = await startContractRegistry({
+      vault,
+      feed,
+      source,
+      auditDeps,
+      suppression,
+      onExternalReload: (p) => externalReloads.push(p),
+    });
+
+    // Plugin registered a suppression entry for what IT was about to
+    // write, but the actual on-disk body is different (e.g. the user
+    // edited the YAML in another editor at the same time). The hash
+    // mismatch must let the event through.
+    suppression.add("_contracts/foo.yaml", { hash: "deadbeef_not_real_hash" });
+    const updatedYaml = renameYaml(MEETING_PREP_YAML, "foo").replace(
+      "description: Prepare for a meeting using context and recent observations.",
+      "description: EXTERNAL_DIFFERENT_FROM_PLUGIN",
+    );
+    source.put("_contracts/foo.yaml", updatedYaml);
+    await feed.emit({
+      kind: "update",
+      id: makeDocId("_contracts/foo.yaml"),
+      at: Date.now(),
+    });
+
+    expect(started.registry.get("foo")!.description).toBe(
+      "EXTERNAL_DIFFERENT_FROM_PLUGIN",
+    );
+    expect(externalReloads).toEqual(["_contracts/foo.yaml"]);
+    // The mismatched suppression entry is preserved for a later
+    // legitimate match (RESEARCH §6 Pitfall 1 mitigation).
+    expect(suppression.has("_contracts/foo.yaml")).toBe(true);
     started.dispose();
   });
 

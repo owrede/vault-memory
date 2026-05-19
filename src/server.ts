@@ -1978,6 +1978,38 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
         feed,
         source,
         auditDeps: { contractAudit: vault.db.contractAudit },
+        // Phase 7 / Plan 07-07 / CAN-08 — hash-keyed echo suppression
+        // for the plugin's `.yaml` companion writes. Shared with the
+        // change-feed watcher above so a single set sees both write
+        // pathways (writer, indexer, plugin).
+        suppression,
+        // CAN-08 D-WATCH-SERVER-NOTIFY — emit the external-edit MCP
+        // Resource notification when (and only when) the gate is on.
+        // The plugin's `ReloadNotifier` (plan 07-07 task 3) subscribes
+        // via `notifications/resources/updated` for this URI and
+        // prompts the user with a Modal.
+        onExternalReload: config.plugin.enabled
+          ? (file) => {
+              try {
+                server.server.notification({
+                  method: "notifications/resources/updated",
+                  params: {
+                    uri: "vault-memory://contracts/reloaded",
+                    // Body is non-standard for resources/updated but
+                    // MCP clients ignore unknown params. Carrying the
+                    // file path here saves the plugin a follow-up
+                    // resource read in the common case.
+                    _meta: { path: file, reason: "external_edit" },
+                  },
+                });
+              } catch (err) {
+                const msg = err instanceof Error ? err.message : String(err);
+                process.stderr.write(
+                  `[contracts-reloaded-notify] ${vault.config.name}: ${msg}\n`,
+                );
+              }
+            }
+          : undefined,
         onRegistryChange: () => {
           if (config.contracts.auto_register_tools) {
             syncAutoRegistered(
