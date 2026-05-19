@@ -32,3 +32,24 @@ export const RESOURCE_URI_LIST_BRIEFS = "vault-memory://briefs";
  */
 export const RESOURCE_URI_LIST_CONTRACTS = "vault-memory://contracts";
 export const RESOURCE_URI_LIST_CONTRACT_VERBS = "vault-memory://contract-verbs";
+
+/**
+ * Phase 8 / Plan 08-05 (REL-08): 5 list-style v1 tools promoted to MCP
+ * Resources to land the canonical (non-deprecated) tool surface at 32.
+ *
+ * The original tools (list_vaults, list_models, recent_notes, vault_stats,
+ * list_backlinks) remain callable through v2.x with a DEPRECATED notice in
+ * their `description`. Each Resource read handler delegates to the existing
+ * internal handler function — no logic duplication (GAT-01 seam preservation).
+ *
+ * URIs are the BASE form here; templated forms append `/{vault}` (and
+ * `/{+docId}` for backlinks) at `registerResource` time. The `+` in
+ * `{+docId}` is RFC 6570 reserved-character expansion: it allows the
+ * variable to include `/`, so multi-segment docIds (e.g. `notes/sub/file.md`)
+ * parse as a single value instead of being truncated at the first `/`.
+ */
+export const RESOURCE_URI_VAULTS = "vault-memory://vaults";
+export const RESOURCE_URI_MODELS = "vault-memory://models";
+export const RESOURCE_URI_RECENT = "vault-memory://recent";
+export const RESOURCE_URI_STATS = "vault-memory://stats";
+export const RESOURCE_URI_BACKLINKS = "vault-memory://backlinks";
