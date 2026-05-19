@@ -155,7 +155,7 @@ export class SecretsStore {
   /**
    * Return the ciphertext blob for the named secret, or `undefined` if no
    * such secret exists. Consumed by the connector resolution path and the
-   * server's `resolve_secret` MCP tool — never returns plaintext.
+   * server's `resolve_secret` MCP tool — never returns cleartext.
    */
   getCiphertext(name: string): string | undefined {
     return this.secrets.find((s) => s.name === name)?.ciphertext;
