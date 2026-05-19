@@ -1,338 +1,23 @@
 # vault-memory
 
-**Local-first, source-agnostic-ready knowledge layer for Obsidian vaults, exposed to
-any MCP-aware agent.**
+**Local-first, source-agnostic-ready agentic knowledge layer over your Obsidian notes,
+exposed to any MCP-aware agent.**
 
-vault-memory turns one or more Obsidian vaults into a queryable, agent-native knowledge
-base — running entirely on your machine. It indexes your notes with local embeddings
-(via Ollama), keeps the index live as you edit, and exposes the result to
-**any MCP-aware agent** — Claude Code, Claude Desktop, ChatGPT Custom Connectors,
-the MCP Inspector, or any other client speaking the
-[Model Context Protocol](https://modelcontextprotocol.io) — as a set of well-defined
-tools for search, graph navigation, frontmatter queries, and atomic writes.
+> See [CHANGELOG.md](./CHANGELOG.md) for release history. Latest: **v2.0.0** — additive
+> over v1.x; the 23 v1 tool names + input schemas are preserved byte-identical.
 
-Obsidian is the v2 source connector; the same MCP tool surface backs any future
-adapter (Notion, Logseq, …) via the `SourceConnector` / `DeliveryAdapter` / `ChangeFeed`
-seams introduced in Phase 1.
+## 30-second example
 
-Nothing leaves your machine. No cloud sync, no API keys, no telemetry.
-
-> See [CHANGELOG.md](./CHANGELOG.md) for release history. Latest: **v1.0.0** — stable API; SemVer-locked.
-
-## What is vault-memory?
-
-It's an [MCP server](https://modelcontextprotocol.io) that sits between your Obsidian
-vaults and an MCP-aware agent. The agent — whether that's Claude Code in your editor,
-the Claude desktop app via a Custom Connector, ChatGPT in Deep-Research mode, the MCP
-Inspector, or any other client speaking MCP — gets a set of tools to read, search, and
-(optionally) write notes. vault-memory handles the hard parts:
-
-- **Hybrid retrieval** — semantic search over local embeddings, BM25 full-text search,
-  and Reciprocal Rank Fusion to merge them. Optional cross-encoder reranking for the
-  hardest queries.
-- **Live indexing** — a file-watcher picks up changes the moment you save a note in
-  Obsidian. No manual re-index.
-- **Multi-vault** — multiple vaults can be registered; search fans out by default and
-  merges results, or you can scope to one.
-- **Graph awareness** — wikilinks, backlinks, broken-link detection, Obsidian-style
-  aliases.
-- **Atomic, hash-protected writes** — the agent can edit notes, but only with explicit
-  opt-in and with concurrency control so it can't clobber your edits.
-
-## What it provides
-
-### MCP tools (23)
-
-**Discovery & read**
-- `list_vaults`, `read_note`
-
-**Search**
-- `search_semantic`, `search_text`, `search_hybrid` — all support optional
-  `exclude_paths` (glob) and an explicit `vaults` filter. Responses include a `note`
-  field when vaults were skipped (e.g. mid-indexing).
-
-**Graph**
-- `list_backlinks`, `list_forward_links`, `find_broken_links`
-
-**Frontmatter**
-- `query_frontmatter` — safe JSON-path DSL
-
-**Write (hash-protected, atomic)**
-- `write_note`, `update_frontmatter`, `delete_note`
-
-**Audit**
-- `audit_log`, `index_runs`
-
-**Model management**
-- `list_models`, `start_shadow_index`, `switch_active_model`
-
-**Maintenance**
-- `vacuum_embeddings` — drop orphaned embedding rows whose `chunk_id` no longer exists
-
-**Agent compatibility (OB1 / Custom Connectors)**
-- `search`, `fetch` — flat-shape adapters for ChatGPT Custom Connectors, Claude.ai,
-  and Deep-Research modes. Backed by the same hybrid pipeline, so connector users get
-  full search quality through the standardized shape.
-
-**Agent self-orientation**
-- `vault_stats` — note count, top tags, top frontmatter keys, last index run
-- `recent_notes` — most-recently-modified notes (mtime DESC). Use on first connect to
-  brief an agent on what's in the vault and what the user has been working on.
-
-**Schema inference (v0.10.0)**
-- `suggest_frontmatter` — for an existing note (by `path`) or a draft (by `content +
-  folder_hint`), returns `{existing, suggestions, conflicts}` with calibrated confidence
-  per source. Three independent layers contribute:
-  - **folder-conventions** — frequency of frontmatter keys in sibling notes (same folder
-    prefix). Walks up one level when sibling count <3. Confidence = prevalence.
-  - **neighbor-inference** — frontmatter aggregate across wikilink-linked neighbors
-    (forward + backlink, deduped). Confidence = prevalence × 0.6 (dampened, since
-    indirect).
-  - **content-heuristics** — vault-agnostic title/body regex matchers for Email, Meeting,
-    Person, Clipping, Fact, and date-prefix patterns. Confidence fixed per rule.
-  Conflicts surface when sources disagree on a value. Existing-vs-suggested mismatches
-  are also flagged. No LLM, no embeddings.
-
-### Claude Code skills
-
-Five skills bundled in `skills/`, installable into any vault with one curl-pipe:
-
-| Skill | What it does | When to invoke |
-|---|---|---|
-| **`install-vault-memory/`** | The complete installer — 8 idempotent checkpoints from Homebrew through MCP smoketest. Defaults to autonomous mode with a `why:` line on every install prompt. Re-running on a working setup verifies state in under 5 seconds and exits. | First-time setup of a vault, or repairing a broken state. `/install-vault-memory` |
-| **`add-vault/`** | Wraps `vault-memory add-vault` CLI with a confirmation flow — appends to `config.toml`, writes `.mcp.json`, builds the initial index. Atomic and idempotent. | Adding a *second or third* vault after vault-memory is already installed. `/add-vault` |
-| **`audit-vault-health/`** | Read-only vault health audit — overview stats, broken wikilinks, tag drift (case/separator variants), frontmatter schema drift, indexing freshness. Pure read, never modifies notes. | Quarterly check, before relying on search after bulk import. `/audit-vault-health` |
-| **`find-stale-notes/`** | Discovers notes >6 mo old with 0 backlinks. Presents candidates as a sortable table, walks through each one with per-note actions (Archive / Update / Delete / Skip / Keep). Hash-protected deletes; never bulk-acts. | Vault cleanup, after import-bursts. `/find-stale-notes` |
-| **`triage-inbox/`** | Walks through recent inbox-stage notes (sparse frontmatter, few tags, recent mtime). Per note: suggests target folder, tags, frontmatter, related wikilinks — based on semantic search against the rest of the vault. User accepts / edits / skips per note. | After a capture-burst (voice memos, web clippings, meeting transcripts). `/triage-inbox` |
-
-## Requirements
-
-Tested on macOS. Linux should work; Windows untested.
-
-| What | Why | How |
-|---|---|---|
-| **Node.js ≥ 22** | Runtime for the MCP server. | `brew install node@22` |
-| **[Ollama](https://ollama.com)** running on `localhost:11434` | Local embedding model host. No cloud API. | `brew install ollama && brew services start ollama` |
-| **An embedding model** — default `bge-m3` (≈1.1 GB) | Generates the vectors that power semantic search. | `ollama pull bge-m3` |
-| **Disk space** — ~1.2 GB for the embedding model, ~1× your vault size for the SQLite index | Models and the per-vault DB under `~/.vault-memory/`. | — |
-| **(Optional) ONNX reranker** — `bge-reranker-v2-m3` (≈570 MB) | Cross-encoder reranking for `search_hybrid` when `rerank: true`. Lazy-loaded — zero cost if you never use it. | `bash scripts/download-reranker.sh` |
-| **An MCP-aware client** — Claude Code, Claude desktop, ChatGPT Custom Connector, etc. | The agent that consumes the MCP tools. | — |
-| **One or more Obsidian vaults** | What you're actually indexing. | — |
-
-### Embedding-model recommendation
-
-Eval-v2 (May 2026) compared two multilingual Ollama-hosted embedding models on a
-187-note real-world German+English vault:
-
-| Model | Size | Dim | Verdict |
-|---|---|---|---|
-| **`bge-m3`** ⭐ | 1.1 GB | 1024 | **Recommended default.** Materially better at concept-paraphrase queries; finds the right note where qwen3 returns generic tool pages. MIT-licensed. |
-| `qwen3-embedding:0.6b` | 600 MB | 1024 | Low-RAM fallback. OK for direct keyword matches, weak on conceptual queries. Apache 2.0. |
-| `embeddinggemma:300m` | 600 MB | 768 | Not benchmarked yet — promising for laptops with <8 GB free RAM. Gemma 3 license. |
-
-See `vault-memory-eval-v2-results.md` for the full per-query benchmark table.
-
-## Install
-
-### Recommended — npm
+Install the CLI from npm, register a vault, and start the MCP server:
 
 ```bash
-# 1) Homebrew (system-level)
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-
-# 2) Node 22+
-brew install node@22
-
-# 3) Ollama + service
-brew install ollama && brew services start ollama
-
-# 4) Embedding model (~1.1 GB)
-ollama pull bge-m3
-
-# 5) Install vault-memory from npm (public registry, no auth)
 npm install -g @owrede/vault-memory
-
-# 6) Register your first vault (creates config + .mcp.json + initial index)
-vault-memory add-vault "/Users/you/Documents/Obsidian Vaults/My Vault"
+vault-memory add-vault "/path/to/your/obsidian/vault" --name notes
+vault-memory serve
 ```
 
-The MCP-host config (`.mcp.json` in the consuming vault) calls the `vault-memory`
-binary, so any shell with it on `$PATH` works. Future upgrades:
-
-```bash
-npm install -g @owrede/vault-memory@latest
-```
-
-### Guided install from inside Claude Code
-
-If you'd rather not run the steps by hand, install the skills first and let
-`/install-vault-memory` walk you through it:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/owrede/vault-memory/main/scripts/install-skills.sh \
-  | bash -s -- "/path/to/your/obsidian/vault"
-```
-
-Open the vault in Claude Code, then run `/install-vault-memory` — it executes the
-same 6 steps above as 8 idempotent checkpoints, with a `why:` line on every prompt.
-
-### Install from source (developer mode)
-
-Only needed if you want to modify vault-memory itself.
-
-```bash
-cd ~/Documents/GitHub
-gh repo clone owrede/vault-memory
-cd vault-memory
-npm install && npm run build && npm link   # creates the global `vault-memory` binary
-```
-
-## Adding a second (or third…) vault
-
-One command:
-
-```bash
-vault-memory add-vault "/path/to/another/obsidian/vault"
-```
-
-This appends a `[[vaults]]` block to `~/.vault-memory/config.toml`, writes a `.mcp.json`
-into the vault root (so any MCP-aware client that reads `.mcp.json` — Claude Code,
-ChatGPT Custom Connectors, etc. — auto-spawns the MCP server when you open the vault),
-and runs the initial index. Idempotent — re-running on a known path only fills in
-whatever is missing. The client identity that wrote a note is captured from the MCP
-`InitializeRequest.params.clientInfo.name` (per the MCP spec, optional) and recorded
-in the audit log — no longer hardcoded.
-
-Flags: `--name <slug>` to override the auto-slugified basename, `--write` to enable
-MCP writes (default read-only), `--no-index` to skip the initial index. Inside Claude
-Code, the `/add-vault` skill wraps the same CLI with confirmation prompts.
-
-### Installing the skills in a vault
-
-One-liner — works from anywhere, installs into the specified vault:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/owrede/vault-memory/main/scripts/install-skills.sh \
-  | bash -s -- "/path/to/your/obsidian/vault"
-```
-
-Or, from inside the vault's root directory:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/owrede/vault-memory/main/scripts/install-skills.sh | bash
-```
-
-The script is idempotent — re-running it fetches the latest skill versions from
-`main` and overwrites the local copies. Use it to update your skills whenever
-vault-memory ships a new release.
-
-If you cloned the source repo, you can also copy directly:
-
-```bash
-cp -R ~/Documents/GitHub/vault-memory/skills/{install-vault-memory,add-vault,audit-vault-health,find-stale-notes,triage-inbox} .claude/skills/
-```
-
-### Autonomous mode
-
-`VAULT_MEMORY_AUTO=1` switches `install-vault-memory/setup.sh` to non-interactive
-mode: every non-destructive `confirm()` prompt auto-answers yes, with a `why:` line
-explaining what is being installed and why vault-memory needs it. Destructive
-operations (overwriting an existing multi-vault `config.toml`, rebuilding a clone with
-uncommitted changes) still prompt. This is the default when the skill is invoked via
-`/install-vault-memory`; direct invocation of `setup.sh` defaults to fully-interactive
-mode.
-
-## Obsidian plugin (Phase 7 / v2.0.0)
-
-The vault-memory **Obsidian plugin** is the v2 user surface — a visual editor
-for task contracts plus in-Obsidian chrome (settings, secrets, manual reindex,
-stats, peer-MCP connectors). It runs on top of the same `vault-memory serve`
-MCP server documented above; the CLI install is a prerequisite.
-
-Capabilities:
-
-- **Visual contract editor.** A three-pane editor (palette + canvas +
-  properties inspector) authors `.contract` JSON files and emits canonical
-  Phase 6 YAML on save. Read [docs/v2/plugin/CONTRACT-EDITOR.md](docs/v2/plugin/CONTRACT-EDITOR.md).
-- **Settings tab.** Every server knob with restart-required vs hot-swappable
-  flagged. See [docs/v2/plugin/SETTINGS.md](docs/v2/plugin/SETTINGS.md).
-- **Secrets via OS keyring.** Electron `safeStorage` (Schlüsselbund on macOS,
-  DPAPI on Windows, libsecret/kwallet on Linux). Referenced as
-  `${secret:name}` in connector configs. See
-  [docs/v2/plugin/SECRETS.md](docs/v2/plugin/SECRETS.md).
-- **Manual reindex + stats panel.** Trigger a full reindex and read per-vault
-  status from within Obsidian.
-- **Peer-MCP connectors.** Declare external MCP servers whose verbs flow
-  through the contract palette. See
-  [docs/v2/plugin/CONNECTORS.md](docs/v2/plugin/CONNECTORS.md).
-
-### Install
-
-Run `/vm-install` in Claude Code (or any MCP-skill-aware client) — see
-[docs/v2/plugin/INSTALL.md](docs/v2/plugin/INSTALL.md) for full installation
-plus the manual sideload fallback (`.obsidian/plugins/vault-memory/` layout).
-
-Updates: `/vm-update`. The plugin uses GitHub Releases as its distribution
-channel during v2.0.0; Obsidian community plugin store submission is a
-v2.0.x / v2.1 task.
-
-> **Walkthrough screencast:** deferred to Phase 8 — see the
-> [Phase 7 roadmap entry](.planning/ROADMAP.md). When recorded, it will be
-> published as a GitHub Release asset and linked here.
-
-### Architectural decisions
-
-See [docs/v2/adr/007-contract-editor.md](docs/v2/adr/007-contract-editor.md)
-for the `.contract` file format, the rejected alternatives (Obsidian
-`.canvas`, sidecar files), the canonicalization rules, and the watcher
-integration.
-
-## Architecture in one paragraph
-
-One SQLite database per vault under `~/.vault-memory/vaults/<name>.db`. Three storage
-layers: **raw** (notes, chunks — permanent, model-agnostic), **derived** (embeddings
-via sqlite-vec, FTS5, wikilinks — regenerable from raw), **audit** (index runs, write
-history). Embeddings via Ollama HTTP. Cross-vault search via Reciprocal Rank Fusion in
-the query layer. Per-model `embeddings_m<id>_d<dim>` vec0 tables let multiple embedding
-models coexist for shadow-indexing and seamless model upgrades.
-
-## Reranker — real ONNX cross-encoder
-
-A real cross-encoder forward pass over **BAAI/bge-reranker-v2-m3** (ONNX INT8,
-≈570 MB) via `onnxruntime-node` + `@huggingface/tokenizers`. Sigmoid-of-logit gives a
-true `[0, 1]` relevance score per `(query, chunk)` pair, matching the `Reranker`
-contract directly.
-
-Setup (one-time):
-
-```bash
-bash scripts/download-reranker.sh       # ≈590 MB into ~/.vault-memory/models/bge-reranker-v2-m3/
-```
-
-Then in `~/.vault-memory/config.toml`:
-
-```toml
-[server]
-reranker_model    = "bge-reranker-v2-m3"
-reranker_backend  = "onnx"              # default when reranker_model is set
-# reranker_model_dir = "..."            # optional override; defaults to ~/.vault-memory/models/bge-reranker-v2-m3
-```
-
-Reranking remains **opt-in per query** via `rerank: true` in `search_hybrid`. The ONNX
-session loads lazily on the first reranked query, so users who never set
-`rerank: true` pay zero startup cost.
-
-The legacy `OllamaReranker` (L2-norm proxy) stays available via
-`reranker_backend = "ollama"` for back-compat, but is no longer recommended.
-
-## Search scope
-
-By default — with multiple vaults configured — `search_*` tools fan out across all of
-them and merge via RRF. Two mechanisms scope this:
-
-**`VAULT_MEMORY_ACTIVE_VAULT` env var** — set per consumer (in `.mcp.json`'s `env`
-block) to default search to one vault. Explicit `vaults: [...]` in the request still
-overrides; cross-vault stays opt-in.
+Point an MCP-aware client at the `vault-memory` binary. For Claude Desktop, drop this
+into `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
 ```json
 {
@@ -340,119 +25,201 @@ overrides; cross-vault stays opt-in.
     "vault-memory": {
       "type": "stdio",
       "command": "vault-memory",
-      "args": ["serve"],
-      "env": { "VAULT_MEMORY_ACTIVE_VAULT": "myvault" }
+      "args": ["serve"]
     }
   }
 }
 ```
 
-**Mid-index skip** — vaults with an unfinished `index_runs` row (i.e. an index is
-still embedding chunks) are excluded from the implicit candidate set so half-indexed
-chunks don't pollute results. Skipped vaults are listed in a `note` field on the
-response. Explicit `vaults: ["…"]` still passes through if you want to query a
-mid-indexing vault on purpose.
+Restart the client. Ask the agent something like: *"Pull me a brief for tomorrow's
+1:1 with Alice."* The agent discovers the bundled `meeting-prep` task contract via
+`describe_contract`, instantiates it with `instantiate_contract`, and the result —
+attendees, recent shared notes, last decisions, open action items — is written into
+your vault's `_memory/_briefs/` folder with full provenance. The brief is a regular
+note; you can read it, edit it, link to it, or delete it.
 
-## Configuration
+That is the full agentic-knowledge-layer loop: discover a contract, instantiate it,
+get a cited document back. Memory writes are labeled and provenance-tracked; user
+notes are never modified silently.
 
-`~/.vault-memory/config.toml`:
+## What this is
 
-```toml
-[server]
-log_level = "info"
-ollama_endpoint = "http://localhost:11434"
-default_embedding_model = "bge-m3"
+vault-memory turns one or more Obsidian vaults into a queryable, agent-native
+knowledge layer running entirely on your machine. It indexes your notes with local
+embeddings (via Ollama), keeps the index live as you edit, and exposes the result to
+**any MCP-aware agent** — Claude Code, Claude Desktop, ChatGPT Custom Connectors,
+the MCP Inspector, or any other client speaking the
+[Model Context Protocol](https://modelcontextprotocol.io).
 
-# Optional: cross-encoder reranker. Run scripts/download-reranker.sh
-# first to fetch the ONNX model. See the "Reranker" section above for details.
-# reranker_model    = "bge-reranker-v2-m3"
-# reranker_backend  = "onnx"   # default when reranker_model is set
+v1.0.0 was a strong **retrieval substrate**: hybrid search (semantic + BM25 + RRF,
+optional cross-encoder rerank), live indexing, multi-vault, hash-protected writes.
+v2.0.0 evolves it into a full **agentic knowledge layer** — memory namespace with
+provenance, document-tree assembly (bundles, outlines, dossiers), graph-as-retrieval
+(typed edges, expand, cluster), a compiled-brief layer with a staleness daemon, and
+a task-contract DSL that any MCP-aware agent can discover and instantiate.
 
-[[vaults]]
-name = "myvault"
-path = "/Users/me/Documents/Obsidian Vaults/My Vault"
-write_enabled = true
-exclude_globs = [".obsidian/**", ".trash/**", "_research/**", ".claude/**"]
+Obsidian is the v2 source connector; the same MCP tool surface backs any future
+adapter (Notion, Logseq, ...) via the `SourceConnector` / `DeliveryAdapter` /
+`ChangeFeed` seams introduced in Phase 1. The memory namespace is a non-negotiable
+safety invariant: agents never write silently into user notes; every agent-authored
+document carries provenance properties and lives in a labeled `MemorySink`.
 
-# Optional: secondary model for shadow-indexing. The indexer embeds new
-# chunks under BOTH models. Use `switch_active_model` once you're ready
-# to promote.
-# secondary_embedding_model = "qwen3-embedding:0.6b"
+Nothing leaves your machine. No cloud sync, no API keys, no telemetry.
+
+## Architecture
+
+One SQLite database per vault under `~/.vault-memory/vaults/<name>.db`. Layers L0
+through L4 sit on top of an Adapter tier that abstracts the source-of-truth. v2.0.0
+ships exactly one adapter implementation (`obsidian-fs`); v3.0.0 adds `notion-api`
+without touching the layers above the seam.
+
+```text
++-----------------------------------------------------------------------------+
+|  L4   Compiled briefs + Task contracts                  (Phases 5, 6)      |
+|       compile_brief . get_brief . instantiate_contract . staleness daemon  |
++-----------------------------------------------------------------------------+
+|  L3   Assembly (bundles, outlines, dossiers, authority + staleness)        |
+|       get_document_bundle . get_outline . search_sections .                |
+|       assemble_dossier . authority + staleness signals  (Phases 3, 4)      |
++-----------------------------------------------------------------------------+
+|  L2   Memory namespace + provenance                     (Phase 2)          |
+|       record_observation . recall . supersede . MemoryContract             |
++-----------------------------------------------------------------------------+
+|  L1   Graph as retrieval                                (Phase 4)          |
+|       typed edges . expand . cluster . backlink walks                      |
++-----------------------------------------------------------------------------+
+|  L0   Retrieval substrate (v1, behavior unchanged)                         |
+|       hybrid search (semantic + BM25 + RRF + rerank) . chunker             |
++-----------------------------------------------------------------------------+
+|  Adapter tier                                           (Phase 1)          |
+|       SourceConnector . DeliveryAdapter . ChangeFeed . Registry            |
++-----------------------------------------------------------------------------+
+|  Implementations                                                           |
+|       obsidian-fs   (v2.0.0)         |   notion-api   (v3, Phase 10)       |
++-----------------------------------------------------------------------------+
 ```
 
-## Connector compatibility
+The Adapter tier is the only horizontal seam in the stack. Every layer above it
+consumes canonical `Document` objects resolved through the registry; no upper layer
+holds a reference to a concrete adapter module. L0 keeps direct database access
+because it is substrate, not a consumer of `Document`s. See
+[docs/v2/ARCHITECTURE.md](docs/v2/ARCHITECTURE.md) for the full layer model, the
+adapter conformance suite, and the read/write data-flow diagrams.
 
-`search` / `fetch` follow the flat-shape spec used by OB1 and adopted by ChatGPT
-Custom Connectors / Claude.ai / Deep-Research:
+## What's new in v2
 
-```
-search({query, limit}) → { results: [{ id, title, url, snippet }] }
-fetch({id})            → { id, title, text, url, metadata }
-```
+- **Phase 2 — Memory namespace + provenance.** Three new tools
+  (`record_observation`, `recall`, `supersede`); labeled `MemorySink` write guard;
+  default folder sink at `_memory/`; superseded-doc handling. See
+  [docs/v2/MEMORY_CONTRACT.md](docs/v2/MEMORY_CONTRACT.md).
+- **Phase 3 — Assembly + authority/staleness.** Four new tools (`get_outline`,
+  `search_sections`, `get_document_bundle`, `assemble_dossier`); citation packets
+  on every result; recency/authority rescore params on `search_hybrid`;
+  superseded-doc filtering at SQL level. See
+  [docs/v2/PHASE-3-SIGN-OFF.md](docs/v2/PHASE-3-SIGN-OFF.md).
+- **Phase 4 — Graph-as-retrieval.** Two new tools (`expand`, `cluster`); typed edges
+  table (`wikilink`, `mention`, `frontmatter-ref`, `hyperlink`); `search_hybrid`
+  gains an additive `expand` param attaching the typed-edge neighborhood to each
+  hit. See [docs/v2/PHASE-4-SIGN-OFF.md](docs/v2/PHASE-4-SIGN-OFF.md).
+- **Phase 5 — Compiled brief layer + staleness daemon.** `compile_brief`,
+  `get_brief`, and `list_briefs`; per-brief `source_hashes` map; daemon marks
+  briefs stale when any source's hash drifts. See
+  [docs/v2/PHASE-5-SIGN-OFF.md](docs/v2/PHASE-5-SIGN-OFF.md).
+- **Phase 6 — Task contract DSL + reference contracts.** Declarative YAML contracts
+  under `_contracts/<name>.yaml`; three new tools (`describe_contract`,
+  `instantiate_contract`, `register_contracts_as_tools`); three reference contracts
+  (`meeting-prep`, `project-status`, `code-review-brief`). See
+  [docs/v2/PHASE-6-SIGN-OFF.md](docs/v2/PHASE-6-SIGN-OFF.md).
+- **Phase 7 — Obsidian plugin (default OFF).** Variant-C visual contract editor,
+  settings tab, secrets via OS keyring, manual reindex + stats panel, peer-MCP
+  connectors. Adds 6 gated tools when enabled. See
+  [docs/v2/plugin/README.md](docs/v2/plugin/README.md).
+- **Tool surface delta.** 23 v1 tools become 32 canonical tools + 5 DEPRECATED
+  entries in `tools/list` (the 5 promoted list-style tools remain callable through
+  v2.x with a `DEPRECATED` notice in their `description`; removal scheduled for
+  v3.0.0). The raw `tools/list` therefore returns 37 entries; canonical
+  (non-deprecated) count = 32. Plugin OFF is the baseline; +6 gated tools when
+  enabled.
+- **Resources delta.** 5 MCP Resources become 10 MCP Resources in v2.0.0
+  (`vaults`, `models`, `recent`, `stats`, `backlinks` added alongside the
+  pre-existing memory/brief/contract resources).
 
-`id` is the opaque format `<vault>:<vault-relative-path>`. `url` is an
-`obsidian://open?…` URL — connectors render it as a clickable link that opens the
-note locally. Use the richer `search_hybrid` / `read_note` tools when working with a
-vault-memory-aware client (Claude Code's MCP integration); use `search` / `fetch`
-when integrating with a connector ecosystem that expects the standard shape.
+## Roadmap
 
-## Development
+**Phase 9 — Pre-Phase-10 premise check (hard gate).** Before any v3 code is
+written, a dedicated phase verifies that the architectural premise for the v3
+multi-source line still holds: all Phase 1 CI greps (no `chokidar`, no
+`gray-matter`, no raw paths, no `Claude` leak, no `obsidian://` literal outside
+adapters) return zero hits on `main`; an adversarial-review sub-agent confirms
+ADRs 001-004 remain unviolated by code shipped in Phases 2-8; the stub-adapter
+conformance suite is green; capability-descriptor test coverage meets the
+plugin-architecture threshold; the maintainer signs off explicitly. Without that
+sign-off, no v3 code is written.
+
+**v3.0.0 — Notion connector + multi-source proof.** Ship the first non-Obsidian
+source/delivery/change-feed adapter (Notion), promoting the adapter seams from
+"interfaces with one implementation" to a real plugin architecture. Resolve the
+14 open ADRs (005-01x) covering identity stability, link resolution, property
+equivalence, granularity, write semantics, auth, watch, rate limits, embedding
+strategy, cross-source memory, caching, sync, Notion sinks, and capability
+discovery. Tracked requirements: NOT-01 through NOT-07; DMN-01 through DMN-03
+(MCP daemon mode, v2.1.x or v3); TPC-01 through TPC-03 (third-party connectors,
+post-v3). Status: deferred — gated by Phase 9 sign-off.
+
+**Beyond v3 (ideas, not commitments).** A v3.x `postgres-fs` storage adapter is
+sketched in the roadmap for users whose vaults outgrow local SQLite, with explicit
+non-goals: still single-user-runtime, not a managed service, not pgvector
+evangelism. A v4.0.0 multi-user direction is anticipated in the roadmap so v2's
+opaque DocIds, adapter seams, content-stable ChunkIds, and provenance-on-every-
+agent-write read as deliberate choices in service of that path. Neither is
+committed work. See [.planning/ROADMAP.md](.planning/ROADMAP.md) for the full
+phase plan and the v3/v4 deferred sections.
+
+## Install and docs
+
+### Prerequisites
+
+- **Node.js >= 22** — runtime for the MCP server (`brew install node@22`).
+- **[Ollama](https://ollama.com)** on `localhost:11434` — local embedding host
+  (`brew install ollama && brew services start ollama`).
+- **`bge-m3`** embedding model (~1.1 GB) — vectors for semantic search
+  (`ollama pull bge-m3`).
+- One or more Obsidian vaults — what you index.
+- An MCP-aware client — the agent that consumes the tools.
+
+Tested on macOS. Linux should work; Windows untested. Optional ONNX reranker
+(`bge-reranker-v2-m3`, ~570 MB) via `bash scripts/download-reranker.sh`.
+
+### Install
 
 ```bash
-npm install
-npm run dev          # MCP server on stdio with hot reload
-npm test             # 324 tests across 35 files
-npm run build
+npm install -g @owrede/vault-memory
+vault-memory add-vault "/path/to/your/obsidian/vault"
+vault-memory serve
 ```
 
-After a code change: `npm run build && git add dist/` — the bundle is tracked in git
-so users can `git pull && npm link` without needing devDependencies on every machine.
+The `add-vault` command appends a `[[vaults]]` block to
+`~/.vault-memory/config.toml`, writes a `.mcp.json` into the vault root, and runs
+the initial index. Idempotent — re-running on a known path fills in whatever is
+missing. Flags: `--name <slug>`, `--write` (enable MCP writes; default read-only),
+`--no-index` (skip the initial index).
 
-The indexer is robust against malformed notes: gray-matter parse errors on a single
-file (invalid YAML frontmatter, duplicate mapping keys, etc.) are logged and skipped,
-not fatal to the whole vault run. The `IndexRunResult.notesSkipped` field surfaces the
-count.
+### Documentation
 
-When shipping a user-visible change, **update `## [Unreleased]` in
-[CHANGELOG.md](./CHANGELOG.md) in the same PR.** Release tags get cut from that
-section — see the bottom of the changelog for the recipe.
+- **Plugin install** — [docs/v2/plugin/INSTALL.md](docs/v2/plugin/INSTALL.md)
+- **Plugin README** — [docs/v2/plugin/README.md](docs/v2/plugin/README.md)
+- **Migration v1 to v2** — [docs/v2/MIGRATION-V1-TO-V2.md](docs/v2/MIGRATION-V1-TO-V2.md)
+- **Architecture deep-dive** — [docs/v2/ARCHITECTURE.md](docs/v2/ARCHITECTURE.md)
+- **Memory contract** — [docs/v2/MEMORY_CONTRACT.md](docs/v2/MEMORY_CONTRACT.md)
+- **Agent-agnostic statement** — [docs/v2/AGENT_AGNOSTIC.md](docs/v2/AGENT_AGNOSTIC.md)
+- **ADR index** — [docs/v2/adr/README.md](docs/v2/adr/README.md)
+- **Changelog** — [CHANGELOG.md](./CHANGELOG.md)
 
-## Comparison to other memory systems
-
-_Coming soon._
-
-## Filing issues
-
-Bug reports and feature requests are welcome. Open one via the
-[Issues tab](https://github.com/owrede/vault-memory/issues/new/choose) —
-two structured templates are available:
-
-- **Bug report** — for things that are broken or misbehave. Include repro
-  steps, your `vault-memory` version, and a one-line severity assessment.
-- **Feature request** — for new tools, behaviours, or skills. Describe the
-  use case and a concrete proposed shape.
-
-Both templates auto-label the issue (`bug` / `enhancement`) and route into
-the area-labels documented below. Anyone with a GitHub account can open
-issues; the maintainer triages and labels.
-
-### Area labels
-
-Issues are organised by which part of vault-memory they touch:
-
-| Label | Scope |
-|---|---|
-| `area:search` | search_hybrid, search_semantic, search_text, search, fetch |
-| `area:indexer` | catchup, watcher, body-hash short-circuit |
-| `area:schema-inference` | suggest_frontmatter + folder/neighbor/content layers |
-| `area:skills` | Claude Code skills bundled in `skills/` |
-| `area:cli` | `vault-memory` CLI (serve, add-vault, index) |
-| `area:graph` | wikilinks, backlinks, broken-link detection |
-| `area:reranker` | ONNX cross-encoder reranker |
-| `area:db-migration` | SQLite schema migrations, sqlite-vec |
-
-Plus the functional labels `eval`, `performance`, `breaking-change`,
-`needs-repro`, `good-first-fix`.
+SemVer-locked tool API per the v1.0.0 declaration. v2.0.0 is additive: the 23 v1
+tool names + input schemas are preserved byte-identical, and the 5 list-style
+tools promoted to MCP Resources remain callable through v2.x with a `DEPRECATED`
+notice in their tool description (removal scheduled for v3.0.0). See
+[CHANGELOG.md](./CHANGELOG.md) for full history.
 
 ## License
 
