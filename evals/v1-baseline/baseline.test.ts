@@ -27,6 +27,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 import { TOOLS } from "../../src/tool-registry.js";
+import { RESOURCES } from "../../src/resource-registry.js";
 
 /**
  * Synchronously probe Ollama at the configured endpoint. Returns true iff
@@ -106,6 +107,220 @@ describe("v1 tools/list surface (FND-10)", () => {
     ];
     const v1Slice = TOOLS.slice(0, 23).map((t) => t.name);
     expect(v1Slice).toEqual(expectedV1Names);
+  });
+
+  // Plan 08-05 (REL-08): 5 tools promoted to MCP Resources but kept callable
+  // through v2.x with a DEPRECATED notice suffixed onto their description.
+  // Canonical (non-deprecated) tool surface = 37 - 5 = 32.
+  it("has exactly 5 tools marked DEPRECATED in description (REL-08)", () => {
+    const deprecated = TOOLS.filter((t) => t.description.includes("DEPRECATED"));
+    expect(deprecated.map((t) => t.name).sort()).toEqual([
+      "list_backlinks",
+      "list_models",
+      "list_vaults",
+      "recent_notes",
+      "vault_stats",
+    ]);
+  });
+});
+
+// --- REL-08: resources/list snapshot pin ------------------------------------
+
+describe("v2 resources/list surface (REL-08)", () => {
+  // Plan 08-05 promotes 5 list-style v1 tools to MCP Resources. The RESOURCES
+  // literal in src/resource-registry.ts is the single source of truth (also
+  // used by evals/v1-baseline/dump-resources.mjs to regenerate the pinned
+  // snapshot). Byte-equality drift fails CI — the same shape gate as TOOLS.
+  it("matches the pinned snapshot exactly", () => {
+    const actual = { resources: RESOURCES };
+    const pinned = JSON.parse(
+      readFileSync(join(__dirname, "resources-list.snapshot.json"), "utf-8"),
+    );
+    expect(actual).toEqual(pinned);
+  });
+
+  it("has exactly 10 resources after REL-08 promotion", () => {
+    expect(RESOURCES).toHaveLength(10);
+  });
+
+  // B2 acceptance: a docId containing path separators (`/`) must round-trip
+  // through the `vault-memory://backlinks/{vault}/{+docId}` Resource and
+  // produce the same payload as the `list_backlinks` tool call. The `+` in
+  // `{+docId}` is RFC 6570 reserved expansion; without it the default
+  // expansion truncates at the first `/`.
+  it("path-style docId round-trips through the backlinks Resource (B2)", async () => {
+    const { McpServer, ResourceTemplate } = await import(
+      "@modelcontextprotocol/sdk/server/mcp.js"
+    );
+    const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
+    const { InMemoryTransport } = await import(
+      "@modelcontextprotocol/sdk/inMemory.js"
+    );
+    const { Database } = await import("../../src/db/database.js");
+    const { VaultManager } = await import("../../src/vault/index.js");
+    const { listBacklinks } = await import("../../src/graph/index.js");
+
+    const db = new Database(":memory:", "rel08-backlinks-test");
+    db.migrate();
+
+    // Seed two notes: source links to target via wikilink. Use a multi-segment
+    // path on the TARGET so the docId we feed to the Resource contains `/`.
+    const sourceNoteId = db.notes.upsertByPath({
+      path: "src/note.md",
+      content: "[[notes/sub/file]]",
+      frontmatter: null,
+      title: "source",
+      hash: "h-src",
+      mtime: 1,
+      wordCount: 1,
+    }).id;
+    const targetNoteId = db.notes.upsertByPath({
+      path: "notes/sub/file.md",
+      content: "# target",
+      frontmatter: null,
+      title: "target",
+      hash: "h-tgt",
+      mtime: 1,
+      wordCount: 1,
+    }).id;
+    db.wikilinks.insertBatch(sourceNoteId, [
+      {
+        targetPath: "notes/sub/file.md",
+        targetNoteId,
+        linkText: "file",
+        anchor: null,
+        lineNumber: 1,
+      },
+    ]);
+    db.edges.insertBatch(sourceNoteId, [
+      {
+        targetNoteId,
+        targetPath: "notes/sub/file.md",
+        type: "wikilink",
+        rel: null,
+        anchor: null,
+        lineNumber: 1,
+        linkText: "file",
+      },
+    ]);
+
+    const vault = {
+      config: { name: "rel08-backlinks-test", path: "/tmp/rel08" },
+      db,
+      dbPath: ":memory:",
+    };
+    const manager = new VaultManager();
+    (
+      manager as unknown as { vaults: Map<string, typeof vault> }
+    ).vaults.set(vault.config.name, vault);
+
+    const server = new McpServer(
+      { name: "rel08-backlinks-test-server", version: "test" },
+      { capabilities: { resources: {}, tools: {} } },
+    );
+
+    // Mirror the production registration shape (delegate to listBacklinks).
+    server.registerResource(
+      "backlinks",
+      new ResourceTemplate(
+        "vault-memory://backlinks/{vault}/{+docId}",
+        { list: undefined },
+      ),
+      { title: "Backlinks", mimeType: "application/json" },
+      async (uri, variables) => {
+        const vaultName = String(variables.vault ?? "");
+        const rawDocId = variables.docId;
+        const docId = Array.isArray(rawDocId)
+          ? rawDocId.join("/")
+          : String(rawDocId ?? "");
+        const v = manager.require(vaultName);
+        const backlinks = listBacklinks(v, docId);
+        return {
+          contents: [
+            {
+              uri: uri.href,
+              mimeType: "application/json",
+              text: JSON.stringify({ backlinks }, null, 2),
+            },
+          ],
+        };
+      },
+    );
+
+    // Also register the list_backlinks tool with the same delegation so we
+    // can compare payloads under one in-memory client/server pair.
+    const { z } = await import("zod");
+    server.registerTool(
+      "list_backlinks",
+      {
+        title: "list_backlinks",
+        description: "list_backlinks (test mirror)",
+        inputSchema: {
+          vault: z.string(),
+          path: z.string(),
+        },
+      },
+      async (args) => {
+        const p = args as { vault: string; path: string };
+        const v = manager.require(p.vault);
+        return {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify({ backlinks: listBacklinks(v, p.path) }),
+            },
+          ],
+        };
+      },
+    );
+
+    const client = new Client(
+      { name: "rel08-backlinks-test-client", version: "test" },
+      { capabilities: { resources: {}, tools: {} } },
+    );
+    const [clientTransport, serverTransport] =
+      InMemoryTransport.createLinkedPair();
+    await Promise.all([
+      server.connect(serverTransport),
+      client.connect(clientTransport),
+    ]);
+
+    try {
+      // Read via the Resource URI with a multi-segment docId.
+      const resourceResp = await client.readResource({
+        uri: "vault-memory://backlinks/rel08-backlinks-test/notes/sub/file.md",
+      });
+      expect(Array.isArray(resourceResp.contents)).toBe(true);
+      expect(resourceResp.contents.length).toBeGreaterThan(0);
+      const firstText = resourceResp.contents[0]?.text;
+      expect(typeof firstText).toBe("string");
+      const resourcePayload = JSON.parse(firstText as string);
+
+      // Read via the tool call with the same vault + path.
+      const toolResp = await client.callTool({
+        name: "list_backlinks",
+        arguments: {
+          vault: "rel08-backlinks-test",
+          path: "notes/sub/file.md",
+        },
+      });
+      expect(toolResp.isError).not.toBe(true);
+      // toolResp.content is an array of {type:"text", text:"..."} envelopes.
+      const toolText = (
+        toolResp.content as Array<{ type: string; text: string }>
+      )[0]?.text;
+      expect(typeof toolText).toBe("string");
+      const toolPayload = JSON.parse(toolText as string);
+
+      expect(resourcePayload).toEqual(toolPayload);
+      expect(Array.isArray(resourcePayload.backlinks)).toBe(true);
+      expect(resourcePayload.backlinks).toHaveLength(1);
+      expect(resourcePayload.backlinks[0].sourcePath).toBe("src/note.md");
+    } finally {
+      await client.close();
+      await server.close();
+      db.close();
+    }
   });
 });
 
