@@ -18,7 +18,12 @@ import {
 } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import type BetterSqlite3 from "better-sqlite3";
-import { loadConfig } from "./config/index.js";
+import { loadConfig, configPath } from "./config/index.js";
+import {
+  syncPluginTools,
+  RuntimeConfigStore,
+} from "./plugin-tools/index.js";
+import type { TriggerReindexProgress } from "./plugin-tools/trigger-reindex.js";
 import { VaultManager } from "./vault/index.js";
 import type { Vault } from "./vault/index.js";
 import { OllamaClient } from "./ollama/index.js";
@@ -2006,6 +2011,79 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
       registered: registeredHandles,
     });
   }
+
+  // ─── Phase 7 (Plan 07-04) — plugin-control MCP tools ─────────────────────
+  //
+  // Gated by `config.plugin.enabled` (default OFF). When false, zero plugin
+  // tools register and `tools/list` is byte-equivalent to the v1-baseline
+  // snapshot for non-plugin deployments (REL-08 ≤32-tool budget).
+  //
+  // The runtime-config store is owned at the serve() lifetime and threaded
+  // into the `set_runtime_config` handler. Hot-swap mutations are NOT
+  // persisted — `~/.vault-memory/config.toml` remains authoritative across
+  // restarts (PLG-01 §"Hot-swap semantics").
+  const runtimeConfigStore = new RuntimeConfigStore({});
+  const pluginToolsRegistered = new Map<string, RegisteredTool>();
+  // `reindexVault` shim — wraps the existing `indexVault` entry point so the
+  // trigger_reindex tool is decoupled from the full indexer surface.
+  const reindexVault = async (
+    vaultName: string,
+    onProgress?: (p: TriggerReindexProgress) => void,
+  ): Promise<void> => {
+    const v = manager.list().find((vt) => vt.config.name === vaultName);
+    if (v === undefined) throw new Error(`unknown vault: ${vaultName}`);
+    const embeddingModel = v.config.embedding_model ?? config.server.default_embedding_model ?? "qwen3-embedding";
+    // Use a dynamic import to keep the indexer module out of the startup
+    // critical path when the plugin gate is OFF.
+    const { indexVault } = await import("./indexer/index.js");
+    let lastReported = 0;
+    await indexVault(v, {
+      mode: "full",
+      embeddingModel,
+      ollama,
+      onProgress: (_msg: string) => {
+        // The current indexer onProgress signal is a free-text status line;
+        // we increment a per-call counter as a coarse progress proxy. The
+        // chrome can render that as "reindex in progress" until the call
+        // resolves. A future indexer enhancement (out of scope for 07-04)
+        // can replace this with structured progress events.
+        lastReported += 1;
+        onProgress?.({ progress: lastReported });
+      },
+    });
+  };
+  // Snapshot peer-MCP availability for get_runtime_stats.
+  const peerMcpStatus = (): Array<{ name: string; available: boolean }> => {
+    const out: Array<{ name: string; available: boolean }> = [];
+    for (const name of Object.keys(config.contracts.mcp_clients)) {
+      const client = peerMcpRegistry.get(name);
+      out.push({ name, available: client?.available ?? false });
+    }
+    return out;
+  };
+  // Contract count per vault — reads from the live registry map populated above.
+  const contractCountFor = (vaultName: string): number => {
+    const state = contractRegistries.get(vaultName);
+    if (state === undefined) return 0;
+    let count = 0;
+    for (const _ of state.started.registry.entries()) count += 1;
+    return count;
+  };
+  syncPluginTools(server, pluginToolsRegistered, {
+    enabled: config.plugin.enabled,
+    runtimeConfig: runtimeConfigStore,
+    configPath: configPath(),
+    listVaults: () => manager.list() as never,
+    peerMcpStatus,
+    contractCountFor,
+    reindexVault,
+    notifier: (notification) => {
+      // Forward to the underlying MCP server transport. The McpServer
+      // wraps a low-level Server with `server.server`; the notification
+      // method is exposed there.
+      server.server.notification(notification);
+    },
+  });
 
   onPhase("connect_transport");
   const transport = new StdioServerTransport();

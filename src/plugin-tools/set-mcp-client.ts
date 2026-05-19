@@ -32,6 +32,47 @@ import { z } from "zod";
 import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
 import { readFile, writeFile } from "node:fs/promises";
 
+/**
+ * Raw object shape exposed to the MCP SDK (`registerTool({inputSchema})`).
+ * The SDK 1.29 input-schema slot accepts a `ZodRawShapeCompat` — a plain
+ * object whose properties are Zod schemas. We can't directly hand it a
+ * `z.union(...)` because the discriminator decision is per-call, so the
+ * shape is union-relaxed: every field is optional at the schema level and
+ * the cross-field invariant is enforced by the refined union below
+ * (`SetMcpClientArgs`) which the handler re-parses with.
+ */
+export const SetMcpClientShape = {
+  name: z
+    .string()
+    .min(1)
+    .optional()
+    .describe("Client name (required for Variants A and B)."),
+  command: z
+    .string()
+    .min(1)
+    .optional()
+    .describe("Executable path. Required for Variant A (add/update)."),
+  args: z
+    .array(z.string())
+    .optional()
+    .describe("Argv tail for child_process.spawn (Variant A)."),
+  env_secrets: z
+    .record(z.string(), z.string())
+    .optional()
+    .describe(
+      "Map of ENV_NAME → secret-key-name (Variant A). Values resolved via " +
+        "resolve_secret at connect time; this map carries key names only.",
+    ),
+  remove: z
+    .literal(true)
+    .optional()
+    .describe("Variant B trigger — set true together with `name` to delete."),
+  list: z
+    .literal(true)
+    .optional()
+    .describe("Variant C trigger — set true to read [contracts.mcp_clients] inventory."),
+} as const;
+
 const SetMcpClientArgs = z.union([
   // Variant A — add/update
   z.object({

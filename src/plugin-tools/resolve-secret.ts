@@ -36,28 +36,37 @@
 
 import { z } from "zod";
 
+/**
+ * Raw object shape (no `.refine`). Exposed separately so the MCP SDK
+ * `registerTool(..., {inputSchema: ResolveSecretShape})` accepts a
+ * ZodRawShapeCompat instead of a `ZodEffects` (which the SDK rejects).
+ * The refined schema (`ResolveSecretArgs`) layers a cross-field check on
+ * top and is used inside the handler for runtime validation.
+ */
+export const ResolveSecretShape = {
+  name: z
+    .string()
+    .min(1)
+    .describe("Secret identifier referenced as `${secret:name}` in a contract."),
+  ciphertext: z
+    .string()
+    .optional()
+    .describe(
+      "Plaintext-of-this-call (the plugin has already decrypted ciphertext " +
+        "in-process via safeStorage). Field name preserved for provenance.",
+    ),
+  error: z
+    .enum(["safe_storage_unavailable", "decrypt_failed"])
+    .optional()
+    .describe(
+      "Plugin-side failure indicator. `safe_storage_unavailable` means " +
+        "the OS keyring backend was missing; `decrypt_failed` covers any " +
+        "other plugin-side decryption failure.",
+    ),
+} as const;
+
 const ResolveSecretArgs = z
-  .object({
-    name: z
-      .string()
-      .min(1)
-      .describe("Secret identifier referenced as `${secret:name}` in a contract."),
-    ciphertext: z
-      .string()
-      .optional()
-      .describe(
-        "Plaintext-of-this-call (the plugin has already decrypted ciphertext " +
-          "in-process via safeStorage). Field name preserved for provenance.",
-      ),
-    error: z
-      .enum(["safe_storage_unavailable", "decrypt_failed"])
-      .optional()
-      .describe(
-        "Plugin-side failure indicator. `safe_storage_unavailable` means " +
-          "the OS keyring backend was missing; `decrypt_failed` covers any " +
-          "other plugin-side decryption failure.",
-      ),
-  })
+  .object(ResolveSecretShape)
   .refine((v) => v.ciphertext !== undefined || v.error !== undefined, {
     message: "must provide either `ciphertext` or `error`",
   });
