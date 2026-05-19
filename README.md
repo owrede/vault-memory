@@ -242,6 +242,51 @@ uncommitted changes) still prompt. This is the default when the skill is invoked
 `/install-vault-memory`; direct invocation of `setup.sh` defaults to fully-interactive
 mode.
 
+## Obsidian plugin (Phase 7 / v2.0.0)
+
+The vault-memory **Obsidian plugin** is the v2 user surface — a visual editor
+for task contracts plus in-Obsidian chrome (settings, secrets, manual reindex,
+stats, peer-MCP connectors). It runs on top of the same `vault-memory serve`
+MCP server documented above; the CLI install is a prerequisite.
+
+Capabilities:
+
+- **Visual contract editor.** A three-pane editor (palette + canvas +
+  properties inspector) authors `.contract` JSON files and emits canonical
+  Phase 6 YAML on save. Read [docs/v2/plugin/CONTRACT-EDITOR.md](docs/v2/plugin/CONTRACT-EDITOR.md).
+- **Settings tab.** Every server knob with restart-required vs hot-swappable
+  flagged. See [docs/v2/plugin/SETTINGS.md](docs/v2/plugin/SETTINGS.md).
+- **Secrets via OS keyring.** Electron `safeStorage` (Schlüsselbund on macOS,
+  DPAPI on Windows, libsecret/kwallet on Linux). Referenced as
+  `${secret:name}` in connector configs. See
+  [docs/v2/plugin/SECRETS.md](docs/v2/plugin/SECRETS.md).
+- **Manual reindex + stats panel.** Trigger a full reindex and read per-vault
+  status from within Obsidian.
+- **Peer-MCP connectors.** Declare external MCP servers whose verbs flow
+  through the contract palette. See
+  [docs/v2/plugin/CONNECTORS.md](docs/v2/plugin/CONNECTORS.md).
+
+### Install
+
+Run `/vm-install` in Claude Code (or any MCP-skill-aware client) — see
+[docs/v2/plugin/INSTALL.md](docs/v2/plugin/INSTALL.md) for full installation
+plus the manual sideload fallback (`.obsidian/plugins/vault-memory/` layout).
+
+Updates: `/vm-update`. The plugin uses GitHub Releases as its distribution
+channel during v2.0.0; Obsidian community plugin store submission is a
+v2.0.x / v2.1 task.
+
+> **Walkthrough screencast:** deferred to Phase 8 — see the
+> [Phase 7 roadmap entry](.planning/ROADMAP.md). When recorded, it will be
+> published as a GitHub Release asset and linked here.
+
+### Architectural decisions
+
+See [docs/v2/adr/007-contract-editor.md](docs/v2/adr/007-contract-editor.md)
+for the `.contract` file format, the rejected alternatives (Obsidian
+`.canvas`, sidecar files), the canonicalization rules, and the watcher
+integration.
+
 ## Architecture in one paragraph
 
 One SQLite database per vault under `~/.vault-memory/vaults/<name>.db`. Three storage
