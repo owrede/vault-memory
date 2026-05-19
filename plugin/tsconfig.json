@@ -4,12 +4,18 @@
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "outDir": "./dist",
-    "rootDir": ".",
     "lib": ["ES2023", "DOM"],
     "types": ["node"],
     "allowJs": false,
     "resolveJsonModule": true
   },
-  "include": ["main.ts", "src/**/*.ts", "src/**/*.svelte", "tests/**/*.ts"],
+  "include": [
+    "main.ts",
+    "src/**/*.ts",
+    "src/**/*.svelte",
+    "tests/**/*.ts",
+    "../src/contracts/schema.ts",
+    "../src/contracts/contract-file-schema.ts"
+  ],
   "exclude": ["node_modules", "dist", "**/*.test.ts"]
 }
