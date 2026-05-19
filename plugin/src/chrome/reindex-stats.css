@@ -1,0 +1,181 @@
+/*
+ * Reindex + Stats panel styles — Phase 7 / 07-09 / PLG-03 + PLG-04.
+ *
+ * Loaded by the chrome view (single workspace leaf hosting both panels).
+ * Every color/spacing token references an Obsidian CSS custom property
+ * so the panels render correctly under every Obsidian theme.
+ *
+ * Layout per UI-SPEC §"Side-panel layout": two stacked sections with
+ * `var(--size-4-6)` separation, section headings "Operations" / "Stats".
+ *
+ * Color tokens per UI-SPEC §"Color":
+ *   - rule 6:  progress bar fill uses `var(--interactive-accent)`.
+ *   - peer-MCP status dots use `var(--text-success)` / `var(--text-error)`
+ *     (NOT `--interactive-accent` per UI-SPEC §"Color" anti-rules).
+ */
+
+.vm-chrome-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-6, 24px);
+  padding: var(--size-4-4, 16px);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-family: var(--font-interface);
+  overflow-y: auto;
+  height: 100%;
+}
+
+.vm-chrome-view__section-heading {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 0 0 var(--size-4-3, 12px) 0;
+  padding-bottom: var(--size-4-2, 8px);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+/* ----- Reindex panel ----- */
+
+.vm-reindex-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-3, 12px);
+}
+
+.vm-reindex-panel__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--size-4-2, 8px);
+}
+
+.vm-reindex-panel__cta-primary,
+.vm-reindex-panel__cta-secondary {
+  cursor: pointer;
+}
+
+.vm-reindex-panel__cta-primary:disabled,
+.vm-reindex-panel__cta-secondary:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.vm-reindex-panel__progress {
+  width: 100%;
+  height: 6px;
+  background: var(--background-modifier-border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.vm-reindex-panel__progress-fill {
+  height: 100%;
+  background: var(--interactive-accent);
+  transition: width 120ms linear;
+}
+
+.vm-reindex-panel__progress-fill--indeterminate {
+  width: 35%;
+  animation: vm-reindex-indeterminate 1.4s ease-in-out infinite;
+}
+
+@keyframes vm-reindex-indeterminate {
+  0% {
+    margin-left: -35%;
+  }
+  100% {
+    margin-left: 100%;
+  }
+}
+
+.vm-reindex-panel__status {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+.vm-reindex-panel__status--success {
+  color: var(--text-success);
+}
+
+.vm-reindex-panel__status--error {
+  color: var(--text-error);
+}
+
+/* ----- Stats panel ----- */
+
+.vm-stats-panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-3, 12px);
+}
+
+.vm-stats-panel__header {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.vm-stats-panel__grid {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: var(--size-4-4, 16px);
+  row-gap: var(--size-4-2, 8px);
+  align-items: baseline;
+}
+
+.vm-stats-panel__key {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.vm-stats-panel__value {
+  font-family: var(--font-monospace);
+  font-size: 13px;
+  color: var(--text-normal);
+  word-break: break-word;
+}
+
+.vm-stats-panel__audit-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.vm-stats-panel__audit-item {
+  font-family: var(--font-monospace);
+  font-size: 12px;
+  color: var(--text-normal);
+}
+
+.vm-stats-panel__peer-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.vm-stats-panel__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.vm-stats-panel__dot--ok {
+  background: var(--text-success);
+}
+
+.vm-stats-panel__dot--fail {
+  background: var(--text-error);
+}
+
+.vm-stats-panel__error {
+  font-size: 13px;
+  color: var(--text-error);
+}
+
+.vm-stats-panel__empty {
+  font-size: 13px;
+  color: var(--text-muted);
+}
