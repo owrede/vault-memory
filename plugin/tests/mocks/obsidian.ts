@@ -17,6 +17,11 @@
 export class Plugin {
   app: unknown;
   manifest: unknown;
+  // Instance-level storage for loadData/saveData round-trip. The real
+  // Obsidian implementation persists this to `.obsidian/plugins/<id>/
+  // data.json`. For tests we keep it on the instance so a fresh `Plugin`
+  // simulates an Obsidian restart (Phase 7 / PLG-01 settings-store test).
+  private __pluginData: unknown = null;
   constructor(app?: unknown, manifest?: unknown) {
     this.app = app;
     this.manifest = manifest;
@@ -27,9 +32,14 @@ export class Plugin {
   async onload(): Promise<void> {}
   async onunload(): Promise<void> {}
   async loadData(): Promise<unknown> {
-    return null;
+    return this.__pluginData;
   }
-  async saveData(_data: unknown): Promise<void> {}
+  async saveData(data: unknown): Promise<void> {
+    // Deep-clone via JSON to mirror Obsidian's persistence boundary
+    // (saveData writes JSON to disk; loadData reads it back, so mutations
+    // to the returned object should not leak into stored state).
+    this.__pluginData = data === undefined ? null : JSON.parse(JSON.stringify(data));
+  }
 }
 
 export class View {
