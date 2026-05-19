@@ -97,10 +97,18 @@ jobs:
         # `vault-memory-plugin-vX.Y.Z.tar.gz`. The tarball is attached to
         # the GitHub Release below so `skills/vm-install/setup.sh` (D-15 /
         # Phase 7 carryover from plan 07-11) can fetch it by predictable URL.
+        #
+        # NOTE: do NOT run `npm ci` inside plugin/. The repo declares
+        # `"workspaces": ["plugin"]` at the root, which hoists workspace deps
+        # (notably @modelcontextprotocol/sdk) to the root node_modules/. The
+        # earlier "Install dependencies" step runs `npm ci` at the root,
+        # which installs everything including the hoisted deps. A second
+        # `cd plugin && npm ci` only installs the plugin's direct deps and
+        # the SDK ends up unresolvable at esbuild time (surfaced by plan
+        # 08-07's v2.0.0-rc.1 dry-run; see 08-07-SUMMARY.md for the audit).
         run: |
           set -euo pipefail
           cd plugin
-          npm ci
           node esbuild.config.mjs production
           cd ..
           TARBALL="vault-memory-plugin-v${GITHUB_REF_NAME#v}.tar.gz"
