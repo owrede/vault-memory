@@ -205,6 +205,14 @@ else
   esac
 fi
 
+# Resolve the human-readable version label from the install mode so the rest
+# of the script can do precise mismatch detection in Checkpoint 5. This is
+# the single source of truth for "what did the user pick?".
+case "$INSTALL_MODE" in
+  npm)    SELECTED_VERSION="1.0.0" ;;
+  source) SELECTED_VERSION="2.0.0-rc.1" ;;
+esac
+
 # Report the resolved install mode + show the GitHub-auth check for source mode.
 case "$INSTALL_MODE" in
   npm)
@@ -375,84 +383,171 @@ step "5/7  vault-memory binary"
 # control into the source-build branch.
 FORCE_SOURCE_REBUILD=0
 
-if command -v vault-memory >/dev/null 2>&1; then
-  vm_version=$(vault-memory --help 2>&1 | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
-  ok "vault-memory in PATH (version $vm_version)"
+# Robust version detection. The CLI's --help output may not surface a version
+# string on the first line (depends on commander/yargs/etc. style), and
+# --version may or may not be wired. Try, in order:
+#   1. `vault-memory --version` (cleanest if supported)
+#   2. npm's view of the global package version (only meaningful if the binary
+#      was installed via `npm install -g`, not via `npm link` from source)
+#   3. fallback: `vault-memory --help | grep version line`
+#   4. give up → "unknown"
+detect_vault_memory_version() {
+  local v=""
+  # 1. --version
+  v=$(vault-memory --version 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?' | head -1 || true)
+  if [ -n "$v" ]; then printf '%s' "$v"; return; fi
+  # 2. npm view of the globally-installed package
+  v=$(npm ls -g @owrede/vault-memory --depth=0 --parseable=false 2>/dev/null \
+      | grep -oE '@owrede/vault-memory@[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?' \
+      | head -1 \
+      | sed 's/^@owrede\/vault-memory@//' || true)
+  if [ -n "$v" ]; then printf '%s' "$v"; return; fi
+  # 3. --help first 10 lines
+  v=$(vault-memory --help 2>&1 | head -10 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?' | head -1 || true)
+  if [ -n "$v" ]; then printf '%s' "$v"; return; fi
+  printf 'unknown'
+}
 
-  # If the user picked a specific version at Checkpoint 0 but the binary on
-  # PATH is a different one, offer to switch. We can't reliably detect "is
-  # this binary a source build of main?" so the 'source' branch only nudges
-  # the user when the binary is clearly the v1.0.0 stable release.
-  if [ "$INSTALL_MODE" = "npm" ] && [ "$vm_version" != "unknown" ] && [ "$vm_version" != "1.0.0" ]; then
-    info "You selected v1.0.0 (stable) but version $vm_version is currently installed."
-    if confirm "Switch to @owrede/vault-memory@1.0.0?" \
-      "You picked v1.0.0 (stable) at Checkpoint 0 but a different version is on PATH. 'npm install -g @owrede/vault-memory@1.0.0' replaces the global binary in-place. Your data (~/.vault-memory/) and vault notes are untouched — only the engine code is changed."; then
+# Detect where the in-PATH `vault-memory` actually comes from. Returns one of:
+#   npm           — binary lives under an npm global prefix (npm-installed)
+#   source        — binary symlinks into $INSTALL_DIR (npm-link from source clone)
+#   unknown       — cannot determine (e.g. weird PATH setup)
+detect_vault_memory_origin() {
+  local vm_path realpath_vm
+  vm_path=$(command -v vault-memory 2>/dev/null || true)
+  if [ -z "$vm_path" ]; then printf 'unknown'; return; fi
+  # Follow symlink to the real file
+  realpath_vm=$(readlink -f "$vm_path" 2>/dev/null || realpath "$vm_path" 2>/dev/null || printf '%s' "$vm_path")
+  case "$realpath_vm" in
+    *"$INSTALL_DIR"/*) printf 'source'; return ;;
+  esac
+  # npm global prefix? Probe with `npm prefix -g` and also accept the common
+  # /opt/homebrew and /usr/local prefixes that npm uses on macOS.
+  local npm_prefix
+  npm_prefix=$(npm prefix -g 2>/dev/null || true)
+  case "$realpath_vm" in
+    "$npm_prefix"/*|/opt/homebrew/*|/usr/local/*)
+      printf 'npm'
+      return
+      ;;
+  esac
+  printf 'unknown'
+}
+
+# Print the upgrade warning block (extracted into a function so we can call it
+# from any mismatch branch — not only the v1.0.0 → v2.0.0-rc.1 case).
+print_upgrade_warning() {
+  local from_version="$1"
+  log ""
+  log "${c_yellow}${c_bold}╔══════════════════════════════════════════════════════════════╗${c_reset}"
+  log "${c_yellow}${c_bold}║  UPGRADE WARNING: v${from_version} → v2.0.0-rc.1$(printf '%*s' $((45 - ${#from_version})) '')║${c_reset}"
+  log "${c_yellow}${c_bold}╚══════════════════════════════════════════════════════════════╝${c_reset}"
+  log ""
+  log "You selected v2.0.0-rc.1 (in-development), but v${from_version} is currently"
+  log "installed. This is a ${c_bold}full replacement${c_reset} — both versions cannot run"
+  log "side-by-side because they share the same global binary name"
+  log "(\`vault-memory\`) and the same data directory (~/.vault-memory/)."
+  log ""
+  log "${c_bold}What WILL change:${c_reset}"
+  log "  • Global binary: ${c_bold}v${from_version}${c_reset} → ${c_bold}v2.0.0-rc.1${c_reset} (source-linked)"
+  log "    (clone of $REPO_URL @ main, npm link from $INSTALL_DIR)"
+  log "  • Database schema in ~/.vault-memory/*.db will be ${c_bold}migrated${c_reset}"
+  log "    automatically on the next \`vault-memory serve\`. Migration is"
+  log "    forward-only (typed-edges, briefs, task-contracts, additional tables)."
+  log "  • A ${c_bold}full re-index${c_reset} is recommended after the upgrade — new edge"
+  log "    types and new tables require fresh data to populate."
+  log "  • MCP tool surface grows to 32 canonical tools + 10 Resources."
+  log "    Existing tool names + shapes are preserved (backwards-compatible)."
+  log ""
+  log "${c_bold}What will NOT change:${c_reset}"
+  log "  • Your Markdown notes (they live in the vault, not in vault-memory)"
+  log "  • Vault registration in ~/.vault-memory/config.toml"
+  log "  • Ollama / bge-m3 model"
+  log "  • Other vaults registered with vault-memory — ALL of them upgrade"
+  log "    together (single global binary, single data dir)"
+  log ""
+  log "${c_red}${c_bold}No automatic downgrade path:${c_reset}"
+  log "  • The migrated DBs cannot be opened by v1.x anymore."
+  log "  • To go back you need BOTH:"
+  log "      1. \`npm install -g @owrede/vault-memory@1.0.0\` (revert binary)"
+  log "      2. Restore ~/.vault-memory/ from a pre-upgrade backup OR"
+  log "         delete the DBs and let v1 re-index from scratch"
+  log "  • RECOMMENDED before proceeding: \`tar -czf ~/vault-memory-v1-backup.tar.gz ~/.vault-memory\`"
+  log ""
+  log "${c_bold}Scope of impact:${c_reset} ALL vaults registered with vault-memory will"
+  log "use v2.0.0-rc.1 after this. There is no per-vault version selection."
+  log ""
+  # Inventory which vaults will be impacted so the user can see them by name.
+  if [ -f "$CONFIG_FILE" ]; then
+    local registered_vaults
+    registered_vaults=$(grep -E "^name = " "$CONFIG_FILE" 2>/dev/null | sed 's/name = //; s/"//g' | tr '\n' ',' | sed 's/,$//; s/,/, /g')
+    if [ -n "$registered_vaults" ]; then
+      log "  Registered vaults that will switch to v2.0.0-rc.1: ${c_bold}$registered_vaults${c_reset}"
+      log ""
+    fi
+  fi
+}
+
+if command -v vault-memory >/dev/null 2>&1; then
+  vm_version=$(detect_vault_memory_version)
+  vm_origin=$(detect_vault_memory_origin)
+  vm_path=$(command -v vault-memory 2>/dev/null || true)
+  ok "vault-memory in PATH (version $vm_version, origin: $vm_origin)"
+  if [ "$vm_origin" = "source" ]; then
+    info "  binary symlinks into source clone: $vm_path"
+  fi
+
+  # ── Mismatch detection ──
+  #
+  # The right question is not "is this binary exactly v1.0.0?" but:
+  # "does the in-PATH binary match the user's Checkpoint-0 choice?"
+  #
+  # Two failure modes the OLD code missed:
+  #   - User on v0.9.x or v0.10.x chooses v2.0.0-rc.1 → must trigger upgrade
+  #   - User has source-clone present but in-PATH binary is npm-installed
+  #     (because `npm install -g @latest` ran later) → must trigger relink
+  #
+  # `version_matches` is true iff vm_version equals SELECTED_VERSION exactly.
+  # `origin_matches` is true iff the binary comes from the expected place:
+  #   - npm-mode    → expects vm_origin = "npm"
+  #   - source-mode → expects vm_origin = "source"
+  version_matches=false
+  origin_matches=false
+  [ "$vm_version" = "$SELECTED_VERSION" ] && version_matches=true
+  case "$INSTALL_MODE" in
+    npm)    [ "$vm_origin" = "npm" ]    && origin_matches=true ;;
+    source) [ "$vm_origin" = "source" ] && origin_matches=true ;;
+  esac
+
+  if $version_matches && $origin_matches; then
+    ok "Version $vm_version and origin $vm_origin match your Checkpoint-0 choice — no upgrade needed."
+  elif [ "$INSTALL_MODE" = "npm" ]; then
+    # ── User picked v1.0.0; in-PATH binary is wrong version or wrong origin ──
+    log ""
+    info "Mismatch detected:"
+    info "  installed version: $vm_version  (you selected: $SELECTED_VERSION)"
+    info "  installed origin:  $vm_origin   (expected: npm)"
+    log ""
+    if confirm "Switch to @owrede/vault-memory@1.0.0 (stable npm release)?" \
+      "Replaces the current binary with the stable v1.0.0 release from the public npm registry. 'npm install -g @owrede/vault-memory@1.0.0' overrides the current install in-place. Your data (~/.vault-memory/) and vault notes are untouched — only the engine code is changed. If the current binary came from a source-link (npm link), the npm install will replace the symlink with the registry artifact."; then
       npm install -g @owrede/vault-memory@1.0.0 \
         || { err "npm install -g failed"; exit 1; }
-      ok "vault-memory switched to 1.0.0"
+      ok "vault-memory switched to 1.0.0 (stable)"
+    else
+      warn "Switch declined. Keeping the existing $vm_version install."
     fi
-  elif [ "$INSTALL_MODE" = "source" ] && [ "$vm_version" = "1.0.0" ]; then
-    # Print the full upgrade warning so the user knows what they are signing
-    # up for. Then ask via confirm_destructive — this fires even in AUTO mode
-    # (a destructive op must never auto-yes).
-    log ""
-    log "${c_yellow}${c_bold}╔══════════════════════════════════════════════════════════════╗${c_reset}"
-    log "${c_yellow}${c_bold}║  UPGRADE WARNING: v1.0.0 → v2.0.0-rc.1                       ║${c_reset}"
-    log "${c_yellow}${c_bold}╚══════════════════════════════════════════════════════════════╝${c_reset}"
-    log ""
-    log "You selected v2.0.0-rc.1 (in-development), but v1.0.0 (stable) is"
-    log "currently installed. This is a ${c_bold}full replacement${c_reset} — both versions"
-    log "cannot run side-by-side because they share the same global binary"
-    log "name (\`vault-memory\`) and the same data directory (~/.vault-memory/)."
-    log ""
-    log "${c_bold}What WILL change:${c_reset}"
-    log "  • Global binary: npm-installed v1.0.0 → source-linked v2.0.0-rc.1"
-    log "    (clone of $REPO_URL @ main, npm link from $INSTALL_DIR)"
-    log "  • Database schema in ~/.vault-memory/*.db will be ${c_bold}migrated${c_reset}"
-    log "    automatically on the next \`vault-memory serve\` (typed-edges, briefs,"
-    log "    task-contracts, additional tables). Migration is forward-only."
-    log "  • A ${c_bold}full re-index${c_reset} is recommended after the upgrade — new edge"
-    log "    types (mentions, frontmatter-refs, hyperlinks) and new tables"
-    log "    require fresh data to populate. v1 indexes still work but miss"
-    log "    the new graph signal until re-built."
-    log "  • MCP tool surface: 23 v1 tools → 32 canonical tools + 10 Resources."
-    log "    Existing tool names + shapes are preserved (backwards-compatible)."
-    log ""
-    log "${c_bold}What will NOT change:${c_reset}"
-    log "  • Your Markdown notes (they live in the vault, not in vault-memory)"
-    log "  • Vault registration in ~/.vault-memory/config.toml"
-    log "  • Ollama / bge-m3 model"
-    log "  • Other vaults registered with vault-memory — ALL of them upgrade"
-    log "    together (single global binary, single data dir)"
-    log ""
-    log "${c_red}${c_bold}No automatic downgrade path:${c_reset}"
-    log "  • The migrated DBs cannot be opened by v1.0.0 anymore (v1 does"
-    log "    not understand the new schema)."
-    log "  • To go back to v1.0.0 you need BOTH:"
-    log "      1. \`npm install -g @owrede/vault-memory@1.0.0\` (revert binary)"
-    log "      2. Restore ~/.vault-memory/ from a backup made BEFORE the"
-    log "         upgrade, OR delete the DBs and let v1 re-index from scratch"
-    log "  • RECOMMENDED before proceeding: \`tar -czf ~/vault-memory-v1-backup.tar.gz ~/.vault-memory\`"
-    log ""
-    log "${c_bold}Scope of impact:${c_reset} ALL vaults registered with vault-memory will"
-    log "use v2.0.0-rc.1 after this. There is no per-vault version selection."
-    log "Inspect ~/.vault-memory/config.toml to see which vaults are affected."
-    log ""
+  else
+    # ── User picked v2.0.0-rc.1; in-PATH binary is wrong version or wrong origin ──
+    # We are now in the upgrade-to-rc.1 path. This is destructive (DB schema
+    # migration is forward-only, no automatic downgrade) — show the full
+    # warning block, ask via confirm_destructive (always prompts, even in AUTO).
+    print_upgrade_warning "$vm_version"
 
-    # Inventory which vaults will be impacted so the user can see them by name.
-    if [ -f "$CONFIG_FILE" ]; then
-      registered_vaults=$(grep -E "^name = " "$CONFIG_FILE" 2>/dev/null | sed 's/name = //; s/"//g' | tr '\n' ',' | sed 's/,$//; s/,/, /g')
-      if [ -n "$registered_vaults" ]; then
-        log "  Registered vaults that will switch to v2.0.0-rc.1: ${c_bold}$registered_vaults${c_reset}"
-        log ""
-      fi
-    fi
-
-    if confirm_destructive "Proceed with full replacement v1.0.0 → v2.0.0-rc.1?"; then
+    if confirm_destructive "Proceed with full replacement v${vm_version} → v2.0.0-rc.1?"; then
       FORCE_SOURCE_REBUILD=1
       ok "Upgrade accepted. Proceeding with source build of v2.0.0-rc.1."
     else
-      err "Upgrade declined. v1.0.0 stays in place."
+      err "Upgrade declined. v${vm_version} stays in place."
       log "  To install v2.0.0-rc.1 later, re-run with VAULT_MEMORY_VERSION=2.0.0-rc.1"
       log "  and confirm the destructive prompt."
       exit 2
