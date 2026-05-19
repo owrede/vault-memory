@@ -147,12 +147,16 @@ jobs:
         # semver tag (no pre-release suffix) becomes the "Latest" release on
         # the repo's main page. Pre-release tags (e.g. v1.1.0-beta.1) skip
         # the latest promotion automatically.
+        # `prerelease` is set dynamically via fromJSON+contains so rc/beta/alpha
+        # tags are flagged "Pre-release" in the GitHub UI. Without this the
+        # action defaults to `false` regardless of tag suffix.
         # `files:` attaches the plugin tarball + checksum as Release assets.
         # MP4 screencast is uploaded manually post-workflow (D-14).
         uses: softprops/action-gh-release@v2
         with:
           body_path: /tmp/release-notes.md
           make_latest: legacy
+          prerelease: ${{ contains(github.ref_name, '-rc.') || contains(github.ref_name, '-beta.') || contains(github.ref_name, '-alpha.') }}
           files: |
             ${{ env.TARBALL }}
             manifest.sha256

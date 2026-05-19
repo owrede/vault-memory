@@ -103,64 +103,51 @@ log ""
 
 # ─── Checkpoint 0: Choose version ────────────────────────────────────────────
 #
-# Two installable versions:
-#   1) v1.0.0 (stable) — pulled from the public npm registry
-#   2) v2.0.0-rc.1 (in-development) — built from source on `main`
+# Two installable versions, both on the public npm registry:
+#   1) v2.0.0-rc.1 (current, recommended) — dist-tag: next
+#      32 canonical tools + 10 MCP Resources, typed-edge graph, briefs,
+#      Obsidian plugin, task contracts. Not yet promoted to `latest` until
+#      the v2.0.0 stable cut.
+#   2) v1.0.0 (legacy stable) — dist-tag: latest
+#      Original 23 MCP tools. Pinned for users that need the older surface
+#      or have not yet completed migration to v2.
+#
+# Version choice and install mechanism are ORTHOGONAL:
+#   - SELECTED_VERSION = "2.0.0-rc.1" (default) or "1.0.0" (explicit opt-in)
+#   - INSTALL_MODE     = "npm" (default) or "source" (developer mode, v2 only)
 #
 # Selection order:
 #   1. Explicit VAULT_MEMORY_VERSION env var (e.g. 1.0.0 or 2.0.0-rc.1)
-#   2. Legacy VAULT_MEMORY_INSTALL_MODE env var (npm → 1.0.0; source → 2.0.0-rc.1)
+#   2. Legacy VAULT_MEMORY_INSTALL_MODE env var (source → INSTALL_MODE=source,
+#      version stays at the default 2.0.0-rc.1)
 #   3. Interactive prompt — ALWAYS fires, even in AUTO mode, because the
 #      version choice is a meaningful product decision the user must make
 #      once. Every OTHER prompt in this script still auto-yeses under AUTO.
-#   4. Non-interactive shell (no TTY) defaults to 1.0.0 (stable) — the only
-#      safe choice when we cannot ask.
-#
-# Internal INSTALL_MODE values stay `npm` / `source` so the rest of the
-# script (Checkpoint 5) does not need to know about version labels.
+#   4. Non-interactive shell (no TTY) defaults to v2.0.0-rc.1 (current).
 
 step "0/7  Choose version"
 
-resolve_install_mode_from_version() {
+SELECTED_VERSION=""
+INSTALL_MODE="npm"  # default; can be flipped to "source" by env var
+
+resolve_version() {
   case "$1" in
-    1.0.0)
-      INSTALL_MODE="npm"
-      ;;
-    2.0.0-rc.1)
-      INSTALL_MODE="source"
+    1.0.0|2.0.0-rc.1)
+      SELECTED_VERSION="$1"
       ;;
     *)
-      err "Unknown VAULT_MEMORY_VERSION: $1 (expected '1.0.0' or '2.0.0-rc.1')"
+      err "Unknown VAULT_MEMORY_VERSION: $1 (expected '2.0.0-rc.1' or '1.0.0')"
       exit 1
       ;;
   esac
 }
 
-INSTALL_MODE=""
-
 if [ -n "${VAULT_MEMORY_VERSION:-}" ]; then
   info "Version pinned via VAULT_MEMORY_VERSION=$VAULT_MEMORY_VERSION"
-  resolve_install_mode_from_version "$VAULT_MEMORY_VERSION"
-elif [ -n "${VAULT_MEMORY_INSTALL_MODE:-}" ]; then
-  # Legacy env var — npm → 1.0.0, source → 2.0.0-rc.1
-  case "$VAULT_MEMORY_INSTALL_MODE" in
-    npm)
-      info "Legacy env: VAULT_MEMORY_INSTALL_MODE=npm → installing v1.0.0 (stable)"
-      INSTALL_MODE="npm"
-      ;;
-    source)
-      info "Legacy env: VAULT_MEMORY_INSTALL_MODE=source → installing v2.0.0-rc.1 (in-development)"
-      INSTALL_MODE="source"
-      ;;
-    *)
-      err "Unknown VAULT_MEMORY_INSTALL_MODE: $VAULT_MEMORY_INSTALL_MODE (expected 'npm' or 'source')"
-      exit 1
-      ;;
-  esac
+  resolve_version "$VAULT_MEMORY_VERSION"
 elif [ ! -t 0 ] && [ ! -e /dev/tty ]; then
-  # No TTY — can't prompt. Default to stable.
-  warn "Non-interactive shell — defaulting to v1.0.0 (stable). Set VAULT_MEMORY_VERSION to override."
-  INSTALL_MODE="npm"
+  warn "Non-interactive shell — defaulting to v2.0.0-rc.1 (current). Set VAULT_MEMORY_VERSION=1.0.0 to override."
+  SELECTED_VERSION="2.0.0-rc.1"
 else
   # Interactive prompt — fires unconditionally (including in AUTO mode).
   # Version choice is the single exception to the AUTO-never-prompts rule.
@@ -170,29 +157,27 @@ else
   log ""
   log "vault-memory has two installable versions:"
   log ""
-  log "  1) v1.0.0 (stable)"
-  log "     - Published to npm registry"
-  log "     - 23 MCP tools, semantic + BM25 + RRF hybrid search, multi-vault, live indexing"
-  log "     - Recommended for production use"
+  log "  1) v2.0.0-rc.1  ${c_bold}(current, recommended)${c_reset}  npm dist-tag: next"
+  log "     - 32 canonical MCP tools + 10 MCP Resources (REL-08 surface)"
+  log "     - Typed-edge graph, compiled briefs, Obsidian plugin, task contracts"
+  log "     - Backwards-compatible: all v1 tool names + shapes preserved"
   log ""
-  log "  2) v2.0.0-rc.1 (in-development)"
-  log "     - Built from source (github.com/owrede/vault-memory main branch)"
-  log "     - 32 canonical tools + 10 MCP Resources, REL-08 surface"
-  log "     - Adds typed-edge graph, briefs, Obsidian plugin, task contracts"
-  log "     - Not yet published to npm; not yet stable"
+  log "  2) v1.0.0       (legacy stable)         npm dist-tag: latest"
+  log "     - Original 23 MCP tools — semantic + BM25 + RRF hybrid search"
+  log "     - For users that need the older surface or have not migrated"
   log ""
   log "  q) quit (no install)"
   log ""
-  log "  (Pass VAULT_MEMORY_VERSION=1.0.0 or 2.0.0-rc.1 to skip this prompt on future runs.)"
+  log "  (Pass VAULT_MEMORY_VERSION=2.0.0-rc.1 or 1.0.0 to skip this prompt on future runs.)"
   log ""
   printf "${c_yellow}? Choice [1/2/q] (default 1):${c_reset} " >&2
   read -r version_reply </dev/tty
   case "$version_reply" in
     ""|1)
-      INSTALL_MODE="npm"
+      SELECTED_VERSION="2.0.0-rc.1"
       ;;
     2)
-      INSTALL_MODE="source"
+      SELECTED_VERSION="1.0.0"
       ;;
     q|Q|quit|QUIT)
       err "Install cancelled by user."
@@ -205,29 +190,38 @@ else
   esac
 fi
 
-# Resolve the human-readable version label from the install mode so the rest
-# of the script can do precise mismatch detection in Checkpoint 5. This is
-# the single source of truth for "what did the user pick?".
-case "$INSTALL_MODE" in
-  npm)    SELECTED_VERSION="1.0.0" ;;
-  source) SELECTED_VERSION="2.0.0-rc.1" ;;
-esac
+# Now resolve INSTALL_MODE. Developers can opt into source-build for v2 via
+# the legacy env var; everyone else uses npm.
+if [ "${VAULT_MEMORY_INSTALL_MODE:-}" = "source" ]; then
+  if [ "$SELECTED_VERSION" = "1.0.0" ]; then
+    err "VAULT_MEMORY_INSTALL_MODE=source is incompatible with VAULT_MEMORY_VERSION=1.0.0."
+    log "v1.0.0 is only published on npm; the source-build path always builds the current main branch (v2.0.0-rc.1+)."
+    exit 1
+  fi
+  INSTALL_MODE="source"
+  info "Developer env: VAULT_MEMORY_INSTALL_MODE=source → building $SELECTED_VERSION from source"
+elif [ -n "${VAULT_MEMORY_INSTALL_MODE:-}" ] && [ "$VAULT_MEMORY_INSTALL_MODE" != "npm" ]; then
+  err "Unknown VAULT_MEMORY_INSTALL_MODE: $VAULT_MEMORY_INSTALL_MODE (expected 'npm' or 'source')"
+  exit 1
+fi
 
-# Report the resolved install mode + show the GitHub-auth check for source mode.
+# Report the resolved combination.
 case "$INSTALL_MODE" in
   npm)
-    info "Resolved: v1.0.0 (stable) → npm registry (https://registry.npmjs.org/@owrede/vault-memory)"
+    case "$SELECTED_VERSION" in
+      2.0.0-rc.1) info "Resolved: v2.0.0-rc.1 → npm registry, dist-tag 'next' (npm install -g @owrede/vault-memory@$SELECTED_VERSION)" ;;
+      1.0.0)      info "Resolved: v1.0.0 → npm registry, dist-tag 'latest' (npm install -g @owrede/vault-memory@$SELECTED_VERSION)" ;;
+    esac
     ;;
   source)
-    info "Resolved: v2.0.0-rc.1 (in-development) → source build from $REPO_URL"
+    info "Resolved: v$SELECTED_VERSION → source build from $REPO_URL"
     if command -v vault-memory >/dev/null 2>&1; then
       ok "vault-memory already in PATH — skipping GitHub auth check"
     elif command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
       ok "GitHub CLI authenticated ($(gh api user --jq .login 2>/dev/null || echo 'ok'))"
     else
       err "Source-build mode needs git access to owrede/vault-memory."
-      log "Either set up gh auth ('gh auth login') or pick v1.0.0 (stable)."
-      log "  Re-run with: VAULT_MEMORY_VERSION=1.0.0"
+      log "Either set up gh auth ('gh auth login') or unset VAULT_MEMORY_INSTALL_MODE for npm install."
       exit 1
     fi
     ;;
@@ -378,11 +372,6 @@ fi
 
 step "5/7  vault-memory binary"
 
-# FORCE_SOURCE_REBUILD is set below when the user picks v2.0.0-rc.1 but the
-# in-PATH binary is v1.0.0. Treating that case as "binary missing" routes
-# control into the source-build branch.
-FORCE_SOURCE_REBUILD=0
-
 # Robust version detection. The CLI's --help output may not surface a version
 # string on the first line (depends on commander/yargs/etc. style), and
 # --version may or may not be wired. Try, in order:
@@ -434,30 +423,36 @@ detect_vault_memory_origin() {
   printf 'unknown'
 }
 
-# Print the upgrade warning block (extracted into a function so we can call it
-# from any mismatch branch — not only the v1.0.0 → v2.0.0-rc.1 case).
+# Print the upgrade warning block. Called when the user picks v2.0.0-rc.1
+# AND a vector index from an older version already exists. Honest about what
+# changes and what doesn't, names a backup command, gives a downgrade recipe.
 print_upgrade_warning() {
   local from_version="$1"
+  local has_existing_index="$2"  # "yes" if ~/.vault-memory/*.db exists
   log ""
   log "${c_yellow}${c_bold}╔══════════════════════════════════════════════════════════════╗${c_reset}"
   log "${c_yellow}${c_bold}║  UPGRADE WARNING: v${from_version} → v2.0.0-rc.1$(printf '%*s' $((45 - ${#from_version})) '')║${c_reset}"
   log "${c_yellow}${c_bold}╚══════════════════════════════════════════════════════════════╝${c_reset}"
   log ""
-  log "You selected v2.0.0-rc.1 (in-development), but v${from_version} is currently"
-  log "installed. This is a ${c_bold}full replacement${c_reset} — both versions cannot run"
-  log "side-by-side because they share the same global binary name"
-  log "(\`vault-memory\`) and the same data directory (~/.vault-memory/)."
+  log "You selected v2.0.0-rc.1, but v${from_version} is currently installed."
+  log "This is a ${c_bold}full replacement${c_reset} — both versions cannot run side-by-side"
+  log "because they share the same global binary name (\`vault-memory\`) and"
+  log "the same data directory (~/.vault-memory/)."
   log ""
   log "${c_bold}What WILL change:${c_reset}"
-  log "  • Global binary: ${c_bold}v${from_version}${c_reset} → ${c_bold}v2.0.0-rc.1${c_reset} (source-linked)"
-  log "    (clone of $REPO_URL @ main, npm link from $INSTALL_DIR)"
-  log "  • Database schema in ~/.vault-memory/*.db will be ${c_bold}migrated${c_reset}"
-  log "    automatically on the next \`vault-memory serve\`. Migration is"
-  log "    forward-only (typed-edges, briefs, task-contracts, additional tables)."
-  log "  • A ${c_bold}full re-index${c_reset} is recommended after the upgrade — new edge"
-  log "    types and new tables require fresh data to populate."
-  log "  • MCP tool surface grows to 32 canonical tools + 10 Resources."
-  log "    Existing tool names + shapes are preserved (backwards-compatible)."
+  log "  • Global binary: ${c_bold}v${from_version}${c_reset} → ${c_bold}v2.0.0-rc.1${c_reset}"
+  log "    Install command: ${c_bold}npm install -g @owrede/vault-memory@2.0.0-rc.1${c_reset}"
+  log "    Published on the public npm registry under dist-tag \`next\`."
+  if [ "$has_existing_index" = "yes" ]; then
+    log "  • Database schema in ~/.vault-memory/*.db will be ${c_bold}migrated${c_reset}"
+    log "    on first run. Migration is automatic + forward-only (adds typed-edge"
+    log "    tables, contract audit, additional model + chunk indexes)."
+    log "  • A ${c_bold}full re-index${c_reset} is recommended after migration — new edge"
+    log "    types (mention, frontmatter-ref, hyperlink) and contract tables need"
+    log "    fresh data to populate. v1 vectors stay valid and won't be re-embedded."
+  fi
+  log "  • MCP tool surface grows: 23 v1 tools → 32 canonical tools + 10 MCP Resources."
+  log "    All v1 tool names + shapes are preserved (backwards-compatible)."
   log ""
   log "${c_bold}What will NOT change:${c_reset}"
   log "  • Your Markdown notes (they live in the vault, not in vault-memory)"
@@ -467,12 +462,15 @@ print_upgrade_warning() {
   log "    together (single global binary, single data dir)"
   log ""
   log "${c_red}${c_bold}No automatic downgrade path:${c_reset}"
-  log "  • The migrated DBs cannot be opened by v1.x anymore."
-  log "  • To go back you need BOTH:"
-  log "      1. \`npm install -g @owrede/vault-memory@1.0.0\` (revert binary)"
+  log "  • Once migrated, v2 DBs cannot be opened by v1 (schema is forward-only)."
+  log "  • To return to v${from_version} you need BOTH:"
+  log "      1. ${c_bold}npm install -g @owrede/vault-memory@${from_version}${c_reset}"
   log "      2. Restore ~/.vault-memory/ from a pre-upgrade backup OR"
-  log "         delete the DBs and let v1 re-index from scratch"
-  log "  • RECOMMENDED before proceeding: \`tar -czf ~/vault-memory-v1-backup.tar.gz ~/.vault-memory\`"
+  log "         delete the DBs and let v${from_version} re-index from scratch"
+  if [ "$has_existing_index" = "yes" ]; then
+    log "  • RECOMMENDED before proceeding:"
+    log "      ${c_bold}tar -czf ~/vault-memory-v${from_version}-backup-\$(date +%Y%m%d-%H%M%S).tar.gz ~/.vault-memory${c_reset}"
+  fi
   log ""
   log "${c_bold}Scope of impact:${c_reset} ALL vaults registered with vault-memory will"
   log "use v2.0.0-rc.1 after this. There is no per-vault version selection."
@@ -488,6 +486,41 @@ print_upgrade_warning() {
   fi
 }
 
+# Check if a vector index already exists. Returns "yes" if any *.db file is
+# present under ~/.vault-memory/, "no" otherwise. Used to scope the upgrade
+# warning — fresh installs don't need the migration / re-index paragraphs.
+has_existing_vector_index() {
+  if [ -d "$HOME/.vault-memory" ]; then
+    if ls "$HOME/.vault-memory"/*.db >/dev/null 2>&1; then
+      printf 'yes'
+      return
+    fi
+  fi
+  printf 'no'
+}
+
+# Offer to make a backup tarball of ~/.vault-memory/ before applying an
+# upgrade. The recommendation is in the warning text; this function gives the
+# user a one-key way to execute it.
+offer_pre_upgrade_backup() {
+  local from_version="$1"
+  if [ ! -d "$HOME/.vault-memory" ]; then return 0; fi
+  local backup_path
+  backup_path="$HOME/vault-memory-v${from_version}-backup-$(date +%Y%m%d-%H%M%S).tar.gz"
+  if confirm "Create backup tarball at $backup_path before upgrade?" \
+    "Saves a snapshot of ~/.vault-memory/ (config + all SQLite DBs) so you can restore the v${from_version} state if rc.1 doesn't work for you. Migration is forward-only so this is your only out. Tarball size matches your DB size; for a 50k-note vault expect 100-500 MB."; then
+    tar -czf "$backup_path" -C "$HOME" .vault-memory \
+      || { err "Backup failed — refusing to proceed without recovery option."; exit 1; }
+    ok "Backup written: $backup_path"
+  else
+    warn "Skipping backup. You will not be able to restore the v${from_version} state if rc.1 has issues."
+  fi
+}
+
+# Track whether we just performed an upgrade. Checkpoint 6 uses this to
+# escalate the index prompt from incremental to full re-index.
+UPGRADED_FROM_VERSION=""
+
 if command -v vault-memory >/dev/null 2>&1; then
   vm_version=$(detect_vault_memory_version)
   vm_origin=$(detect_vault_memory_origin)
@@ -499,13 +532,13 @@ if command -v vault-memory >/dev/null 2>&1; then
 
   # ── Mismatch detection ──
   #
-  # The right question is not "is this binary exactly v1.0.0?" but:
+  # The right question is not "is this binary exactly the right version?" but:
   # "does the in-PATH binary match the user's Checkpoint-0 choice?"
   #
-  # Two failure modes the OLD code missed:
-  #   - User on v0.9.x or v0.10.x chooses v2.0.0-rc.1 → must trigger upgrade
+  # Two failure modes to catch:
+  #   - User on v0.9.x / v1.x chooses v2.0.0-rc.1 → upgrade prompt fires
   #   - User has source-clone present but in-PATH binary is npm-installed
-  #     (because `npm install -g @latest` ran later) → must trigger relink
+  #     (because `npm install -g @latest` ran later) → re-link/upgrade fires
   #
   # `version_matches` is true iff vm_version equals SELECTED_VERSION exactly.
   # `origin_matches` is true iff the binary comes from the expected place:
@@ -520,65 +553,103 @@ if command -v vault-memory >/dev/null 2>&1; then
   esac
 
   if $version_matches && $origin_matches; then
-    ok "Version $vm_version and origin $vm_origin match your Checkpoint-0 choice — no upgrade needed."
-  elif [ "$INSTALL_MODE" = "npm" ]; then
-    # ── User picked v1.0.0; in-PATH binary is wrong version or wrong origin ──
+    ok "Version $vm_version and origin $vm_origin match your Checkpoint-0 choice — no install change needed."
+  elif [ "$SELECTED_VERSION" = "1.0.0" ]; then
+    # ── User picked v1.0.0 (legacy) but a different version/origin is installed ──
+    # This is a DOWNGRADE if vm_version > 1.0.0, otherwise a switch within v1
+    # patch lineage. Either way we ask via standard confirm (not destructive)
+    # because going to v1 from a newer version is unusual and the user must be
+    # explicit about it.
     log ""
     info "Mismatch detected:"
-    info "  installed version: $vm_version  (you selected: $SELECTED_VERSION)"
+    info "  installed version: $vm_version  (you selected: 1.0.0)"
     info "  installed origin:  $vm_origin   (expected: npm)"
     log ""
-    if confirm "Switch to @owrede/vault-memory@1.0.0 (stable npm release)?" \
-      "Replaces the current binary with the stable v1.0.0 release from the public npm registry. 'npm install -g @owrede/vault-memory@1.0.0' overrides the current install in-place. Your data (~/.vault-memory/) and vault notes are untouched — only the engine code is changed. If the current binary came from a source-link (npm link), the npm install will replace the symlink with the registry artifact."; then
+    if [ "$vm_origin" = "source" ] || [[ "$vm_version" =~ ^2\. ]]; then
+      warn "You are about to DOWNGRADE from $vm_version to 1.0.0."
+      warn "Note: if your vaults have been re-indexed under v2 (typed-edges, briefs),"
+      warn "      v1.0.0 will refuse to open those DBs. Restore from backup or delete"
+      warn "      ~/.vault-memory/ and let v1 re-index from scratch."
+    fi
+    if confirm "Switch to @owrede/vault-memory@1.0.0 (legacy stable)?" \
+      "Replaces the current binary with v1.0.0 from the public npm registry. 'npm install -g @owrede/vault-memory@1.0.0' overrides the current install in-place. Markdown notes are untouched; vault-memory DBs may be incompatible if you came from v2."; then
       npm install -g @owrede/vault-memory@1.0.0 \
         || { err "npm install -g failed"; exit 1; }
-      ok "vault-memory switched to 1.0.0 (stable)"
+      ok "vault-memory switched to 1.0.0 (legacy stable)"
     else
       warn "Switch declined. Keeping the existing $vm_version install."
     fi
   else
     # ── User picked v2.0.0-rc.1; in-PATH binary is wrong version or wrong origin ──
-    # We are now in the upgrade-to-rc.1 path. This is destructive (DB schema
-    # migration is forward-only, no automatic downgrade) — show the full
-    # warning block, ask via confirm_destructive (always prompts, even in AUTO).
-    print_upgrade_warning "$vm_version"
+    # This is the upgrade path. Show the warning, offer a backup, run the
+    # actual install via npm (much faster than source-build), then continue.
+    has_index=$(has_existing_vector_index)
+    print_upgrade_warning "$vm_version" "$has_index"
 
-    if confirm_destructive "Proceed with full replacement v${vm_version} → v2.0.0-rc.1?"; then
-      FORCE_SOURCE_REBUILD=1
-      ok "Upgrade accepted. Proceeding with source build of v2.0.0-rc.1."
-    else
+    if ! confirm_destructive "Proceed with full replacement v${vm_version} → v2.0.0-rc.1?"; then
       err "Upgrade declined. v${vm_version} stays in place."
       log "  To install v2.0.0-rc.1 later, re-run with VAULT_MEMORY_VERSION=2.0.0-rc.1"
       log "  and confirm the destructive prompt."
       exit 2
     fi
+
+    # Offer the backup before touching anything.
+    if [ "$has_index" = "yes" ]; then
+      offer_pre_upgrade_backup "$vm_version"
+    fi
+
+    # Execute the upgrade.
+    if [ "$INSTALL_MODE" = "npm" ]; then
+      info "Installing v2.0.0-rc.1 via 'npm install -g @owrede/vault-memory@2.0.0-rc.1'…"
+      npm install -g @owrede/vault-memory@2.0.0-rc.1 \
+        || { err "npm install -g failed. Inspect 'npm config get prefix' for permissions; re-run after fixing."; exit 1; }
+    else
+      # Developer mode: build from source.
+      info "Building v2.0.0-rc.1 from source at $INSTALL_DIR…"
+      if [ -d "$INSTALL_DIR/.git" ]; then
+        ( cd "$INSTALL_DIR" && git pull --ff-only && npm install && npm run build && npm link ) \
+          || { err "Source rebuild failed in $INSTALL_DIR"; exit 1; }
+      else
+        mkdir -p "$(dirname "$INSTALL_DIR")"
+        if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+          gh repo clone owrede/vault-memory "$INSTALL_DIR" \
+            || { err "gh repo clone failed"; exit 1; }
+        else
+          git clone "$REPO_URL" "$INSTALL_DIR" \
+            || { err "git clone failed"; exit 1; }
+        fi
+        ( cd "$INSTALL_DIR" && npm install && npm run build && npm link ) \
+          || { err "Source build failed"; exit 1; }
+      fi
+    fi
+    ok "Upgrade complete: v${vm_version} → v2.0.0-rc.1"
+    UPGRADED_FROM_VERSION="$vm_version"
   fi
 fi
 
-if [ "$FORCE_SOURCE_REBUILD" = "1" ] || ! command -v vault-memory >/dev/null 2>&1; then
-  if [ "$FORCE_SOURCE_REBUILD" = "1" ]; then
-    info "Building v2.0.0-rc.1 from source to replace the in-PATH v1.0.0."
-  else
-    warn "vault-memory not in PATH."
-  fi
+# Fresh install path: no vault-memory in PATH at script start, or the upgrade
+# above didn't run (which it does run, so this branch only fires on first install).
+if ! command -v vault-memory >/dev/null 2>&1; then
+  warn "vault-memory not in PATH — performing first install."
 
   if [ "$INSTALL_MODE" = "npm" ]; then
-    # ── npm install path (v1.0.0 stable, no GitHub auth needed) ─────────────
-    if confirm "Install vault-memory@1.0.0 via 'npm install -g @owrede/vault-memory@1.0.0'?" \
-      "Pulls v1.0.0 from the public npm registry (https://registry.npmjs.org/@owrede/vault-memory) and installs the 'vault-memory' binary globally. The version is pinned to 1.0.0 — running this skill later will not silently jump you to v2.x once it ships. No GitHub authentication or source build required."; then
-      npm install -g @owrede/vault-memory@1.0.0 \
-        || { err "npm install -g failed. Possible causes: npm not in PATH, npm prefix not writable (try: npm config get prefix). Falling back to source build: re-run with VAULT_MEMORY_VERSION=2.0.0-rc.1."; exit 1; }
-      ok "vault-memory installed from npm registry"
+    # Both v1.0.0 and v2.0.0-rc.1 are available on npm. Pin to SELECTED_VERSION.
+    install_cmd="npm install -g @owrede/vault-memory@$SELECTED_VERSION"
+    if confirm "Install vault-memory@$SELECTED_VERSION via '$install_cmd'?" \
+      "Pulls v$SELECTED_VERSION from the public npm registry (https://registry.npmjs.org/@owrede/vault-memory) and installs the 'vault-memory' binary globally. Pinned to v$SELECTED_VERSION — no surprise jumps to a future release."; then
+      eval "$install_cmd" \
+        || { err "npm install -g failed. Inspect 'npm config get prefix' for permissions; try opening a new shell."; exit 1; }
+      ok "vault-memory v$SELECTED_VERSION installed from npm registry"
     else
       err "vault-memory is required."
       exit 2
     fi
   else
-    # ── source-build path (developer mode) ──────────────────────────────────
+    # Source-build (developer mode, v2 only).
     if [ -d "$INSTALL_DIR/.git" ]; then
       info "Existing clone at $INSTALL_DIR — will pull + rebuild."
       if confirm "Rebuild vault-memory at $INSTALL_DIR?" \
-        "An existing clone was found but the global 'vault-memory' command is not in PATH. Pulling latest, reinstalling deps, rebuilding TypeScript, and re-linking via 'npm link' to make the binary globally available."; then
+        "Pulling latest from main, reinstalling deps, rebuilding TypeScript, and re-linking via 'npm link' to make the binary globally available."; then
         ( cd "$INSTALL_DIR" && git pull --ff-only && npm install && npm run build && npm link ) \
           || { err "Rebuild failed in $INSTALL_DIR"; exit 1; }
         ok "vault-memory rebuilt and linked"
@@ -588,14 +659,14 @@ if [ "$FORCE_SOURCE_REBUILD" = "1" ] || ! command -v vault-memory >/dev/null 2>&
       fi
     else
       if confirm "Clone owrede/vault-memory to $INSTALL_DIR and install?" \
-        "Source-build mode: clone the repo, run npm install + build + npm link. Use this only if you want to develop or modify vault-memory itself. For normal use, the default 'npm install -g' (unset VAULT_MEMORY_INSTALL_MODE) is simpler and does not require git access."; then
+        "Source-build mode: clone the repo, run npm install + build + npm link. Use only if you intend to modify vault-memory itself; for normal use, unset VAULT_MEMORY_INSTALL_MODE for the much faster npm install."; then
         mkdir -p "$(dirname "$INSTALL_DIR")"
         if command -v gh >/dev/null 2>&1; then
           gh repo clone owrede/vault-memory "$INSTALL_DIR" \
             || { err "gh repo clone failed (auth?)"; exit 1; }
         else
           git clone "$REPO_URL" "$INSTALL_DIR" \
-            || { err "git clone failed. Set up GitHub auth (e.g. gh auth login) or check the URL."; exit 1; }
+            || { err "git clone failed. Set up GitHub auth or use the npm path (unset VAULT_MEMORY_INSTALL_MODE)."; exit 1; }
         fi
         ( cd "$INSTALL_DIR" && npm install && npm run build && npm link ) \
           || { err "Install/build/link failed in $INSTALL_DIR"; exit 1; }
@@ -606,12 +677,12 @@ if [ "$FORCE_SOURCE_REBUILD" = "1" ] || ! command -v vault-memory >/dev/null 2>&
       fi
     fi
   fi
+fi
 
-  # Verify
-  if ! command -v vault-memory >/dev/null 2>&1; then
-    err "After install, vault-memory still not in PATH. Try opening a new shell (or check 'npm bin -g')."
-    exit 1
-  fi
+# Final verify
+if ! command -v vault-memory >/dev/null 2>&1; then
+  err "After install, vault-memory still not in PATH. Try opening a new shell (or check 'npm bin -g')."
+  exit 1
 fi
 
 # ─── Checkpoint 6: Config + initial index ────────────────────────────────────
@@ -664,21 +735,23 @@ log ""
 step "Initial index"
 
 # Two flavours of the index prompt:
-#  - Normal (incremental): first install OR no version change
-#  - Post-upgrade: FORCE_SOURCE_REBUILD=1 was set above, indicating
-#    v1.0.0 → v2.0.0-rc.1. Recommend a FULL re-index so the new typed-edge
-#    tables and additional indexes are populated for ALL notes.
-if [ "${FORCE_SOURCE_REBUILD:-0}" = "1" ]; then
-  warn "Upgrade detected (v1.0.0 → v2.0.0-rc.1). A FULL re-index is strongly recommended."
+#  - Post-upgrade (UPGRADED_FROM_VERSION non-empty): A FULL re-index is
+#    strongly recommended so the new v2 typed-edge tables and contract
+#    scaffold populate for every note. v1 vectors stay valid (same embed
+#    model + dim); only the graph signal is rebuilt.
+#  - Normal (fresh install OR no version change): incremental index is
+#    fine. Subsequent runs only re-embed changed notes.
+if [ -n "$UPGRADED_FROM_VERSION" ]; then
+  warn "Upgrade detected (v${UPGRADED_FROM_VERSION} → v$SELECTED_VERSION). A FULL re-index is strongly recommended."
   log "  Reason: v2 adds new edge types (mentions, frontmatter-refs, hyperlinks)"
-  log "  and new tables (briefs, contracts) that the v1 index never populated."
+  log "  and new tables (briefs, contracts) that the v${UPGRADED_FROM_VERSION} index never populated."
   log "  Schema migration on first \`vault-memory serve\` will create the tables;"
-  log "  the re-index fills them."
+  log "  the re-index fills them. Existing embeddings are reused (same model + dim)."
   log ""
   if confirm "Run 'vault-memory index --full' now? (≈5-15 min for a 90 MB vault)" \
-    "Full re-index rebuilds the vector index AND populates the new v2 graph signal (typed edges, briefs scaffold) for every note. Required to make semantic+graph search return v2-quality results. Incremental updates after this will be fast as usual."; then
+    "Full re-index rebuilds the typed-edge graph + contract scaffold for every note. Existing vector embeddings are reused (same bge-m3, same 1024-dim); only the graph signal is rebuilt. Required to make semantic+graph search return v2-quality results. Incremental updates after this will be fast as usual."; then
     vault-memory index --full || { err "Full re-index failed"; exit 1; }
-    ok "Vault re-indexed under v2.0.0-rc.1"
+    ok "Vault re-indexed under v$SELECTED_VERSION"
   else
     warn "Skipped. v2 graph signal will be empty until you run 'vault-memory index --full' manually."
   fi
