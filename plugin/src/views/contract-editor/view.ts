@@ -63,6 +63,23 @@ export type ContractFile = ContractDocumentShape;
 /** Debounce window for `.yaml` companion emission, in ms. */
 const YAML_EMIT_DEBOUNCE_MS = 200;
 
+/**
+ * SHA-256 the input string and return its lowercase hex digest. Uses
+ * `crypto.subtle` (available in Electron renderer / Obsidian context);
+ * no Node `crypto` dependency. Used by the CAN-08 echo-suppression
+ * handshake before each `.yaml` companion write.
+ */
+async function sha256Hex(input: string): Promise<string> {
+  const bytes = new TextEncoder().encode(input);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const view = new Uint8Array(digest);
+  let hex = "";
+  for (const byte of view) {
+    hex += byte.toString(16).padStart(2, "0");
+  }
+  return hex;
+}
+
 export class ContractEditorView extends TextFileView {
   private currentJson: ContractDocumentShape | null = null;
   private svelteApp: SvelteComponent | null = null;
@@ -172,9 +189,28 @@ export class ContractEditorView extends TextFileView {
 
   /**
    * Emit the canonical Phase 6 YAML companion to
-   * `_contracts/<name>.yaml`. The SuppressionSet integration that
-   * prevents the resulting watcher event from echoing back into the
-   * editor lands in plan 07-07 (CAN-08).
+   * `_contracts/<name>.yaml`.
+   *
+   * # CAN-08 echo-suppression (Plan 07-07)
+   *
+   * Before writing, compute SHA-256 of the YAML body and call
+   * `suppress_contract_write` so the Phase 6 ContractRegistry
+   * ChangeFeed handler can recognize the resulting filesystem event
+   * as our own write and drop it silently (hash equality check in
+   * `SuppressionSet.consume(path, hash)`).
+   *
+   * Ordering is strict — suppression MUST be registered BEFORE the
+   * write, otherwise the change-feed event may fire on a vault with
+   * an empty suppression set and trigger a redundant reload + audit
+   * row. We `await` the MCP `tools/call` round-trip so the entry is
+   * guaranteed to exist before the write hits chokidar.
+   *
+   * Suppress-call failures are non-fatal: the plugin proceeds with
+   * the write, accepting that the change-feed handler may then
+   * re-validate the YAML (idempotent — same body, same registry).
+   * The most common cause is `[plugin] enabled = false` on the
+   * server side; we surface a one-shot Notice so the user knows the
+   * echo loop guard is inactive (see `cliMissing` analog in main.ts).
    *
    * Errors are swallowed with a console warning — the next save cycle
    * retries; the editor remains usable even when the vault adapter
@@ -188,6 +224,31 @@ export class ContractEditorView extends TextFileView {
       // it lands on disk.
       parseYaml(yamlBody);
       const yamlPath = `_contracts/${file.contract.name}.yaml`;
+
+      // CAN-08 — register the hash-keyed suppression entry BEFORE the
+      // write. SubtleCrypto is available in the Obsidian renderer
+      // (Electron browser context); no Node `crypto` dependency.
+      const hash = await sha256Hex(yamlBody);
+      const mcp = this.plugin.mcpClient;
+      if (mcp?.available) {
+        try {
+          await mcp.callTool("suppress_contract_write", {
+            path: yamlPath,
+            hash,
+          });
+        } catch (err) {
+          // Server may have `[plugin] enabled = false` (suppress tool
+          // not registered) or be transiently disconnected. Either way
+          // we proceed with the write — the change-feed re-validate is
+          // idempotent on the same body.
+          const message = err instanceof Error ? err.message : String(err);
+          console.warn(
+            "[vault-memory] suppress_contract_write failed (proceeding with write):",
+            message,
+          );
+        }
+      }
+
       await this.app.vault.adapter.write(yamlPath, yamlBody);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

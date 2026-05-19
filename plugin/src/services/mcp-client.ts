@@ -46,7 +46,10 @@
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
-import { ProgressNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
+import {
+  ProgressNotificationSchema,
+  ResourceUpdatedNotificationSchema,
+} from "@modelcontextprotocol/sdk/types.js";
 
 export interface VaultMemoryMcpClientConfig {
   command: string;
@@ -187,6 +190,24 @@ export class VaultMemoryMcpClient {
           }
         }
       });
+
+      // Phase 7 / Plan 07-07 / CAN-08 — wire `notifications/resources/updated`
+      // so generic subscribers (e.g. ReloadNotifier subscribing to
+      // `vault-memory://contracts/reloaded`) actually receive events.
+      // The SDK dispatches by method literal in the Zod schema, so we
+      // register one handler that fans out to every generic sub whose
+      // method matches the resource-updated notification method.
+      client.setNotificationHandler(
+        ResourceUpdatedNotificationSchema,
+        (notif) => {
+          const params = (notif as { params?: Record<string, unknown> }).params ?? {};
+          for (const sub of this.genericSubs) {
+            if (sub.method === "notifications/resources/updated") {
+              sub.handler(params);
+            }
+          }
+        },
+      );
     } catch (err) {
       // Promote ENOENT from the factory to CliNotFoundError if the
       // factory didn't already wrap it (test factories often throw raw
@@ -253,15 +274,19 @@ export class VaultMemoryMcpClient {
   }
 
   /**
-   * Subscribe to a generic notification method (e.g.
-   * `vault-memory://contracts/reloaded`). Returns an unsubscribe
-   * function. The handler receives the raw `params` payload.
+   * Subscribe to a generic notification method. The handler receives
+   * the raw `params` payload.
    *
-   * Note: each call wires its own `setNotificationHandler` on the
-   * underlying Client, so the schema MUST be the SDK Zod schema
-   * matching `method`. For ad-hoc method names without a published
-   * Zod schema, the watcher plan (07-07) will land a dedicated schema
-   * alongside the method.
+   * Supported methods:
+   *   - `notifications/resources/updated` — Phase 7 / 07-07 / CAN-08.
+   *     Used by `ReloadNotifier` to subscribe to
+   *     `vault-memory://contracts/reloaded` (the URI lives inside
+   *     `params.uri`, so subscribers receive ALL resource-updated
+   *     notifications and filter on `uri` themselves).
+   *
+   * Returns an unsubscribe function. The `connect()` path registers
+   * one underlying `setNotificationHandler` per supported schema; the
+   * subscription list here fans those out to multiple consumers.
    */
   onNotification(method: string, handler: (params: unknown) => void): () => void {
     const sub: GenericSub = { method, handler };

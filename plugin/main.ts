@@ -37,7 +37,7 @@
  * "Save" / "Apply" actions only.
  */
 
-import { Notice, Plugin } from "obsidian";
+import { Modal, Notice, Plugin } from "obsidian";
 import {
   ContractEditorView,
   VIEW_TYPE_CONTRACT,
@@ -49,6 +49,7 @@ import {
 import { SettingsStore } from "./src/services/settings-store.js";
 import { SafeStorageAdapter } from "./src/services/safe-storage.js";
 import { SecretsStore } from "./src/services/secrets-store.js";
+import { ReloadNotifier } from "./src/services/reload-notifier.js";
 import { VaultMemorySettingsTab } from "./src/chrome/settings-tab.js";
 import { ChromeView, VIEW_TYPE_CHROME } from "./src/chrome/chrome-view.js";
 
@@ -63,6 +64,13 @@ export default class VaultMemoryPlugin extends Plugin {
   safeStorage!: SafeStorageAdapter;
   /** PLG-02 — typed secrets store backed by data.json (ciphertext only). */
   secretsStore!: SecretsStore;
+  /**
+   * Plan 07-07 / CAN-08 — subscribes to
+   * `vault-memory://contracts/reloaded` and surfaces a Modal when an
+   * external edit touches an open `.contract`. Null when the MCP
+   * client failed to connect (no notifications to subscribe to).
+   */
+  reloadNotifier: ReloadNotifier | null = null;
 
   /** True when boot-time `mcpClient.connect()` failed with ENOENT. */
   cliMissing = false;
@@ -144,9 +152,30 @@ export default class VaultMemoryPlugin extends Plugin {
         10000,
       );
     }
+
+    // (8) Plan 07-07 / CAN-08 — subscribe to external-edit notifications
+    // for `.contract` files. Only meaningful when the MCP client is
+    // available; on `cliMissing` we skip wiring (nothing to subscribe to).
+    if (!this.cliMissing) {
+      this.reloadNotifier = new ReloadNotifier({
+        mcpClient: this.mcpClient,
+        openContractPaths: () => this.collectOpenContractPaths(),
+        promptReload: (contractPath) => this.promptExternalEditReload(contractPath),
+      });
+      this.reloadNotifier.start();
+    }
   }
 
   override async onunload(): Promise<void> {
+    // CAN-08 — unsubscribe from contracts/reloaded notifications first
+    // so any in-flight emit during teardown is silently dropped.
+    try {
+      this.reloadNotifier?.stop();
+    } catch {
+      // Best-effort.
+    }
+    this.reloadNotifier = null;
+
     // Detach any open chrome leaves first so onClose() runs and the
     // panel's Svelte trees unmount cleanly (subscriptions disposed).
     try {
@@ -164,6 +193,71 @@ export default class VaultMemoryPlugin extends Plugin {
       // are not worth surfacing — the OS will reap on Obsidian exit.
     }
     // Obsidian auto-unregisters views, extensions, and setting-tabs.
+  }
+
+  /**
+   * Walk the workspace and collect the vault-relative paths of every
+   * open `.contract` editor view. Cheap (constant work per leaf), and
+   * called once per incoming notification.
+   *
+   * Plan 07-07 / CAN-08 — the ReloadNotifier uses this to decide
+   * whether the user has the affected contract open before surfacing
+   * the reload prompt.
+   */
+  private collectOpenContractPaths(): string[] {
+    const paths: string[] = [];
+    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_CONTRACT);
+    for (const leaf of leaves) {
+      const view = leaf.view as { file?: { path: string } } | null;
+      const filePath = view?.file?.path;
+      if (typeof filePath === "string") paths.push(filePath);
+    }
+    return paths;
+  }
+
+  /**
+   * Surface an Obsidian Modal asking the user whether to reload the
+   * editor for `.contract` files affected by an external edit. On
+   * "Reload", call `view.load()` on the matching leaf to force
+   * Obsidian to re-read the `.contract` from disk and rebuild state.
+   *
+   * Plan 07-07 / CAN-08 D-WATCH-SERVER-NOTIFY.
+   */
+  private async promptExternalEditReload(contractPath: string): Promise<void> {
+    const leaves = this.app.workspace.getLeavesOfType(VIEW_TYPE_CONTRACT);
+    const match = leaves.find((leaf) => {
+      const v = leaf.view as { file?: { path: string } } | null;
+      return v?.file?.path === contractPath;
+    });
+    if (!match) return;
+
+    return new Promise<void>((resolve) => {
+      const modal = new Modal(this.app);
+      modal.titleEl.setText("External edit detected");
+      modal.contentEl.createEl("p", {
+        text: `\`${contractPath}\` was modified outside the editor. Reload?`,
+      });
+      const buttons = modal.contentEl.createDiv({ cls: "vm-modal-buttons" });
+      const reloadBtn = buttons.createEl("button", { text: "Reload" });
+      reloadBtn.addEventListener("click", () => {
+        const view = match.view as { load?: () => void | Promise<void> };
+        try {
+          void view.load?.();
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          new Notice(`Reload failed: ${msg}`, 5000);
+        }
+        modal.close();
+        resolve();
+      });
+      const keepBtn = buttons.createEl("button", { text: "Keep current" });
+      keepBtn.addEventListener("click", () => {
+        modal.close();
+        resolve();
+      });
+      modal.onClose = () => resolve();
+      modal.open();
+    });
   }
 
   /**
