@@ -110,8 +110,11 @@ log ""
 # Selection order:
 #   1. Explicit VAULT_MEMORY_VERSION env var (e.g. 1.0.0 or 2.0.0-rc.1)
 #   2. Legacy VAULT_MEMORY_INSTALL_MODE env var (npm → 1.0.0; source → 2.0.0-rc.1)
-#   3. Interactive prompt
-#   4. Autonomous mode (VAULT_MEMORY_AUTO=1) defaults to 1.0.0
+#   3. Interactive prompt — ALWAYS fires, even in AUTO mode, because the
+#      version choice is a meaningful product decision the user must make
+#      once. Every OTHER prompt in this script still auto-yeses under AUTO.
+#   4. Non-interactive shell (no TTY) defaults to 1.0.0 (stable) — the only
+#      safe choice when we cannot ask.
 #
 # Internal INSTALL_MODE values stay `npm` / `source` so the rest of the
 # script (Checkpoint 5) does not need to know about version labels.
@@ -154,51 +157,52 @@ elif [ -n "${VAULT_MEMORY_INSTALL_MODE:-}" ]; then
       exit 1
       ;;
   esac
-elif [ "$AUTO" = "1" ]; then
-  info "auto: defaulting to v1.0.0 (stable, npm registry)"
-  info "  why: autonomous mode picks the stable release. Pass VAULT_MEMORY_VERSION=2.0.0-rc.1 to override."
+elif [ ! -t 0 ] && [ ! -e /dev/tty ]; then
+  # No TTY — can't prompt. Default to stable.
+  warn "Non-interactive shell — defaulting to v1.0.0 (stable). Set VAULT_MEMORY_VERSION to override."
   INSTALL_MODE="npm"
 else
-  # Interactive prompt
-  if [ ! -t 0 ] && [ ! -e /dev/tty ]; then
-    warn "Non-interactive shell — defaulting to v1.0.0 (stable). Set VAULT_MEMORY_VERSION to override."
-    INSTALL_MODE="npm"
-  else
-    log ""
-    log "vault-memory has two installable versions:"
-    log ""
-    log "  1) v1.0.0 (stable)"
-    log "     - Published to npm registry"
-    log "     - 23 MCP tools, semantic + BM25 + RRF hybrid search, multi-vault, live indexing"
-    log "     - Recommended for production use"
-    log ""
-    log "  2) v2.0.0-rc.1 (in-development)"
-    log "     - Built from source (github.com/owrede/vault-memory main branch)"
-    log "     - 32 canonical tools + 10 MCP Resources, REL-08 surface"
-    log "     - Adds typed-edge graph, briefs, Obsidian plugin, task contracts"
-    log "     - Not yet published to npm; not yet stable"
-    log ""
-    log "  q) quit (no install)"
-    log ""
-    printf "${c_yellow}? Choice [1/2/q] (default 1):${c_reset} " >&2
-    read -r version_reply </dev/tty
-    case "$version_reply" in
-      ""|1)
-        INSTALL_MODE="npm"
-        ;;
-      2)
-        INSTALL_MODE="source"
-        ;;
-      q|Q|quit|QUIT)
-        err "Install cancelled by user."
-        exit 2
-        ;;
-      *)
-        err "Invalid choice: $version_reply (expected 1, 2, or q)"
-        exit 1
-        ;;
-    esac
+  # Interactive prompt — fires unconditionally (including in AUTO mode).
+  # Version choice is the single exception to the AUTO-never-prompts rule.
+  if [ "$AUTO" = "1" ]; then
+    info "AUTO mode: still asking which version to install — this is the one prompt that fires regardless of AUTO."
   fi
+  log ""
+  log "vault-memory has two installable versions:"
+  log ""
+  log "  1) v1.0.0 (stable)"
+  log "     - Published to npm registry"
+  log "     - 23 MCP tools, semantic + BM25 + RRF hybrid search, multi-vault, live indexing"
+  log "     - Recommended for production use"
+  log ""
+  log "  2) v2.0.0-rc.1 (in-development)"
+  log "     - Built from source (github.com/owrede/vault-memory main branch)"
+  log "     - 32 canonical tools + 10 MCP Resources, REL-08 surface"
+  log "     - Adds typed-edge graph, briefs, Obsidian plugin, task contracts"
+  log "     - Not yet published to npm; not yet stable"
+  log ""
+  log "  q) quit (no install)"
+  log ""
+  log "  (Pass VAULT_MEMORY_VERSION=1.0.0 or 2.0.0-rc.1 to skip this prompt on future runs.)"
+  log ""
+  printf "${c_yellow}? Choice [1/2/q] (default 1):${c_reset} " >&2
+  read -r version_reply </dev/tty
+  case "$version_reply" in
+    ""|1)
+      INSTALL_MODE="npm"
+      ;;
+    2)
+      INSTALL_MODE="source"
+      ;;
+    q|Q|quit|QUIT)
+      err "Install cancelled by user."
+      exit 2
+      ;;
+    *)
+      err "Invalid choice: $version_reply (expected 1, 2, or q)"
+      exit 1
+      ;;
+  esac
 fi
 
 # Report the resolved install mode + show the GitHub-auth check for source mode.
