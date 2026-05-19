@@ -21,3 +21,12 @@ export {
   type ContractDocumentShape,
   type EditorStateShape,
 } from "../../src/contracts/contract-file-schema.js";
+
+/**
+ * BASELINE_VERBS — re-exported from `src/contracts/resources.ts` (single
+ * source of truth, Phase 6 / D-A2b). The plugin's palette consumes this
+ * as the compile-time enumeration of the 11 baseline verbs that the
+ * `vault-memory` server dispatches directly. `literal` is NOT in this
+ * list — it is the escape-hatch verb, surfaced separately by the palette.
+ */
+export { BASELINE_VERBS } from "../../src/contracts/resources.js";
