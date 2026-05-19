@@ -8,9 +8,13 @@
 
 set -eu
 
-# Banned substrings (case-insensitive). Whole-word match where reasonable;
-# substring match where it must (e.g., "segment.com" is a domain).
-BANNED='analytics|telemetry|posthog|segment\.com|mixpanel|sentry|datadog|track\(|trackEvent|report\(|reportMetric'
+# Banned tokens (case-insensitive).
+#
+# Word-anchored tokens use `\b...\b` so that substring collisions don't trip
+# the gate (e.g. `Entry` ↔ `sentry`, `reentry` ↔ `entry`). Tokens that must
+# stay substring-only — a domain like `segment.com`, or a call-shape like
+# `track(` / `report(` — are left unanchored.
+BANNED='\banalytics\b|\btelemetry\b|\bposthog\b|segment\.com|\bmixpanel\b|\bsentry\b|\bdatadog\b|track\(|\btrackEvent\b|report\(|\breportMetric\b'
 
 # The escape marker. If a line containing a banned substring ALSO contains
 # this marker on the same line, it is allowed.
