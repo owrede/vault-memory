@@ -24,12 +24,17 @@ See also:
 
 ## Accepted v2 ADRs
 
-| # | Title | Status | Phase | Supersedes | Tags |
-|---|---|---|---|---|---|
-| 001 | [Document identity is opaque, URI-style](001-document-identity.md) | Accepted | 0 | — | identity, source-agnostic, uri, opaque-id |
-| 002 | [Source & Delivery Seams](002-adapter-seams.md) | Accepted | 0 | — | adapters, seams, source-connector, delivery-adapter, change-feed, capability-descriptors |
-| 003 | [Normalized Document Shape](003-document-shape.md) | Accepted | 0 | — | document-shape, hash, canonicalization, rfc-8785, source-hashes, property-bag |
-| 004 | [Memory Sink Handles](004-memory-sink-handles.md) | Accepted | 0 | — | memory, memory-sink, provenance, sentinel-file, folder-default, separate-vault |
+| # | Title | Status | Date | Phase | Supersedes | Tags |
+|---|---|---|---|---|---|---|
+| 001 | [Document identity is opaque, URI-style](001-document-identity.md) | Accepted | — | 0 | — | identity, source-agnostic, uri, opaque-id |
+| 002 | [Source & Delivery Seams](002-adapter-seams.md) | Accepted | — | 0 | — | adapters, seams, source-connector, delivery-adapter, change-feed, capability-descriptors |
+| 003 | [Normalized Document Shape](003-document-shape.md) | Accepted | — | 0 | — | document-shape, hash, canonicalization, rfc-8785, source-hashes, property-bag |
+| 004 | [Memory Sink Handles](004-memory-sink-handles.md) | Accepted | — | 0 | — | memory, memory-sink, provenance, sentinel-file, folder-default, separate-vault |
+| 005 | [Brief Compile Strategy](005-brief-compile-strategy.md) | Accepted | — | 5 | — | brief, compile, llm-ladder, sampling, ollama |
+| 006 | [Task Contract DSL](006-task-contract-dsl.md) | Accepted | — | 6 | — | task-contracts, dsl, instantiate, describe, verbs, mcp |
+| 007 | [Contract Editor (Obsidian plugin + `.contract` JSON format)](007-contract-editor.md) | Accepted | 2026-05-19 | 7 | — | obsidian-plugin, contract-editor, svelte-flow, palette-canvas-inspector, vm-editor-state |
+
+**ADR-007 decision summary:** Variant C palette+canvas+inspector Obsidian plugin authoring `.contract` JSON emitted as canonical Phase 6 YAML; renderer Svelte Flow rather than jsoncanvas fork (upstream renderer does not exist — see ADR-007 §Pitfall 1).
 
 ## Open ADRs (v3 / Phase 10)
 
@@ -39,6 +44,15 @@ caching, capability discovery, etc.). They are parked here as the single
 visible parking lot for v3 work per D-22 — there is no separate tracking
 document. None of these ADRs may be written or merged until Phase 9's
 premise check passes (see `.planning/ROADMAP.md` §Phase 9 HARD GATE).
+
+> **Numbering note (2026-05-19):** the Open ADR numbers below were originally
+> assigned 005–018 as placeholders for v3 work. As of ADR-005 (Phase 5,
+> Accepted), ADR-006 (Phase 6, Accepted), and ADR-007 (Phase 7, Accepted),
+> numbers 005, 006, and 007 are taken by Accepted v2 ADRs. The placeholder
+> ADR titles for the Open v3 work below remain unchanged for grep stability,
+> but their **final assigned numbers will shift to 008+** when v3 Phase 10
+> actually writes them. The themes (identity stability, link resolution,
+> property equivalence, etc.) are unchanged; only the integer prefix moves.
 
 | # | Title | Status | Phase | Supersedes | Tags |
 |---|---|---|---|---|---|
