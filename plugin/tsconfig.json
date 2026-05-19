@@ -1,0 +1,15 @@
+{
+  "extends": "../tsconfig.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "outDir": "./dist",
+    "rootDir": ".",
+    "lib": ["ES2023", "DOM"],
+    "types": ["node"],
+    "allowJs": false,
+    "resolveJsonModule": true
+  },
+  "include": ["main.ts", "src/**/*.ts", "src/**/*.svelte", "tests/**/*.ts"],
+  "exclude": ["node_modules", "dist", "**/*.test.ts"]
+}
