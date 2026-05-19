@@ -414,9 +414,9 @@ log ""
 
 step "0/8  Choose version"
 
-# Default to 2.0.0-rc.2 (the latest prerelease published to npm under @next).
+# Default to 2.0.0-rc.3 (the latest prerelease published to npm under @next).
 # This constant is bumped whenever a new RC is cut.
-DEFAULT_V2_VERSION="2.0.0-rc.2"
+DEFAULT_V2_VERSION="2.0.0-rc.3"
 
 SELECTED_VERSION=""
 INSTALL_MODE="npm"
