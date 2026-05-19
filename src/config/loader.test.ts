@@ -377,3 +377,72 @@ describe("loadConfig — Phase 6 [contracts] block", () => {
     });
   });
 });
+
+/**
+ * Phase 7 / Plan 07-04 / D-MCP-SURFACE: `[plugin]` block.
+ *
+ * Backwards-compat invariant: every pre-Phase-7 config.toml parses identically
+ * with `config.plugin.enabled === false` injected. The default-OFF gate is the
+ * structural mechanism that keeps `evals/v1-baseline/tools-list.snapshot.json`
+ * byte-stable for non-plugin deployments (Phase 8 REL-08 ≤32-tool budget).
+ */
+describe("loadConfig — Phase 7 [plugin] block", () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "vm-config-plugin-"));
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  async function seed(toml: string): Promise<string> {
+    const path = join(tmpDir, "config.toml");
+    await writeFile(path, toml, "utf-8");
+    return path;
+  }
+
+  it("configs without [plugin] parse identically with plugin.enabled = false", async () => {
+    const path = await seed(
+      [
+        "[[vaults]]",
+        "name = 'atlas'",
+        "path = '/vaults/atlas'",
+      ].join("\n"),
+    );
+    const config = await loadConfig(path);
+    expect(config.plugin).toEqual({ enabled: false });
+  });
+
+  it("[plugin] enabled = true parses with plugin.enabled === true", async () => {
+    const path = await seed(
+      [
+        "[[vaults]]",
+        "name = 'atlas'",
+        "path = '/vaults/atlas'",
+        "",
+        "[plugin]",
+        "enabled = true",
+      ].join("\n"),
+    );
+    const config = await loadConfig(path);
+    expect(config.plugin.enabled).toBe(true);
+  });
+
+  it("[plugin] enabled = 'not-a-bool' is REJECTED by Zod validation", async () => {
+    const path = await seed(
+      [
+        "[plugin]",
+        "enabled = 'not-a-bool'",
+      ].join("\n"),
+    );
+    await expect(loadConfig(path)).rejects.toThrow();
+  });
+
+  it("missing config file (ENOENT) returns DEFAULT_CONFIG with plugin.enabled = false", async () => {
+    const path = join(tmpDir, "does-not-exist.toml");
+    const config = await loadConfig(path);
+    expect(config.plugin).toEqual({ enabled: false });
+  });
+});

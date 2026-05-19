@@ -111,6 +111,29 @@ const DEFAULT_CONTRACTS_CONFIG = {
   mcp_clients: {},
 } as const;
 
+/**
+ * Phase 7 / Plan 07-04 / D-MCP-SURFACE: `[plugin]` block.
+ *
+ * Single field for v2.0.0: `enabled` — gates the five plugin-control MCP tools
+ * (`set_runtime_config`, `resolve_secret`, `set_mcp_client`, `get_runtime_stats`,
+ * `trigger_reindex`). Default OFF preserves v1 tools-list snapshot stability
+ * (REL-08 ≤32-tool budget for non-plugin deployments).
+ *
+ * Backwards-compatible: configs without `[plugin]` resolve to
+ * `DEFAULT_PLUGIN_CONFIG` via `.optional().default(...)` at the AppConfigSchema
+ * attach site.
+ */
+const PluginConfigSchema = z.object({
+  enabled: z
+    .boolean()
+    .default(false)
+    .describe(
+      "D-MCP-SURFACE — gates the 5 plugin-control MCP tools (set_runtime_config, resolve_secret, set_mcp_client, get_runtime_stats, trigger_reindex). Default OFF preserves v1 tools-list snapshot stability per REL-08.",
+    ),
+});
+
+const DEFAULT_PLUGIN_CONFIG = { enabled: false } as const;
+
 // Phase 2: optional [memory] and [[memory_sinks]] blocks.
 //
 // The handle string is intentionally NOT validated against
@@ -140,6 +163,9 @@ const AppConfigSchema = z.object({
   // Phase 6 / ADR-006 §Decision 1. Backwards-compatible: configs without
   // `[contracts]` resolve to DEFAULT_CONTRACTS_CONFIG.
   contracts: ContractsConfigSchema.optional().default(DEFAULT_CONTRACTS_CONFIG),
+  // Phase 7 / Plan 07-04 / D-MCP-SURFACE. Backwards-compatible: configs
+  // without `[plugin]` resolve to DEFAULT_PLUGIN_CONFIG (enabled: false).
+  plugin: PluginConfigSchema.optional().default(DEFAULT_PLUGIN_CONFIG),
 });
 
 const DEFAULT_CONFIG: AppConfig = {
@@ -151,6 +177,7 @@ const DEFAULT_CONFIG: AppConfig = {
   vaults: [],
   memory_sinks: [],
   contracts: { ...DEFAULT_CONTRACTS_CONFIG },
+  plugin: { ...DEFAULT_PLUGIN_CONFIG },
 };
 
 export function configPath(): string {
@@ -197,6 +224,7 @@ export async function loadConfig(path: string = configPath()): Promise<AppConfig
     memory_sinks: sortSinksByPathSpecificity(validated.memory_sinks),
     brief: validated.brief,
     contracts: validated.contracts,
+    plugin: validated.plugin,
   };
 }
 

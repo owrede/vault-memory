@@ -110,6 +110,17 @@ export interface ContractsConfig {
   mcp_clients: Record<string, ContractsMcpClientConfig>;
 }
 
+/**
+ * Phase 7 / Plan 07-04 / D-MCP-SURFACE: `[plugin]` block (ADR-007).
+ *
+ * `enabled` gates the five plugin-control MCP tools (set_runtime_config,
+ * resolve_secret, set_mcp_client, get_runtime_stats, trigger_reindex).
+ * Default OFF preserves v1 tools-list snapshot byte-stability.
+ */
+export interface PluginConfig {
+  enabled: boolean;
+}
+
 export interface AppConfig {
   server: ServerConfig;
   vaults: VaultConfig[];
@@ -121,6 +132,8 @@ export interface AppConfig {
   brief?: BriefConfig;
   /** Phase 6: optional `[contracts]` block (ADR-006 §Decision 1). */
   contracts: ContractsConfig;
+  /** Phase 7: `[plugin]` block (ADR-007 §D-MCP-SURFACE). */
+  plugin: PluginConfig;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
