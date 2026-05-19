@@ -24,23 +24,40 @@ investigation/fix follow-up location.
   for other whole-word tokens), leaving substring matchers like
   `segment.com`, `track(`, `report(` unanchored.
 
-## Carried forward to plan 08-08
+## Deferred past v2.0.0 (post-release follow-ups)
 
 ### Plugin walkthrough screencast MP4 + thumbnail PNG
 
 - **Surfaced during:** plan 08-04, Tasks 1 + 2 (both `checkpoint:human-action`).
-- **Disposition:** Deferred to plan 08-08 (v2.0.0 cut), which owns the
-  GitHub Release asset upload anyway. Plan 08-04 landed the docs-only
+- **Initial disposition (08-04 → 08-08):** Plan 08-04 landed the docs-only
   Tasks 3 + 4 with the canonical Release URL pattern
   (`https://github.com/owrede/vault-memory/releases/download/v2.0.0/vault-memory-plugin-walkthrough.mp4`).
-- **Carryover work for 08-08:**
+  The MP4 + thumbnail were originally scheduled for 08-08 as a manual asset
+  upload to the v2.0.0 GitHub Release.
+- **Final disposition (decided 2026-05-19, post-08-07 verification):**
+  **DEFERRED PAST v2.0.0 entirely.** Plan 08-08 ships v2.0.0 without the
+  screencast assets to tighten the critical path. The canonical Release URL
+  in INSTALL.md and CONTRACT-EDITOR.md will be a dead link until the MP4
+  is uploaded; the in-repo thumbnail PNG path will also be absent. Both
+  are acceptable post-release gaps because:
+  - The `vm-install` skill (Phase 7 → Plan 07-11) only depends on
+    `vault-memory-plugin-v2.0.0.tar.gz` + `manifest.sha256` as Release
+    assets, not on the MP4. Skill functionality is unaffected.
+  - The README §What's new and §Architecture sections do not embed the
+    screencast (plan 08-02 did not add it). Only the plugin INSTALL and
+    CONTRACT-EDITOR docs link the eventual URL.
+  - GitHub renders broken `[![alt](thumb.png)](url)` markdown gracefully
+    (shows the alt text and a "play" badge) until the assets exist.
+- **Carryover work (post-v2.0.0):**
   - Record `vault-memory-plugin-walkthrough.mp4` (≤8 min, 1080p, D-13 storyboard).
   - Produce `docs/v2/plugin/screencast-thumbnail.png` (≤600px width, <200 KB).
-  - Upload MP4 as a Release asset; commit PNG to repo.
-- **Cross-link gap (also for 08-08):** README.md still says "deferred to Phase 8"
-  in the screencast section and does not yet link the thumbnail or MP4 URL —
-  plan 08-02 rewrote the README without adding the screencast block. Plan 08-08
-  should land the screencast block in README.md alongside the MP4 upload.
+  - `gh release upload v2.0.0 vault-memory-plugin-walkthrough.mp4` (manual).
+  - Commit thumbnail PNG to repo with `docs(plugin): add screencast thumbnail PNG`.
+- **Cross-link gap:** README.md still says "deferred to Phase 8" in the
+  screencast section if any was authored, and does not link the thumbnail
+  or MP4. Plan 08-02 rewrote the README without adding a screencast block,
+  so this is moot — the README has no broken screencast link. INSTALL.md
+  and CONTRACT-EDITOR.md will have broken links until the assets land.
 
 ## Open (non-blocking)
 
