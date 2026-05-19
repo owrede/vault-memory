@@ -257,10 +257,17 @@ Plans:
   4. `MIGRATION-V1-TO-V2.md` documents SDK 1.29 and Zod 4 major bumps for downstream library consumers; tool API delta is additive only (no breaking changes)
   5. Tool surface inventory is ≤32 tools (with MCP Resources promotion) or ≤40 tools (without) at v2.0.0 ship
 
-**Plans:** TBD — not yet planned
+**Plans:** 8 plans
 Plans:
 
-- TBD — run `/gsd:plan-phase 8` to populate this list
+- [ ] 08-01-PLAN.md — CHANGELOG backfill (Phase 5 + Phase 7) + REL-08 deprecation entries
+- [ ] 08-02-PLAN.md — README rewrite (6-section v2 pitch, ASCII architecture, Phase 9/v3 roadmap) + maintainer cold-read sign-off
+- [ ] 08-03-PLAN.md — docs/v2/MIGRATION-V1-TO-V2.md (SDK 1.29 + Zod 4 + verbatimModuleSyntax + tool API delta) + repo-root stub
+- [ ] 08-04-PLAN.md — Phase 7 screencast carryover (recording + thumbnail + plugin doc URL resolution)
+- [ ] 08-05-PLAN.md — REL-08 Resources promotion (5 tools to MCP Resources; new snapshot + dump-resources + smoketest)
+- [ ] 08-06-PLAN.md — Release infrastructure (scripts/release.mjs + CONTRIBUTING.md + publish.yml plugin-tarball extension)
+- [ ] 08-07-PLAN.md — Branch protection on main + RC-tag dry-run of publish.yml workflow
+- [ ] 08-08-PLAN.md — Cut v2.0.0 (sign-off doc + release.mjs + MP4 upload + vm-install live dry-run + maintainer signature)
 
 **Phase 7 carryovers** (must land in Phase 8):
 
