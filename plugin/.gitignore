@@ -1,0 +1,10 @@
+# esbuild outputs — produced by `npm run build` from main.ts + Svelte
+# components. The release tarball (Phase 7 / D-DIST-PRIMARY vm-install
+# skill) ships main.js + main.css from the GitHub Release asset, not
+# from the source tree.
+main.js
+main.css
+main.js.map
+
+# Plugin-specific build artifacts that may also be created
+dist/

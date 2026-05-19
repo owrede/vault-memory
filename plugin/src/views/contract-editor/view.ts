@@ -21,6 +21,7 @@
 import { TextFileView, type WorkspaceLeaf } from "obsidian";
 import { mount, unmount, type SvelteComponent } from "svelte";
 import CanvasPane from "./spike/canvas-pane.svelte";
+import type VaultMemoryPlugin from "../../../main.js";
 
 export const VIEW_TYPE_CONTRACT = "vault-memory-contract-editor";
 
@@ -61,8 +62,17 @@ export class ContractEditorView extends TextFileView {
   private currentJson: ContractFile | null = null;
   private svelteApp: SvelteComponent | null = null;
 
-  constructor(leaf: WorkspaceLeaf) {
+  /**
+   * The owning plugin instance, exposed publicly so subsequent plans
+   * (07-05 editor, 07-07 watcher, 07-08 chrome) can reach
+   * `this.plugin.mcpClient` and `this.plugin.settingsStore` without
+   * a workspace walk. Phase 7 / 07-03 wiring.
+   */
+  readonly plugin: VaultMemoryPlugin;
+
+  constructor(leaf: WorkspaceLeaf, plugin: VaultMemoryPlugin) {
     super(leaf);
+    this.plugin = plugin;
   }
 
   override getViewType(): string {
