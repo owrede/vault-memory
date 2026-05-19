@@ -7,6 +7,7 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
 ## Phases
 
 **Phase Numbering:**
+
 - Integer phases (0, 1, 2, ...): Planned milestone work
 - Decimal phases (2.1, 2.2): Reserved for urgent insertions (INSERTED)
 
@@ -26,17 +27,21 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
 ## Phase Details
 
 ### Phase 0: Foundation & decisions
+
 **Goal**: Lock ADRs, architecture docs, eval fixtures, regression baselines, and CI lints so every later phase builds on a stable, public substrate
 **Mode:** mvp
 **Depends on**: Nothing (first phase)
 **Requirements**: FND-01, FND-02, FND-03, FND-04, FND-05, FND-06, FND-07, FND-08, FND-09, FND-10, FND-11, FND-12, FND-13, FND-14
 **Success Criteria** (what must be TRUE):
+
   1. All ADRs (001–004) live at `docs/v2/adr/` and are committed to the public repo (not gitignored), with explicit Invariants + Examples sections on each
   2. ADR-003 hash-semantics amendment specifies `hash = digest(blocks-as-plain-text + canonical PropertyBag)` and chunk-level `source_hashes` schema; ADR-004 specifies folder-default sink with config-only separate-vault option
   3. Architecture, memory-contract, and agent-agnostic docs published under `docs/v2/`; ADR index page at `docs/v2/adr/README.md` lists every contested choice
   4. Eval fixture vault (`evals/fixtures/v2-test-vault/` — 50–100 notes, coherent narrative) and v1-baseline regression suite (`evals/v1-baseline/`) frozen; tool-snapshot tests pin `tools/list` JSON for all 23 v1 tools
   5. Adversarial-review sub-agent confirms a Phase 10 agent could implement Notion from ADRs 001–004 alone; fixture-privacy and no-telemetry CI lints gate CI; maintainer signs off on all Phase 0 docs
+
 **Plans**: 15 plans
+
 - [x] 00-01-bootstrap-PLAN.md — install `yaml@^2.9.0`, add `lint:check`/`eval:baseline`/`eval:snapshot` scripts, narrow `docs/dev/` gitignore, seed CHANGELOG `[Unreleased] → ### Documentation`
 - [x] 00-02-adr-001-vertical-slice-PLAN.md — MVP walking-skeleton: relocate ADR-001 via two-commit `git mv`+amend, add Invariants+Examples, seed `docs/v2/adr/README.md` index (proves the pattern for plans 03–05)
 - [x] 00-03-adr-002-adapter-seams-PLAN.md — relocate ADR-002 to `002-adapter-seams.md` (filename rewrite), amend with Invariants+Examples covering all three seam interfaces, append index row
@@ -54,17 +59,21 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
 - [x] 00-15-sign-off-PLAN.md — author `docs/v2/SIGN-OFF.md` (FND-01..14 checklist with resolving commit SHAs), refine CHANGELOG, capture maintainer PR approval (D-17)
 
 ### Phase 1: Adapter extraction & tech-debt-up
+
 **Goal**: Stand up `SourceConnector` / `DeliveryAdapter` / `ChangeFeed` adapter seams with `obsidian-fs` as the v2 implementation, bundle MCP SDK 1.29 + Zod 4 upgrades, and prove client-agnosticism — all without user-visible behavior change
 **Mode:** mvp
 **Depends on**: Phase 0
 **Requirements**: ADP-01, ADP-02, ADP-03, ADP-04, ADP-05, ADP-06, ADP-07, ADP-08, ADP-09, ADP-10, ADP-11, ADP-12, ADP-13, ADP-14, ADP-15
 **Success Criteria** (what must be TRUE):
+
   1. All 324 v1 tests still pass and the v1-baseline eval regression suite is still green — Phase 1 is purely architectural with no user-visible change
   2. CI greps return zero hits outside adapter modules for `chokidar`, `gray-matter`, `path.join`/`path.resolve`, `fs.*`, `claude`/`Claude`, `obsidian://`, and bare `.md` literals; branded `DocId` nominal type rejects raw `string` at compile time
   3. `scripts/smoketest-non-claude.mjs` passes end-to-end against MCP Inspector or another non-Claude MCP client; README leads with "any MCP-aware agent" framing
   4. `@modelcontextprotocol/sdk` is on `^1.29.x` and `zod` is on `^4.x`; tool registrations migrated to `registerTool(...)`; Standard Schema wiring works
   5. Stub-adapter conformance test suite (pulled forward from brief Phase 10) is green; doc_uri dual-column migration (Strategy A) applied and backfilled
+
 **Plans**: 6 plans
+
 - [x] 01-01-PLAN.md — Type surface + branded DocId + adapter directory bootstrap (ADP-04, ADP-05, partial ADP-06)
 - [x] 01-02-PLAN.md — doc_uri dual-column migration, Strategy A (v7 additive + v8 backfill) (ADP-07)
 - [x] 01-03-PLAN.md — Source adapter extraction + `obsidian-fs` source impl + StubSource + conformance (ADP-01, partial ADP-06, partial ADP-13)
@@ -73,17 +82,21 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
 - [x] 01-06-PLAN.md — `scripts/lint-adapters.sh` + Inspector smoketest + AGENT_AGNOSTIC_AUDIT.md + README "any MCP-aware agent" rewrite + CI wiring + final phase-gate verification (ADP-10, ADP-11, ADP-12, ADP-14, ADP-15)
 
 ### Phase 2: Memory namespace & provenance contract
+
 **Goal**: Establish the single non-negotiable safety invariant — agent writes go only to a labeled `MemorySink` with mandatory provenance properties, centralized at the `DeliveryAdapter.write()` chokepoint
 **Mode:** mvp
 **Depends on**: Phase 1
 **Requirements**: MEM-01, MEM-02, MEM-03, MEM-04, MEM-05, MEM-06, MEM-07, MEM-08, MEM-09, MEM-10, MEM-11, MEM-12
 **Success Criteria** (what must be TRUE):
+
   1. A naive `write_note` call targeting a memory-sink-resolved path is rejected with a clear, structured error message (verified by targeted test); `write_note`/`update_frontmatter` guards refuse memory-sink targets and refuse `source: agent` outside any configured sink
   2. `record_observation`, `recall`, and `supersede` MCP tools write/read labeled documents via the `DeliveryAdapter`; provenance validator (Guard A + Guard B) centralizes at `DeliveryAdapter.write()`, not at tool handlers
   3. `MemorySink` handle parser (`obsidian-fs://_memory/`) is the only resolver of sink-as-path; `.memory-sink` sentinel file prevents resolving against folders that lack it
   4. List-style memory operations (`memory_stats`, `list_sinks`) promoted to MCP Resources, cutting the v2.0.0 tool surface count; `audit_log` distinctly flags memory-sink writes
   5. ADR-004 amendment (folder-default vs separate-vault) committed before implementation; eval fixture includes a 20-document `_memory/` subset with diverse provenance labels
+
 **Plans**: 9 plans (after revision: 02-03 was split into 02-03 + 02-03b to keep validator chokepoint focused and isolate v1-entry-point guards / bootstrap wiring)
+
 - [x] 02-01-PLAN.md — ADR-004 amendment + MEMORY_CONTRACT alignment (MEM-12, doc-only) — wave 0
 - [x] 02-02-PLAN.md — MemorySink runtime substrate (handle parser, registry, contract loader, sentinel, `decomposeDocId`, `pathInSink`/`joinVaultPath` helpers) (MEM-01, MEM-05, MEM-06) — wave 0
 - [x] 02-03-PLAN.md — Centralized provenance validator at the delivery seam + conformance cases 11–18 / sentinel cases 19–21 (MEM-05, MEM-06) — wave 1
@@ -95,17 +108,21 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
 - [x] 02-08-PLAN.md — Phase 2 gate: full verification + traceability + CHANGELOG/STATE (final checkpoint) — wave 5
 
 ### Phase 3: Bundles + authority/staleness — COMPLETE (2026-05-17)
+
 **Goal**: Deliver document-tree retrieval (bundles, outlines, sections, dossiers) with citation packets on every result, plus authority/staleness ranking signals — proven source-neutral against a stub adapter
 **Mode:** mvp
 **Depends on**: Phase 2
 **Requirements**: ASM-01, ASM-02, ASM-03, ASM-04, ASM-05, ASM-06, ASM-07, ASM-08, ASM-09, ASM-10, ASM-11, ASM-12, ASM-13
 **Success Criteria** (what must be TRUE):
+
   1. `get_document_bundle`, `get_outline`, `search_sections`, and `assemble_dossier` return results with a citation packet `{doc_id, source_handle, title, heading_path, mtime, hash, display_url}` on every item; ≥5 dossier eval queries pass with ≥0.8 precision/recall — **MET** (8 dossier queries shipped in `_queries/dossier.yaml`; all four tools return 8-field citation packets incl. REQUIRED `properties`)
   2. v1 default behavior is unchanged when no weights/filters are supplied — re-running the v1-baseline eval set produces identical results — **MET** (invariance pin in `hybrid.rescore.test.ts`; `baseline.test.ts` green; 23 v1 tool entries byte-identical)
   3. `search_hybrid` accepts optional `recency_weight`, `authority_weight`, and `superseded` filter; eval scenarios with stale-vs-fresh duplicates rank fresh higher when `recency_weight > 0`; `status: superseded` documents are hidden by default — **MET** (`recency.yaml` ASM-11 fixture; SQL-level filter via `notes_status` partial index)
   4. Stubbed second adapter (hard-coded `Document` objects) passes the same eval suite as `obsidian-fs` — proves source-neutrality before Phase 9 gate — **MET** (`src/adapters/stub/assembly-fixture.ts` 8-doc fixture + 10 source-neutrality conformance tests in `conformance.test.ts`; per RESEARCH §7 P/R evals run on obsidian-fs only, contract conformance runs on both)
   5. All search/bundle results carry `mtime`, `status` (if present), and `superseded_by` (if present); list-style assembly ops promoted to MCP Resources where applicable — **MET** (`mtime` is REQUIRED on every citation packet; `status` + `superseded_by` surfaced via `withBundleAnchorExtras` / `withDossierExtras`; ASM-13 disposition: no MVP candidates found, re-evaluate at Phase 5 `list_briefs` + Phase 6 `list_contracts` — see `docs/v2/PHASE-3-SIGN-OFF.md`)
+
 **Plans**: 7 plans
+
 - [x] 03-01-PLAN.md — Section identity substrate (migration 010, sections table, anchor algorithm, indexer hook)
 - [x] 03-02-PLAN.md — `get_outline` MCP tool + assembly module skeleton
 - [x] 03-03-PLAN.md — `search_sections` MCP tool (chunk-to-section promotion over the v1 hybrid pipeline)
@@ -115,16 +132,20 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
 - [x] 03-07-PLAN.md — Conformance + source-neutrality proof + phase sign-off
 
 ### Phase 4: Graph-as-retrieval — COMPLETE (2026-05-17)
+
 **Goal**: Promote backlinks/forward links from navigation tools to retrieval expansion via typed-edge graph traversal and community clustering, enabling Phase 5 brief compilation to use graph-driven source discovery
 **Mode:** mvp
 **Depends on**: Phase 3
 **Requirements**: GRA-01, GRA-02, GRA-03, GRA-04, GRA-05
 **Success Criteria** (what must be TRUE):
+
   1. `expand({seed_doc_ids, hops, edge_types?, filter_properties?})` returns typed-edge neighborhoods with metadata; `search_hybrid` accepts `expand: {hops: 1}` for auto-expansion of top-K results — **MET** (`expand` MCP tool shipped per plan 04-03 with shortest-path `via` dedup + `_memory/` opacity; `search_hybrid({expand: {hops, direction?, edge_types?}})` shipped per plan 04-04 as a strictly additive nested param; per-vault BFS isolation enforced at the `expand()` boundary; pinned by `src/graph/expand.integration.test.ts` + `src/search/hybrid-expand.integration.test.ts`)
   2. `cluster({query | seed_doc_ids, method: "edge-community"})` produces deterministic cluster summaries per fixture; opt-in/feature-flagged if computation is slow — **MET** (`cluster` MCP tool shipped per plan 04-05 via `graphology` + `graphology-communities-louvain` + `seedrandom`; D-12 determinism enforced at three control points (lexicographic DocId sort + seeded `rng` + smallest-member `cluster_id`); 5000-node hard cap with `force: true` override; pinned by `_queries/cluster.yaml` byte-snapshot)
   3. Edges carry an explicit `type` field per ADR-003 — schema supports `wikilink`, `frontmatter-ref`, `mention`, and `hyperlink` types — **MET** (migration 011 ships the `edges` table with `CHECK(type IN (...))` per plan 04-01; unified `extractAllEdges` extracts all four types in a single parse pass per plan 04-02; the v2.0.0-pinned `relation: "wikilink"` on assembly tools is now `relation: EdgeType`; `PHASE-4-WIDEN` markers retired)
   4. Eval fixture includes ≥5 "find me everything related to X" queries that are answered correctly by expansion (precision/recall ≥0.8) — **MET** (`_queries/expand.yaml` ships 8 hand-curated queries covering all four edge types, mixed-type traversal at hops 1 and 2, `_memory/` opacity, and the unknown-seed warning path; all eight queries clear `min_precision >= 0.8 / min_recall >= 0.8`; plus 3 `_queries/search-hybrid-with-expand.yaml` composition queries; plus `_queries/cluster.yaml` determinism snapshot; plus 6 cross-adapter conformance cases — see `docs/v2/PHASE-4-SIGN-OFF.md`)
+
 **Plans**: 7 plans
+
 - [x] 04-01-edges-substrate-PLAN.md — migration 011 + EdgesQueries + Database wiring + v1 graph tools additive `type` (GRA-04 substrate)
 - [x] 04-02-edge-extractors-PLAN.md — indexer extracts mention/frontmatter-ref/hyperlink in a single per-note parse pass (GRA-04 indexer)
 - [x] 04-03-expand-tool-PLAN.md — `expand()` BFS over typed edges with shortest-path `via` dedup + `_memory` opacity + MCP tool (GRA-01)
@@ -134,84 +155,129 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
 - [x] 04-07-phase-gate-PLAN.md — tool-list snapshot regen + full eval + CHANGELOG + STATE + ROADMAP + sign-off doc
 
 ### Phase 5: Compiled brief layer
+
 **Status:** ✅ shipped 2026-05-18 — 34 tools + 3 Resources; all 11 BRF requirements green; signature differentiator operational. See `docs/v2/PHASE-5-SIGN-OFF.md`.
 **Goal**: Defeat the 85%-rediscovery failure mode by shipping compiled briefs as first-class `Document`s in `_memory/_briefs/` with deterministic source-hash staleness propagation — vault-memory's signature v2 differentiator
 **Mode:** mvp
 **Depends on**: Phase 4
 **Requirements**: BRF-01, BRF-02, BRF-03, BRF-04, BRF-05, BRF-06, BRF-07, BRF-08, BRF-09, BRF-10, BRF-11
 **Success Criteria** (what must be TRUE):
+
   1. After compiling a brief for a 20-document project, modifying one source flips the brief to `stale: true` within one change-feed cycle (verified by eval); the same scenario passes when the stub adapter is the change-feed source — proving source-neutrality — **MET** (`_queries/briefs-curated.yaml` + `_queries/briefs-staleness-stub.yaml`; `conformance.test.ts` BRF-11 block runs 4 cases × 2 adapters)
   2. `compile_brief` resolves its LLM strategy via the documented ladder MCP Sampling → local Ollama → caller-passed text (per the Phase 5 ADR); vault-memory never bundles a remote LLM SDK — **MET** (ADR-005 + `src/brief/llm-ladder.ts`; `bash scripts/lint-adapters.sh` green)
   3. `get_brief({target, max_age_days?, allow_stale?})` returns a fresh brief, or `stale: true` with the changed-source list, or null forcing recompile; `list_briefs` is exposed as an MCP Resource (not Tool) — **MET** (`src/brief/get.ts` D-13 + `src/brief/resources.ts` at `vault-memory://briefs`)
   4. Staleness daemon subscribes via `ChangeFeed.subscribe()`, runs single-owner enforced by `~/.vault-memory/locks/<vault>.lock`, replays missed events on startup, and preserves brief→source links across rename events — **MET** (`src/brief/daemon.ts` + `src/brief/lock.ts`; `daemon.test.ts` + conformance BRF-11 block)
   5. Briefs are `Document`s in `_memory/_briefs/` with properties `compiled_from`, `compiled_at`, chunk-level `source_hashes`, `confidence`, `target`, `purpose`; brief writes route through `DeliveryAdapter` — **MET** (`src/brief/compile.ts` + `default-brief-v1` MemoryContract; `compile.test.ts` Test 13 YAML round-trip)
+
 **Plans**:
+
 - [x] 05-01-foundations-PLAN.md — ADR-005 + migration 013 + ChunkId brand + source-hashes helpers + `default-brief-v1` contract (BRF-01, BRF-02)
 - [x] 05-02-compile-and-get-PLAN.md — OllamaClient.chat() + LLM ladder (D-10) + body validator (D-11) + `compile_brief` (D-12 supersede) + `get_brief` (D-13) + `briefs-curated.yaml` (BRF-03, BRF-04, BRF-10)
 - [x] 05-03-staleness-daemon-PLAN.md — Lockfile + `BriefStalenessDaemon` (startup scan + ChangeFeed subscribe + rename grace) + server daemon bootstrap + cluster-driven brief eval (BRF-05, BRF-06, BRF-07, BRF-08)
 - [x] 05-04-phase-gate-PLAN.md — `list_briefs` MCP Resource + cross-adapter conformance + `briefs-staleness-stub.yaml` + tools-list snapshot regen + PHASE-5-SIGN-OFF + ROADMAP flip (BRF-09, BRF-11)
 
 ### Phase 6: Task contract DSL
+
 **Goal**: Ship declarative task contracts as YAML documents (Zod-validated) in `_contracts/`, addressable by name, instantiable via MCP, with handle-based source/sink portability that sets the v3 multi-source template
 **Mode:** mvp
 **Depends on**: Phase 5
 **Requirements**: CON-01, CON-02, CON-03, CON-04, CON-05, CON-06, CON-07, CON-08, CON-09, CON-10, CON-11, CON-12
 **Success Criteria** (what must be TRUE):
+
   1. A non-Claude MCP client can list contracts via `list_contracts` (MCP Resource), describe one via `describe_contract`, and successfully run `instantiate_contract` against the fixture vault
   2. Three reference contracts ship and pass eval scenarios with expected output shape: `meeting-prep`, `project-status`, `code-review-brief`
   3. Override mechanism is proven — pointing a contract at the stub connector via `source_overrides` yields the same shaped output as `obsidian-fs`, demonstrating handle-based portability
   4. Contract schema (`version`, `name`, `inputs`, `sources`, `assembly`, `output_shape`, `write_back`) is Zod-4 validated; variable handle pattern (`{{default_source}}`) works in all reference contracts; comments are preserved on round-trip
   5. Phase 6 ADR documents the Tools vs Prompts decision; `yaml ^2.6` is the only net-new runtime dependency
+
 **Plans:** 4/4 plans complete
 Plans:
+
 - [x] 06-01-foundations-PLAN.md — ADR-006 + migration 014 contract_audit + [contracts] config block + type catalog + $ref resolver + buildInputSchema + ContractRegistry + slug + Zod ContractFileSchema + Wave-0 stubs
 - [x] 06-02-loader-registry-hot-reload-PLAN.md — startContractRegistry (boot scan + ChangeFeed hot reload per D-LOAD) + syncAutoRegistered dynamic tool registration (D-A1) + register_contracts_as_tools tool + snapshot regen (34 -> 35)
 - [x] 06-03-instantiate-describe-verbs-PLAN.md — resolveTemplate (D-A2c) + PeerMcpRegistry (D-A2a peer-MCP, Pitfall F4) + verbDispatcher (11 baseline + literal + mcp:// with Q-TIMEOUT) + instantiateContract orchestrator (CON-06, all 11 InstantiateError reasons) + describeContract (CON-05, Q-DESCRIBE) + snapshot regen (35 -> 37)
 - [x] 06-04-reference-contracts-evals-gate-PLAN.md — 3 reference contracts (CON-07) + 4 eval scenarios (CON-08, CON-10) + stub-parity conformance + non-Claude smoketest extension (CON-09) + list_contracts & list_contract_verbs MCP Resources (CON-04, D-A2b) + PHASE-6-SIGN-OFF + CHANGELOG + ROADMAP checkbox
 
 ### Phase 7: vault-memory Obsidian plugin (contract editor + chrome)
+
 **Goal**: Ship an Obsidian plugin (`vault-memory`) that delivers a structured visual editor for Phase 6 task contracts via a custom `.contract` file format and a forked jsoncanvas.org renderer, plus the surrounding chrome — settings panel, key-ring–backed secrets (Obsidian safeStorage / Schlüsselbund), manual reindex trigger, basic stats, and connector management UI — making the v2.0.0 Agentic Knowledge Layer discoverable and operable from inside Obsidian.
 **Mode:** mvp
 **Depends on**: Phase 6
 **Requirements**: CAN-01, CAN-02, CAN-03, CAN-04, CAN-05, CAN-06, CAN-07, CAN-08, CAN-09, CAN-10, PLG-01, PLG-02, PLG-03, PLG-04, PLG-05
 **Success Criteria** (what must be TRUE):
+
   1. Obsidian plugin scaffolded and installable (community-plugin layout + sideload-capable), registering a custom view for the `.contract` file extension; opening a `.contract` file in Obsidian launches the editor
   2. Visual contract editor (Variant C — palette + canvas + properties inspector) renders/edits the custom `.contract` JSON format and emits a valid Phase 6 YAML contract on save; round-trip `.contract` → `.yaml` → `.contract` is semantically equivalent after canonicalization; three reference `.contract` files ship in `examples/contracts/` matching the three Phase 6 reference contracts (meeting-prep, project-status, code-review-brief)
   3. Plugin chrome ships in v2.0.0: settings panel exposing core vault-memory tunables (Ollama URL, embedding model, indexer config), key-ring–backed secret storage for MCP/cloud credentials via Obsidian safeStorage, manual reindex trigger (full + per-vault) with progress feedback, read-only stats panel (index size, last-index timestamp, model dimensions, audit_log counts), and connector management UI for peer MCP clients
   4. Watcher reuses v1 `SuppressionSet` (per CAN-08) to hot-reload `_contracts/*.yaml` into the Phase 6 `ContractRegistry` without recompile loops; `.yaml` emission by the plugin and `.yaml` re-read by the server are serialized through the suppression gate
   5. Pre-implementation spike (jsoncanvas-fork viability) lands as ADR + working prototype: forks the jsoncanvas.org renderer (license verified MIT-compatible), demonstrates one reference contract rendered in a real Obsidian plugin view, decides go/no-go on the fork before bulk editor work begins; documentation + screencast walkthrough cover plugin install, editor usage, settings, secrets, and one end-to-end contract authoring flow
-**Plans:** TBD — not yet planned
+
+**Plans:** 12 plans
 Plans:
-- TBD — run `/gsd:plan-phase 7` to populate this list
+**Wave 1**
+
+- [ ] 07-01-PLAN.md — Spike + ADR 007 + plugin skeleton + meeting-prep prototype (CAN-10; jsoncanvas-fork rescoped to @xyflow/svelte; blocking human go/no-go gate)
+
+**Wave 2** *(blocked on Wave 1 completion)*
+
+- [ ] 07-02-PLAN.md — ContractDocumentSchema + pure-TS round-trip codec (canonicalize, editor-state-comment) (CAN-01, CAN-02, CAN-07)
+- [ ] 07-03-PLAN.md — Plugin lifecycle: SettingsStore + VaultMemoryMcpClient + settings-tab skeleton + missing-CLI banner (CAN-01, CAN-05)
+- [ ] 07-04-PLAN.md — [plugin] config block + 5 plugin-control MCP tools (set_runtime_config, resolve_secret, set_mcp_client, get_runtime_stats, trigger_reindex) gated default-OFF (PLG-01..PLG-05 server half; preserves v1 tools-list snapshot)
+
+**Wave 3** *(blocked on Wave 2 completion)*
+
+- [ ] 07-05-PLAN.md — Variant C editor view: palette + Svelte Flow canvas + Zod-derived inspector forms (CAN-01, CAN-02, CAN-03, CAN-04, CAN-05)
+- [ ] 07-06-PLAN.md — 3 reference .contract files + CAN-07 round-trip acceptance test (CAN-06, CAN-07)
+- [ ] 07-08-PLAN.md — Settings tab + safeStorage-backed secrets panel (PLG-01, PLG-02)
+- [ ] 07-09-PLAN.md — Chrome ItemView with Reindex + Stats panels via MCP progress notifications (PLG-03, PLG-04)
+
+**Wave 4** *(blocked on Wave 3 completion)*
+
+- [ ] 07-07-PLAN.md — SuppressionSet hash extension + Phase 6 loader consume() + suppress_contract_write tool + plugin ReloadNotifier (CAN-08)
+- [ ] 07-10-PLAN.md — Connectors panel + ${secret:name} resolver service (PLG-05)
+
+**Wave 5** *(blocked on Wave 4 completion)*
+
+- [ ] 07-11-PLAN.md — vm-install + vm-update skills consuming GitHub Releases tarballs with SHA-256 verification (CAN-09 distribution half)
+- [ ] 07-12-PLAN.md — Five plugin docs (INSTALL/SETTINGS/SECRETS/CONTRACT-EDITOR/CONNECTORS) + README plugin section + screencast (CAN-09 docs half)
+
 **UI hint**: yes
 
 ### Phase 8: Polish, eval suite, v2.0.0 release
+
 **Goal**: Cut v2.0.0 — full eval suite in CI, README rewritten around the new pitch, migration guide for v1 users, npm publish; tool surface inventory within the agreed budget
 **Mode:** mvp
 **Depends on**: Phase 7
 **Requirements**: REL-01, REL-02, REL-03, REL-04, REL-05, REL-06, REL-07, REL-08, REL-09
 **Success Criteria** (what must be TRUE):
+
   1. v2.0.0 git tag exists, CI auto-creates the GitHub Release, and `npm publish` has completed successfully
   2. Full eval suite (v1-baseline + v2 fixtures + stub-adapter conformance) runs in CI and is required for merge; CHANGELOG curated lists every user-visible v2 change
   3. README rewritten around the new pitch ("agentic knowledge layer over Obsidian; more sources coming"); Roadmap section names Phase 9/v3 explicitly; maintainer signs off on README
   4. `MIGRATION-V1-TO-V2.md` documents SDK 1.29 and Zod 4 major bumps for downstream library consumers; tool API delta is additive only (no breaking changes)
   5. Tool surface inventory is ≤32 tools (with MCP Resources promotion) or ≤40 tools (without) at v2.0.0 ship
+
 **Plans:** TBD — not yet planned
 Plans:
+
 - TBD — run `/gsd:plan-phase 8` to populate this list
 
 ### Phase 9: Pre-Phase-10 premise check (HARD GATE)
+
 **Goal**: Verify that the architectural premise for the v3 multi-source line still holds — adapter seams unbroken, ADRs unviolated, conformance suite green, capability descriptors well-tested — before any Notion code is written
 **Mode:** mvp
 **Depends on**: Phase 8
 **Requirements**: GAT-01, GAT-02, GAT-03, GAT-04, GAT-05
 **Success Criteria** (what must be TRUE):
+
   1. All Phase 1 CI greps return zero hits on `main` (chokidar, gray-matter, paths, `Claude`, `obsidian://`, `.md` literals outside adapters) — verified by gate script
   2. Adversarial-review sub-agent confirms ADRs 001–004 remain unviolated by code shipped in Phases 2–8; any findings are closed before sign-off
   3. Stub-adapter conformance suite is green on `main`; capability-descriptor test coverage meets the agreed threshold for plugin-architecture promotion
   4. Maintainer signs off explicitly: Phase 10 (v3 Notion connector work) is cleared to begin; without this sign-off, no v3 code is written
+
 **Plans:** TBD — not yet planned
 Plans:
+
 - TBD — run `/gsd:plan-phase 9` to populate this list
 
 ## Deployment model — load-bearing assumption for all phases
@@ -234,26 +300,31 @@ The following work is **out of v2 scope** and tracked for the v3.0.0 line. It is
 **v3.0.0 preserves the single-user-runtime model.** Everything in v3 is about widening the *storage substrate* (more source types, more delivery targets) — never about sharing the runtime between users. Multi-user is a v4 question (see below).
 
 ### Phase 10 (v3.0.0): Notion connector & multi-source proof
+
 **Status**: Deferred — gated by Phase 9 sign-off
 **Goal (sketch)**: Ship the first non-Obsidian source/delivery/change-feed adapter (Notion), promoting the adapter seams from "interfaces with one implementation" to a real plugin architecture; resolve the 14 open ADRs (005–01x) on identity stability, link resolution, property equivalence, granularity, write semantics, auth, watch, rate limits, embedding strategy, cross-source memory, caching, sync, Notion sinks, and capability discovery
 **Tracked requirements (v3, not v2)**: NOT-01 through NOT-07 (Notion connector); DMN-01 through DMN-03 (MCP daemon mode, v2.1.x or v3.0.0); TPC-01 through TPC-03 (third-party connectors, post-v3)
 **Premise check**: Phase 9 of this roadmap. No v3 code is written until Phase 9 passes.
 
 ### Phase 11 (v3.x, IDEA — not a decision): `postgres-fs` storage adapter
+
 **Status**: Idea — not committed; surfaces a path, does not lock it in
 **Why it's listed here:** The adapter seams Phase 1 introduced (`SourceConnector` / `DeliveryAdapter` / `ChangeFeed`) make this technically additive. If a power user's vault grows past what local SQLite comfortably indexes (rough mental model: 100k+ notes, multi-GB embeddings), or if a user wants their vault-memory state backed by hosted Postgres (Supabase, Neon, RDS) for backup / cross-device availability, a `postgres-fs` adapter would let them swap storage without rewriting the retrieval layer.
 
 **What it would (probably) ship:**
+
 - `src/adapters/source/postgres-fs.ts` reading Obsidian vault files but indexing into Postgres (`pgvector` for embeddings, `pg_trgm` or `pg_search`/ParadeDB for BM25, native B-tree indexes for the edges/brief_sources reverse-index tables)
 - `src/adapters/delivery/postgres-fs.ts` and `src/adapters/change-feed/postgres-fs.ts` — same seam contracts, Postgres-backed
 - A migration tool moving an existing SQLite vault DB to Postgres (one-shot, additive — SQLite remains the default)
 
 **Explicit non-goals for v3.x:**
+
 - **Still single-user-runtime.** A `postgres-fs` adapter does not share runtime between users. Each user connects their `vault-memory serve` to their own Postgres database (or their own schema in a shared one). No auth, no ACL, no row-level security in v3.
 - **Not "Ghost.build" or any other agent-DB SaaS.** Evaluated 2026-05-18 and rejected: cloud-only, no retrieval primitives, no local-first path, violates the v2 brand constraint. `postgres-fs` is a *storage adapter*, not a managed service.
 - **Not pgvector evangelism.** SQLite + sqlite-vec stays the default. Postgres is an option for users who need it.
 
 **Open ADRs (v3 territory, do not author until premise check passes):**
+
 - ADR-PGS-01 — connection model (per-user-per-vault DB? shared schema-per-user? cloud-hosted vs self-hosted?)
 - ADR-PGS-02 — vector extension choice (`pgvector` baseline vs `pgvectorscale` for scale)
 - ADR-PGS-03 — BM25 path (`pg_trgm` good-enough vs ParadeDB `pg_search` for parity with SQLite FTS5)

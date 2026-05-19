@@ -806,32 +806,32 @@ describe("CAN-07 round-trip", () => {
 
 ---
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Should `set_runtime_config` apply settings atomically or per-key?**
    - What we know: Settings UI lets the user change multiple keys then click Save; ideal semantics is "all-or-nothing." Hot-swap-eligible vs restart-required keys differ.
    - What's unclear: Whether the MCP tool accepts a single key + value (simple) or a partial settings object (atomic).
-   - Recommendation: **Per-key tool, plugin batches client-side.** Each setting change becomes one tool call; if any fails, the plugin rolls back the UI. Simpler tool surface; matches how Phase 6 `set_mcp_client` is shaped.
+   - RESOLVED: **Per-key tool, plugin batches client-side.** Each setting change becomes one tool call; if any fails, the plugin rolls back the UI. Simpler tool surface; matches how Phase 6 `set_mcp_client` is shaped.
 
 2. **Is the `vm-editor-state` base64 comment block enough, or do we also need a `vmFormatVersion` field in the YAML?**
    - What we know: `vmFormatVersion: 1` lives in the `.contract` JSON; the YAML is the build artifact.
    - What's unclear: If the YAML is the only artifact a non-plugin user ever sees, do we need a way to detect "this YAML was last touched by a plugin newer than mine"?
-   - Recommendation: **Yes — include `vmFormatVersion` in the base64-encoded editor state.** No YAML body changes; future-proof for plugin v2 → v3 migrations.
+   - RESOLVED: **Yes — include `vmFormatVersion` in the base64-encoded editor state.** No YAML body changes; future-proof for plugin v2 → v3 migrations.
 
 3. **Should the plugin embed `src/contracts/schema.ts` Zod directly or fetch it via an MCP tool?**
    - What we know: Phase 6 schema is canonical; the plugin must validate `.contract` and `.yaml` against it.
    - What's unclear: Embedding the schema means a dual-publish concern (server + plugin must stay in lock-step); fetching it via MCP means the plugin can't validate offline.
-   - Recommendation: **Embed via a shared workspace package or direct file import** — `plugin/src/shared-types.ts` does `import { ContractFileSchema } from "../../src/contracts/schema.js"`. Plan 07-spike confirms whether the workspace is set up as an npm workspace or as a relative-import monorepo. Either way, version skew is enforced at build time: if the plugin's bundled schema is older than the server's, the plugin's `.yaml` emissions may fail server-side validation — explicit error, no silent corruption.
+   - RESOLVED: **Embed via a shared workspace package or direct file import** — `plugin/src/shared-types.ts` does `import { ContractFileSchema } from "../../src/contracts/schema.js"`. Plan 07-spike confirms whether the workspace is set up as an npm workspace or as a relative-import monorepo. Either way, version skew is enforced at build time: if the plugin's bundled schema is older than the server's, the plugin's `.yaml` emissions may fail server-side validation — explicit error, no silent corruption.
 
 4. **How does the spike validate the jsoncanvas-fork question once it's rescoped to Svelte Flow?**
    - What we know: ADR 007 is the artifact; a working prototype rendering one reference contract is the gate.
    - What's unclear: With the rescoping, the success criteria become "Svelte Flow wired into a TextFileView renders `meeting-prep.contract` and supports add-node / connect-edge / delete-edge." The deliverable changes; the gate is still real.
-   - Recommendation: Plan 07-spike rewrites the CAN-10 success criteria explicitly. ADR 007 records why the rescoping happened (Pitfall 4 in this research).
+   - RESOLVED: Plan 07-spike rewrites the CAN-10 success criteria explicitly. ADR 007 records why the rescoping happened (Pitfall 4 in this research).
 
 5. **What happens if the plugin is installed before the user has run `vm-install`?**
    - What we know: The plugin needs the `vault-memory` CLI to spawn `serve`.
    - What's unclear: Whether the plugin should detect a missing CLI and prompt to run `vm-install` from a chat skill, or silently fail with a clear error.
-   - Recommendation: **Plugin detects missing CLI, surfaces a banner "vault-memory CLI not found — run /vm-install in Claude Code to set up."** No automatic install; user must run the skill explicitly. This sidesteps the "plugin shouldn't install system software" anti-pattern.
+   - RESOLVED: **Plugin detects missing CLI, surfaces a banner "vault-memory CLI not found — run /vm-install in Claude Code to set up."** No automatic install; user must run the skill explicitly. This sidesteps the "plugin shouldn't install system software" anti-pattern.
 
 ---
 
