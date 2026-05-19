@@ -22,12 +22,26 @@
  *   1. Pre-flight   — validate args, clean tree, on main, non-empty Unreleased.
  *   2. Test gate    — `npm test` (fail-fast via stdio: "inherit").
  *   3. Version bump — `npm version X.Y.Z --no-git-tag-version`.
- *   4. CHANGELOG    — rename `## [Unreleased]` → `## [X.Y.Z] — YYYY-MM-DD`.
+ *   4. CHANGELOG    — stable releases rename `## [Unreleased]` → `## [X.Y.Z]`.
+ *                     Prereleases INSERT a `## [X.Y.Z-pre] — YYYY-MM-DD`
+ *                     snapshot above Unreleased without renaming it, so
+ *                     Unreleased keeps accumulating through subsequent
+ *                     prereleases until the final stable cut.
  *   5. Commit + tag + atomic push (`git push --follow-tags`).
- *   6. Confirmation — print what happens next + manual MP4 reminder.
+ *   6. Confirmation — print what happens next.
+ *
+ * Prerelease behavior (e.g. 2.0.0-rc.1):
+ *   - publish.yml's `npm publish` step picks up the prerelease suffix and
+ *     publishes under the `next` dist-tag (configured in publish.yml itself,
+ *     not in this script). `latest` is left untouched, so users running
+ *     `npm install -g @owrede/vault-memory` (no version pin) still get the
+ *     stable release.
+ *   - GitHub flags the release as "Pre-release" automatically because the
+ *     tag has a -prerelease suffix.
  *
  * Usage:
- *   node scripts/release.mjs 2.0.0
+ *   node scripts/release.mjs 2.0.0           # stable release
+ *   node scripts/release.mjs 2.0.0-rc.1      # prerelease (rc, beta, alpha)
  *   npm run release -- 2.0.0
  */
 
@@ -36,10 +50,19 @@ import { execSync } from "node:child_process";
 import { argv, exit, stderr, stdout } from "node:process";
 
 const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
+const SEMVER_PRERELEASE_RE = /^\d+\.\d+\.\d+-[0-9A-Za-z.-]+$/;
 const CHANGELOG_PATH = "CHANGELOG.md";
 const UNRELEASED_HEADING = "## [Unreleased]";
 const NOTHING_YET = "_Nothing yet._";
 const EM_DASH = "—"; // U+2014 — must match existing CHANGELOG entries
+
+/**
+ * Is this version a prerelease (e.g. 2.0.0-rc.1, 2.0.0-beta.3)?
+ * Stable releases (e.g. 2.0.0) are NOT prereleases.
+ */
+function isPrerelease(version) {
+  return SEMVER_PRERELEASE_RE.test(version);
+}
 
 /**
  * Print an error to stderr and exit non-zero.
@@ -155,9 +178,25 @@ try {
   fail(`npm version ${VERSION} failed — check that ${VERSION} is greater than current version.`);
 }
 
-// ─── Phase 4 — CHANGELOG rename ──────────────────────────────────────────────
+// ─── Phase 4 — CHANGELOG section ─────────────────────────────────────────────
+//
+// Stable release behavior (e.g. cutting 2.0.0):
+//   Rename `## [Unreleased]` → `## [X.Y.Z] — YYYY-MM-DD` and insert a fresh
+//   empty `## [Unreleased]` above it. The existing Unreleased entries become
+//   the new release's content.
+//
+// Prerelease behavior (e.g. cutting 2.0.0-rc.1):
+//   The Unreleased section continues accumulating changes through subsequent
+//   prereleases up to the final stable cut. So we INSERT a snapshot heading
+//   `## [X.Y.Z-pre] — YYYY-MM-DD` above the Unreleased block without renaming
+//   anything. The snapshot copies the current Unreleased entries as a frozen
+//   record of "what shipped in this prerelease". Future prereleases get their
+//   own snapshot heading; the final stable cut renames Unreleased as usual.
 
-stderr.write(`\n→ Phase 4: renaming ${UNRELEASED_HEADING} → ## [${VERSION}] in ${CHANGELOG_PATH}…\n`);
+const PRERELEASE = isPrerelease(VERSION);
+stderr.write(
+  `\n→ Phase 4: ${PRERELEASE ? "inserting prerelease snapshot heading" : `renaming ${UNRELEASED_HEADING} → ## [${VERSION}]`} in ${CHANGELOG_PATH}…\n`,
+);
 
 // Re-read to be safe (npm version doesn't touch CHANGELOG, but read-after-write
 // is the safer pattern if any future phase grows).
@@ -171,26 +210,55 @@ if (unreleasedIdxV2 === -1) {
 const today = new Date().toISOString().slice(0, 10);
 const renamedHeading = `## [${VERSION}] ${EM_DASH} ${today}`;
 
-// Splice: replace the Unreleased line with a fresh Unreleased block + the
-// renamed heading. Result:
-//   ## [Unreleased]
-//
-//   _Nothing yet._
-//
-//   ## [X.Y.Z] — YYYY-MM-DD
-//   (existing entries that were under Unreleased follow…)
-linesV2.splice(
-  unreleasedIdxV2,
-  1,
-  UNRELEASED_HEADING,
-  "",
-  NOTHING_YET,
-  "",
-  renamedHeading,
-);
+if (PRERELEASE) {
+  // Snapshot the current Unreleased body, then insert a new dated heading
+  // ABOVE Unreleased with that snapshot as its body. Unreleased itself is
+  // untouched.
+  const nextHeadingIdxV2 = linesV2.findIndex(
+    (l, i) => i > unreleasedIdxV2 && l.startsWith("## ["),
+  );
+  const unreleasedEndV2 = nextHeadingIdxV2 === -1 ? linesV2.length : nextHeadingIdxV2;
+  // Snapshot the body between the Unreleased heading and the next heading,
+  // EXCLUDING any blank line trailing into the next section.
+  const snapshotBody = linesV2
+    .slice(unreleasedIdxV2 + 1, unreleasedEndV2)
+    .join("\n")
+    .replace(/\n+$/, ""); // trim trailing blank lines
 
-await writeFile(CHANGELOG_PATH, linesV2.join("\n"));
-stderr.write(`  wrote ${CHANGELOG_PATH} — new heading: ${renamedHeading}\n`);
+  // The Unreleased block stays intact. Insert the snapshot section ABOVE it.
+  linesV2.splice(
+    unreleasedIdxV2,
+    0,
+    renamedHeading,
+    "",
+    snapshotBody,
+    "",
+  );
+  await writeFile(CHANGELOG_PATH, linesV2.join("\n"));
+  stderr.write(`  wrote ${CHANGELOG_PATH} — inserted prerelease snapshot: ${renamedHeading}\n`);
+  stderr.write(`  ${UNRELEASED_HEADING} kept intact for the next prerelease or the stable cut\n`);
+} else {
+  // Stable release: rename Unreleased → X.Y.Z and reset Unreleased.
+  // Splice: replace the Unreleased line with a fresh Unreleased block + the
+  // renamed heading. Result:
+  //   ## [Unreleased]
+  //
+  //   _Nothing yet._
+  //
+  //   ## [X.Y.Z] — YYYY-MM-DD
+  //   (existing entries that were under Unreleased follow…)
+  linesV2.splice(
+    unreleasedIdxV2,
+    1,
+    UNRELEASED_HEADING,
+    "",
+    NOTHING_YET,
+    "",
+    renamedHeading,
+  );
+  await writeFile(CHANGELOG_PATH, linesV2.join("\n"));
+  stderr.write(`  wrote ${CHANGELOG_PATH} — new heading: ${renamedHeading}\n`);
+}
 
 // ─── Phase 5 — Commit + tag + atomic push ────────────────────────────────────
 
@@ -222,17 +290,30 @@ try {
 
 // ─── Phase 6 — Confirmation ──────────────────────────────────────────────────
 
+const publishNote = PRERELEASE
+  ? `    2. npm publish --access public --provenance --tag next  (dist-tag "next", NOT "latest").\n` +
+    `       Users will get this prerelease only via:\n` +
+    `         npm install -g @owrede/vault-memory@${VERSION}\n` +
+    `         npm install -g @owrede/vault-memory@next\n` +
+    `       \`npm install -g @owrede/vault-memory\` (no tag) still resolves to the\n` +
+    `       current \`latest\` dist-tag, which this prerelease does NOT touch.\n`
+  : `    2. npm publish --access public --provenance  (default dist-tag "latest").\n`;
+
 stderr.write(
-  `\n✓ Tag v${VERSION} pushed.\n\n` +
+  `\n✓ Tag v${VERSION} pushed${PRERELEASE ? " (prerelease)" : ""}.\n\n` +
     "Next steps (automatic):\n" +
     "  .github/workflows/publish.yml will now run on the v" +
     VERSION +
     " tag:\n" +
     "    1. npm ci + lint + test + build on a clean Linux runner.\n" +
-    "    2. npm publish --access public --provenance.\n" +
+    publishNote +
     "    3. Build the plugin tarball + manifest.sha256.\n" +
-    "    4. Create the GitHub Release with tarball + checksum attached.\n\n" +
-    "Next steps (manual):\n" +
+    "    4. Create the GitHub Release with tarball + checksum attached.\n" +
+    (PRERELEASE
+      ? "       (GitHub treats the v" + VERSION + " release as a Pre-release\n" +
+        "       automatically because the tag carries a -prerelease suffix.)\n"
+      : "") +
+    "\nNext steps (manual):\n" +
     "  After the workflow completes, upload the MP4 screencast asset to the\n" +
     "  GitHub Release page via the GitHub UI (per D-13 / D-14 — the MP4 is\n" +
     "  intentionally NOT committed to the repo).\n\n" +

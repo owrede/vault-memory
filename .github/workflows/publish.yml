@@ -61,7 +61,23 @@ jobs:
         # --provenance: attaches signed provenance attestation (npm 9.5+)
         # NPM_TOKEN must be a granular access token with publish rights for
         # @owrede/vault-memory and bypass-2fa enabled — stored in repo secrets.
-        run: npm publish --access public --provenance
+        #
+        # dist-tag routing:
+        #   - prerelease tags (v*-rc.*, v*-beta.*, v*-alpha.*) → publish under
+        #     `next` dist-tag. Users get the prerelease only via an explicit
+        #     `@next` or `@X.Y.Z-prerelease` pin; the default `latest` dist-tag
+        #     stays on the most recent stable release.
+        #   - stable tags (v*.*.*) → publish under the default `latest`
+        #     dist-tag.
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_NAME}" =~ -(rc|beta|alpha) ]]; then
+            echo "Detected prerelease tag '${GITHUB_REF_NAME}' → publishing under 'next' dist-tag"
+            npm publish --access public --provenance --tag next
+          else
+            echo "Detected stable tag '${GITHUB_REF_NAME}' → publishing under default 'latest' dist-tag"
+            npm publish --access public --provenance
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
