@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: release
 status: phase_complete
-stopped_at: Phase 7 complete — Phase 8 release prep + screencast carryover queued
-last_updated: "2026-05-19T11:59:00.000Z"
-last_activity: 2026-05-19 -- Phase 07 execution complete; CAN-09 docs done, screencast deferred to Phase 8
+stopped_at: Phase 8 context gathered
+last_updated: "2026-05-19T12:17:12.760Z"
+last_activity: 2026-05-19 -- Phase 07 execution started
 progress:
   total_phases: 10
   completed_phases: 5
@@ -189,7 +189,7 @@ Items acknowledged and carried forward from previous milestone close:
 
 ## Session Continuity
 
-Last session: 2026-05-19T01:06:04.127Z
-Stopped at: Phase 7 UI-SPEC approved
-Resume file: .planning/phases/07-visual-contract-editor-canvas/07-UI-SPEC.md
+Last session: 2026-05-19T12:17:12.751Z
+Stopped at: Phase 8 context gathered
+Resume file: .planning/phases/08-polish-eval-suite-v2-0-0-release/08-CONTEXT.md
 Next: `/gsd-execute-phase 3`
