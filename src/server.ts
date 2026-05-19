@@ -63,8 +63,14 @@ import {
   RESOURCE_URI_MEMORY_STATS,
   RESOURCE_URI_LIST_CONTRACTS,
   RESOURCE_URI_LIST_CONTRACT_VERBS,
+  RESOURCE_URI_VAULTS,
+  RESOURCE_URI_MODELS,
+  RESOURCE_URI_RECENT,
+  RESOURCE_URI_STATS,
+  RESOURCE_URI_BACKLINKS,
   type MemorySinkConfig,
 } from "./memory/index.js";
+import { RESOURCES } from "./resource-registry.js";
 import {
   handleRecall,
   handleRecordObservation,
@@ -1935,6 +1941,215 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
           },
         ],
       };
+    },
+  );
+
+  // ─── Phase 8 (Plan 08-05 / REL-08) — promote 5 list-style v1 tools ───────
+  //
+  // Each Resource delegates to the existing internal tool handler (GAT-01
+  // seam preservation: no logic duplication). The v1 tool handlers remain
+  // wired in `tools/call` — only their descriptions get a DEPRECATED notice
+  // (see src/tool-registry.ts).
+  //
+  // `vault-memory://vaults` is static (no per-vault variable). The other
+  // four use ResourceTemplate with a `{vault}` variable; `backlinks`
+  // additionally uses RFC 6570 reserved expansion `{+docId}` so multi-segment
+  // paths (e.g. `notes/sub/file.md`) parse as a single value.
+  const rel08Vaults = RESOURCES.find((r) => r.name === "vaults");
+  const rel08Models = RESOURCES.find((r) => r.name === "models");
+  const rel08Recent = RESOURCES.find((r) => r.name === "recent");
+  const rel08Stats = RESOURCES.find((r) => r.name === "stats");
+  const rel08Backlinks = RESOURCES.find((r) => r.name === "backlinks");
+  if (
+    rel08Vaults === undefined ||
+    rel08Models === undefined ||
+    rel08Recent === undefined ||
+    rel08Stats === undefined ||
+    rel08Backlinks === undefined
+  ) {
+    throw new Error(
+      "REL-08 Resources missing from RESOURCES registry — check src/resource-registry.ts",
+    );
+  }
+
+  server.registerResource(
+    rel08Vaults.name,
+    RESOURCE_URI_VAULTS,
+    {
+      title: "Vaults",
+      description: rel08Vaults.description,
+      mimeType: rel08Vaults.mimeType,
+    },
+    async (uri) => ({
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: "application/json",
+          text: JSON.stringify(handleListVaults(manager), null, 2),
+        },
+      ],
+    }),
+  );
+
+  server.registerResource(
+    rel08Models.name,
+    new ResourceTemplate(`${RESOURCE_URI_MODELS}/{vault}`, { list: undefined }),
+    {
+      title: "Embedding models",
+      description: rel08Models.description,
+      mimeType: rel08Models.mimeType,
+    },
+    async (uri, variables) => {
+      const vaultName = String(variables.vault ?? "");
+      try {
+        const vault = manager.require(vaultName);
+        const models = listModels(vault);
+        return {
+          contents: [
+            {
+              uri: uri.href,
+              mimeType: "application/json",
+              text: JSON.stringify({ models, count: models.length }, null, 2),
+            },
+          ],
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return {
+          contents: [
+            {
+              uri: uri.href,
+              mimeType: "application/json",
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+        };
+      }
+    },
+  );
+
+  server.registerResource(
+    rel08Recent.name,
+    new ResourceTemplate(`${RESOURCE_URI_RECENT}/{vault}`, { list: undefined }),
+    {
+      title: "Recent notes",
+      description: rel08Recent.description,
+      mimeType: rel08Recent.mimeType,
+    },
+    async (uri, variables) => {
+      const vaultName = String(variables.vault ?? "");
+      try {
+        manager.require(vaultName);
+        // Default limit matches the recent_notes tool's schema default (20).
+        const limitParam = uri.searchParams.get("limit");
+        const sinceParam = uri.searchParams.get("since");
+        const limit = limitParam !== null ? Number(limitParam) : 20;
+        const since = sinceParam !== null ? Number(sinceParam) : undefined;
+        const payload = handleRecentNotes(manager, vaultName, limit, since);
+        return {
+          contents: [
+            {
+              uri: uri.href,
+              mimeType: "application/json",
+              text: JSON.stringify(payload, null, 2),
+            },
+          ],
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return {
+          contents: [
+            {
+              uri: uri.href,
+              mimeType: "application/json",
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+        };
+      }
+    },
+  );
+
+  server.registerResource(
+    rel08Stats.name,
+    new ResourceTemplate(`${RESOURCE_URI_STATS}/{vault}`, { list: undefined }),
+    {
+      title: "Vault stats",
+      description: rel08Stats.description,
+      mimeType: rel08Stats.mimeType,
+    },
+    async (uri, variables) => {
+      const vaultName = String(variables.vault ?? "");
+      try {
+        manager.require(vaultName);
+        const payload = handleVaultStats(manager, vaultName);
+        return {
+          contents: [
+            {
+              uri: uri.href,
+              mimeType: "application/json",
+              text: JSON.stringify(payload, null, 2),
+            },
+          ],
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return {
+          contents: [
+            {
+              uri: uri.href,
+              mimeType: "application/json",
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+        };
+      }
+    },
+  );
+
+  server.registerResource(
+    rel08Backlinks.name,
+    new ResourceTemplate(`${RESOURCE_URI_BACKLINKS}/{vault}/{+docId}`, {
+      list: undefined,
+    }),
+    {
+      title: "Backlinks",
+      description: rel08Backlinks.description,
+      mimeType: rel08Backlinks.mimeType,
+    },
+    async (uri, variables) => {
+      const vaultName = String(variables.vault ?? "");
+      const rawDocId = variables.docId;
+      // RFC 6570 reserved expansion: when the URI contains percent-encoded
+      // characters (e.g. spaces or unicode in path segments), the SDK
+      // already decodes them. The variable arrives as the raw path string.
+      const docId = Array.isArray(rawDocId)
+        ? rawDocId.join("/")
+        : String(rawDocId ?? "");
+      try {
+        const vault = manager.require(vaultName);
+        const backlinks = listBacklinks(vault, docId);
+        return {
+          contents: [
+            {
+              uri: uri.href,
+              mimeType: "application/json",
+              text: JSON.stringify({ backlinks }, null, 2),
+            },
+          ],
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return {
+          contents: [
+            {
+              uri: uri.href,
+              mimeType: "application/json",
+              text: JSON.stringify({ error: message }),
+            },
+          ],
+        };
+      }
     },
   );
 

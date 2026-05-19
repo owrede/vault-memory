@@ -41,7 +41,10 @@
 export const TOOLS = [
   {
     name: "list_vaults",
-    description: "List configured vaults with their status (note count, last indexed run).",
+    description:
+      "List configured vaults with their status (note count, last indexed run). " +
+      "DEPRECATED since v2.0.0 — prefer MCP Resource `vault-memory://vaults` for agent discovery. " +
+      "The tool remains callable through v2.x; removal scheduled for v3.0.0.",
     inputSchema: { type: "object", properties: {} },
   },
   {
@@ -196,7 +199,10 @@ export const TOOLS = [
   },
   {
     name: "list_backlinks",
-    description: "Find all notes that link TO a given note.",
+    description:
+      "Find all notes that link TO a given note. " +
+      "DEPRECATED since v2.0.0 — prefer MCP Resource `vault-memory://backlinks/{vault}/{+docId}` " +
+      "for agent discovery. The tool remains callable through v2.x; removal scheduled for v3.0.0.",
     inputSchema: {
       type: "object",
       required: ["vault", "path"],
@@ -342,7 +348,9 @@ export const TOOLS = [
     description:
       "List all embedding models registered for a vault, with dim, " +
       "active flag, and how many chunks have been embedded under each. " +
-      "Use before start_shadow_index / switch_active_model.",
+      "Use before start_shadow_index / switch_active_model. " +
+      "DEPRECATED since v2.0.0 — prefer MCP Resource `vault-memory://models/{vault}` for agent " +
+      "discovery. The tool remains callable through v2.x; removal scheduled for v3.0.0.",
     inputSchema: {
       type: "object",
       required: ["vault"],
@@ -447,7 +455,9 @@ export const TOOLS = [
   {
     name: "vault_stats",
     description:
-      "Vault overview for agent self-orientation: note/word counts, top tags, top frontmatter keys, embedding model, last index run. Omit `vault` to get all configured vaults.",
+      "Vault overview for agent self-orientation: note/word counts, top tags, top frontmatter keys, embedding model, last index run. Omit `vault` to get all configured vaults. " +
+      "DEPRECATED since v2.0.0 — prefer MCP Resource `vault-memory://stats/{vault}` for agent " +
+      "discovery. The tool remains callable through v2.x; removal scheduled for v3.0.0.",
     inputSchema: {
       type: "object",
       properties: {
@@ -458,7 +468,9 @@ export const TOOLS = [
   {
     name: "recent_notes",
     description:
-      "List recently modified notes (mtime DESC). Use for agent self-orientation: 'what has the user been working on lately?'. No vector search, just SQL.",
+      "List recently modified notes (mtime DESC). Use for agent self-orientation: 'what has the user been working on lately?'. No vector search, just SQL. " +
+      "DEPRECATED since v2.0.0 — prefer MCP Resource `vault-memory://recent/{vault}` for agent " +
+      "discovery. The tool remains callable through v2.x; removal scheduled for v3.0.0.",
     inputSchema: {
       type: "object",
       properties: {
