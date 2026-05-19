@@ -54,7 +54,7 @@
     type="text"
     class="vm-alias-input"
     {value}
-    placeholder="{{alias.field}}"
+    placeholder={"{{alias.field}}"}
     oninput={(e) => onChange((e.target as HTMLInputElement).value)}
   />
   <button

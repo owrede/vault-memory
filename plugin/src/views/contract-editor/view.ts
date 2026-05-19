@@ -2,71 +2,76 @@
  * ContractEditorView — Obsidian `TextFileView` host for the `.contract`
  * visual editor.
  *
- * Phase 7 / ADR-007 / D-FORMAT-SCHEMA + D-AUTH.
+ * Phase 7 / Plan 07-05 / ADR-007 / D-FORMAT-SCHEMA + D-AUTH.
  *
- * On file open, Obsidian calls `setViewData(jsonText, clear)` with the raw
- * file contents. We `JSON.parse` into a `ContractFile` envelope and mount the
- * Svelte spike component (`canvas-pane.svelte`) which renders the assembly
- * DAG via `@xyflow/svelte`. On save, Obsidian calls `getViewData()` and we
- * round-trip back to JSON.
+ * # Lifecycle
  *
- * Plan 07-01 lands the minimum spike — no inspector forms, no save lifecycle
- * beyond `requestSave()`. Plan 07-02 (codec) extends this with `.contract`
- * ↔ `.yaml` round-trip; plan 07-03 (inspector) adds the typed forms.
+ *   setViewData(jsonText, clear):
+ *     1. Parse `jsonText` as JSON.
+ *     2. Validate via `ContractDocumentSchema.parse(...)` — on failure,
+ *        render an error pane carrying the Zod error path. Do NOT mount
+ *        the editor (threat T-07-05-01 mitigation).
+ *     3. On success, mount `editor.svelte` with `file: parsed` and
+ *        `onChange: this.onUserEdit.bind(this)`.
  *
- * Adapter-seam discipline: no Node `fs`. All vault writes flow through
- * `this.app.vault.adapter.write(...)` (Obsidian's own fs adapter).
+ *   getViewData(): JSON.stringify(this.currentJson, null, 2).
+ *
+ *   onUserEdit(next):
+ *     - Updates `this.currentJson = next`.
+ *     - Calls `this.requestSave()` so Obsidian round-trips through
+ *       `getViewData()` on the next tick.
+ *     - Schedules a debounced (200ms) YAML companion emission via
+ *       `emitYamlCompanion(next)`; rapid edits coalesce into one write.
+ *
+ *   emitYamlCompanion(file):
+ *     - Computes `yamlBody = emitYaml(file)` via the 07-02 codec.
+ *     - Resolves the companion path as
+ *       `_contracts/<file.contract.name>.yaml`.
+ *     - Writes via `app.vault.adapter.write(...)` — the only FS
+ *       chokepoint per adapter-seam discipline.
+ *     - The Phase 6 ContractRegistry watcher will fire on this write;
+ *       the SuppressionSet wiring that kills the echo loop lands in
+ *       plan 07-07 (CAN-08). For Plan 07-05 the write-loop noise is
+ *       acceptable because the inner ChangeFeed re-parse is idempotent.
+ *
+ *   clear():
+ *     - Unmounts the Svelte root and clears any pending YAML timer.
+ *
+ * # Adapter-seam discipline
+ *
+ *   No Node `fs`. All vault writes route through
+ *   `this.app.vault.adapter.write(...)` (Obsidian's own fs adapter).
+ *   The contract codec (`plugin/src/codec/`) is the only place
+ *   YAML-specific code lives.
  */
 
 import { TextFileView, type WorkspaceLeaf } from "obsidian";
 import { mount, unmount, type SvelteComponent } from "svelte";
-import CanvasPane from "./spike/canvas-pane.svelte";
+import Editor from "./editor.svelte";
+import {
+  ContractDocumentSchema,
+  type ContractDocumentShape,
+} from "../../shared-types.js";
+import { emitYaml, parseYaml } from "../../codec/contract-codec.js";
 import type VaultMemoryPlugin from "../../../main.js";
 
 export const VIEW_TYPE_CONTRACT = "vault-memory-contract-editor";
 
-/**
- * The `.contract` envelope shape per ADR-007 D-FORMAT-SCHEMA. The richer
- * Zod-validated `ContractDocumentSchema` is finalized in plan 07-02 alongside
- * the codec; this interface is the spike's minimum surface.
- */
-export interface ContractFile {
-  $schema?: string;
-  vmFormatVersion: 1;
-  contract: {
-    version: 1;
-    name: string;
-    description?: string;
-    inputs?: Record<string, unknown>;
-    required?: readonly string[];
-    sources?: Record<string, unknown>;
-    sinks?: Record<string, unknown>;
-    assembly: ReadonlyArray<{
-      as: string;
-      verb: string;
-      args?: Record<string, unknown>;
-      value?: unknown;
-    }>;
-    output_shape?: unknown;
-    write_back?: Record<string, unknown>;
-  };
-  editor: {
-    nodes: ReadonlyArray<{ id: string; x: number; y: number }>;
-    selection: string | readonly string[] | null;
-    viewport: { x: number; y: number; zoom: number };
-    yamlComments: Record<string, unknown>;
-  };
-}
+/** Public alias for callers that still reference the old surface name. */
+export type ContractFile = ContractDocumentShape;
+
+/** Debounce window for `.yaml` companion emission, in ms. */
+const YAML_EMIT_DEBOUNCE_MS = 200;
 
 export class ContractEditorView extends TextFileView {
-  private currentJson: ContractFile | null = null;
+  private currentJson: ContractDocumentShape | null = null;
   private svelteApp: SvelteComponent | null = null;
+  private yamlTimer: ReturnType<typeof setTimeout> | null = null;
 
   /**
    * The owning plugin instance, exposed publicly so subsequent plans
-   * (07-05 editor, 07-07 watcher, 07-08 chrome) can reach
-   * `this.plugin.mcpClient` and `this.plugin.settingsStore` without
-   * a workspace walk. Phase 7 / 07-03 wiring.
+   * (07-07 watcher, 07-08 chrome) can reach `this.plugin.mcpClient` and
+   * `this.plugin.settingsStore` without a workspace walk.
    */
   readonly plugin: VaultMemoryPlugin;
 
@@ -88,33 +93,43 @@ export class ContractEditorView extends TextFileView {
   }
 
   /**
-   * Called by Obsidian when the file is loaded or reloaded. The `data`
-   * parameter is the raw `.contract` file text. We parse and mount the
-   * Svelte spike component.
+   * Called by Obsidian when the file is loaded or reloaded. Parses +
+   * validates via `ContractDocumentSchema` and mounts the editor; on
+   * any failure, renders a visible error pane and aborts the mount
+   * (threat T-07-05-01: tampered `.contract` never reaches the canvas).
    */
   override setViewData(data: string, clear: boolean): void {
     if (clear) {
       this.clear();
     }
 
-    let parsed: ContractFile;
+    let raw: unknown;
     try {
-      parsed = JSON.parse(data) as ContractFile;
+      raw = JSON.parse(data);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.contentEl.empty();
-      const banner = this.contentEl.createDiv({ cls: "vm-error-banner" });
-      banner.setText(`Error: malformed .contract file — ${message}`);
+      this.renderError(`malformed .contract file (invalid JSON) — ${message}`);
       return;
     }
 
-    this.currentJson = parsed;
-    this.renderCanvas();
+    const result = ContractDocumentSchema.safeParse(raw);
+    if (!result.success) {
+      const issue = result.error.issues[0];
+      const path = issue?.path.join(".") ?? "<root>";
+      const msg = issue?.message ?? "schema validation failed";
+      this.renderError(`invalid .contract — at \`${path}\`: ${msg}`);
+      return;
+    }
+
+    this.currentJson = result.data;
+    this.renderEditor();
   }
 
   /**
-   * Called by Obsidian when it needs to persist the file (Cmd-S or the
-   * autosave cycle). We serialize the current envelope back to JSON.
+   * Called by Obsidian when it needs to persist the file. We serialize
+   * the current envelope back to JSON; YAML emission is handled
+   * separately by `emitYamlCompanion` so the `.contract` save and the
+   * `.yaml` companion stay on independent code paths.
    */
   override getViewData(): string {
     if (!this.currentJson) return "";
@@ -127,14 +142,65 @@ export class ContractEditorView extends TextFileView {
       void unmount(this.svelteApp);
       this.svelteApp = null;
     }
+    if (this.yamlTimer !== null) {
+      clearTimeout(this.yamlTimer);
+      this.yamlTimer = null;
+    }
     this.contentEl.empty();
   }
 
-  private renderCanvas(): void {
+  /**
+   * Handler bound into the Svelte editor's `onChange`. Updates the
+   * in-memory document, asks Obsidian to save the `.contract`, and
+   * schedules a debounced `.yaml` companion emission.
+   */
+  private onUserEdit(next: ContractDocumentShape): void {
+    this.currentJson = next;
+    this.requestSave();
+    this.scheduleYamlEmit(next);
+  }
+
+  private scheduleYamlEmit(file: ContractDocumentShape): void {
+    if (this.yamlTimer !== null) {
+      clearTimeout(this.yamlTimer);
+    }
+    this.yamlTimer = setTimeout(() => {
+      this.yamlTimer = null;
+      void this.emitYamlCompanion(file);
+    }, YAML_EMIT_DEBOUNCE_MS);
+  }
+
+  /**
+   * Emit the canonical Phase 6 YAML companion to
+   * `_contracts/<name>.yaml`. The SuppressionSet integration that
+   * prevents the resulting watcher event from echoing back into the
+   * editor lands in plan 07-07 (CAN-08).
+   *
+   * Errors are swallowed with a console warning — the next save cycle
+   * retries; the editor remains usable even when the vault adapter
+   * temporarily fails (e.g. mid-Syncthing-rename).
+   */
+  private async emitYamlCompanion(file: ContractDocumentShape): Promise<void> {
+    try {
+      const yamlBody = emitYaml(file);
+      // Sanity self-check: parseYaml must successfully round-trip
+      // emitYaml's output. Catching here surfaces codec drift before
+      // it lands on disk.
+      parseYaml(yamlBody);
+      const yamlPath = `_contracts/${file.contract.name}.yaml`;
+      await this.app.vault.adapter.write(yamlPath, yamlBody);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // Use console because Obsidian's Notice would spam on every
+      // debounced retry — Plan 07-08 surfaces persistent errors via
+      // the unsaved-changes UX.
+      console.warn("[vault-memory] YAML companion emit failed:", message);
+    }
+  }
+
+  private renderEditor(): void {
     if (!this.currentJson) return;
 
-    // Unmount any previous Svelte root before mounting the new one. Obsidian
-    // can call setViewData multiple times for the same view instance.
     if (this.svelteApp) {
       void unmount(this.svelteApp);
       this.svelteApp = null;
@@ -142,15 +208,23 @@ export class ContractEditorView extends TextFileView {
     this.contentEl.empty();
 
     const host = this.contentEl.createDiv({ cls: "vm-contract-editor" });
-    this.svelteApp = mount(CanvasPane, {
+    this.svelteApp = mount(Editor, {
       target: host,
       props: {
         file: this.currentJson,
-        onChange: (next: ContractFile) => {
-          this.currentJson = next;
-          this.requestSave();
-        },
+        onChange: (next: ContractDocumentShape) => this.onUserEdit(next),
+        mcpClient: this.plugin.mcpClient?.available ? this.plugin.mcpClient : null,
       },
     }) as unknown as SvelteComponent;
+  }
+
+  private renderError(message: string): void {
+    if (this.svelteApp) {
+      void unmount(this.svelteApp);
+      this.svelteApp = null;
+    }
+    this.contentEl.empty();
+    const banner = this.contentEl.createDiv({ cls: "vm-error-banner" });
+    banner.setText(`Error: ${message}`);
   }
 }

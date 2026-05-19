@@ -75,6 +75,9 @@ export interface McpClientLike {
     name: string;
     arguments: Record<string, unknown>;
   }): Promise<unknown>;
+  readResource?(req: { uri: string }): Promise<{
+    contents: Array<{ text?: string; mimeType?: string; uri?: string }>;
+  }>;
   setNotificationHandler(
     schema: unknown,
     handler: (notif: { method: string; params: unknown }) => void | Promise<void>,
@@ -215,6 +218,25 @@ export class VaultMemoryMcpClient {
     }
     const res = await this.client.callTool({ name, arguments: args });
     return peelEnvelope(res);
+  }
+
+  /**
+   * Read an MCP Resource by URI. Returns the raw envelope so callers can
+   * inspect `contents[].text` and `mimeType`. Throws when not connected.
+   *
+   * Used by the contract editor's palette (Plan 07-05) to fetch
+   * `vault-memory://contract-verbs` for the dynamic peer-MCP section.
+   */
+  async readResource(uri: string): Promise<{
+    contents: Array<{ text?: string; mimeType?: string; uri?: string }>;
+  }> {
+    if (!this.client || !this._available) {
+      throw new Error("VaultMemoryMcpClient not connected — call connect() first");
+    }
+    if (!this.client.readResource) {
+      throw new Error("Underlying MCP client does not support readResource");
+    }
+    return this.client.readResource({ uri });
   }
 
   /**
