@@ -91,13 +91,44 @@ jobs:
           echo "--- release notes preview ---" >&2
           head -20 /tmp/release-notes.md >&2
 
+      - name: Build plugin tarball
+        # Bundles the Obsidian plugin (Svelte + esbuild) and archives the
+        # `plugin/` directory into a tarball named
+        # `vault-memory-plugin-vX.Y.Z.tar.gz`. The tarball is attached to
+        # the GitHub Release below so `skills/vm-install/setup.sh` (D-15 /
+        # Phase 7 carryover from plan 07-11) can fetch it by predictable URL.
+        run: |
+          set -euo pipefail
+          cd plugin
+          npm ci
+          node esbuild.config.mjs production
+          cd ..
+          TARBALL="vault-memory-plugin-v${GITHUB_REF_NAME#v}.tar.gz"
+          tar -czf "$TARBALL" -C plugin .
+          echo "TARBALL=$TARBALL" >> "$GITHUB_ENV"
+
+      - name: Generate manifest.sha256
+        # Checksum the plugin tarball so `vm-install` (Phase 7) can verify
+        # the download. Manual MP4 screencast asset uploads are out of scope
+        # for this workflow (D-14 / RESEARCH Open Q2 — uploaded post-workflow
+        # via the GitHub Release UI).
+        run: |
+          set -euo pipefail
+          shasum -a 256 "$TARBALL" > manifest.sha256
+          cat manifest.sha256
+
       - name: Create GitHub Release
         # softprops/action-gh-release@v2 picks up the tag from GITHUB_REF and
         # uses the body_path file. make_latest=legacy means: the highest
         # semver tag (no pre-release suffix) becomes the "Latest" release on
         # the repo's main page. Pre-release tags (e.g. v1.1.0-beta.1) skip
         # the latest promotion automatically.
+        # `files:` attaches the plugin tarball + checksum as Release assets.
+        # MP4 screencast is uploaded manually post-workflow (D-14).
         uses: softprops/action-gh-release@v2
         with:
           body_path: /tmp/release-notes.md
           make_latest: legacy
+          files: |
+            ${{ env.TARBALL }}
+            manifest.sha256
