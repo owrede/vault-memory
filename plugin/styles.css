@@ -102,3 +102,46 @@
   height: 100%;
   background: var(--background-primary);
 }
+
+/* -------------------------------------------------------------------------
+ * Chrome side-panel — Phase 7 / 07-09 / PLG-03 + PLG-04
+ *
+ * ChromeView hosts the Reindex + Stats panels in a single workspace leaf.
+ * Per UI-SPEC §"Side-panel layout": two stacked sections with
+ * `var(--size-4-6)` separation, section headings "Operations" / "Stats".
+ *
+ * The detailed panel styles (progress bar, grid, dots, mono values) live
+ * in `src/chrome/reindex-stats.css` and are bundled into the plugin's
+ * built CSS via Svelte's `css: "injected"` mode + esbuild — this section
+ * provides only the host-layout shell.
+ * ------------------------------------------------------------------------- */
+
+.vm-chrome-view {
+  display: flex;
+  flex-direction: column;
+  gap: var(--size-4-6, 24px);
+  padding: var(--size-4-4, 16px);
+  background: var(--background-primary);
+  color: var(--text-normal);
+  font-family: var(--font-interface);
+  overflow-y: auto;
+  height: 100%;
+}
+
+.vm-chrome-view__section-heading {
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 0 0 var(--size-4-3, 12px) 0;
+  padding-bottom: var(--size-4-2, 8px);
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.vm-chrome-view__slot {
+  display: block;
+}
+
+.vm-chrome-view *:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+}

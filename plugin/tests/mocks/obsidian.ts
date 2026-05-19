@@ -29,6 +29,7 @@ export class Plugin {
   registerView(_type: string, _factory: (leaf: WorkspaceLeaf) => View): void {}
   registerExtensions(_exts: readonly string[], _viewType: string): void {}
   addSettingTab(_tab: PluginSettingTab): void {}
+  addCommand(_cmd: { id: string; name: string; callback?: () => unknown }): void {}
   async onload(): Promise<void> {}
   async onunload(): Promise<void> {}
   async loadData(): Promise<unknown> {
@@ -69,6 +70,17 @@ export class TextFileView extends View {
   requestSave(): void {}
 }
 
+// ItemView — Phase 7 / 07-09. ChromeView extends ItemView for the
+// side-panel host. Tests only exercise the metadata methods + the
+// `composeChromePanels` helper, so the surface here stays minimal.
+export class ItemView extends View {
+  getIcon(): string {
+    return "";
+  }
+  async onOpen(): Promise<void> {}
+  async onClose(): Promise<void> {}
+}
+
 export class WorkspaceLeaf {
   view: View | null = null;
 }
@@ -87,8 +99,18 @@ export class Vault {
 
 export class App {
   vault: Vault = new Vault();
-  workspace: { getLeaf(): WorkspaceLeaf } = {
+  workspace: {
+    getLeaf(): WorkspaceLeaf;
+    getRightLeaf(_split: boolean): WorkspaceLeaf | null;
+    revealLeaf(_leaf: WorkspaceLeaf): void;
+    getLeavesOfType(_type: string): WorkspaceLeaf[];
+    detachLeavesOfType(_type: string): void;
+  } = {
     getLeaf: () => new WorkspaceLeaf(),
+    getRightLeaf: (_split: boolean) => new WorkspaceLeaf(),
+    revealLeaf: (_leaf: WorkspaceLeaf) => {},
+    getLeavesOfType: (_type: string) => [],
+    detachLeavesOfType: (_type: string) => {},
   };
 }
 

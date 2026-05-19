@@ -48,6 +48,7 @@ import {
 } from "./src/services/mcp-client.js";
 import { SettingsStore } from "./src/services/settings-store.js";
 import { VaultMemorySettingsTab } from "./src/chrome/settings-tab.js";
+import { ChromeView, VIEW_TYPE_CHROME } from "./src/chrome/chrome-view.js";
 
 export default class VaultMemoryPlugin extends Plugin {
   // Public fields so chrome plans (07-08..07-10), the editor view
@@ -99,8 +100,24 @@ export default class VaultMemoryPlugin extends Plugin {
       (leaf) => new ContractEditorView(leaf, this),
     );
 
+    // (4b) Chrome view registration (07-09 / PLG-03 + PLG-04). A single
+    // workspace leaf bundles the Reindex + Stats panels; opened via the
+    // "Open vault-memory panel" command below.
+    this.registerView(VIEW_TYPE_CHROME, (leaf) => new ChromeView(leaf, this));
+
     // (5) Bind .contract extension to the view.
     this.registerExtensions(["contract"], VIEW_TYPE_CONTRACT);
+
+    // (5b) Command — opens the chrome side-panel. Command id is
+    // `open-chrome` (the Obsidian-public id is namespaced by Obsidian
+    // to "vault-memory:open-chrome").
+    this.addCommand({
+      id: "open-chrome",
+      name: "Open vault-memory panel",
+      callback: () => {
+        void this.activateChromeView();
+      },
+    });
 
     // (6) Settings-tab skeleton (07-08 fills it in).
     this.addSettingTab(new VaultMemorySettingsTab(this.app, this));
@@ -116,6 +133,14 @@ export default class VaultMemoryPlugin extends Plugin {
   }
 
   override async onunload(): Promise<void> {
+    // Detach any open chrome leaves first so onClose() runs and the
+    // panel's Svelte trees unmount cleanly (subscriptions disposed).
+    try {
+      this.app.workspace.detachLeavesOfType(VIEW_TYPE_CHROME);
+    } catch {
+      // Best-effort — workspace teardown is also handled by Obsidian.
+    }
+
     // Always attempt disconnect — disconnect is idempotent and safe
     // even when connect() failed (available is false).
     try {
@@ -125,5 +150,33 @@ export default class VaultMemoryPlugin extends Plugin {
       // are not worth surfacing — the OS will reap on Obsidian exit.
     }
     // Obsidian auto-unregisters views, extensions, and setting-tabs.
+  }
+
+  /**
+   * Reveal the chrome side-panel in a right-leaf workspace pane. If a
+   * leaf of `VIEW_TYPE_CHROME` already exists, reveal it; otherwise
+   * create a fresh right-leaf and `setViewState` to mount the view.
+   *
+   * Phase 7 / 07-09. Pattern: `getLeavesOfType` → reuse or create →
+   * `revealLeaf` (matches Obsidian's recommended side-panel idiom).
+   */
+  async activateChromeView(): Promise<void> {
+    const { workspace } = this.app;
+    const existing = workspace.getLeavesOfType(VIEW_TYPE_CHROME);
+    let leaf = existing[0];
+    if (!leaf) {
+      const right = workspace.getRightLeaf(false);
+      if (!right) {
+        // Workspace cannot allocate a right leaf — fall through to a
+        // Notice so the user knows the command did something.
+        new Notice("Could not open vault-memory panel (no available pane).", 5000);
+        return;
+      }
+      leaf = right;
+      await (leaf as unknown as {
+        setViewState: (state: { type: string; active: boolean }) => Promise<void>;
+      }).setViewState({ type: VIEW_TYPE_CHROME, active: true });
+    }
+    workspace.revealLeaf(leaf);
   }
 }
