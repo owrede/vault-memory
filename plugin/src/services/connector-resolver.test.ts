@@ -77,6 +77,7 @@ describe("extractSecretRefs", () => {
   });
 
   it("(b) returns multiple secret names from a value with multiple placeholders", () => {
+    // Names must satisfy the regex `[a-z][a-z0-9_-]{2,63}` (3–64 chars).
     expect(extractSecretRefs("${secret:abc}${secret:xyz_1}")).toEqual([
       "abc",
       "xyz_1",
@@ -116,14 +117,14 @@ describe("resolveConnectorSecrets — happy paths", () => {
 
   it("substitutes every placeholder in a value with multiple refs", async () => {
     const { deps } = makeDeps({
-      ciphertexts: { a: "ct-a", b: "ct-b" },
+      ciphertexts: { foo: "ct-foo", bar_baz: "ct-bar_baz" },
     });
     const result = await resolveConnectorSecrets(
-      { COMBO: "left-${secret:a}-mid-${secret:b}-right" },
+      { COMBO: "left-${secret:foo}-mid-${secret:bar_baz}-right" },
       deps,
     );
     expect(result).toEqual({
-      COMBO: "left-plain-of-ct-a-mid-plain-of-ct-b-right",
+      COMBO: "left-plain-of-ct-foo-mid-plain-of-ct-bar_baz-right",
     });
   });
 
