@@ -14,6 +14,124 @@
  * actually imports. Extend additively as new modules are added.
  */
 
+/**
+ * Minimal Obsidian-flavoured HTMLElement stub.
+ *
+ * Real Obsidian (and the runtime extensions it patches onto HTMLElement)
+ * adds `empty`, `createEl`, `createDiv`, `setText`, etc. We don't load the
+ * real Obsidian runtime in vitest, so settings-tab / chrome panel tests
+ * need a node-pure substitute that responds to those methods. This stub
+ * implements just enough for plugin chrome to render: children list,
+ * attributes map, text node, classList, and the Obsidian helpers.
+ *
+ * Used by the settings-tab + secrets-panel test suites (07-08). Editor
+ * view code lives elsewhere and exercises the real Obsidian runtime.
+ */
+export class FakeEl {
+  tagName: string;
+  parentEl: FakeEl | null = null;
+  children: FakeEl[] = [];
+  attrs: Record<string, string> = {};
+  classes: Set<string> = new Set();
+  textContent: string = "";
+  listeners: Record<string, ((ev: unknown) => void)[]> = {};
+  // Test-only: pretend to be an HTMLElement so production code's type
+  // annotations compile when this stub is passed in.
+  constructor(tagName: string = "div") {
+    this.tagName = tagName.toUpperCase();
+  }
+  // ---- Obsidian extensions ----
+  empty(): void {
+    this.children = [];
+    this.textContent = "";
+  }
+  createEl(
+    tag: string,
+    options?: { text?: string; cls?: string; attr?: Record<string, string> },
+  ): FakeEl {
+    const el = new FakeEl(tag);
+    if (options?.text !== undefined) el.textContent = options.text;
+    if (options?.cls) options.cls.split(" ").forEach((c) => el.classes.add(c));
+    if (options?.attr) Object.assign(el.attrs, options.attr);
+    el.parentEl = this;
+    this.children.push(el);
+    return el;
+  }
+  createDiv(options?: { cls?: string; attr?: Record<string, string> }): FakeEl {
+    return this.createEl("div", options);
+  }
+  createSpan(options?: { cls?: string; text?: string }): FakeEl {
+    return this.createEl("span", options);
+  }
+  setText(text: string): this {
+    this.textContent = text;
+    this.children = [];
+    return this;
+  }
+  setAttribute(name: string, value: string): this {
+    this.attrs[name] = value;
+    return this;
+  }
+  getAttribute(name: string): string | null {
+    return Object.prototype.hasOwnProperty.call(this.attrs, name)
+      ? (this.attrs[name] ?? null)
+      : null;
+  }
+  // ---- DOM-like surface ----
+  get classList() {
+    return {
+      add: (c: string) => this.classes.add(c),
+      remove: (c: string) => this.classes.delete(c),
+      contains: (c: string) => this.classes.has(c),
+      toggle: (c: string) => {
+        if (this.classes.has(c)) this.classes.delete(c);
+        else this.classes.add(c);
+      },
+    };
+  }
+  appendChild(child: FakeEl): FakeEl {
+    child.parentEl = this;
+    this.children.push(child);
+    return child;
+  }
+  addEventListener(event: string, handler: (ev: unknown) => void): void {
+    (this.listeners[event] ??= []).push(handler);
+  }
+  click(): void {
+    this.listeners["click"]?.forEach((h) => h({ target: this }));
+  }
+  /** Depth-first walk yielding every descendant including self. */
+  *walk(): IterableIterator<FakeEl> {
+    yield this;
+    for (const c of this.children) yield* c.walk();
+  }
+  /** Test helper: find first descendant with the given data-testid. */
+  findByTestId(id: string): FakeEl | null {
+    for (const el of this.walk()) {
+      if (el.attrs["data-testid"] === id) return el;
+    }
+    return null;
+  }
+  /** Test helper: collect all descendants matching predicate. */
+  findAll(predicate: (el: FakeEl) => boolean): FakeEl[] {
+    const out: FakeEl[] = [];
+    for (const el of this.walk()) {
+      if (predicate(el)) out.push(el);
+    }
+    return out;
+  }
+  /** Recursive text aggregation (children + own textContent). */
+  innerText(): string {
+    if (this.children.length === 0) return this.textContent;
+    return this.children.map((c) => c.innerText()).join("");
+  }
+}
+
+/** Create a root FakeEl — used by tests that don't want to go through PluginSettingTab. */
+export function makeFakeEl(tag: string = "div"): FakeEl {
+  return new FakeEl(tag);
+}
+
 export class Plugin {
   app: unknown;
   manifest: unknown;
@@ -117,32 +235,116 @@ export class App {
 export class PluginSettingTab {
   app: App;
   plugin: Plugin;
-  containerEl: HTMLElement;
+  containerEl: FakeEl;
   constructor(app: App, plugin: Plugin) {
     this.app = app;
     this.plugin = plugin;
-    this.containerEl = (globalThis as unknown as { document?: Document })
-      .document?.createElement("div") ?? ({} as HTMLElement);
+    this.containerEl = new FakeEl("div");
   }
   display(): void {}
   hide(): void {}
 }
 
+/**
+ * Setting mock — creates a real DOM element per row so tests can introspect
+ * the settings-tab structure via `data-testid` attributes added by the
+ * production code. The chainable component callbacks receive a stub that
+ * records the wired `onChange` handler so tests can simulate user input.
+ */
+class TextComponentStub {
+  value = "";
+  private handler: ((v: string) => void) | null = null;
+  setPlaceholder(_p: string): this {
+    return this;
+  }
+  setValue(v: string): this {
+    this.value = v;
+    return this;
+  }
+  getValue(): string {
+    return this.value;
+  }
+  onChange(cb: (v: string) => void): this {
+    this.handler = cb;
+    return this;
+  }
+  /** Test-only helper — simulate the user typing a new value. */
+  __fire(v: string): void {
+    this.value = v;
+    this.handler?.(v);
+  }
+}
+
+class ToggleComponentStub {
+  value = false;
+  private handler: ((v: boolean) => void) | null = null;
+  setValue(v: boolean): this {
+    this.value = v;
+    return this;
+  }
+  getValue(): boolean {
+    return this.value;
+  }
+  onChange(cb: (v: boolean) => void): this {
+    this.handler = cb;
+    return this;
+  }
+  __fire(v: boolean): void {
+    this.value = v;
+    this.handler?.(v);
+  }
+}
+
+class DropdownComponentStub {
+  value = "";
+  options: Record<string, string> = {};
+  private handler: ((v: string) => void) | null = null;
+  addOption(value: string, display: string): this {
+    this.options[value] = display;
+    return this;
+  }
+  setValue(v: string): this {
+    this.value = v;
+    return this;
+  }
+  getValue(): string {
+    return this.value;
+  }
+  onChange(cb: (v: string) => void): this {
+    this.handler = cb;
+    return this;
+  }
+  __fire(v: string): void {
+    this.value = v;
+    this.handler?.(v);
+  }
+}
+
 export class Setting {
-  constructor(_containerEl: HTMLElement) {}
-  setName(_n: string): this {
+  readonly settingEl: FakeEl;
+  constructor(containerEl: FakeEl) {
+    this.settingEl = new FakeEl("div");
+    this.settingEl.classList.add("setting-item");
+    containerEl.appendChild(this.settingEl);
+  }
+  setName(n: string): this {
+    this.settingEl.setAttribute("data-setting-name", n);
     return this;
   }
-  setDesc(_d: string): this {
+  setDesc(d: string): this {
+    this.settingEl.setAttribute("data-setting-desc", d);
     return this;
   }
-  addText(_cb: (t: unknown) => void): this {
+  addText(cb: (t: TextComponentStub) => void): this {
+    cb(new TextComponentStub());
     return this;
   }
-  addToggle(_cb: (t: unknown) => void): this {
+  addToggle(cb: (t: ToggleComponentStub) => void): this {
+    cb(new ToggleComponentStub());
     return this;
   }
-  addDropdown(_cb: (d: unknown) => void): this {
+  addDropdown(cb: (d: DropdownComponentStub) => void): this {
+    cb(new DropdownComponentStub());
     return this;
   }
 }
