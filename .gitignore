@@ -13,4 +13,8 @@ bin/
 # Internal roadmap notes — kept locally for maintainer use, not part of
 # the public repo or npm tarball.
 docs/optimization-todos/
-docs/dev/gsd-agent-knowledg-layer.md
+docs/dev/
+
+# Claude Code workspace artifacts (worktree state, scheduled-task locks).
+# Session-local; never committed.
+.claude/
