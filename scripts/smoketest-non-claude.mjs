@@ -155,6 +155,43 @@ const EXPECTED_RESOURCES = [
   "vault-memory://memory/stats",
 ];
 
+// Phase 8 (plan 08-05 / REL-08): the 5 v1 tools that were promoted to MCP
+// Resources keep their tool entries (with DEPRECATED in the description)
+// so EXPECTED_TOOLS stays at 37. This array drives the per-tool assertion
+// that each one carries the DEPRECATED marker in its description.
+const DEPRECATED_TOOLS = [
+  "list_vaults",
+  "list_models",
+  "recent_notes",
+  "vault_stats",
+  "list_backlinks",
+];
+
+// Phase 8 (plan 08-05 / REL-08): full Resources surface = 10 entries.
+// Five pre-existing (memory-sinks, memory-stats, briefs, contracts,
+// contract-verbs) + five newly promoted (vaults, models, recent, stats,
+// backlinks). The contracts/contract-verbs Resources are templated with
+// `{vault}`; the smoketest registers one vault named `test-vault`, so the
+// SDK reports them with that vault substituted on the listResources()
+// response. We assert presence of the BASE URI for templated entries via
+// startsWith()-style matching rather than equality. For non-templated
+// Resources we still want exact equality.
+const EXPECTED_RESOURCE_URIS = [
+  // Static URIs (exact match)
+  "vault-memory://memory/sinks",
+  "vault-memory://memory/stats",
+  "vault-memory://briefs",
+  "vault-memory://vaults",
+  // Templated URIs — the SDK lists them with the template literal in
+  // `uriTemplate` when no concrete instances are enumerated (list:undefined).
+  "vault-memory://contracts/{vault}",
+  "vault-memory://contract-verbs/{vault}",
+  "vault-memory://models/{vault}",
+  "vault-memory://recent/{vault}",
+  "vault-memory://stats/{vault}",
+  "vault-memory://backlinks/{vault}/{+docId}",
+];
+
 const transport = new StdioClientTransport({
   command: "node",
   args: [CLI, "serve"],
@@ -221,6 +258,30 @@ try {
     pass(`all ${tools.length} tools have non-empty description`);
   }
 
+  // ─── Assertion 2b: REL-08 — 5 v1 tools marked DEPRECATED in description ─
+  // Phase 8 plan 08-05: the 5 list-style tools that were promoted to MCP
+  // Resources MUST stay in tools/list (additive transition path) but each
+  // entry's description MUST carry the DEPRECATED marker so v1 clients
+  // surface the deprecation to their users.
+  const missingDeprecation = [];
+  for (const name of DEPRECATED_TOOLS) {
+    const t = tools.find((x) => x.name === name);
+    if (!t) {
+      missingDeprecation.push(`${name} (not in tools/list)`);
+      continue;
+    }
+    if (typeof t.description !== "string" || !t.description.includes("DEPRECATED")) {
+      missingDeprecation.push(`${name} (description missing DEPRECATED)`);
+    }
+  }
+  if (missingDeprecation.length > 0) {
+    fail(`REL-08 deprecation notice missing on: ${missingDeprecation.join(", ")}`);
+  } else {
+    pass(
+      `REL-08 — ${DEPRECATED_TOOLS.length} v1 tools annotated DEPRECATED in description (plan 08-05)`,
+    );
+  }
+
   // ─── Assertion 3: tools/call list_vaults succeeds ───────────────────
   // list_vaults is the lowest-side-effect tool (read-only, returns
   // configured vaults). The envelope must be `content: [...]` with no
@@ -259,17 +320,56 @@ try {
   // Plan 02-08 Task 4 — confirm memory/sinks + memory/stats Resources
   // are listed AND readable. Resources are the MEM-09 surface; Phase 2
   // requires they work for non-Claude clients (AGENT_AGNOSTIC.md).
+  //
+  // Phase 8 plan 08-05 (REL-08) extends this block: assert all 10
+  // Resources are present (5 pre-existing + 5 newly promoted) AND that
+  // the templated `backlinks` Resource accepts a multi-segment docId
+  // (RFC 6570 reserved expansion via `{+docId}`).
   try {
     const { resources } = await client.listResources();
-    const uris = (resources ?? []).map((r) => r.uri).sort();
+    // Per MCP spec, templated Resources surface under
+    // `resources/templates/list` (NOT `resources/list`). The SDK exposes
+    // this via `client.listResourceTemplates()`. We union static URIs
+    // and templates so the presence check below covers both shapes.
+    const { resourceTemplates } = await client.listResourceTemplates();
+    const staticUris = (resources ?? [])
+      .map((r) => r.uri)
+      .filter((u) => typeof u === "string");
+    const templateUris = (resourceTemplates ?? [])
+      .map((r) => r.uriTemplate)
+      .filter((u) => typeof u === "string");
+    const allUris = [...staticUris, ...templateUris].sort();
     const missingResources = EXPECTED_RESOURCES.filter(
-      (u) => !uris.includes(u),
+      (u) => !allUris.includes(u),
     );
     if (missingResources.length > 0) {
       fail(`missing resources: ${missingResources.join(", ")}`);
     } else {
       pass(
         `resources/list returned the 2 Phase 2 memory Resources (Phase 2 plan 02-06 / MEM-09)`,
+      );
+    }
+
+    // REL-08: assert all 10 expected URIs / templates are present.
+    const missingRel08 = EXPECTED_RESOURCE_URIS.filter(
+      (u) => !allUris.includes(u),
+    );
+    const extraRel08 = allUris.filter(
+      (u) => !EXPECTED_RESOURCE_URIS.includes(u),
+    );
+    if (missingRel08.length > 0) {
+      fail(`REL-08 missing Resource URIs: ${missingRel08.join(", ")}`);
+    }
+    if (extraRel08.length > 0) {
+      fail(`REL-08 unexpected Resource URIs: ${extraRel08.join(", ")}`);
+    }
+    if (allUris.length !== EXPECTED_RESOURCE_URIS.length) {
+      fail(
+        `REL-08 Resource count: expected ${EXPECTED_RESOURCE_URIS.length}, got ${allUris.length}`,
+      );
+    } else if (missingRel08.length === 0 && extraRel08.length === 0) {
+      pass(
+        `REL-08 — resources/list returned all 10 Resource URIs (5 existing + 5 promoted, plan 08-05)`,
       );
     }
 
