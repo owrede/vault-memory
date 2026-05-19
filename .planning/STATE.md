@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: release
-status: ready_to_plan
-stopped_at: Phase 7 UI-SPEC approved
-last_updated: "2026-05-19T01:58:01.242Z"
-last_activity: 2026-05-19 -- Phase 07 planning complete
+status: phase_complete
+stopped_at: Phase 7 complete — Phase 8 release prep + screencast carryover queued
+last_updated: "2026-05-19T11:59:00.000Z"
+last_activity: 2026-05-19 -- Phase 07 execution complete; CAN-09 docs done, screencast deferred to Phase 8
 progress:
   total_phases: 10
-  completed_phases: 4
-  total_plans: 61
-  completed_plans: 59
-  percent: 40
+  completed_phases: 5
+  total_plans: 73
+  completed_plans: 71
+  percent: 50
 ---
 
 # Project State
@@ -21,12 +21,31 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-14)
 
 **Core value:** Local-first, source-agnostic-ready, agentic knowledge layer over your Obsidian notes — with the memory namespace as a non-negotiable safety invariant.
-**Current focus:** Phase 7 — visual contract editor (canvas)
+**Current focus:** Phase 8 — Polish, eval suite, v2.0.0 release (carries the Phase 7 screencast + GitHub Release publish)
 
 ## Current Position
 
-Phase: 7
-Plan: Not started
+Phase: 07 (visual-contract-editor-canvas) — COMPLETE 2026-05-19
+Plan: 12 of 12 — all merged
+
+### Phase 7 sign-off
+
+- All 12 plans complete (Waves 1-5, three human-gated plans approved by orchestrator decision)
+- New surface: `plugin/` Obsidian community-plugin package with Variant C three-pane editor + chrome side-panel (reindex / stats / connectors) + settings tab + safeStorage-backed secrets
+- New server surface (gated by `[plugin] enabled = true`, default OFF): 6 plugin-control MCP tools (`set_runtime_config`, `resolve_secret`, `set_mcp_client`, `get_runtime_stats`, `trigger_reindex`, `suppress_contract_write`); default-off snapshot byte-identical to v1 baseline
+- New file format: `.contract` JSON envelope (`vmFormatVersion: 1` + Phase 6 `ContractFileSchema` body + `editor` block) with `.contract` ↔ `.yaml` round-trip codec; three reference contracts ported (meeting-prep, project-status, code-review-brief)
+- CAN-08: `SuppressionSet` extended with hash-aware `consume(path, hash)` (backwards-compatible); plugin hashes every YAML companion write and calls `suppress_contract_write` before write; server emits `vault-memory://contracts/reloaded` Resource notifications for external edits; plugin `ReloadNotifier` surfaces an Obsidian Notice prompt
+- CAN-09 docs complete: `docs/v2/plugin/{INSTALL,SETTINGS,SECRETS,CONTRACT-EDITOR,CONNECTORS,README}.md` + README.md plugin section; screencast deferred to Phase 8 (REL bookkeeping)
+- CAN-09 distribution: `skills/vm-install/` + `skills/vm-update/` skills with SHA-256 verification; release URL placeholder until v2.0.0 published in Phase 8
+- Tests: server-side 1657 passing (was 1640 at Phase 6 sign-off; +17 net Phase 7), plugin 136 passing (new); both tsc clean; both builds clean
+- Tool surface (with `plugin.enabled = true`): existing baseline + 6 plugin tools. Default-off surface unchanged (snapshot test enforces byte equivalence).
+
+**Phase 8 carryovers** (recorded in ROADMAP.md Phase 8 section):
+
+- ≤8-minute screencast (CAN-09 carryover from Plan 07-12 Task 3)
+- Publish v2.0.0 GitHub Release + `manifest.sha256` to unblock the `vm-install`/`vm-update` skills (Plan 07-11 Task 3 deferred human-verify)
+
+Next: `/gsd-plan-phase 8` — Polish, eval suite, v2.0.0 release.
 
 Phase 6 plan set (`.planning/phases/06-task-contract-dsl/`):
 
@@ -58,7 +77,7 @@ Phase 4 ships:
 - 3 new deps (Phase 4 plan 04-05): `graphology`, `graphology-communities-louvain`, `seedrandom` — all pure-JS ESM MIT, provenance-verified; bundle 376KB → 392KB
 
 Next: `/gsd-plan-phase 5` — Compiled brief layer (BRF-01..BRF-11).
-Last activity: 2026-05-19 -- Phase 07 planning complete
+Last activity: 2026-05-19 -- Phase 07 execution started
 
 ---
 

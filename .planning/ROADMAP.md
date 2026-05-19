@@ -18,7 +18,7 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
 - [x] **Phase 4: Graph-as-retrieval** - Typed-edge expansion and community clustering (Complete 2026-05-17)
 - [x] **Phase 5: Compiled brief layer** - Signature differentiator; briefs as documents with source-hash staleness daemon (Complete 2026-05-18)
 - [x] **Phase 6: Task contract DSL** - YAML+Zod contracts; list/describe/instantiate via MCP (completed 2026-05-18)
-- [ ] **Phase 7: vault-memory Obsidian plugin (contract editor + chrome)** - Obsidian plugin with Variant-C visual editor over a custom `.contract` format (forked jsoncanvas renderer) emitting Phase 6 YAML; ships with settings, key-ring secrets, manual reindex, stats, and connector management
+- [x] **Phase 7: vault-memory Obsidian plugin (contract editor + chrome)** - Obsidian plugin with Variant-C visual editor over a custom `.contract` format (forked jsoncanvas renderer) emitting Phase 6 YAML; ships with settings, key-ring secrets, manual reindex, stats, and connector management — COMPLETE 2026-05-19 (screencast deferred to Phase 8)
 - [ ] **Phase 8: Polish, eval suite, v2.0.0 release** - Release gate; CI eval suite; npm publish
 - [ ] **Phase 9: Pre-Phase-10 premise check (HARD GATE)** - Verify seams, ADR conformance, capability descriptors before any v3 work
 
@@ -216,30 +216,30 @@ Plans:
 Plans:
 **Wave 1**
 
-- [ ] 07-01-PLAN.md — Spike + ADR 007 + plugin skeleton + meeting-prep prototype (CAN-10; jsoncanvas-fork rescoped to @xyflow/svelte; blocking human go/no-go gate)
+- [x] 07-01-PLAN.md — Spike + ADR 007 + plugin skeleton + meeting-prep prototype (CAN-10; jsoncanvas-fork rescoped to @xyflow/svelte; blocking human go/no-go gate)
 
 **Wave 2** *(blocked on Wave 1 completion)*
 
-- [ ] 07-02-PLAN.md — ContractDocumentSchema + pure-TS round-trip codec (canonicalize, editor-state-comment) (CAN-01, CAN-02, CAN-07)
-- [ ] 07-03-PLAN.md — Plugin lifecycle: SettingsStore + VaultMemoryMcpClient + settings-tab skeleton + missing-CLI banner (CAN-01, CAN-05)
-- [ ] 07-04-PLAN.md — [plugin] config block + 5 plugin-control MCP tools (set_runtime_config, resolve_secret, set_mcp_client, get_runtime_stats, trigger_reindex) gated default-OFF (PLG-01..PLG-05 server half; preserves v1 tools-list snapshot)
+- [x] 07-02-PLAN.md — ContractDocumentSchema + pure-TS round-trip codec (canonicalize, editor-state-comment) (CAN-01, CAN-02, CAN-07)
+- [x] 07-03-PLAN.md — Plugin lifecycle: SettingsStore + VaultMemoryMcpClient + settings-tab skeleton + missing-CLI banner (CAN-01, CAN-05)
+- [x] 07-04-PLAN.md — [plugin] config block + 5 plugin-control MCP tools (set_runtime_config, resolve_secret, set_mcp_client, get_runtime_stats, trigger_reindex) gated default-OFF (PLG-01..PLG-05 server half; preserves v1 tools-list snapshot)
 
 **Wave 3** *(blocked on Wave 2 completion)*
 
-- [ ] 07-05-PLAN.md — Variant C editor view: palette + Svelte Flow canvas + Zod-derived inspector forms (CAN-01, CAN-02, CAN-03, CAN-04, CAN-05)
-- [ ] 07-06-PLAN.md — 3 reference .contract files + CAN-07 round-trip acceptance test (CAN-06, CAN-07)
-- [ ] 07-08-PLAN.md — Settings tab + safeStorage-backed secrets panel (PLG-01, PLG-02)
-- [ ] 07-09-PLAN.md — Chrome ItemView with Reindex + Stats panels via MCP progress notifications (PLG-03, PLG-04)
+- [x] 07-05-PLAN.md — Variant C editor view: palette + Svelte Flow canvas + Zod-derived inspector forms (CAN-01, CAN-02, CAN-03, CAN-04, CAN-05)
+- [x] 07-06-PLAN.md — 3 reference .contract files + CAN-07 round-trip acceptance test (CAN-06, CAN-07)
+- [x] 07-08-PLAN.md — Settings tab + safeStorage-backed secrets panel (PLG-01, PLG-02)
+- [x] 07-09-PLAN.md — Chrome ItemView with Reindex + Stats panels via MCP progress notifications (PLG-03, PLG-04)
 
 **Wave 4** *(blocked on Wave 3 completion)*
 
-- [ ] 07-07-PLAN.md — SuppressionSet hash extension + Phase 6 loader consume() + suppress_contract_write tool + plugin ReloadNotifier (CAN-08)
-- [ ] 07-10-PLAN.md — Connectors panel + ${secret:name} resolver service (PLG-05)
+- [x] 07-07-PLAN.md — SuppressionSet hash extension + Phase 6 loader consume() + suppress_contract_write tool + plugin ReloadNotifier (CAN-08)
+- [x] 07-10-PLAN.md — Connectors panel + ${secret:name} resolver service (PLG-05)
 
 **Wave 5** *(blocked on Wave 4 completion)*
 
-- [ ] 07-11-PLAN.md — vm-install + vm-update skills consuming GitHub Releases tarballs with SHA-256 verification (CAN-09 distribution half)
-- [ ] 07-12-PLAN.md — Five plugin docs (INSTALL/SETTINGS/SECRETS/CONTRACT-EDITOR/CONNECTORS) + README plugin section + screencast (CAN-09 docs half)
+- [x] 07-11-PLAN.md — vm-install + vm-update skills consuming GitHub Releases tarballs with SHA-256 verification (CAN-09 distribution half — release tarball + manifest.sha256 publish carries to Phase 8 release prep)
+- [x] 07-12-PLAN.md — Five plugin docs (INSTALL/SETTINGS/SECRETS/CONTRACT-EDITOR/CONNECTORS) + README plugin section (CAN-09 docs half; ≤8-min screencast deferred to Phase 8)
 
 **UI hint**: yes
 
@@ -261,6 +261,11 @@ Plans:
 Plans:
 
 - TBD — run `/gsd:plan-phase 8` to populate this list
+
+**Phase 7 carryovers** (must land in Phase 8):
+
+- [ ] ≤8-minute screencast covering install → first contract authored → first `instantiate_contract` call (CAN-09 carryover from Phase 7 / Plan 07-12 Task 3). Publish as `vault-memory-plugin-walkthrough.mp4` GitHub Release asset on the v2.0.0 tag; update `README.md`, `docs/v2/plugin/INSTALL.md`, and `docs/v2/plugin/CONTRACT-EDITOR.md` deferral notes with the resolved URL.
+- [ ] Publish v2.0.0 GitHub Release with `vault-memory-plugin-v2.0.0.tar.gz` tarball + `manifest.sha256` checksum so the `vm-install` + `vm-update` skills (Phase 7 Plan 07-11) become live. Replace `RELEASE_URL_PLACEHOLDER` in `skills/vm-install/setup.sh` and `skills/vm-update/update.sh` with the resolved release URL. Run the live-vault dry run that satisfies Plan 07-11 Task 3 (deferred human-verify checkpoint).
 
 ### Phase 9: Pre-Phase-10 premise check (HARD GATE)
 
