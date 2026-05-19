@@ -76,7 +76,7 @@ export class VaultMemorySettingsTab extends PluginSettingTab {
     if (this.vmPlugin.cliMissing) {
       const banner = containerEl.createDiv({ cls: "vm-cli-missing-banner" });
       banner.setText(
-        "vault-memory CLI not found. Install via the `/vm-install` skill " +
+        "vault-memory CLI not found. Install via the `/vmem:install` skill " +
           "or set the Server Command setting to the absolute path of " +
           "`vault-memory`.",
       );

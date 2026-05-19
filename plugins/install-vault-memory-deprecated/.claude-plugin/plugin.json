@@ -1,0 +1,19 @@
+{
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
+  "name": "install-vault-memory",
+  "version": "0.6.0",
+  "description": "DEPRECATED — renamed to `vmem`. Install the `vmem` plugin from this same marketplace and use `/vmem:install` going forward. This plugin will be removed in 60 days.",
+  "author": {
+    "name": "Oliver Wrede",
+    "email": "owrede@gmail.com",
+    "url": "https://github.com/owrede"
+  },
+  "homepage": "https://github.com/owrede/vault-memory",
+  "license": "MIT",
+  "keywords": [
+    "vault-memory",
+    "obsidian",
+    "mcp",
+    "deprecated"
+  ]
+}

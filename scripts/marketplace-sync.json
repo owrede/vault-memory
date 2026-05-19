@@ -6,14 +6,22 @@
     "marketplace_json_path": ".claude-plugin/marketplace.json",
     "plugins_dir": "plugins"
   },
-  "skills": [
+  "plugins": [
     {
-      "source": "skills/install-vault-memory",
+      "source": "plugins/vmem",
+      "plugin_name": "vmem",
+      "category": "development",
+      "homepage": "https://github.com/owrede/vault-memory",
+      "license": "MIT",
+      "keywords": ["vault-memory", "obsidian", "mcp", "agentic-memory", "vmem"]
+    },
+    {
+      "source": "plugins/install-vault-memory-deprecated",
       "plugin_name": "install-vault-memory",
       "category": "development",
       "homepage": "https://github.com/owrede/vault-memory",
       "license": "MIT",
-      "keywords": ["vault-memory", "obsidian", "mcp", "installer"]
+      "keywords": ["vault-memory", "obsidian", "mcp", "deprecated"]
     }
   ]
 }

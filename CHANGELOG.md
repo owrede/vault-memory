@@ -344,6 +344,10 @@ The following five v1 tools are deprecated in v2.0.0 and promoted to MCP Resourc
 
 ## [Unreleased]
 
+### Changed
+
+- **Obsidian plugin error messages reference `/vmem:install`** (was: `vm-install skill` / `/vm-install`). Two strings updated in `plugin/src/services/mcp-client.ts` (the `CliNotFoundError` thrown in both the spawn-time and connect-time error paths) and one banner string in `plugin/src/chrome/settings-tab.ts` (the "CLI not found" banner in the settings tab). The new strings point users at the renamed marketplace plugin `vmem` (replacing the old `install-vault-memory` with its duplicated `/install-vault-memory:install-vault-memory` slug) and the verb-split surface: `/vmem:install`, `/vmem:health`, `/vmem:reindex`. See `ISSUE-marketplace-plugin-rename-vmem.md`.
+
 ### Fixed
 
 - **Migration 010 — `UNIQUE constraint failed: sections.note_id, sections.anchor`** crash blocking v0.9.x/v1.0.0 → v2.0.0-rc.1 upgrade for any user whose vault contains heading-only sibling sections (e.g. template scaffolds with repeated `## TODO` headings whose body slot is empty). `extractSections` produces identical content-hash anchors for sections with identical `(heading_text, body)` pairs, and the `INSERT INTO sections` was plain so the second sibling aborted the migration transaction — leaving every CLI command unreachable for every configured vault until the bad DB was removed from `config.toml`. `backfillSectionsFromChunks` now uses `INSERT OR IGNORE`; on collision the surviving row's id is looked up and reused so the `insertedIds` slot still resolves later children's `parent_id` correctly. See `ISSUE-migration-010-duplicate-anchor.md`.

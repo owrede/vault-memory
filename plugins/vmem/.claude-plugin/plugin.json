@@ -1,0 +1,20 @@
+{
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
+  "name": "vmem",
+  "version": "0.1.0",
+  "description": "Local-first agentic memory layer for Obsidian — install, diagnose, and reindex vault-memory from Claude Code via /vmem:install, /vmem:health, /vmem:reindex.",
+  "author": {
+    "name": "Oliver Wrede",
+    "email": "owrede@gmail.com",
+    "url": "https://github.com/owrede"
+  },
+  "homepage": "https://github.com/owrede/vault-memory",
+  "license": "MIT",
+  "keywords": [
+    "vault-memory",
+    "obsidian",
+    "mcp",
+    "agentic-memory",
+    "vmem"
+  ]
+}

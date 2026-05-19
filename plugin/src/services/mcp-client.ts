@@ -118,7 +118,7 @@ export const defaultClientFactory: ClientFactory = async (cfg) => {
     if (code === "ENOENT") {
       throw new CliNotFoundError(
         `vault-memory CLI not found on PATH (tried '${cfg.command}'). ` +
-          `Install via the vm-install skill, or set the Server Command setting ` +
+          `Install via the /vmem:install skill, or set the Server Command setting ` +
           `to the absolute path of the vault-memory binary.`,
       );
     }
@@ -219,7 +219,7 @@ export class VaultMemoryMcpClient {
       if (code === "ENOENT") {
         throw new CliNotFoundError(
           `vault-memory CLI not found on PATH (tried '${this.cfg.command}'). ` +
-            `Install via the vm-install skill, or set the Server Command setting ` +
+            `Install via the /vmem:install skill, or set the Server Command setting ` +
             `to the absolute path of the vault-memory binary.`,
         );
       }
