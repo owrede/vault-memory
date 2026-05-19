@@ -48,7 +48,7 @@ created: 2026-05-19
 | REL-05 | TBD | 1 | `MIGRATION-V1-TO-V2.md` covers SDK 1.29 + Zod 4 + type-import changes | — | N/A | grep | `grep -q "1.29" docs/v2/MIGRATION-V1-TO-V2.md && grep -q "Zod 4" docs/v2/MIGRATION-V1-TO-V2.md` | ❌ W0 (file missing) | ⬜ pending |
 | REL-06 | TBD | 3 | v2.0.0 tag exists + GitHub Release auto-created | — | N/A | manual + workflow | `git tag -l v2.0.0` returns tag; `gh release view v2.0.0` returns Release | n/a — post-release | ⬜ pending |
 | REL-07 | TBD | 3 | npm publish succeeded | — | npm provenance attestation present | manual + workflow | `npm view @owrede/vault-memory@2.0.0 version` returns `2.0.0` | n/a — post-publish | ⬜ pending |
-| REL-08 | TBD | 2 | Default tool surface ≤32 (with MCP Resources promotion of 5 list-style tools) | — | Tools-list snapshot is the contract | snapshot test | `npm run eval:baseline` passes against updated `tools-list.snapshot.json` (32 entries); extended assertion in `scripts/smoketest-non-claude.mjs` for resources-list | ❌ W0 (snapshots regen + resources-list snapshot) | ⬜ pending |
+| REL-08 | TBD | 2 | Canonical (non-deprecated) tool count = 32; raw `tools/list` length = 37 with 5 DEPRECATED; `resources/list` length = 10 | — | Tools-list + resources-list snapshots are the contract | snapshot test | `npm run eval:baseline` passes against updated `tools-list.snapshot.json` (37 entries, 5 with `"DEPRECATED"` in description) and the new `resources-list.snapshot.json` (10 entries); extended assertions in `scripts/smoketest-non-claude.mjs` for `DEPRECATED_TOOLS` and `EXPECTED_RESOURCE_URIS` | ❌ W0 (snapshots regen + resources-list snapshot + DEPRECATED_TOOLS list) | ⬜ pending |
 | REL-09 | TBD | 3 | Maintainer signed off | — | N/A | manual | maintainer line at bottom of `docs/v2/PHASE-8-SIGN-OFF.md` | ❌ manual (D-18) | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
@@ -65,8 +65,8 @@ created: 2026-05-19
 - [ ] `docs/v2/plugin/screencast-thumbnail.png` — does not exist; create per D-14 (carryover from Phase 7 CAN-09)
 - [ ] Tarball-build step in `.github/workflows/publish.yml` — does not exist as a step; add before the `Create GitHub Release` step (Phase 7 carryover: tarball + manifest.sha256 release assets)
 - [ ] Branch protection rule on `main` — must be configured via GitHub Settings → Branches (REL-01)
-- [ ] Update `evals/v1-baseline/tools-list.snapshot.json` to 32-tool inventory (REL-08)
-- [ ] Update `EXPECTED_TOOLS` array in `scripts/smoketest-non-claude.mjs` to match the 32-tool inventory (REL-08)
+- [ ] Update `evals/v1-baseline/tools-list.snapshot.json` — 37 entries, 5 with `"DEPRECATED"` in description (raw `tools/list` length stays 37 per D-03 additive-only; canonical count = 32). (REL-08)
+- [ ] Update `EXPECTED_TOOLS` array in `scripts/smoketest-non-claude.mjs` — keep all 37 tool names; add a separate `DEPRECATED_TOOLS` list of the 5 promoted names (`list_vaults`, `list_models`, `recent_notes`, `vault_stats`, `list_backlinks`) for assertion. (REL-08)
 
 ---
 
