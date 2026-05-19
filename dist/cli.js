@@ -52,10 +52,43 @@ async function loadConfig(path7 = configPath()) {
     },
     vaults: validated.vaults,
     memory: validated.memory,
-    memory_sinks: validated.memory_sinks
+    // Phase 5 / ADR-005 §"Sub-folder MemorySink ordering": sort the
+    // memory_sinks array by path-specificity (longest resource first)
+    // so `MemorySinkRegistry.findSinkContaining` (startsWith over
+    // insertion order, src/memory/registry.ts:190-202) resolves
+    // sub-folder sinks BEFORE their parents. Concretely:
+    // `_memory/_briefs/` MUST be registered before `_memory/` so a
+    // brief write routes into the brief-specific sink (bound to
+    // `default-brief-v1`, accepts `status: "stale"`) instead of the
+    // parent (bound to `default-memory-v1`, rejects `"stale"`).
+    memory_sinks: sortSinksByPathSpecificity(validated.memory_sinks),
+    brief: validated.brief,
+    contracts: validated.contracts
   };
 }
-var ServerConfigSchema, VaultConfigSchema, MemorySinkConfigSchema, MemoryConfigSchema, AppConfigSchema, DEFAULT_CONFIG;
+function sortSinksByPathSpecificity(sinks) {
+  const tagged = sinks.map((s, i) => ({
+    sink: s,
+    resourceLength: extractResourceLength(s.handle),
+    order: i
+  }));
+  tagged.sort((a, b) => {
+    if (a.resourceLength !== b.resourceLength) {
+      return b.resourceLength - a.resourceLength;
+    }
+    return a.order - b.order;
+  });
+  return tagged.map((t) => t.sink);
+}
+function extractResourceLength(handle) {
+  const schemeEnd = handle.indexOf("://");
+  if (schemeEnd === -1) return 0;
+  const afterScheme = handle.slice(schemeEnd + 3);
+  const firstSlash = afterScheme.indexOf("/");
+  if (firstSlash === -1) return 0;
+  return afterScheme.length - (firstSlash + 1);
+}
+var ServerConfigSchema, VaultConfigSchema, BriefOllamaConfigSchema, BriefConfigSchema, ContractsMcpClientConfigSchema, ContractsConfigSchema, DEFAULT_CONTRACTS_CONFIG, MemorySinkConfigSchema, MemoryConfigSchema, AppConfigSchema, DEFAULT_CONFIG;
 var init_loader = __esm({
   "src/config/loader.ts"() {
     "use strict";
@@ -76,6 +109,37 @@ var init_loader = __esm({
       write_enabled: z.boolean().optional(),
       exclude_globs: z.array(z.string()).optional()
     });
+    BriefOllamaConfigSchema = z.object({
+      model: z.string().min(1)
+    });
+    BriefConfigSchema = z.object({
+      ollama: BriefOllamaConfigSchema.optional()
+    });
+    ContractsMcpClientConfigSchema = z.object({
+      command: z.string().min(1).describe("Peer MCP server executable path"),
+      args: z.array(z.string()).optional(),
+      env: z.record(z.string(), z.string()).optional()
+    });
+    ContractsConfigSchema = z.object({
+      auto_register_tools: z.boolean().default(false).describe(
+        "D-A1b \u2014 per-vault gate for auto-registering contracts as MCP Tools"
+      ),
+      tool_prefix: z.string().min(1).regex(/^[a-z_][a-z0-9_]*$/).default("vm_").describe(
+        "D-A1c \u2014 slug prefix for auto-registered tool names; A7 enforces non-empty"
+      ),
+      step_timeout_seconds: z.number().int().positive().default(30).describe(
+        "Q-TIMEOUT \u2014 applied only to peer-MCP verbs (baseline verbs use their own discipline)"
+      ),
+      defaults: z.record(z.string(), z.string()).default({}).describe("D-A4b \u2014 default chain step 2: handle \u2192 URI fallback"),
+      mcp_clients: z.record(z.string(), ContractsMcpClientConfigSchema).default({}).describe("D-A2a \u2014 peer MCP clients vault-memory connects to as an MCP client")
+    });
+    DEFAULT_CONTRACTS_CONFIG = {
+      auto_register_tools: false,
+      tool_prefix: "vm_",
+      step_timeout_seconds: 30,
+      defaults: {},
+      mcp_clients: {}
+    };
     MemorySinkConfigSchema = z.object({
       name: z.string().min(1),
       handle: z.string().min(1),
@@ -88,7 +152,13 @@ var init_loader = __esm({
       server: ServerConfigSchema.optional().default({}),
       vaults: z.array(VaultConfigSchema).optional().default([]),
       memory: MemoryConfigSchema.optional(),
-      memory_sinks: z.array(MemorySinkConfigSchema).optional().default([])
+      memory_sinks: z.array(MemorySinkConfigSchema).optional().default([]),
+      // Phase 5 / D-10 tier 2 (ADR-005). Backwards-compatible: existing
+      // configs without `[brief]` parse identically.
+      brief: BriefConfigSchema.optional(),
+      // Phase 6 / ADR-006 §Decision 1. Backwards-compatible: configs without
+      // `[contracts]` resolve to DEFAULT_CONTRACTS_CONFIG.
+      contracts: ContractsConfigSchema.optional().default(DEFAULT_CONTRACTS_CONFIG)
     });
     DEFAULT_CONFIG = {
       server: {
@@ -97,7 +167,8 @@ var init_loader = __esm({
         default_embedding_model: "qwen3-embedding"
       },
       vaults: [],
-      memory_sinks: []
+      memory_sinks: [],
+      contracts: { ...DEFAULT_CONTRACTS_CONFIG }
     };
   }
 });
@@ -624,6 +695,22 @@ var init_backfill = __esm({
   }
 });
 
+// src/chunker/chunk-id.ts
+import { createHash as createHash2 } from "crypto";
+function computeChunkHash(text) {
+  const canonical = text.replace(/\r\n/g, "\n").trimEnd().normalize("NFC");
+  return "sha256:" + createHash2("sha256").update(canonical, "utf8").digest("hex");
+}
+function computeChunkIdFragment(text) {
+  return computeChunkHash(text).slice("sha256:".length, "sha256:".length + 7);
+}
+var init_chunk_id = __esm({
+  "src/chunker/chunk-id.ts"() {
+    "use strict";
+    init_esm_shims();
+  }
+});
+
 // src/db/schema.ts
 function runMigration005(db, _ctx) {
   const rows = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'embeddings\\_%' ESCAPE '\\'").all();
@@ -768,12 +855,121 @@ function runMigration011(db, _ctx) {
     lastId = nxt.id;
   }
 }
+function runMigration012(db, _ctx) {
+  db.exec(`DROP INDEX IF EXISTS idx_edges_unique`);
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_edges_unique
+      ON edges(
+        source_doc,
+        COALESCE(target_doc, -1),
+        COALESCE(target_path, ''),
+        type,
+        COALESCE(rel, ''),
+        COALESCE(anchor, ''),
+        COALESCE(line_number, -1)
+      );
+  `);
+  const pending = db.prepare("SELECT COUNT(*) AS c FROM wikilinks").get();
+  if (!pending || pending.c === 0) return;
+  const CHUNK = 1e4;
+  const copy = db.prepare(`
+    INSERT OR IGNORE INTO edges
+      (source_doc, target_doc, target_path, type, rel, anchor, line_number, link_text)
+    SELECT source_note, target_note, target_path, 'wikilink', NULL, anchor, line_number, link_text
+      FROM wikilinks
+     WHERE id > @after_id
+     ORDER BY id ASC
+     LIMIT @chunk
+  `);
+  const nextLast = db.prepare("SELECT id FROM wikilinks WHERE id > ? ORDER BY id ASC LIMIT 1 OFFSET ?");
+  let lastId = 0;
+  while (true) {
+    copy.run({ after_id: lastId, chunk: CHUNK });
+    const nxt = nextLast.get(lastId, CHUNK - 1);
+    if (!nxt) break;
+    lastId = nxt.id;
+  }
+}
+function runMigration013(db, _ctx) {
+  const cols = db.prepare("PRAGMA table_info(chunks)").all();
+  const hasColumn = cols.some((c) => c.name === "chunk_id_fragment");
+  if (!hasColumn) {
+    db.exec(
+      "ALTER TABLE chunks ADD COLUMN chunk_id_fragment TEXT NOT NULL DEFAULT ''"
+    );
+  }
+  const pending = db.prepare(
+    "SELECT COUNT(*) AS c FROM chunks WHERE chunk_id_fragment = ''"
+  ).get();
+  if (pending && pending.c > 0) {
+    const CHUNK = 1e4;
+    const update = db.prepare(
+      "UPDATE chunks SET chunk_id_fragment = ? WHERE id = ?"
+    );
+    const select = db.prepare(
+      "SELECT id, text FROM chunks WHERE id > ? AND chunk_id_fragment = '' ORDER BY id ASC LIMIT 10000"
+    );
+    let afterId = 0;
+    while (true) {
+      const rows = select.all(afterId);
+      if (rows.length === 0) break;
+      const tx = db.transaction((batch) => {
+        for (const row of batch) {
+          update.run(computeChunkIdFragment(row.text), row.id);
+        }
+      });
+      tx(rows);
+      const last = rows[rows.length - 1];
+      if (!last) break;
+      afterId = last.id;
+      if (rows.length < CHUNK) break;
+    }
+  }
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS brief_sources (
+      brief_doc_id      TEXT NOT NULL,
+      chunk_id_fragment TEXT NOT NULL,
+      chunk_doc_id      TEXT NOT NULL,
+      recorded_hash     TEXT NOT NULL,
+      UNIQUE(brief_doc_id, chunk_id_fragment)
+    );
+    CREATE INDEX IF NOT EXISTS idx_brief_sources_chunk_doc
+      ON brief_sources(chunk_doc_id);
+    CREATE INDEX IF NOT EXISTS idx_brief_sources_fragment
+      ON brief_sources(chunk_id_fragment);
+  `);
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS daemon_state (
+      vault_name           TEXT PRIMARY KEY,
+      last_seen_doc_mtime  INTEGER NOT NULL
+    );
+  `);
+}
+function runMigration014(db, _ctx) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS contract_audit (
+      id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      kind          TEXT NOT NULL,
+      contract      TEXT,
+      verb          TEXT,
+      step_alias    TEXT,
+      vault         TEXT,
+      ts            INTEGER NOT NULL,
+      error_message TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_contract_audit_kind_ts
+      ON contract_audit(kind, ts);
+    CREATE INDEX IF NOT EXISTS idx_contract_audit_verb
+      ON contract_audit(verb);
+  `);
+}
 var INITIAL_SCHEMA, MIGRATION_002_ALIASES, MIGRATION_003_FIX_DELETE_FKS, MIGRATION_004_VARIABLE_DIMS, MIGRATION_006_BODY_HASH, MIGRATION_007_DOC_URI_ADD, MIGRATIONS;
 var init_schema = __esm({
   "src/db/schema.ts"() {
     "use strict";
     init_esm_shims();
     init_backfill();
+    init_chunk_id();
     INITIAL_SCHEMA = `
 -- \u2500\u2500 3.1 Raw Layer \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 
@@ -1027,6 +1223,21 @@ CREATE INDEX IF NOT EXISTS idx_notes_doc_uri ON notes(doc_uri);
         version: 11,
         description: "edges table + backfill from wikilinks (Phase 4 / 04-01 / GRA-04)",
         run: runMigration011
+      },
+      {
+        version: 12,
+        description: "widen idx_edges_unique to include target_path/rel/line_number; re-run wikilink backfill (CR-01)",
+        run: runMigration012
+      },
+      {
+        version: 13,
+        description: "chunks.chunk_id_fragment + brief_sources + daemon_state (Phase 5 / BRF-* / D-04..D-06 / D-09)",
+        run: runMigration013
+      },
+      {
+        version: 14,
+        description: "contract_audit table \u2014 Phase 6 / CON-* / Q-AUD",
+        run: runMigration014
       }
     ];
   }
@@ -1230,12 +1441,13 @@ var init_chunks = __esm({
   "src/db/queries/chunks.ts"() {
     "use strict";
     init_esm_shims();
+    init_chunk_id();
     ChunksQueries = class {
       constructor(db) {
         this.db = db;
         this._insert = db.prepare(`
-      INSERT INTO chunks (note_id, idx, text, heading_path, start_offset, end_offset, token_count)
-      VALUES (@note_id, @idx, @text, @heading_path, @start_offset, @end_offset, @token_count)
+      INSERT INTO chunks (note_id, idx, text, heading_path, start_offset, end_offset, token_count, chunk_id_fragment)
+      VALUES (@note_id, @idx, @text, @heading_path, @start_offset, @end_offset, @token_count, @chunk_id_fragment)
     `);
         this._deleteByNote = db.prepare("DELETE FROM chunks WHERE note_id = ?");
         this._getByNote = db.prepare(
@@ -1259,7 +1471,14 @@ var init_chunks = __esm({
               heading_path: c.headingPath,
               start_offset: c.startOffset,
               end_offset: c.endOffset,
-              token_count: c.tokenCount
+              token_count: c.tokenCount,
+              // Phase 5 / D-04 / D-05: prefer the caller-supplied fragment
+              // (production path: chunker computed it once). Fall back to
+              // the canonical helper for legacy / test-only call sites that
+              // pre-date the field. The helper is the single source of
+              // truth — there is no other place in the codebase that
+              // computes `chunk_id_fragment`.
+              chunk_id_fragment: c.chunkIdFragment ?? computeChunkIdFragment(c.text)
             });
             ids.push(Number(info.lastInsertRowid));
           }
@@ -2209,6 +2428,195 @@ var init_sections = __esm({
   }
 });
 
+// src/db/queries/brief_sources.ts
+var BriefSourcesQueries;
+var init_brief_sources = __esm({
+  "src/db/queries/brief_sources.ts"() {
+    "use strict";
+    init_esm_shims();
+    BriefSourcesQueries = class {
+      constructor(db) {
+        this.db = db;
+        this._insert = db.prepare(`
+      INSERT OR IGNORE INTO brief_sources
+        (brief_doc_id, chunk_id_fragment, chunk_doc_id, recorded_hash)
+      VALUES (@brief_doc_id, @chunk_id_fragment, @chunk_doc_id, @recorded_hash)
+    `);
+        this._deleteByBrief = db.prepare(
+          "DELETE FROM brief_sources WHERE brief_doc_id = ?"
+        );
+        this._listBriefDocIds = db.prepare(
+          "SELECT DISTINCT brief_doc_id FROM brief_sources"
+        );
+        this._briefsForChunkDoc = db.prepare(
+          `SELECT brief_doc_id, chunk_id_fragment, chunk_doc_id, recorded_hash
+         FROM brief_sources
+        WHERE chunk_doc_id = ?`
+        );
+        this._sourcesForBrief = db.prepare(
+          `SELECT brief_doc_id, chunk_id_fragment, chunk_doc_id, recorded_hash
+         FROM brief_sources
+        WHERE brief_doc_id = ?`
+        );
+      }
+      db;
+      _insert;
+      _deleteByBrief;
+      _listBriefDocIds;
+      _briefsForChunkDoc;
+      _sourcesForBrief;
+      /**
+       * Batch insert. Idempotent: `INSERT OR IGNORE` against the UNIQUE
+       * `(brief_doc_id, chunk_id_fragment)` constraint means re-running the
+       * same batch is a no-op. Mirrors `WikilinksQueries.insertBatch`
+       * (`wikilinks.ts:74-87`).
+       */
+      insertBatch(briefDocId, sources) {
+        const tx = this.db.transaction((xs) => {
+          for (const x of xs) {
+            this._insert.run({
+              brief_doc_id: briefDocId,
+              chunk_id_fragment: x.chunkIdFragment,
+              chunk_doc_id: x.chunkDocId,
+              recorded_hash: x.recordedHash
+            });
+          }
+        });
+        tx(sources);
+      }
+      deleteByBrief(briefDocId) {
+        return this._deleteByBrief.run(briefDocId).changes;
+      }
+      listBriefDocIds() {
+        return this._listBriefDocIds.all().map((r) => r.brief_doc_id);
+      }
+      briefsForChunkDoc(chunkDocId) {
+        return this._briefsForChunkDoc.all(chunkDocId).map((r) => ({
+          briefDocId: r.brief_doc_id,
+          chunkIdFragment: r.chunk_id_fragment,
+          chunkDocId: r.chunk_doc_id,
+          recordedHash: r.recorded_hash
+        }));
+      }
+      sourcesForBrief(briefDocId) {
+        return this._sourcesForBrief.all(briefDocId).map((r) => ({
+          briefDocId: r.brief_doc_id,
+          chunkIdFragment: r.chunk_id_fragment,
+          chunkDocId: r.chunk_doc_id,
+          recordedHash: r.recorded_hash
+        }));
+      }
+    };
+  }
+});
+
+// src/db/queries/daemon_state.ts
+var DaemonStateQueries;
+var init_daemon_state = __esm({
+  "src/db/queries/daemon_state.ts"() {
+    "use strict";
+    init_esm_shims();
+    DaemonStateQueries = class {
+      constructor(db) {
+        this.db = db;
+        this._getCursor = db.prepare(
+          "SELECT last_seen_doc_mtime FROM daemon_state WHERE vault_name = ?"
+        );
+        this._setCursor = db.prepare(`
+      INSERT INTO daemon_state (vault_name, last_seen_doc_mtime)
+      VALUES (@vault_name, @mtime)
+      ON CONFLICT(vault_name) DO UPDATE SET last_seen_doc_mtime = @mtime
+    `);
+      }
+      db;
+      _getCursor;
+      _setCursor;
+      /**
+       * Returns the cursor for `vaultName`, or `null` if no row exists yet
+       * (fresh vault, daemon has never run). Callers treat `null` as
+       * "perform the startup full scan" — the cursor is a steady-state
+       * efficiency hint, never a correctness floor.
+       */
+      getCursor(vaultName) {
+        const row = this._getCursor.get(vaultName);
+        return row?.last_seen_doc_mtime ?? null;
+      }
+      setCursor(vaultName, mtime) {
+        this._setCursor.run({ vault_name: vaultName, mtime });
+      }
+    };
+  }
+});
+
+// src/db/queries/contract-audit.ts
+function toContractAuditRow(row) {
+  const out = {
+    kind: row.kind,
+    ts: row.ts
+  };
+  if (row.contract !== null) out.contract = row.contract;
+  if (row.verb !== null) out.verb = row.verb;
+  if (row.step_alias !== null) out.stepAlias = row.step_alias;
+  if (row.vault !== null) out.vault = row.vault;
+  if (row.error_message !== null) out.errorMessage = row.error_message;
+  return out;
+}
+var ContractAuditQueries;
+var init_contract_audit = __esm({
+  "src/db/queries/contract-audit.ts"() {
+    "use strict";
+    init_esm_shims();
+    ContractAuditQueries = class {
+      _insert;
+      _listByKindAll;
+      _listByKindAndVault;
+      // Q-AUD: `kind = 'contract_step'` is a CONSTANT filter (D-A2b semantics) —
+      // the aggregator counts ONLY step rows, never load_error rows.
+      _aggregate;
+      constructor(db) {
+        this._insert = db.prepare(`
+      INSERT INTO contract_audit
+        (kind, contract, verb, step_alias, vault, ts, error_message)
+      VALUES
+        (@kind, @contract, @verb, @step_alias, @vault, @ts, @error_message)
+    `);
+        this._listByKindAll = db.prepare(
+          "SELECT * FROM contract_audit WHERE kind = ? ORDER BY ts DESC LIMIT ?"
+        );
+        this._listByKindAndVault = db.prepare(
+          "SELECT * FROM contract_audit WHERE kind = ? AND vault = ? ORDER BY ts DESC LIMIT ?"
+        );
+        this._aggregate = db.prepare(
+          `SELECT verb, COUNT(*) AS invocation_count, MAX(ts) AS last_seen
+         FROM contract_audit
+        WHERE kind = 'contract_step' AND vault = ? AND verb IS NOT NULL
+        GROUP BY verb
+        ORDER BY invocation_count DESC`
+        );
+      }
+      insert(row) {
+        this._insert.run({
+          kind: row.kind,
+          contract: row.contract ?? null,
+          verb: row.verb ?? null,
+          step_alias: row.stepAlias ?? null,
+          vault: row.vault ?? null,
+          ts: row.ts,
+          error_message: row.errorMessage ?? null
+        });
+      }
+      listByKind(kind, opts = {}) {
+        const limit = opts.limit ?? 100;
+        const rows = opts.vault !== void 0 ? this._listByKindAndVault.all(kind, opts.vault, limit) : this._listByKindAll.all(kind, limit);
+        return rows.map(toContractAuditRow);
+      }
+      aggregateVerbUsage(vault) {
+        return this._aggregate.all(vault);
+      }
+    };
+  }
+});
+
 // src/db/database.ts
 import BetterSqlite3 from "better-sqlite3";
 import * as sqliteVec from "sqlite-vec";
@@ -2249,6 +2657,9 @@ var init_database = __esm({
     init_fts();
     init_aliases();
     init_sections();
+    init_brief_sources();
+    init_daemon_state();
+    init_contract_audit();
     Database = class _Database {
       handle;
       notes;
@@ -2263,6 +2674,12 @@ var init_database = __esm({
       aliases;
       /** Phase 3 / 03-01: materialized `sections` table query namespace. */
       sections;
+      /** Phase 5 / BRF-* / D-06: brief→chunk reverse-index query namespace. */
+      briefSources;
+      /** Phase 5 / D-09: staleness-daemon cursor query namespace. */
+      daemonState;
+      /** Phase 6 / Q-AUD: task-contract orchestration audit query namespace. */
+      contractAudit;
       /**
        * Name of the vault this DB belongs to, or `undefined` for `:memory:` /
        * unrecognised paths. Threaded into function-style migrations as
@@ -2291,6 +2708,9 @@ var init_database = __esm({
         this.fts = new FtsQueries(this.handle);
         this.aliases = new AliasesQueries(this.handle);
         this.sections = new SectionsQueries(this.handle);
+        this.briefSources = new BriefSourcesQueries(this.handle);
+        this.daemonState = new DaemonStateQueries(this.handle);
+        this.contractAudit = new ContractAuditQueries(this.handle);
       }
       static async open(dbPath, vaultName) {
         return new _Database(dbPath, vaultName);
@@ -2491,7 +2911,7 @@ function stripTag(name) {
   const idx = name.indexOf(":");
   return idx === -1 ? name : name.slice(0, idx);
 }
-var DEFAULT_ENDPOINT, DEFAULT_BATCH_SIZE, DEFAULT_TIMEOUT_MS, DEFAULT_RETRIES, EmbedResponseSchema, TagsResponseSchema, OllamaHttpError, OllamaClient;
+var DEFAULT_ENDPOINT, DEFAULT_BATCH_SIZE, DEFAULT_TIMEOUT_MS, DEFAULT_RETRIES, EmbedResponseSchema, TagsResponseSchema, ChatResponseSchema, OllamaHttpError, OllamaClient;
 var init_client = __esm({
   "src/ollama/client.ts"() {
     "use strict";
@@ -2511,6 +2931,16 @@ var init_client = __esm({
           name: z2.string()
         })
       )
+    });
+    ChatResponseSchema = z2.object({
+      model: z2.string(),
+      message: z2.object({
+        role: z2.literal("assistant"),
+        content: z2.string()
+      }),
+      done: z2.boolean().optional(),
+      total_duration: z2.number().optional(),
+      eval_count: z2.number().optional()
     });
     OllamaHttpError = class extends Error {
       status;
@@ -2579,6 +3009,46 @@ var init_client = __esm({
             const json = await response.json();
             const parsed = EmbedResponseSchema.parse(json);
             return { embeddings: parsed.embeddings, model: parsed.model };
+          },
+          { retries: this.retries, shouldRetry: isRetryable }
+        );
+      }
+      /**
+       * Phase 5 / D-10 tier 2 — synchronous chat completion via `/api/chat`.
+       *
+       * Single round-trip, non-streaming (`stream: false`). Mirrors the
+       * `embed()` shape verbatim: `withRetry` wrapper, `fetchWithTimeout`,
+       * `OllamaHttpError` on non-2xx after retry exhaustion, `isRetryable`
+       * predicate (5xx + AbortError + network errors).
+       *
+       * The LLM ladder (`src/brief/llm-ladder.ts`) is the only production
+       * caller; we keep the method on the same class so the shared retry /
+       * timeout / endpoint config are honored without re-plumbing.
+       */
+      async chat(request) {
+        return withRetry(
+          async () => {
+            const body = JSON.stringify({
+              model: request.model,
+              messages: request.messages,
+              stream: false,
+              options: request.options
+            });
+            const response = await this.fetchWithTimeout(`${this.endpoint}/api/chat`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body
+            });
+            if (!response.ok) {
+              const text = await response.text().catch(() => "");
+              throw new OllamaHttpError(
+                response.status,
+                `Ollama /api/chat returned ${response.status}: ${text}`
+              );
+            }
+            const json = await response.json();
+            const parsed = ChatResponseSchema.parse(json);
+            return { model: parsed.model, message: parsed.message };
           },
           { retries: this.retries, shouldRetry: isRetryable }
         );
@@ -3062,11 +3532,32 @@ async function cluster(deps, opts) {
     if (allVaults.length === 0) {
       return { ok: true, clusters: [], node_count: 0 };
     }
-    const firstVault = allVaults[0];
-    if (!firstVault) {
+    let workingVault = null;
+    if (opts.vault !== void 0) {
+      try {
+        workingVault = deps.manager.require(opts.vault);
+      } catch {
+        return {
+          ok: false,
+          reason: "vault_required",
+          hint: `Unknown vault: "${opts.vault}". Pass one of the configured vault names.`,
+          configured_vaults: allVaults.map((v) => v.config.name)
+        };
+      }
+    } else if (allVaults.length === 1) {
+      workingVault = allVaults[0] ?? null;
+    } else {
+      return {
+        ok: false,
+        reason: "vault_required",
+        hint: "cluster() with `query` requires an explicit `vault:` parameter when multiple vaults are configured.",
+        configured_vaults: allVaults.map((v) => v.config.name)
+      };
+    }
+    if (!workingVault) {
       return { ok: true, clusters: [], node_count: 0 };
     }
-    const hits = await deps.hybridSearch(firstVault, opts.query, limit);
+    const hits = await deps.hybridSearch(workingVault, opts.query, limit);
     const ids = [];
     for (const h of hits) {
       if (h.doc_id !== void 0) ids.push(h.doc_id);
@@ -3934,6 +4425,24 @@ async function scanVault(rootPath, options) {
   results.sort();
   return results;
 }
+async function scanContractFiles(rootPath) {
+  const root = path2.resolve(rootPath);
+  const contractsDir = path2.join(root, "_contracts");
+  let entries;
+  try {
+    entries = await fs2.readdir(contractsDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const results = [];
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    if (!entry.name.toLowerCase().endsWith(".yaml")) continue;
+    results.push(path2.join(contractsDir, entry.name));
+  }
+  results.sort();
+  return results;
+}
 async function walk(root, dir, matchers, out) {
   let entries;
   try {
@@ -4142,9 +4651,9 @@ var init_wikilinks2 = __esm({
 });
 
 // src/adapters/source/obsidian-fs/hash.ts
-import { createHash as createHash2 } from "crypto";
+import { createHash as createHash3 } from "crypto";
 function sha256(input) {
-  return createHash2("sha256").update(input, "utf8").digest("hex");
+  return createHash3("sha256").update(input, "utf8").digest("hex");
 }
 function canonicalJsonStringify(value) {
   if (value === null || value === void 0) return "null";
@@ -4250,7 +4759,7 @@ __export(obsidian_fs_exports, {
 });
 import { promises as fs4 } from "fs";
 import * as path4 from "path";
-var SCHEME, ObsidianFsSource;
+var CONTRACT_PATH_RE, SCHEME, ObsidianFsSource;
 var init_obsidian_fs = __esm({
   "src/adapters/source/obsidian-fs/index.ts"() {
     "use strict";
@@ -4259,6 +4768,7 @@ var init_obsidian_fs = __esm({
     init_scanner();
     init_parser();
     init_hash();
+    CONTRACT_PATH_RE = /^_contracts\/[^/]+\.yaml$/;
     SCHEME = "obsidian-fs";
     ObsidianFsSource = class {
       constructor(vault) {
@@ -4280,9 +4790,12 @@ var init_obsidian_fs = __esm({
       // ── enumeration ────────────────────────────────────────────────────────────
       async *listDocuments(opts) {
         const excludeOverlay = opts?.excludeGlobs;
-        const files = await scanVault(this.vault.path, {
+        const mdFiles = await scanVault(this.vault.path, {
           ...excludeOverlay ? { excludeGlobs: excludeOverlay } : {}
         });
+        const yamlFiles = await scanContractFiles(this.vault.path);
+        const files = mdFiles.concat(yamlFiles);
+        files.sort();
         const since = opts?.since;
         const limit = opts?.limit;
         let yielded = 0;
@@ -4302,6 +4815,22 @@ var init_obsidian_fs = __esm({
       async readDocument(id) {
         const rel = this.docIdToPath(id);
         const abs = this.absPath(rel);
+        if (CONTRACT_PATH_RE.test(rel)) {
+          const body = await fs4.readFile(abs, "utf-8");
+          const stat = await fs4.stat(abs);
+          const hash = computeBodyHash(body);
+          return {
+            id,
+            source: this.handle,
+            title: rel,
+            blocks: [{ kind: "paragraph", text: body }],
+            properties: {},
+            links: [],
+            mtime: Math.floor(stat.mtimeMs),
+            hash,
+            display_url: this.formatDisplayUrl(id)
+          };
+        }
         const parsed = await parseNote(abs, this.vault.path);
         const wikilinks = parsed.wikilinks.map((w) => {
           const ref = { target: w.normalizedTarget };
@@ -5084,7 +5613,8 @@ async function indexVault(vault, options) {
         headingPath: c.headingPath,
         startOffset: c.startOffset,
         endOffset: c.endOffset,
-        tokenCount: c.tokenCount
+        tokenCount: c.tokenCount,
+        chunkIdFragment: computeChunkIdFragment(c.text)
       }));
       const chunkIds = vault.db.chunks.insertBatch(noteId, chunkInputs);
       buildSectionsForNote(vault, noteId, parsed.content, chunkIds);
@@ -5320,6 +5850,7 @@ var init_indexer = __esm({
     init_scanner();
     init_parser();
     init_chunker2();
+    init_chunk_id();
     init_ollama();
     init_resolver();
     init_extract_edges();
@@ -5425,7 +5956,10 @@ async function indexNote(options) {
       headingPath: c.headingPath,
       startOffset: c.startOffset,
       endOffset: c.endOffset,
-      tokenCount: c.tokenCount
+      tokenCount: c.tokenCount,
+      // Phase 5 / D-05: canonical chunk-fragment via the chunker helper
+      // (single source of truth — see src/chunker/chunk-id.ts).
+      chunkIdFragment: computeChunkIdFragment(c.text)
     }))
   );
   const embedResult = await ollama.embed({
@@ -5536,6 +6070,7 @@ var init_single = __esm({
     init_esm_shims();
     init_parser();
     init_chunker2();
+    init_chunk_id();
     init_indexer();
     init_resolver();
     init_extract_edges();
@@ -6288,6 +6823,111 @@ var init_default_v1 = __esm({
   }
 });
 
+// src/memory/contract/default-brief-v1.ts
+import { z as z4 } from "zod";
+var requiredKeys2, baseShape2, DEFAULT_BRIEF_V1;
+var init_default_brief_v1 = __esm({
+  "src/memory/contract/default-brief-v1.ts"() {
+    "use strict";
+    init_esm_shims();
+    requiredKeys2 = [
+      // Base seven (mirrors default-v1).
+      "source",
+      "confidence",
+      "evidence",
+      "status",
+      "observed_at",
+      "superseded_by",
+      "type",
+      // Brief-specific keys per ADR-005 / MEMORY_CONTRACT.md brief shape.
+      "target",
+      "purpose",
+      "compiled_from",
+      "compiled_at",
+      "source_hashes"
+    ];
+    baseShape2 = z4.object({
+      // ── Base shape inherited from default-v1 ────────────────────────
+      source: z4.enum(["agent", "user", "imported"]),
+      confidence: z4.enum(["direct", "inferred", "uncertain"]),
+      evidence: z4.array(z4.string()),
+      // ── Status enum WIDENED for briefs: + "stale" ──────────────────
+      status: z4.enum(["active", "stale", "superseded", "archived"]).default("active"),
+      observed_at: z4.string().datetime({ offset: true }),
+      superseded_by: z4.string().nullable().default(null),
+      type: z4.string().min(1),
+      superseded_reason: z4.string().optional(),
+      // ── Brief-specific properties (D-11 brief shape) ───────────────
+      target: z4.string().min(1),
+      /**
+       * Brief purpose — free text but bounded at 500 chars so
+       * `list_briefs` stays scannable. Lower bound `min(1)` matches
+       * BRF-03 "no empty purpose".
+       */
+      purpose: z4.string().min(1).max(500),
+      /** DocId list of all sources the brief was compiled from. */
+      compiled_from: z4.array(z4.string()).min(1),
+      /** ISO-8601 datetime with offset (mirrors observed_at). */
+      compiled_at: z4.string().datetime({ offset: true }),
+      /**
+       * Record<ChunkId, BriefSourceHash> — staleness contract. The map
+       * key is the public ChunkId (`<DocId>#chunk-<7-hex>`); the value
+       * is `"sha256:<hex>"`. Marked optional at the type level because
+       * the cross-field invariant below only REQUIRES it on stale; the
+       * validator still rejects `status: "stale"` writes that omit it.
+       */
+      source_hashes: z4.record(z4.string(), z4.string()).optional(),
+      /**
+       * Daemon-computed list of source DocIds whose hashes have
+       * diverged. Populated when `status` flips to `"stale"`.
+       */
+      changed_sources: z4.array(z4.string()).optional()
+    }).passthrough().superRefine((data, ctx) => {
+      if (data.status === "superseded") {
+        if (data.superseded_by === null || data.superseded_by === void 0) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["superseded_by"],
+            message: "Required (non-null DocId) when status is 'superseded'"
+          });
+        }
+        if (typeof data.superseded_reason !== "string" || data.superseded_reason.length === 0) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["superseded_reason"],
+            message: "Required (non-empty string) when status is 'superseded'"
+          });
+        }
+      }
+      if (data.status === "stale") {
+        if (!data.source_hashes) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["source_hashes"],
+            message: "Required when status is 'stale' (daemon needs hashes to recompute)"
+          });
+        }
+      }
+    });
+    DEFAULT_BRIEF_V1 = {
+      name: "default-brief-v1",
+      version: "1.0",
+      propertiesSchema: baseShape2,
+      requiredKeys: requiredKeys2,
+      // D-12 timestamped slug (`{target}--{compiled_at:YYYYMMDDTHHmm}.md`)
+      // is computed by compile_brief itself — the caller (the brief layer)
+      // hands the DeliveryAdapter a fully-formed DocId. The MemoryContract
+      // naming strategy enum (`caller-provided | date-slug |
+      // adapter-assigned`) does not include `slug-timestamp` as a value;
+      // `caller-provided` is the closest match and signals "the
+      // implementation mints the DocId before write".
+      naming: {
+        strategy: "caller-provided"
+      }
+    };
+  }
+});
+
 // src/adapters/delivery/obsidian-fs/path.ts
 import path6 from "path";
 function pathInSink(vaultAbsolutePath, sink, relativeSubpath = "") {
@@ -6311,36 +6951,36 @@ var init_contract_yaml_read = __esm({
 });
 
 // src/memory/contract/schema.ts
-import { z as z4 } from "zod";
+import { z as z5 } from "zod";
 var PropertyRuleSchema, CrossFieldRuleSchema, MemoryContractYamlSchema;
 var init_schema2 = __esm({
   "src/memory/contract/schema.ts"() {
     "use strict";
     init_esm_shims();
-    PropertyRuleSchema = z4.object({
-      type: z4.enum(["string", "datetime", "array", "doc_id", "number", "boolean", "reference", "date"]),
-      allowed: z4.array(z4.string()).optional(),
-      default: z4.unknown().optional(),
-      items: z4.object({ type: z4.string() }).optional(),
-      min_length: z4.number().optional(),
+    PropertyRuleSchema = z5.object({
+      type: z5.enum(["string", "datetime", "array", "doc_id", "number", "boolean", "reference", "date"]),
+      allowed: z5.array(z5.string()).optional(),
+      default: z5.unknown().optional(),
+      items: z5.object({ type: z5.string() }).optional(),
+      min_length: z5.number().optional(),
       /** When true, the property accepts `null` as a sentinel value (in
        *  addition to whatever `type` says). Used for required-but-null-by-
        *  default properties like `superseded_by` on active observations. */
-      nullable: z4.boolean().optional()
+      nullable: z5.boolean().optional()
     });
-    CrossFieldRuleSchema = z4.object({
-      when: z4.string(),
-      require: z4.string()
+    CrossFieldRuleSchema = z5.object({
+      when: z5.string(),
+      require: z5.string()
     });
-    MemoryContractYamlSchema = z4.object({
-      name: z4.string().min(1),
-      version: z4.string().default("1.0"),
-      required_properties: z4.record(z4.string(), PropertyRuleSchema),
-      optional_properties: z4.record(z4.string(), PropertyRuleSchema).default({}),
-      cross_field_rules: z4.array(CrossFieldRuleSchema).default([]),
-      naming: z4.object({
-        strategy: z4.enum(["caller-provided", "date-slug", "adapter-assigned"]),
-        pattern: z4.string().optional()
+    MemoryContractYamlSchema = z5.object({
+      name: z5.string().min(1),
+      version: z5.string().default("1.0"),
+      required_properties: z5.record(z5.string(), PropertyRuleSchema),
+      optional_properties: z5.record(z5.string(), PropertyRuleSchema).default({}),
+      cross_field_rules: z5.array(CrossFieldRuleSchema).default([]),
+      naming: z5.object({
+        strategy: z5.enum(["caller-provided", "date-slug", "adapter-assigned"]),
+        pattern: z5.string().optional()
       })
     });
   }
@@ -6348,7 +6988,7 @@ var init_schema2 = __esm({
 
 // src/memory/contract/loader.ts
 import { parse as parseYaml } from "yaml";
-import { z as z5 } from "zod";
+import { z as z6 } from "zod";
 function __cacheContract(name, contract) {
   contractCache.set(name, contract);
 }
@@ -6376,7 +7016,7 @@ function getContract(name) {
 }
 function otherCachedNames(excluding) {
   const names = [];
-  for (const candidate of ["default-memory-v1"]) {
+  for (const candidate of ["default-memory-v1", "default-brief-v1"]) {
     if (candidate === excluding) continue;
     if (__getCachedContract(candidate)) names.push(candidate);
   }
@@ -6387,8 +7027,10 @@ var init_contract = __esm({
     "use strict";
     init_esm_shims();
     init_default_v1();
+    init_default_brief_v1();
     init_loader2();
     __cacheContract("default-memory-v1", DEFAULT_MEMORY_V1);
+    __cacheContract("default-brief-v1", DEFAULT_BRIEF_V1);
   }
 });
 
@@ -7944,7 +8586,7 @@ var init_memory_stats = __esm({
 });
 
 // src/memory/resources/index.ts
-var RESOURCE_URI_LIST_SINKS, RESOURCE_URI_MEMORY_STATS;
+var RESOURCE_URI_LIST_SINKS, RESOURCE_URI_MEMORY_STATS, RESOURCE_URI_LIST_BRIEFS, RESOURCE_URI_LIST_CONTRACTS, RESOURCE_URI_LIST_CONTRACT_VERBS;
 var init_resources = __esm({
   "src/memory/resources/index.ts"() {
     "use strict";
@@ -7953,6 +8595,9 @@ var init_resources = __esm({
     init_memory_stats();
     RESOURCE_URI_LIST_SINKS = "vault-memory://memory/sinks";
     RESOURCE_URI_MEMORY_STATS = "vault-memory://memory/stats";
+    RESOURCE_URI_LIST_BRIEFS = "vault-memory://briefs";
+    RESOURCE_URI_LIST_CONTRACTS = "vault-memory://contracts";
+    RESOURCE_URI_LIST_CONTRACT_VERBS = "vault-memory://contract-verbs";
   }
 });
 
@@ -7970,14 +8615,14 @@ var init_memory = __esm({
 });
 
 // src/memory/tools/record-observation.ts
-import { createHash as createHash3, randomBytes as randomBytes2 } from "crypto";
+import { createHash as createHash4, randomBytes as randomBytes2 } from "crypto";
 function slugify(claim) {
   const stripped = claim.normalize("NFD").replace(/[\u0300-\u036F]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   if (stripped.length <= 60) return stripped || "observation";
   return stripped.slice(0, 60).replace(/-+$/g, "") || "observation";
 }
 function hashSuffix(claim, observedAt, salt = "") {
-  return createHash3("sha256").update(`${claim}\0${observedAt}\0${salt}`).digest("hex").slice(0, 6);
+  return createHash4("sha256").update(`${claim}\0${observedAt}\0${salt}`).digest("hex").slice(0, 6);
 }
 function dateSlug(isoTimestamp) {
   return isoTimestamp.slice(0, 10);
@@ -8224,6 +8869,1092 @@ var init_tools = __esm({
     init_record_observation();
     init_supersede();
     init_recall();
+  }
+});
+
+// src/brief/chunk-id.ts
+var FRAGMENT_REGEX, CHUNK_ID_REGEX, parseChunkId, formatChunkId, decomposeChunkId;
+var init_chunk_id2 = __esm({
+  "src/brief/chunk-id.ts"() {
+    "use strict";
+    init_esm_shims();
+    FRAGMENT_REGEX = /^[0-9a-f]{7}$/;
+    CHUNK_ID_REGEX = /^([a-z][a-z0-9-]*:\/\/[^/]+\/.+)#chunk-([0-9a-f]{7})$/;
+    ({ parseChunkId, formatChunkId, decomposeChunkId } = /* @__PURE__ */ (() => {
+      const mint = (s) => s;
+      function format(docId, fragment) {
+        if (!FRAGMENT_REGEX.test(fragment)) {
+          throw new Error(
+            `Invalid chunk fragment: ${JSON.stringify(fragment)}. Expected exactly 7 lowercase hex characters (per ADR-005 / D-04).`
+          );
+        }
+        return mint(`${docId}#chunk-${fragment}`);
+      }
+      function parse(s) {
+        if (!CHUNK_ID_REGEX.test(s)) {
+          throw new Error(
+            `Invalid ChunkId: ${JSON.stringify(s)}. Expected <DocId>#chunk-<7-hex-fragment>.`
+          );
+        }
+        return mint(s);
+      }
+      function decompose(id) {
+        const m = CHUNK_ID_REGEX.exec(id);
+        if (!m) {
+          throw new Error(`Malformed ChunkId reached decomposeChunkId: ${JSON.stringify(id)}`);
+        }
+        return { docId: m[1], fragment: m[2] };
+      }
+      return { parseChunkId: parse, formatChunkId: format, decomposeChunkId: decompose };
+    })());
+  }
+});
+
+// src/brief/source-hashes.ts
+function buildSourceHashes(sources) {
+  const out = {};
+  for (const chunk of sources) {
+    const chunkId = formatChunkId(chunk.docId, chunk.fragment);
+    out[chunkId] = computeChunkHash(chunk.text);
+  }
+  return out;
+}
+function recomputeCurrentHash(text) {
+  return computeChunkHash(text);
+}
+var init_source_hashes = __esm({
+  "src/brief/source-hashes.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_chunk_id();
+    init_chunk_id2();
+  }
+});
+
+// src/brief/llm-ladder.ts
+function resolveLlmStrategy(server, briefConfig, preparedText) {
+  const attempted = [];
+  const caps = server.server.getClientCapabilities();
+  if (caps?.sampling) {
+    return { kind: "sampling" };
+  }
+  attempted.push("sampling");
+  const ollamaModel = briefConfig?.ollama?.model;
+  if (typeof ollamaModel === "string" && ollamaModel.length > 0) {
+    return { kind: "ollama", model: ollamaModel };
+  }
+  attempted.push("ollama");
+  if (typeof preparedText === "string" && preparedText.length > 0) {
+    return { kind: "prepared_text" };
+  }
+  attempted.push("prepared_text");
+  return { kind: "unavailable", attempted };
+}
+async function compileWithLlm(strategy, server, ollama, prompt, maxTokens, preparedText) {
+  switch (strategy.kind) {
+    case "sampling": {
+      let result;
+      try {
+        result = await server.server.createMessage({
+          messages: [
+            {
+              role: "user",
+              content: { type: "text", text: prompt.userText }
+            }
+          ],
+          maxTokens,
+          systemPrompt: prompt.systemText
+        });
+      } catch (err) {
+        throw new BriefLlmSamplingRefusedError(err);
+      }
+      const content = result.content;
+      if (content === void 0 || Array.isArray(content) || content.type !== "text") {
+        const got = content === void 0 ? "undefined" : Array.isArray(content) ? "array" : content.type;
+        throw new Error(
+          `MCP Sampling returned non-text content (type=${got}); brief compile expects text.`
+        );
+      }
+      return { body: content.text, model: result.model };
+    }
+    case "ollama": {
+      const res = await ollama.chat({
+        model: strategy.model,
+        messages: [
+          { role: "system", content: prompt.systemText },
+          { role: "user", content: prompt.userText }
+        ],
+        options: { num_predict: maxTokens }
+      });
+      return { body: res.message.content, model: strategy.model };
+    }
+    case "prepared_text": {
+      if (typeof preparedText !== "string" || preparedText.length === 0) {
+        throw new Error(
+          "compileWithLlm(prepared_text) called without a non-empty preparedText string"
+        );
+      }
+      return { body: preparedText, model: "prepared_text" };
+    }
+    case "unavailable": {
+      throw new BriefLlmUnavailableError(strategy.attempted);
+    }
+  }
+}
+var BriefLlmUnavailableError, BriefLlmSamplingRefusedError;
+var init_llm_ladder = __esm({
+  "src/brief/llm-ladder.ts"() {
+    "use strict";
+    init_esm_shims();
+    BriefLlmUnavailableError = class extends Error {
+      attempted;
+      constructor(attempted) {
+        super(`LLM unavailable; attempted: ${attempted.join(", ")}`);
+        this.name = "BriefLlmUnavailableError";
+        this.attempted = attempted;
+      }
+    };
+    BriefLlmSamplingRefusedError = class extends Error {
+      cause;
+      constructor(cause) {
+        super("MCP Sampling refused");
+        this.name = "BriefLlmSamplingRefusedError";
+        this.cause = cause;
+      }
+    };
+  }
+});
+
+// src/brief/body-validator.ts
+function validateAndPatchBody(body, sourceDocIds, resolveTitle) {
+  const cited = /* @__PURE__ */ new Set();
+  for (const m of body.matchAll(WIKILINK_RE2)) {
+    const target = m[1]?.trim();
+    if (target !== void 0 && target.length > 0) cited.add(target);
+  }
+  const missing = [];
+  for (const id of sourceDocIds) {
+    const title = resolveTitle(id);
+    if (cited.has(title) || cited.has(id)) continue;
+    missing.push(id);
+  }
+  if (missing.length === 0) return body;
+  const footerLines = missing.map((id) => `- [[${resolveTitle(id)}]]`);
+  const footer = `
+
+## Sources
+${footerLines.join("\n")}
+`;
+  return body + footer;
+}
+var WIKILINK_RE2;
+var init_body_validator = __esm({
+  "src/brief/body-validator.ts"() {
+    "use strict";
+    init_esm_shims();
+    WIKILINK_RE2 = /\[\[([^\]|#]+)(?:#[^\]|]+)?(?:\|[^\]]+)?\]\]/g;
+  }
+});
+
+// src/brief/compile.ts
+function compactIso(date) {
+  return date.toISOString().replace(/[-:.]/g, "").slice(0, 13);
+}
+function resolveBriefSink(deps, sinkArg) {
+  const name = sinkArg ?? DEFAULT_BRIEF_SINK_NAME;
+  return deps.memorySinkRegistry.resolveMemorySink(name);
+}
+function resolveSourcesToChunks(vault, docIds) {
+  const out = [];
+  for (const docId of docIds) {
+    const { resource } = decomposeDocId(docId);
+    const note = vault.db.notes.getByPath(resource);
+    if (!note) continue;
+    const chunks = vault.db.chunks.getByNote(note.id);
+    for (const chunk of chunks) {
+      out.push({
+        docId,
+        fragment: chunk.chunk_id_fragment,
+        text: chunk.text
+      });
+    }
+  }
+  return out;
+}
+async function findBriefByTarget(source, briefSinkPrefix, vaultName, target) {
+  const candidates = [];
+  for await (const ref of source.listDocuments()) {
+    const { resource } = decomposeDocId(ref.id);
+    if (!resource.startsWith(briefSinkPrefix)) continue;
+    let doc;
+    try {
+      doc = await source.readDocument(ref.id);
+    } catch {
+      continue;
+    }
+    const props = doc.properties;
+    if (props.target !== target) continue;
+    if (props.status === "superseded") continue;
+    candidates.push(doc);
+  }
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) return candidates[0];
+  candidates.sort((a, b) => {
+    const ai = a.properties.compiled_at;
+    const bi = b.properties.compiled_at;
+    return (bi ?? "").localeCompare(ai ?? "");
+  });
+  void vaultName;
+  return candidates[0];
+}
+function makeTitleResolver(vault) {
+  return (id) => {
+    try {
+      const { resource } = decomposeDocId(id);
+      const row = vault.db.notes.getByPath(resource);
+      if (row?.title) return row.title;
+    } catch {
+    }
+    return id;
+  };
+}
+async function handleCompileBrief(deps, args2) {
+  const vault = deps.manager.require(args2.vault);
+  const vaultName = vault.config.name;
+  const briefSink = resolveBriefSink(deps, args2.sink);
+  if (briefSink.vault !== vaultName) {
+    throw new Error(
+      `Brief sink "${briefSink.name}" belongs to vault "${briefSink.vault}", not "${vaultName}"`
+    );
+  }
+  const dedupedRaw = Array.from(new Set(args2.source_doc_ids));
+  if (dedupedRaw.length > MAX_SOURCES) {
+    return {
+      ok: false,
+      reason: "too_many_sources",
+      limit: MAX_SOURCES,
+      hint: `Pass at most ${MAX_SOURCES} source_doc_ids. Use cluster() or expand() to narrow the corpus.`
+    };
+  }
+  const parsedSourceDocIds = [];
+  const offending = [];
+  for (const raw of dedupedRaw) {
+    let parsed;
+    try {
+      parsed = parseDocId(raw);
+    } catch {
+      offending.push(raw);
+      continue;
+    }
+    const { authority } = decomposeDocId(parsed);
+    if (authority !== vaultName) {
+      offending.push(raw);
+      continue;
+    }
+    parsedSourceDocIds.push(parsed);
+  }
+  if (offending.length > 0) {
+    return { ok: false, reason: "cross_vault_sources", offending };
+  }
+  const chunkSources = resolveSourcesToChunks(vault, parsedSourceDocIds);
+  const sourceHashes = buildSourceHashes(chunkSources);
+  const strategy = resolveLlmStrategy(
+    deps.server,
+    deps.briefConfig,
+    args2.prepared_text
+  );
+  if (strategy.kind === "unavailable") {
+    return {
+      ok: false,
+      reason: "no_llm_strategy_available",
+      attempted: strategy.attempted,
+      hint: "Configure [brief.ollama] in config.toml, use a sampling-capable MCP client, or pass prepared_text."
+    };
+  }
+  const titleOf = makeTitleResolver(vault);
+  const citations = parsedSourceDocIds.map((id) => `- [[${titleOf(id)}]] (${id})`).join("\n");
+  const systemText = "You are compiling a concise, evidence-grounded brief from the source documents below. Emit `[[Title]]` wikilinks for each cited source so the knowledge graph indexes the brief. Do not invent attendees, dates, decisions, or numbers \u2014 ground every claim in the sources.";
+  const userText = `Purpose: ${args2.purpose}
+
+Sources:
+${citations}
+
+Compile the brief now. Cite every source as a [[wikilink]] at least once.`;
+  let rawBody;
+  let model;
+  try {
+    const compiled = await compileWithLlm(
+      strategy,
+      deps.server,
+      deps.ollama,
+      { systemText, userText },
+      args2.max_tokens ?? 2e3,
+      args2.prepared_text
+    );
+    rawBody = compiled.body;
+    model = compiled.model;
+  } catch (err) {
+    if (err instanceof BriefLlmSamplingRefusedError) {
+      return {
+        ok: false,
+        reason: "sampling_refused",
+        message: err.message
+      };
+    }
+    if (err instanceof BriefLlmUnavailableError) {
+      return {
+        ok: false,
+        reason: "no_llm_strategy_available",
+        attempted: err.attempted,
+        hint: "Configure [brief.ollama] in config.toml, use a sampling-capable MCP client, or pass prepared_text."
+      };
+    }
+    throw err;
+  }
+  const body = validateAndPatchBody(rawBody, parsedSourceDocIds, titleOf);
+  const now = args2._now ?? /* @__PURE__ */ new Date();
+  const slug = compactIso(now);
+  const briefRelative = `${briefSink.resolveToRelativePath}${args2.target}--${slug}.md`;
+  const newDocId = formatDocId("obsidian-fs", vaultName, briefRelative);
+  const source = deps.sourceConnectorFor(vaultName);
+  const existing = await findBriefByTarget(
+    source,
+    briefSink.resolveToRelativePath,
+    vaultName,
+    args2.target
+  );
+  const oldDocId = existing?.id ?? null;
+  const nowIso = now.toISOString();
+  const properties = {
+    source: "agent",
+    confidence: "inferred",
+    evidence: parsedSourceDocIds.slice(),
+    status: "active",
+    observed_at: nowIso,
+    superseded_by: null,
+    type: "brief",
+    target: args2.target,
+    purpose: args2.purpose,
+    compiled_from: parsedSourceDocIds.slice(),
+    compiled_at: nowIso,
+    source_hashes: sourceHashes,
+    // Audit-trail attribution — which LLM tier produced the body.
+    // The value is whatever the LLM tier returned verbatim (the host
+    // MCP client's model identifier, the Ollama model name, or the
+    // sentinel string "prepared_text"). Per ADR-005 §"Provenance" the
+    // audit log carries the model name.
+    model
+  };
+  const title = `${args2.target} brief`;
+  const briefDoc = {
+    id: newDocId,
+    title,
+    properties,
+    blocks: [{ kind: "paragraph", text: body }]
+  };
+  const delivery = deps.deliveryAdapterFor(vaultName);
+  const writeRes = await delivery.write(newDocId, briefDoc, {
+    sink: briefSink.handle
+  });
+  if (!writeRes.ok) {
+    return {
+      ok: false,
+      reason: "write_failed",
+      message: writeRes.message ?? `Delivery refused brief write: reason=${writeRes.reason}`
+    };
+  }
+  const sourceRows = chunkSources.map((cs) => ({
+    chunkIdFragment: cs.fragment,
+    chunkDocId: cs.docId,
+    recordedHash: sourceHashes[`${cs.docId}#chunk-${cs.fragment}`]
+  }));
+  if (sourceRows.length > 0) {
+    vault.db.briefSources.insertBatch(newDocId, sourceRows);
+  }
+  if (oldDocId !== null) {
+    await handleSupersede(
+      {
+        memorySinkRegistry: deps.memorySinkRegistry,
+        manager: deps.manager,
+        deliveryAdapterFor: deps.deliveryAdapterFor,
+        sourceConnectorFor: deps.sourceConnectorFor
+      },
+      {
+        doc_id: oldDocId,
+        replacement_doc_id: newDocId,
+        reason: "recompiled"
+      }
+    );
+    return {
+      ok: true,
+      doc_id: newDocId,
+      supersededPrior: oldDocId,
+      model
+    };
+  }
+  return { ok: true, doc_id: newDocId, model };
+}
+var MAX_SOURCES, DEFAULT_BRIEF_SINK_NAME;
+var init_compile = __esm({
+  "src/brief/compile.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_registry();
+    init_supersede();
+    init_source_hashes();
+    init_llm_ladder();
+    init_body_validator();
+    MAX_SOURCES = 50;
+    DEFAULT_BRIEF_SINK_NAME = "_memory/_briefs";
+  }
+});
+
+// src/brief/get.ts
+async function findBriefByTarget2(source, briefSinkPrefix, target) {
+  const candidates = [];
+  for await (const ref of source.listDocuments()) {
+    const { resource } = decomposeDocId(ref.id);
+    if (!resource.startsWith(briefSinkPrefix)) continue;
+    let doc;
+    try {
+      doc = await source.readDocument(ref.id);
+    } catch {
+      continue;
+    }
+    const props = doc.properties;
+    if (props.target !== target) continue;
+    if (props.status === "superseded") continue;
+    candidates.push(doc);
+  }
+  if (candidates.length === 0) return null;
+  if (candidates.length === 1) return candidates[0];
+  candidates.sort((a, b) => {
+    const ai = a.properties.compiled_at;
+    const bi = b.properties.compiled_at;
+    return (bi ?? "").localeCompare(ai ?? "");
+  });
+  return candidates[0];
+}
+async function followSupersedeChain(source, start) {
+  let current = start;
+  let hops = 0;
+  while (current.properties.status === "superseded") {
+    const nextRaw = current.properties.superseded_by;
+    if (nextRaw === null || nextRaw === void 0) break;
+    if (typeof nextRaw !== "string") break;
+    if (++hops > MAX_SUPERSEDE_HOPS) {
+      throw new Error(
+        `get_brief supersede chain exceeded ${MAX_SUPERSEDE_HOPS} hops; target chain rooted at ${start.id}. Indicates a forward-only invariant violation upstream (Phase 2 D-03).`
+      );
+    }
+    const nextId = parseDocId(nextRaw);
+    let next;
+    try {
+      next = await source.readDocument(nextId);
+    } catch {
+      break;
+    }
+    current = next;
+  }
+  return current;
+}
+function ageDaysFor(brief) {
+  const compiledAt = brief.properties.compiled_at;
+  if (typeof compiledAt !== "string") return Number.POSITIVE_INFINITY;
+  const parsed = Date.parse(compiledAt);
+  if (Number.isNaN(parsed)) return Number.POSITIVE_INFINITY;
+  return Math.floor((Date.now() - parsed) / 864e5);
+}
+function changedSourcesFor(brief) {
+  const raw = brief.properties.changed_sources;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((x) => typeof x === "string");
+}
+async function handleGetBrief(deps, args2) {
+  const vault = deps.manager.require(args2.vault);
+  const vaultName = vault.config.name;
+  const briefSink = deps.memorySinkRegistry.resolveMemorySink(
+    args2.sink ?? DEFAULT_BRIEF_SINK_NAME2
+  );
+  if (briefSink.vault !== vaultName) {
+    throw new Error(
+      `Brief sink "${briefSink.name}" belongs to vault "${briefSink.vault}", not "${vaultName}"`
+    );
+  }
+  const source = deps.sourceConnectorFor(vaultName);
+  const found = await findBriefByTarget2(
+    source,
+    briefSink.resolveToRelativePath,
+    args2.target
+  );
+  if (found === null) {
+    return { brief: null, reason: "not_found" };
+  }
+  const terminal = await followSupersedeChain(source, found);
+  const ageDays = ageDaysFor(terminal);
+  const status = terminal.properties.status;
+  const stale = status === "stale";
+  const tooOld = args2.max_age_days !== void 0 && Number.isFinite(ageDays) && ageDays > args2.max_age_days;
+  const allowStale = args2.allow_stale === true;
+  if (stale && !allowStale) {
+    return {
+      brief: null,
+      stale: true,
+      ...tooOld ? { too_old: true } : {},
+      changed_sources: changedSourcesFor(terminal),
+      reason: "stale_blocked"
+    };
+  }
+  if (tooOld && !allowStale) {
+    return {
+      brief: null,
+      stale: false,
+      too_old: true,
+      age_days: ageDays,
+      reason: "too_old_blocked"
+    };
+  }
+  if (stale) {
+    return {
+      brief: terminal,
+      stale: true,
+      too_old: tooOld,
+      age_days: ageDays,
+      changed_sources: changedSourcesFor(terminal)
+    };
+  }
+  if (tooOld) {
+    return {
+      brief: terminal,
+      stale: false,
+      too_old: true,
+      age_days: ageDays
+    };
+  }
+  return {
+    brief: terminal,
+    stale: false,
+    too_old: false,
+    age_days: ageDays
+  };
+}
+var MAX_SUPERSEDE_HOPS, DEFAULT_BRIEF_SINK_NAME2;
+var init_get = __esm({
+  "src/brief/get.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_registry();
+    MAX_SUPERSEDE_HOPS = 100;
+    DEFAULT_BRIEF_SINK_NAME2 = "_memory/_briefs";
+  }
+});
+
+// src/brief/lock.ts
+import { open, readFile as readFile4, unlink, mkdir as mkdir2 } from "fs/promises";
+import { homedir as homedir4 } from "os";
+import { join as join6 } from "path";
+function lockDir(rootOverride) {
+  if (rootOverride !== void 0) return join6(rootOverride, "locks");
+  return join6(homedir4(), ".vault-memory", "locks");
+}
+function lockPath(vaultName, rootOverride) {
+  return join6(lockDir(rootOverride), `${vaultName}.lock`);
+}
+function isProcessAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    if (err.code === "ESRCH") return false;
+    return true;
+  }
+}
+async function readOwnerPid(path7) {
+  try {
+    const buf = await readFile4(path7, "utf8");
+    const pid = parseInt(buf.trim(), 10);
+    return Number.isFinite(pid) && pid > 0 ? pid : null;
+  } catch {
+    return null;
+  }
+}
+async function tryAcquireLock(vaultName, options = {}) {
+  const dir = lockDir(options.rootOverride);
+  await mkdir2(dir, { recursive: true });
+  const path7 = lockPath(vaultName, options.rootOverride);
+  const MAX_ATTEMPTS = 3;
+  const attempt = async (n, stolenFromPid) => {
+    if (n > MAX_ATTEMPTS) {
+      return { acquired: false, ownerPid: stolenFromPid ?? -1, path: path7 };
+    }
+    try {
+      const handle = await open(path7, "wx");
+      try {
+        await handle.writeFile(`${process.pid}
+`);
+      } finally {
+        await handle.close();
+      }
+      const result = { acquired: true, pid: process.pid, path: path7 };
+      if (stolenFromPid !== void 0) result.stolenFromPid = stolenFromPid;
+      return result;
+    } catch (err) {
+      if (err.code !== "EEXIST") throw err;
+      const ownerPid = await readOwnerPid(path7);
+      if (ownerPid === null || !isProcessAlive(ownerPid)) {
+        await unlink(path7).catch(() => void 0);
+        return attempt(n + 1, ownerPid ?? -1);
+      }
+      return { acquired: false, ownerPid, path: path7 };
+    }
+  };
+  return attempt(1);
+}
+async function releaseLock(vaultName, options = {}) {
+  await unlink(lockPath(vaultName, options.rootOverride)).catch(
+    () => void 0
+  );
+}
+var init_lock = __esm({
+  "src/brief/lock.ts"() {
+    "use strict";
+    init_esm_shims();
+  }
+});
+
+// src/brief/daemon.ts
+function chunkSetMatch(a, b) {
+  if (a.size !== b.size) return false;
+  for (const x of a) if (!b.has(x)) return false;
+  return true;
+}
+function rewriteBriefSourceDocId(vault, oldId, newId) {
+  vault.db.handle.prepare(
+    `UPDATE brief_sources
+          SET chunk_doc_id = ?
+        WHERE chunk_doc_id = ?`
+  ).run(newId, oldId);
+}
+var DEFAULT_BRIEF_SINK_NAME3, RENAME_GRACE_MS, MAX_EXPIRE_PER_TICK, BriefStalenessDaemon;
+var init_daemon = __esm({
+  "src/brief/daemon.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_registry();
+    init_source_hashes();
+    init_lock();
+    DEFAULT_BRIEF_SINK_NAME3 = "_memory/_briefs";
+    RENAME_GRACE_MS = 5e3;
+    MAX_EXPIRE_PER_TICK = 1024;
+    BriefStalenessDaemon = class {
+      disposable = null;
+      vault = null;
+      deps = null;
+      acquired = false;
+      pendingDeletes = /* @__PURE__ */ new Map();
+      now = Date.now;
+      log = (m) => process.stderr.write(`[brief-daemon] ${m}
+`);
+      /**
+       * Acquire the per-vault lock, run the startup scan, subscribe to
+       * the feed. Multi-MCP-client friendly: returns
+       * `{acquired: false, ownerPid}` on lock contention WITHOUT
+       * subscribing or throwing — the second server boots normally.
+       */
+      async start(vault, feed, deps) {
+        this.vault = vault;
+        this.deps = deps;
+        if (deps.now) this.now = deps.now;
+        if (deps.log) this.log = deps.log;
+        const lockOpts = deps.lockRootOverride !== void 0 ? { rootOverride: deps.lockRootOverride } : {};
+        const lock = await tryAcquireLock(vault.config.name, lockOpts);
+        if (!lock.acquired) {
+          const payload = JSON.stringify({
+            kind: "daemon_already_owned",
+            vault: vault.config.name,
+            ownerPid: lock.ownerPid,
+            path: lock.path
+          });
+          this.log(`WARN ${payload}`);
+          return { acquired: false, ownerPid: lock.ownerPid };
+        }
+        this.acquired = true;
+        const startCursor = vault.db.daemonState.getCursor(vault.config.name);
+        this.log(
+          `start vault=${vault.config.name} startCursor=${startCursor ?? "null"}`
+        );
+        await this.runStartupScan();
+        this.disposable = feed.subscribe(async (event) => {
+          try {
+            await this.handleEvent(event);
+            vault.db.daemonState.setCursor(vault.config.name, this.now());
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            const payload = JSON.stringify({
+              kind: "brief_staleness_error",
+              vault: vault.config.name,
+              event_kind: event.kind,
+              event_id: "id" in event ? event.id : null,
+              message
+            });
+            this.log(`ERROR ${payload}`);
+          }
+        });
+        vault.db.daemonState.setCursor(vault.config.name, this.now());
+        return { acquired: true };
+      }
+      /**
+       * Force any pending grace-window deletes to expire and propagate.
+       * Test hook + shutdown-flush helper.
+       */
+      async drainPending() {
+        await this.expireGraceWindow(true);
+      }
+      async shutdown() {
+        if (this.disposable) {
+          this.disposable[Symbol.dispose]();
+          this.disposable = null;
+        }
+        if (this.acquired && this.vault && this.deps) {
+          const lockOpts = this.deps.lockRootOverride !== void 0 ? { rootOverride: this.deps.lockRootOverride } : {};
+          await releaseLock(this.vault.config.name, lockOpts);
+          this.acquired = false;
+        }
+      }
+      /** True iff the daemon currently owns the lock (test hook). */
+      get isOwner() {
+        return this.acquired;
+      }
+      // ────────────────────────────────────────────────────────────────────
+      //  Internal — handlers
+      // ────────────────────────────────────────────────────────────────────
+      async runStartupScan() {
+        const vault = this.requireVault();
+        const briefIds = vault.db.briefSources.listBriefDocIds();
+        for (const briefId of briefIds) {
+          try {
+            await this.evaluateBrief(briefId);
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            const payload = JSON.stringify({
+              kind: "brief_staleness_error",
+              vault: vault.config.name,
+              phase: "startup_scan",
+              brief_id: briefId,
+              message
+            });
+            this.log(`ERROR ${payload}`);
+          }
+        }
+      }
+      async handleEvent(event) {
+        await this.expireGraceWindow(false);
+        switch (event.kind) {
+          case "create":
+            await this.handleCreate(event.id);
+            break;
+          case "update":
+            await this.evaluateChangedDocId(event.id);
+            break;
+          case "delete":
+            await this.handleDelete(event.id);
+            break;
+          case "rename":
+            await this.handleRenameDirect(event.old_id, event.new_id);
+            break;
+        }
+      }
+      /**
+       * For each brief that cites `docId`, re-evaluate its source_hashes
+       * and flip the brief stale if any chunk diverges (or sources were
+       * removed entirely).
+       */
+      async evaluateChangedDocId(docId) {
+        const vault = this.requireVault();
+        const affected = vault.db.briefSources.briefsForChunkDoc(docId);
+        const briefIds = new Set(affected.map((a) => a.briefDocId));
+        for (const briefId of briefIds) {
+          await this.evaluateBrief(briefId);
+        }
+      }
+      /**
+       * Read the brief Document, walk its `brief_sources` rows, and
+       * compare each `recorded_hash` to the current chunk hash. On
+       * divergence, call `delivery.update` to flip status → "stale".
+       *
+       * Errors per-brief are caught + logged; the loop never crashes.
+       */
+      async evaluateBrief(briefId) {
+        const vault = this.requireVault();
+        const deps = this.requireDeps();
+        const sources = vault.db.briefSources.sourcesForBrief(briefId);
+        if (sources.length === 0) return;
+        const currentHashes = /* @__PURE__ */ new Map();
+        for (const row of sources) {
+          const key = `${row.chunkDocId}#${row.chunkIdFragment}`;
+          if (currentHashes.has(key)) continue;
+          try {
+            const { resource } = decomposeDocId(row.chunkDocId);
+            const note = vault.db.notes.getByPath(resource);
+            if (!note) {
+              currentHashes.set(key, null);
+              continue;
+            }
+            const chunks = vault.db.chunks.getByNote(note.id);
+            const found = chunks.find(
+              (c) => c.chunk_id_fragment === row.chunkIdFragment
+            );
+            if (!found) {
+              currentHashes.set(key, null);
+              continue;
+            }
+            currentHashes.set(key, recomputeCurrentHash(found.text));
+          } catch {
+            currentHashes.set(key, null);
+          }
+        }
+        const changedSourceIds = /* @__PURE__ */ new Set();
+        for (const row of sources) {
+          const key = `${row.chunkDocId}#${row.chunkIdFragment}`;
+          const current = currentHashes.get(key);
+          if (current === null || current !== row.recordedHash) {
+            changedSourceIds.add(row.chunkDocId);
+          }
+        }
+        if (changedSourceIds.size === 0) return;
+        const source = deps.sourceConnectorFor(vault.config.name);
+        let briefDoc;
+        try {
+          briefDoc = await source.readDocument(briefId);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          const payload = JSON.stringify({
+            kind: "brief_staleness_error",
+            vault: vault.config.name,
+            brief_id: briefId,
+            phase: "read_brief",
+            message
+          });
+          this.log(`ERROR ${payload}`);
+          return;
+        }
+        const currentStatus = briefDoc.properties.status;
+        if (currentStatus === "stale" || currentStatus === "superseded") return;
+        const briefSink = this.resolveBriefSink(vault.config.name);
+        const delivery = deps.deliveryAdapterFor(vault.config.name);
+        const patchProperties = {
+          ...briefDoc.properties,
+          status: "stale",
+          changed_sources: Array.from(changedSourceIds)
+        };
+        const updateRes = await delivery.update(
+          briefId,
+          { properties: patchProperties },
+          {
+            expectedHash: briefDoc.hash,
+            sink: briefSink.handle
+          }
+        );
+        if (!updateRes.ok) {
+          const payload = JSON.stringify({
+            kind: "brief_staleness_error",
+            vault: vault.config.name,
+            brief_id: briefId,
+            phase: "update",
+            reason: updateRes.reason,
+            message: updateRes.message
+          });
+          this.log(`ERROR ${payload}`);
+        }
+      }
+      /**
+       * Delete handler — capture the deleted doc's chunk hashes into the
+       * grace-window so a matching `create` can survive the link via
+       * rename heuristic (BRF-08).
+       */
+      async handleDelete(docId) {
+        const vault = this.requireVault();
+        const chunkHashes = /* @__PURE__ */ new Set();
+        try {
+          const { resource } = decomposeDocId(docId);
+          const note = vault.db.notes.getByPath(resource);
+          if (note) {
+            for (const chunk of vault.db.chunks.getByNote(note.id)) {
+              chunkHashes.add(recomputeCurrentHash(chunk.text));
+            }
+          }
+        } catch {
+        }
+        this.pendingDeletes.set(docId, {
+          id: docId,
+          chunkHashes,
+          timestamp: this.now()
+        });
+      }
+      /**
+       * Create handler — look for a matching pendingDelete by chunk-hash
+       * set; if found, rewrite `brief_sources.chunk_doc_id` from old → new
+       * in place (BRF-08).
+       */
+      async handleCreate(docId) {
+        const vault = this.requireVault();
+        const newHashes = /* @__PURE__ */ new Set();
+        try {
+          const { resource } = decomposeDocId(docId);
+          const note = vault.db.notes.getByPath(resource);
+          if (note) {
+            for (const chunk of vault.db.chunks.getByNote(note.id)) {
+              newHashes.add(recomputeCurrentHash(chunk.text));
+            }
+          }
+        } catch {
+          return;
+        }
+        if (newHashes.size === 0) return;
+        for (const [oldId, pending] of this.pendingDeletes) {
+          if (chunkSetMatch(pending.chunkHashes, newHashes)) {
+            this.pendingDeletes.delete(oldId);
+            rewriteBriefSourceDocId(vault, oldId, docId);
+            return;
+          }
+        }
+      }
+      /**
+       * Native rename handler — for adapters that surface `rename` events
+       * directly. Today's obsidian-fs ChangeFeed emits delete+create
+       * (`emitsRename: false`); this branch fires only when a future
+       * adapter (notion-api, github-api) emits a real rename.
+       */
+      async handleRenameDirect(oldId, newId) {
+        const vault = this.requireVault();
+        rewriteBriefSourceDocId(vault, oldId, newId);
+      }
+      /**
+       * Walk the pendingDeletes map; for each entry older than the grace
+       * window, treat as a real delete and mark its dependent briefs stale.
+       */
+      async expireGraceWindow(force) {
+        const cutoff = force ? Number.POSITIVE_INFINITY : RENAME_GRACE_MS;
+        const nowMs = this.now();
+        let processed = 0;
+        for (const [id, pending] of this.pendingDeletes) {
+          if (processed++ > MAX_EXPIRE_PER_TICK) break;
+          if (force || nowMs - pending.timestamp >= cutoff) {
+            this.pendingDeletes.delete(id);
+            try {
+              await this.evaluateChangedDocId(id);
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err);
+              const vault = this.vault;
+              const payload = JSON.stringify({
+                kind: "brief_staleness_error",
+                vault: vault?.config.name ?? "unknown",
+                brief_id: id,
+                phase: "grace_expire",
+                message
+              });
+              this.log(`ERROR ${payload}`);
+            }
+          }
+        }
+      }
+      // ────────────────────────────────────────────────────────────────────
+      resolveBriefSink(vaultName) {
+        const deps = this.requireDeps();
+        const name = deps.briefSinkName ?? DEFAULT_BRIEF_SINK_NAME3;
+        const sink = deps.memorySinkRegistry.resolveMemorySink(name);
+        if (sink.vault !== vaultName) {
+          throw new Error(
+            `Brief sink "${name}" belongs to vault "${sink.vault}", not "${vaultName}"`
+          );
+        }
+        return sink;
+      }
+      requireVault() {
+        if (!this.vault) throw new Error("daemon used before start()");
+        return this.vault;
+      }
+      requireDeps() {
+        if (!this.deps) throw new Error("daemon used before start()");
+        return this.deps;
+      }
+    };
+  }
+});
+
+// src/brief/resources.ts
+async function readListBriefs(deps, opts = {}) {
+  const sinkName = opts.sink ?? DEFAULT_BRIEF_SINK_NAME4;
+  const now = opts._now ?? Date.now();
+  const vaults = opts.vault !== void 0 ? [deps.manager.require(opts.vault)] : deps.manager.list();
+  const out = [];
+  for (const vault of vaults) {
+    const vaultName = vault.config.name;
+    let resolveTo;
+    try {
+      const briefSink = deps.registry.resolveMemorySink(sinkName);
+      if (briefSink.vault !== vaultName) continue;
+      resolveTo = briefSink.resolveToRelativePath;
+    } catch {
+      continue;
+    }
+    const connector = deps.sourceConnectorFor(vaultName);
+    for await (const ref of connector.listDocuments()) {
+      if (!String(ref.id).includes(`/${resolveTo}`)) continue;
+      let doc;
+      try {
+        doc = await connector.readDocument(ref.id);
+      } catch {
+        continue;
+      }
+      const props = doc.properties;
+      if (props.type !== "brief") continue;
+      const target = typeof props.target === "string" ? props.target : "";
+      if (opts.target !== void 0 && !target.includes(opts.target)) continue;
+      const compiledAt = typeof props.compiled_at === "string" ? props.compiled_at : "";
+      const purpose = typeof props.purpose === "string" ? props.purpose : "";
+      const status = typeof props.status === "string" ? props.status : "active";
+      const sourceCount = vault.db.briefSources.sourcesForBrief(doc.id).length;
+      const compiledAtMs = compiledAt ? Date.parse(compiledAt) : NaN;
+      const ageDays = Number.isNaN(compiledAtMs) ? Number.POSITIVE_INFINITY : Math.floor((now - compiledAtMs) / 864e5);
+      out.push({
+        doc_id: String(doc.id),
+        target,
+        purpose,
+        compiled_at: compiledAt,
+        status,
+        source_count: sourceCount,
+        age_days: ageDays,
+        vault: vaultName
+      });
+    }
+  }
+  return { total: out.length, briefs: out };
+}
+var DEFAULT_BRIEF_SINK_NAME4;
+var init_resources2 = __esm({
+  "src/brief/resources.ts"() {
+    "use strict";
+    init_esm_shims();
+    DEFAULT_BRIEF_SINK_NAME4 = "_memory/_briefs";
+  }
+});
+
+// src/brief/index.ts
+var init_brief = __esm({
+  "src/brief/index.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_source_hashes();
+    init_source_hashes();
+    init_chunk_id2();
+    init_llm_ladder();
+    init_body_validator();
+    init_compile();
+    init_get();
+    init_lock();
+    init_daemon();
+    init_resources2();
   }
 });
 
@@ -9325,11 +11056,11 @@ var init_obsidian_fs3 = __esm({
 });
 
 // src/tool-registry.ts
-import { z as z6 } from "zod";
+import { z as z7 } from "zod";
 function buildToolSchema(name) {
   const builder = SCHEMA_BUILDERS[name];
   if (builder) return builder();
-  return z6.object(TOOL_SCHEMAS[name]);
+  return z7.object(TOOL_SCHEMAS[name]);
 }
 var TOOLS, DOC_ID_PATTERN2, PredicateSchema, TOOL_SCHEMAS, SCHEMA_BUILDERS;
 var init_tool_registry = __esm({
@@ -9826,6 +11557,71 @@ var init_tool_registry = __esm({
           }
         }
       },
+      // ── Phase 5 brief tools (Plan 05-02 / BRF-03) ────────────────────────────
+      {
+        name: "compile_brief",
+        description: "Compile a brief from caller-supplied source documents and write it to the briefs sink. Resolves the LLM via the D-10 capability-first ladder (MCP Sampling \u2192 local Ollama \u2192 caller `prepared_text` \u2192 structured error). Enforces D-11 wikilink emission per source (appends a `## Sources` footer when the LLM omits them) and writes through DeliveryAdapter. On target collision, auto-supersedes the prior brief via the Phase 2 supersede chain (D-12).",
+        inputSchema: {
+          type: "object",
+          required: ["vault", "target", "source_doc_ids", "purpose"],
+          properties: {
+            vault: { type: "string", description: "Vault name (registered in [vaults] config)" },
+            target: {
+              type: "string",
+              description: "Stable cross-version handle for the brief (e.g. 'atlas-q3')."
+            },
+            source_doc_ids: {
+              type: "array",
+              items: { type: "string" },
+              minItems: 1,
+              maxItems: 50,
+              description: "DocIds the brief is compiled from; deduped, capped at 50 (D-03)."
+            },
+            purpose: {
+              type: "string",
+              minLength: 1,
+              maxLength: 500,
+              description: "Free-form purpose; bounded so list_briefs stays scannable."
+            },
+            max_tokens: {
+              type: "integer",
+              minimum: 1,
+              default: 2e3,
+              description: "Hint for the LLM ladder; default 2000."
+            },
+            prepared_text: {
+              type: "string",
+              description: "D-10 tier 3 fallback when no LLM is reachable \u2014 verbatim body to stitch in."
+            },
+            sink: {
+              type: "string",
+              description: "Override the default `_memory/_briefs` sink."
+            }
+          }
+        }
+      },
+      {
+        name: "get_brief",
+        description: "Look up a brief by target slug. D-13 decision tree: staleness dominates; age is independent; follow the supersede chain to the terminal brief. Returns null when the caller MUST recompile (stale + !allow_stale OR too_old + !allow_stale).",
+        inputSchema: {
+          type: "object",
+          required: ["vault", "target"],
+          properties: {
+            vault: { type: "string", description: "Vault name (registered in [vaults] config)" },
+            target: { type: "string", description: "Stable cross-version handle for the brief." },
+            max_age_days: {
+              type: "integer",
+              minimum: 0,
+              description: "Reject briefs older than this many days unless allow_stale=true."
+            },
+            allow_stale: {
+              type: "boolean",
+              default: false,
+              description: "When true, return briefs flagged stale or too_old with annotation rather than null."
+            }
+          }
+        }
+      },
       // ── Phase 3 assembly tools (Plan 03-02 / ASM-02) ─────────────────────────
       {
         name: "get_outline",
@@ -10005,7 +11801,7 @@ var init_tool_registry = __esm({
       // ── Phase 4 graph tools (Plan 04-05 / GRA-02) ───────────────────────────
       {
         name: "cluster",
-        description: "Community detection over the typed-edge graph via Louvain modularity (Blondel et al. 2008) using `graphology` + `graphology-communities-louvain`. Deterministic: same input produces byte-identical cluster_id assignment via DocId-sorted node insertion + seeded RNG (`vault-memory-cluster-v1`). cluster_id = smallest member DocId per community. Hard-capped at 5000 nodes; pass `force: true` to override. Either `query` (composes search_hybrid + expand 1-hop) OR `seed_doc_ids` (uses provided seeds + induced 1-hop neighborhood); not both \u2014 passing both returns {ok:false, reason:'both_seeds_and_query'}. Returns per-cluster {cluster_id, size, members[], summary: {top_types, top_titles, edge_density}}. No LLM enrichment \u2014 summary fields are pure-deterministic computations (LLM enrichment is Phase 5 brief layer's job). _memory opacity inherited from expand() (Plan 04-03).",
+        description: "Community detection over the typed-edge graph via Louvain modularity (Blondel et al. 2008) using `graphology` + `graphology-communities-louvain`. Deterministic: same input produces byte-identical cluster_id assignment via DocId-sorted node insertion + seeded RNG (`vault-memory-cluster-v1`). cluster_id = smallest member DocId per community. Hard-capped at 5000 nodes; pass `force: true` to override. Either `query` (composes search_hybrid + expand 1-hop) OR `seed_doc_ids` (uses provided seeds + induced 1-hop neighborhood); not both \u2014 passing both returns {ok:false, reason:'both_seeds_and_query'}. On the `query` path with multiple vaults configured, the `vault` field is required so search scope is deterministic; single-vault setups may omit it (returns {ok:false, reason:'vault_required'} otherwise). Returns per-cluster {cluster_id, size, members[], summary: {top_types, top_titles, edge_density}}. No LLM enrichment \u2014 summary fields are pure-deterministic computations (LLM enrichment is Phase 5 brief layer's job). _memory opacity inherited from expand() (Plan 04-03).",
         inputSchema: {
           type: "object",
           required: ["method"],
@@ -10019,6 +11815,10 @@ var init_tool_registry = __esm({
               minItems: 1,
               items: { type: "string" },
               description: "1+ opaque DocIds. When set, cluster() uses these seeds + their induced 1-hop neighborhood. Mutually exclusive with query."
+            },
+            vault: {
+              type: "string",
+              description: "Vault name to scope the `query` search against (CR-02). Required on the `query` path when multiple vaults are configured; optional on single-vault setups. Ignored on the `seed_doc_ids` path (the vault is inferred from each DocId)."
             },
             method: {
               type: "string",
@@ -10063,228 +11863,313 @@ var init_tool_registry = __esm({
             }
           }
         }
+      },
+      // ── Phase 6 task-contract DSL (Plan 06-02 / D-A1 escape valve) ───────────
+      {
+        name: "register_contracts_as_tools",
+        description: "Explicit-control escape valve (D-A1) \u2014 scans the per-vault contract registry and updates the dynamic MCP tool list (registers new contracts as vm_<name> tools, unregisters removed ones) regardless of the [contracts.auto_register_tools] config gate. Always callable. Returns a per-vault diff of {registered, unregistered}. Omit `vault` to apply to every configured vault.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            vault: {
+              type: "string",
+              description: "Vault name; omit to apply to all vaults."
+            }
+          }
+        }
+      },
+      // ── Phase 6 task-contract DSL (Plan 06-03 / CON-05, Q-DESCRIBE) ──────────
+      {
+        name: "describe_contract",
+        description: "Return the input JSON Schema + an auto-generated markdown summary for a contract (Q-DESCRIBE). Pure function \u2014 does not execute the contract. Summary lists Inputs / Sources / Sinks / Assembly (numbered) / write_back / Output Shape. Omit `vault` on single-vault setups; on multi-vault setups, pass `vault` to disambiguate (returns `{ok:false, reason:'ambiguous_vault'}` otherwise).",
+        inputSchema: {
+          type: "object",
+          required: ["name"],
+          properties: {
+            name: {
+              type: "string",
+              description: "Registered contract name (see register_contracts_as_tools)."
+            },
+            vault: {
+              type: "string",
+              description: "Vault name; omit on single-vault setups."
+            }
+          }
+        }
+      },
+      // ── Phase 6 task-contract DSL (Plan 06-03 / CON-06) ──────────────────────
+      {
+        name: "instantiate_contract",
+        description: "Execute a registered contract end-to-end. Zod-validates inputs against the contract's inputZodSchema (additionalProperties:false rejects typos). Resolves source/sink overrides per D-A4b default chain (explicit \u2192 config \u2192 contract literal \u2192 error if required); sinks are MemorySink-only per D-A4c (MEM-05 invariant un-bypassable). Runs each assembly step through verbDispatcher with template resolution + named-binding accumulation. write_back routes through DeliveryAdapter.write() (MEM-05 chokepoint). Returns the Q-OUTPUT bundle {steps, write_back} on success OR a structured InstantiateError envelope (12 sealed reasons per ADR-006 \xA7Decision 7). Omit `vault` on single-vault setups; multi-vault setups require it (returns `ambiguous_vault` otherwise).",
+        inputSchema: {
+          type: "object",
+          required: ["name"],
+          properties: {
+            name: {
+              type: "string",
+              description: "Registered contract name."
+            },
+            inputs: {
+              type: "object",
+              additionalProperties: true,
+              description: "Contract inputs; validated against the contract's inputZodSchema."
+            },
+            source_overrides: {
+              type: "object",
+              additionalProperties: { type: "string" },
+              description: "Override declared source handles by handle name (e.g. {default_source: 'obsidian-fs://x'})."
+            },
+            sink_overrides: {
+              type: "object",
+              additionalProperties: { type: "string" },
+              description: "Override declared sink handles by handle name. Targets MUST resolve through MemorySinkRegistry (D-A4c)."
+            },
+            vault: {
+              type: "string",
+              description: "Vault name; omit on single-vault setups."
+            }
+          }
+        }
       }
     ];
     DOC_ID_PATTERN2 = /^[a-z][a-z0-9-]*:\/\/[^/]+\/.+$/;
-    PredicateSchema = z6.union([
-      z6.string(),
-      z6.number(),
-      z6.boolean(),
-      z6.null(),
-      z6.object({ $in: z6.array(z6.union([z6.string(), z6.number(), z6.boolean(), z6.null()])) }),
-      z6.object({ $exists: z6.boolean() }),
-      z6.object({ $contains: z6.union([z6.string(), z6.number(), z6.boolean(), z6.null()]) })
+    PredicateSchema = z7.union([
+      z7.string(),
+      z7.number(),
+      z7.boolean(),
+      z7.null(),
+      z7.object({ $in: z7.array(z7.union([z7.string(), z7.number(), z7.boolean(), z7.null()])) }),
+      z7.object({ $exists: z7.boolean() }),
+      z7.object({ $contains: z7.union([z7.string(), z7.number(), z7.boolean(), z7.null()]) })
     ]);
     TOOL_SCHEMAS = {
       list_vaults: {},
       read_note: {
-        vault: z6.string(),
-        path: z6.string()
+        vault: z7.string(),
+        path: z7.string()
       },
       search_semantic: {
-        query: z6.string().min(1),
-        vaults: z6.array(z6.string()).optional(),
-        top_k: z6.number().int().positive().max(100).optional().default(10),
-        exclude_paths: z6.array(z6.string()).optional()
+        query: z7.string().min(1),
+        vaults: z7.array(z7.string()).optional(),
+        top_k: z7.number().int().positive().max(100).optional().default(10),
+        exclude_paths: z7.array(z7.string()).optional()
       },
       search_text: {
-        query: z6.string().min(1),
-        vaults: z6.array(z6.string()).optional(),
-        top_k: z6.number().int().positive().max(100).optional().default(10),
-        exclude_paths: z6.array(z6.string()).optional()
+        query: z7.string().min(1),
+        vaults: z7.array(z7.string()).optional(),
+        top_k: z7.number().int().positive().max(100).optional().default(10),
+        exclude_paths: z7.array(z7.string()).optional()
       },
       search_hybrid: {
-        query: z6.string().min(1),
-        vaults: z6.array(z6.string()).optional(),
-        top_k: z6.number().int().positive().max(100).optional().default(10),
-        rrf_k: z6.number().int().positive().max(1e3).optional().default(60),
-        exclude_paths: z6.array(z6.string()).optional(),
-        rerank: z6.boolean().optional().default(false),
+        query: z7.string().min(1),
+        vaults: z7.array(z7.string()).optional(),
+        top_k: z7.number().int().positive().max(100).optional().default(10),
+        rrf_k: z7.number().int().positive().max(1e3).optional().default(60),
+        exclude_paths: z7.array(z7.string()).optional(),
+        rerank: z7.boolean().optional().default(false),
         // Phase 3 / 03-05 additive params — D-07, D-08, ASM-07, ASM-08.
         // All `.optional()` with defaults that vanish when unset, so v1
         // callers see no behavior change.
-        recency_weight: z6.number().optional().default(0),
-        authority_weight: z6.number().optional().default(0),
-        half_life_days: z6.number().positive().optional().default(30),
-        include_superseded: z6.boolean().optional().default(false),
+        recency_weight: z7.number().optional().default(0),
+        authority_weight: z7.number().optional().default(0),
+        half_life_days: z7.number().positive().optional().default(30),
+        include_superseded: z7.boolean().optional().default(false),
         // ── Phase 4 / 04-04 / GRA-03 (D-15): additive auto-expansion ──
         // Nested under a single optional `expand` object per D-15. When
         // omitted, hybridSearch behavior is byte-identical to v1 (the
         // guard `if (opts.expand && opts.expandDeps && ...)` at the end of
         // `src/search/hybrid.ts` short-circuits entirely). The literal-
         // union for `hops` enforces the D-05 hop cap at the boundary.
-        expand: z6.object({
-          hops: z6.union([z6.literal(1), z6.literal(2)]),
-          direction: z6.enum(["forward", "backward", "both"]).optional(),
-          edge_types: z6.array(z6.enum(["wikilink", "mention", "frontmatter-ref", "hyperlink"])).optional()
+        expand: z7.object({
+          hops: z7.union([z7.literal(1), z7.literal(2)]),
+          direction: z7.enum(["forward", "backward", "both"]).optional(),
+          edge_types: z7.array(z7.enum(["wikilink", "mention", "frontmatter-ref", "hyperlink"])).optional()
         }).optional()
       },
       list_backlinks: {
-        vault: z6.string(),
-        path: z6.string()
+        vault: z7.string(),
+        path: z7.string()
       },
       list_forward_links: {
-        vault: z6.string(),
-        path: z6.string(),
-        include_broken: z6.boolean().optional().default(true)
+        vault: z7.string(),
+        path: z7.string(),
+        include_broken: z7.boolean().optional().default(true)
       },
       find_broken_links: {
-        vault: z6.string()
+        vault: z7.string()
       },
       query_frontmatter: {
-        vault: z6.string(),
-        where: z6.record(z6.string(), PredicateSchema),
-        limit: z6.number().int().positive().max(1e3).optional().default(100)
+        vault: z7.string(),
+        where: z7.record(z7.string(), PredicateSchema),
+        limit: z7.number().int().positive().max(1e3).optional().default(100)
       },
       write_note: {
-        vault: z6.string(),
-        path: z6.string(),
-        content: z6.string(),
-        frontmatter: z6.record(z6.string(), z6.unknown()).nullable().optional(),
-        expected_hash: z6.string().optional(),
-        client_id: z6.string().optional()
+        vault: z7.string(),
+        path: z7.string(),
+        content: z7.string(),
+        frontmatter: z7.record(z7.string(), z7.unknown()).nullable().optional(),
+        expected_hash: z7.string().optional(),
+        client_id: z7.string().optional()
       },
       update_frontmatter: {
-        vault: z6.string(),
-        path: z6.string(),
-        merge: z6.record(z6.string(), z6.unknown()),
-        expected_hash: z6.string().optional(),
-        client_id: z6.string().optional()
+        vault: z7.string(),
+        path: z7.string(),
+        merge: z7.record(z7.string(), z7.unknown()),
+        expected_hash: z7.string().optional(),
+        client_id: z7.string().optional()
       },
       delete_note: {
-        vault: z6.string(),
-        path: z6.string(),
-        expected_hash: z6.string(),
-        client_id: z6.string().optional()
+        vault: z7.string(),
+        path: z7.string(),
+        expected_hash: z7.string(),
+        client_id: z7.string().optional()
       },
       audit_log: {
-        vault: z6.string(),
-        note_path: z6.string().optional(),
-        op: z6.enum(["create", "update", "delete"]).optional(),
-        since: z6.number().int().nonnegative().optional(),
-        limit: z6.number().int().positive().max(1e3).optional().default(50),
+        vault: z7.string(),
+        note_path: z7.string().optional(),
+        op: z7.enum(["create", "update", "delete"]).optional(),
+        since: z7.number().int().nonnegative().optional(),
+        limit: z7.number().int().positive().max(1e3).optional().default(50),
         // Plan 02-06 (MEM-08): additive optional filter. The MCP tool's
         // `description` string is INTENTIONALLY unchanged — Phase 1 byte-identity
         // is preserved. New capability is documented in docs/tools/audit_log.md.
-        is_memory_sink_write: z6.boolean().optional()
+        is_memory_sink_write: z7.boolean().optional()
       },
       list_models: {
-        vault: z6.string()
+        vault: z7.string()
       },
       start_shadow_index: {
-        vault: z6.string(),
-        model: z6.string().min(1),
-        batch_size: z6.number().int().positive().max(256).optional()
+        vault: z7.string(),
+        model: z7.string().min(1),
+        batch_size: z7.number().int().positive().max(256).optional()
       },
       switch_active_model: {
-        vault: z6.string(),
-        model_name: z6.string().min(1)
+        vault: z7.string(),
+        model_name: z7.string().min(1)
       },
       vacuum_embeddings: {
-        vault: z6.string()
+        vault: z7.string()
       },
       index_runs: {
-        vault: z6.string(),
-        limit: z6.number().int().positive().max(200).optional().default(20)
+        vault: z7.string(),
+        limit: z7.number().int().positive().max(200).optional().default(20)
       },
       search: {
-        query: z6.string().min(1),
-        limit: z6.number().int().positive().max(50).optional().default(10)
+        query: z7.string().min(1),
+        limit: z7.number().int().positive().max(50).optional().default(10)
       },
       fetch: {
-        id: z6.string().min(1)
+        id: z7.string().min(1)
       },
       vault_stats: {
-        vault: z6.string().optional()
+        vault: z7.string().optional()
       },
       recent_notes: {
-        vault: z6.string().optional(),
-        limit: z6.number().int().positive().max(200).optional().default(20),
-        since: z6.number().int().nonnegative().optional()
+        vault: z7.string().optional(),
+        limit: z7.number().int().positive().max(200).optional().default(20),
+        since: z7.number().int().nonnegative().optional()
       },
       suggest_frontmatter: {
-        vault: z6.string(),
-        path: z6.string().optional(),
-        content: z6.string().optional(),
-        title: z6.string().optional(),
-        folder_hint: z6.string().optional()
+        vault: z7.string(),
+        path: z7.string().optional(),
+        content: z7.string().optional(),
+        title: z7.string().optional(),
+        folder_hint: z7.string().optional()
       },
       // ── Phase 2 memory tools (Plan 02-04) ───────────────────────────────────
       record_observation: {
-        vault: z6.string().min(1).describe("Vault name (registered in [vaults] config block)"),
-        claim: z6.string().min(1).describe("Short natural-language statement of the observation (becomes title + body)"),
-        evidence: z6.array(z6.string()).describe("DocIds or quoted source spans supporting the claim; empty array allowed"),
-        confidence: z6.enum(["direct", "inferred", "uncertain"]).describe("How the agent arrived at this claim"),
-        type: z6.string().min(1).describe(
+        vault: z7.string().min(1).describe("Vault name (registered in [vaults] config block)"),
+        claim: z7.string().min(1).describe("Short natural-language statement of the observation (becomes title + body)"),
+        evidence: z7.array(z7.string()).describe("DocIds or quoted source spans supporting the claim; empty array allowed"),
+        confidence: z7.enum(["direct", "inferred", "uncertain"]).describe("How the agent arrived at this claim"),
+        type: z7.string().min(1).describe(
           "Observation type per the sink contract (e.g. 'observation', 'hypothesis', 'decision')"
         ),
-        sink: z6.string().min(1).optional().describe(
+        sink: z7.string().min(1).optional().describe(
           "Memory sink name OR full obsidian-fs://\u2026 handle. Defaults to the vault's default sink."
         ),
-        properties: z6.record(z6.string(), z6.unknown()).optional().describe(
+        properties: z7.record(z7.string(), z7.unknown()).optional().describe(
           "Escape-hatch: contract-allowed extra properties; merged AFTER sugar args (caller wins)"
         )
       },
       supersede: {
-        doc_id: z6.string().regex(DOC_ID_PATTERN2).describe("DocId of the document being superseded"),
-        replacement_doc_id: z6.string().regex(DOC_ID_PATTERN2).describe("DocId of the replacement document"),
-        reason: z6.string().min(1).describe("Why the old document is being retired; written to superseded_reason")
+        doc_id: z7.string().regex(DOC_ID_PATTERN2).describe("DocId of the document being superseded"),
+        replacement_doc_id: z7.string().regex(DOC_ID_PATTERN2).describe("DocId of the replacement document"),
+        reason: z7.string().min(1).describe("Why the old document is being retired; written to superseded_reason")
+      },
+      // ── Phase 5 brief tools (Plan 05-02 / BRF-03, BRF-04) ───────────────────
+      compile_brief: {
+        vault: z7.string().min(1).describe("Vault name (registered in [vaults] config block)"),
+        target: z7.string().min(1).describe("Stable cross-version handle for the brief (e.g. 'atlas-q3')"),
+        source_doc_ids: z7.array(z7.string().regex(DOC_ID_PATTERN2)).min(1).max(50).describe("DocIds the brief is compiled from; deduped, capped at 50 (D-03)"),
+        purpose: z7.string().min(1).max(500).describe("Free-form purpose; bounded so list_briefs stays scannable"),
+        max_tokens: z7.number().int().positive().optional().default(2e3).describe("Hint for the LLM ladder; default 2000"),
+        prepared_text: z7.string().min(1).optional().describe("D-10 tier 3 fallback when no LLM is reachable \u2014 verbatim body to stitch in"),
+        sink: z7.string().min(1).optional().describe("Override the default `_memory/_briefs` sink")
+      },
+      get_brief: {
+        vault: z7.string().min(1).describe("Vault name (registered in [vaults] config block)"),
+        target: z7.string().min(1).describe("Stable cross-version handle for the brief"),
+        max_age_days: z7.number().int().nonnegative().optional().describe("Reject briefs older than this many days unless allow_stale=true"),
+        allow_stale: z7.boolean().optional().default(false).describe(
+          "When true, return briefs flagged stale or too_old with annotation rather than null"
+        )
       },
       // ── Phase 3 assembly tools (Plan 03-02 / ASM-02) ────────────────────────
       get_outline: {
-        doc_id: z6.string().regex(DOC_ID_PATTERN2).describe("Opaque DocId (obsidian-fs://<vault>/<path>) of the document"),
-        vaults: z6.array(z6.string().min(1)).optional().describe("Optional vault filter; usually omitted (the DocId names a vault)")
+        doc_id: z7.string().regex(DOC_ID_PATTERN2).describe("Opaque DocId (obsidian-fs://<vault>/<path>) of the document"),
+        vaults: z7.array(z7.string().min(1)).optional().describe("Optional vault filter; usually omitted (the DocId names a vault)")
       },
       // ── Phase 3 assembly tools (Plan 03-03) ─────────────────────────────────
       search_sections: {
-        query: z6.string().min(1),
-        limit: z6.number().int().positive().max(50).optional().default(10),
-        vaults: z6.array(z6.string().min(1)).optional(),
+        query: z7.string().min(1),
+        limit: z7.number().int().positive().max(50).optional().default(10),
+        vaults: z7.array(z7.string().min(1)).optional(),
         // Forward-compat with slice 03-05's authority/staleness rescore.
         // Accepted today; ignored by the controller until 03-05 wires the
         // forwarding inside hybridSearch. See 03-03-DEVIATIONS.md.
-        recency_weight: z6.number().min(0).optional().default(0),
-        authority_weight: z6.number().min(0).optional().default(0),
-        include_superseded: z6.boolean().optional().default(false)
+        recency_weight: z7.number().min(0).optional().default(0),
+        authority_weight: z7.number().min(0).optional().default(0),
+        include_superseded: z7.boolean().optional().default(false)
       },
       // ── Phase 2 memory tools (Plan 02-05) ───────────────────────────────────
       recall: {
-        query: z6.string().min(1).describe("Natural-language query; routes through hybrid (semantic + BM25) search"),
-        min_confidence: z6.enum(["direct", "inferred", "uncertain"]).optional().describe(
+        query: z7.string().min(1).describe("Natural-language query; routes through hybrid (semantic + BM25) search"),
+        min_confidence: z7.enum(["direct", "inferred", "uncertain"]).optional().describe(
           "Exclude docs whose confidence ordinal is lower than this (direct=3, inferred=2, uncertain=1)"
         ),
-        types: z6.array(z6.string().min(1)).optional().describe("Restrict to docs whose `type` property is in this set"),
-        max_age_days: z6.number().int().positive().optional().describe("Exclude docs whose `observed_at` is older than this many days"),
-        sink: z6.string().min(1).optional().describe(
+        types: z7.array(z7.string().min(1)).optional().describe("Restrict to docs whose `type` property is in this set"),
+        max_age_days: z7.number().int().positive().optional().describe("Exclude docs whose `observed_at` is older than this many days"),
+        sink: z7.string().min(1).optional().describe(
           "Memory sink name OR full obsidian-fs://\u2026 handle. Defaults to all configured sinks."
         ),
-        limit: z6.number().int().positive().max(200).optional().describe("Maximum results AFTER filter+sort; default 20"),
-        vaults: z6.array(z6.string().min(1)).optional().describe("Restrict to these vault names; defaults to all configured")
+        limit: z7.number().int().positive().max(200).optional().describe("Maximum results AFTER filter+sort; default 20"),
+        vaults: z7.array(z7.string().min(1)).optional().describe("Restrict to these vault names; defaults to all configured")
       },
       // ── Phase 3 assembly tools (Plan 03-04 / ASM-01) ────────────────────────
       get_document_bundle: {
-        doc_id: z6.string().regex(DOC_ID_PATTERN2).describe("Opaque DocId (obsidian-fs://<vault>/<path>) of the anchor document"),
+        doc_id: z7.string().regex(DOC_ID_PATTERN2).describe("Opaque DocId (obsidian-fs://<vault>/<path>) of the anchor document"),
         // v2.0.0 accepts only depth:1. The literal pin guarantees Zod
         // rejects any other value at the boundary so the controller does
         // not need to clamp. Phase 4 may widen additively (z.union of
         // literals, or `z.number().int().min(1).max(2)`).
-        depth: z6.literal(1).optional().default(1).describe("Link-walk depth. v2.0.0: only 1 (one-hop). Phase 4 may widen."),
-        vaults: z6.array(z6.string().min(1)).optional().describe("Optional vault filter; usually omitted (the DocId names a vault)")
+        depth: z7.literal(1).optional().default(1).describe("Link-walk depth. v2.0.0: only 1 (one-hop). Phase 4 may widen."),
+        vaults: z7.array(z7.string().min(1)).optional().describe("Optional vault filter; usually omitted (the DocId names a vault)")
       },
       // ── Phase 4 graph tools (Plan 04-03 / GRA-01) ───────────────────────────
       expand: {
-        seed_doc_ids: z6.array(z6.string().regex(DOC_ID_PATTERN2)).min(1).describe(
+        seed_doc_ids: z7.array(z7.string().regex(DOC_ID_PATTERN2)).min(1).describe(
           "1+ opaque DocIds (e.g. obsidian-fs://<vault>/<path>) \u2014 seeds of the BFS."
         ),
         // Hops hard-capped at 2 (D-05) via Zod literal union — `hops: 3`
         // is rejected at the boundary; the controller does not clamp.
-        hops: z6.union([z6.literal(1), z6.literal(2)]).describe("Hop cap (1 or 2). v2.0.0 hard-caps at 2."),
-        direction: z6.enum(["forward", "backward", "both"]).optional().default("both").describe("Edge traversal direction; default 'both'."),
-        edge_types: z6.array(z6.enum(["wikilink", "mention", "frontmatter-ref", "hyperlink"])).optional().describe("Optional filter on edge types; default = all four types."),
-        filter_properties: z6.record(z6.string(), z6.unknown()).optional().describe(
+        hops: z7.union([z7.literal(1), z7.literal(2)]).describe("Hop cap (1 or 2). v2.0.0 hard-caps at 2."),
+        direction: z7.enum(["forward", "backward", "both"]).optional().default("both").describe("Edge traversal direction; default 'both'."),
+        edge_types: z7.array(z7.enum(["wikilink", "mention", "frontmatter-ref", "hyperlink"])).optional().describe("Optional filter on edge types; default = all four types."),
+        filter_properties: z7.record(z7.string(), z7.unknown()).optional().describe(
           "Strict-equality predicate on document properties (e.g. {type: 'Project'})."
         ),
-        include_superseded: z6.boolean().optional().default(false).describe(
+        include_superseded: z7.boolean().optional().default(false).describe(
           "When false (default), docs whose properties.status === 'superseded' are dropped."
         )
       },
@@ -10298,25 +12183,50 @@ var init_tool_registry = __esm({
       // works. The runtime path goes through `buildToolSchema("cluster")`
       // which calls the SCHEMA_BUILDERS entry.
       cluster: {
-        query: z6.string().min(1).optional(),
-        seed_doc_ids: z6.array(z6.string().regex(DOC_ID_PATTERN2)).min(1).optional(),
-        method: z6.literal("edge-community"),
-        query_top_k: z6.number().int().positive().max(200).optional().default(50),
-        force: z6.boolean().optional().default(false)
+        query: z7.string().min(1).optional(),
+        seed_doc_ids: z7.array(z7.string().regex(DOC_ID_PATTERN2)).min(1).optional(),
+        // CR-02: `vault` scopes the `query` path on multi-vault setups so
+        // search_hybrid is not silently restricted to whichever vault
+        // sorts first in VaultManager insertion order. Optional at the
+        // schema layer; the runtime cluster() entry enforces the
+        // multi-vault-without-vault error.
+        vault: z7.string().min(1).optional(),
+        method: z7.literal("edge-community"),
+        query_top_k: z7.number().int().positive().max(200).optional().default(50),
+        force: z7.boolean().optional().default(false)
       },
       // ── Phase 3 assembly tools (Plan 03-06) ─────────────────────────────────
       assemble_dossier: {
-        type: z6.string().min(1).describe(
+        type: z7.string().min(1).describe(
           "Exact-match value for properties.type on the anchor document (D-03 \u2014 no fuzzy match)"
         ),
-        key: z6.string().min(1).describe(
+        key: z7.string().min(1).describe(
           "Candidate key \u2014 matches the document's title OR any entry in properties.aliases (D-04)"
         ),
-        vaults: z6.array(z6.string().min(1)).optional().describe("Restrict to these vault names; defaults to all configured")
+        vaults: z7.array(z7.string().min(1)).optional().describe("Restrict to these vault names; defaults to all configured")
+      },
+      // ── Phase 6 task-contract DSL (Plan 06-02 / D-A1 escape valve) ─────────
+      register_contracts_as_tools: {
+        vault: z7.string().min(1).optional().describe("Vault name; omit to apply to all vaults")
+      },
+      // ── Phase 6 task-contract DSL (Plan 06-03 / CON-05, Q-DESCRIBE) ────────
+      describe_contract: {
+        name: z7.string().min(1).describe("Registered contract name (see register_contracts_as_tools)"),
+        vault: z7.string().min(1).optional().describe("Vault name; omit on single-vault setups")
+      },
+      // ── Phase 6 task-contract DSL (Plan 06-03 / CON-06) ────────────────────
+      instantiate_contract: {
+        name: z7.string().min(1).describe("Registered contract name"),
+        inputs: z7.record(z7.string(), z7.unknown()).optional().default({}).describe("Contract inputs; validated against the contract's inputZodSchema"),
+        source_overrides: z7.record(z7.string(), z7.string()).optional().describe("Override declared source handles by handle name"),
+        sink_overrides: z7.record(z7.string(), z7.string()).optional().describe(
+          "Override declared sink handles by handle name. Targets MUST resolve through MemorySinkRegistry (D-A4c)."
+        ),
+        vault: z7.string().min(1).optional().describe("Vault name; omit on single-vault setups")
       }
     };
     SCHEMA_BUILDERS = {
-      suggest_frontmatter: () => z6.object(TOOL_SCHEMAS.suggest_frontmatter).refine((v) => v.path !== void 0 || v.content !== void 0, {
+      suggest_frontmatter: () => z7.object(TOOL_SCHEMAS.suggest_frontmatter).refine((v) => v.path !== void 0 || v.content !== void 0, {
         message: "suggest_frontmatter requires either `path` or `content`"
       }),
       // Plan 04-05 / D-15a — EXACTLY ONE of `query` or `seed_doc_ids` must
@@ -10325,13 +12235,1179 @@ var init_tool_registry = __esm({
       // so this Zod refinement is the early-rejection gate at the MCP
       // boundary (cluster's internal validator handles the same case for
       // direct callers that bypass Zod).
-      cluster: () => z6.object(TOOL_SCHEMAS.cluster).refine(
+      cluster: () => z7.object(TOOL_SCHEMAS.cluster).refine(
         (v) => v.query !== void 0 && v.seed_doc_ids === void 0 || v.query === void 0 && v.seed_doc_ids !== void 0,
         {
           message: "cluster requires EXACTLY ONE of `query` or `seed_doc_ids` (D-15a mutual exclusion)"
         }
       )
     };
+  }
+});
+
+// src/contracts/types.ts
+var CONTRACT_PATH_REGEX;
+var init_types = __esm({
+  "src/contracts/types.ts"() {
+    "use strict";
+    init_esm_shims();
+    CONTRACT_PATH_REGEX = /^_contracts\/[^/]+\.yaml$/;
+  }
+});
+
+// src/contracts/types-catalog.ts
+var TYPES_CATALOG;
+var init_types_catalog = __esm({
+  "src/contracts/types-catalog.ts"() {
+    "use strict";
+    init_esm_shims();
+    TYPES_CATALOG = Object.freeze({
+      DocId: Object.freeze({
+        type: "string",
+        pattern: "^[a-z][a-z0-9-]*://",
+        description: "Opaque document identifier per ADR-001 (URI-style)"
+      }),
+      Handle: Object.freeze({
+        type: "string",
+        pattern: "^[a-z][a-z0-9-]*://",
+        description: "Source or sink handle (currently identical to DocId; future-proofed for divergence)"
+      }),
+      ChunkId: Object.freeze({
+        type: "string",
+        pattern: "^[a-z][a-z0-9-]*://.+#chunk-[0-9a-f]{7}$",
+        description: "Content-stable chunk identifier per Phase 5 ADR-005 H-5"
+      }),
+      MemorySink: Object.freeze({
+        type: "string",
+        description: "Registered MemorySink handle (see list_sinks)",
+        "x-validator": "memory-sink"
+      })
+    });
+  }
+});
+
+// src/contracts/json-schema-ref.ts
+function resolveRefs(schema) {
+  if (Array.isArray(schema)) return schema.map(resolveRefs);
+  if (schema !== null && typeof schema === "object") {
+    const obj = schema;
+    if (typeof obj["$ref"] === "string") {
+      const ref = obj["$ref"];
+      const match = ref.match(TYPES_REF_RE);
+      if (!match) {
+        throw new Error(
+          `Unsupported $ref form (only '#/types/<name>' accepted): ${ref}`
+        );
+      }
+      const typeName = match[1];
+      const catalogEntry = TYPES_CATALOG[typeName];
+      if (catalogEntry === void 0) {
+        throw new Error(`Unknown $ref target: ${ref}`);
+      }
+      const rest = {};
+      for (const [k, v] of Object.entries(obj)) {
+        if (k === "$ref") continue;
+        rest[k] = resolveRefs(v);
+      }
+      return { ...catalogEntry, ...rest };
+    }
+    const out = {};
+    for (const [k, v] of Object.entries(obj)) {
+      out[k] = resolveRefs(v);
+    }
+    return out;
+  }
+  return schema;
+}
+var TYPES_REF_RE;
+var init_json_schema_ref = __esm({
+  "src/contracts/json-schema-ref.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_types_catalog();
+    TYPES_REF_RE = /^#\/types\/(\w+)$/;
+  }
+});
+
+// src/contracts/input-schema.ts
+import { z as z8 } from "zod";
+function buildInputSchema(yamlInputs, required = []) {
+  const resolvedProperties = resolveRefs(yamlInputs);
+  const jsonSchema = {
+    type: "object",
+    properties: resolvedProperties,
+    required,
+    additionalProperties: false
+  };
+  const zodSchema = z8.fromJSONSchema(
+    jsonSchema
+  );
+  return { zodSchema, jsonSchema };
+}
+var init_input_schema = __esm({
+  "src/contracts/input-schema.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_json_schema_ref();
+  }
+});
+
+// src/contracts/registry.ts
+var ContractRegistry;
+var init_registry3 = __esm({
+  "src/contracts/registry.ts"() {
+    "use strict";
+    init_esm_shims();
+    ContractRegistry = class {
+      contracts = /* @__PURE__ */ new Map();
+      get size() {
+        return this.contracts.size;
+      }
+      get(name) {
+        return this.contracts.get(name);
+      }
+      /** D-A1c first-wins. Returns `{ok:false, reason:"duplicate_name"}` if `name` is already registered. */
+      set(name, contract) {
+        if (this.contracts.has(name)) {
+          return { ok: false, reason: "duplicate_name" };
+        }
+        this.contracts.set(name, contract);
+        return { ok: true };
+      }
+      delete(name) {
+        return this.contracts.delete(name);
+      }
+      entries() {
+        return this.contracts.entries();
+      }
+      names() {
+        return Array.from(this.contracts.keys());
+      }
+    };
+  }
+});
+
+// src/contracts/slug.ts
+function slugify2(name, prefix) {
+  return prefix + name.replace(/-/g, "_");
+}
+var init_slug = __esm({
+  "src/contracts/slug.ts"() {
+    "use strict";
+    init_esm_shims();
+  }
+});
+
+// src/contracts/audit.ts
+function recordContractStep(deps, args2) {
+  deps.contractAudit.insert({
+    kind: "contract_step",
+    contract: args2.contract,
+    verb: args2.verb,
+    stepAlias: args2.step_alias,
+    vault: args2.vault,
+    ts: Date.now()
+  });
+}
+function recordContractLoadError(deps, args2) {
+  deps.contractAudit.insert({
+    kind: "contract_load_error",
+    vault: args2.vault,
+    ts: Date.now(),
+    errorMessage: `${args2.file}: ${args2.error_message}`
+  });
+}
+var init_audit4 = __esm({
+  "src/contracts/audit.ts"() {
+    "use strict";
+    init_esm_shims();
+  }
+});
+
+// src/contracts/schema.ts
+import { z as z9 } from "zod";
+var BASELINE_VERBS, MCP_VERB_RE, VerbSchema, StepSchema, HandleDeclSchema, WriteBackSchema, ContractFileSchema;
+var init_schema4 = __esm({
+  "src/contracts/schema.ts"() {
+    "use strict";
+    init_esm_shims();
+    BASELINE_VERBS = [
+      "search_hybrid",
+      "expand",
+      "cluster",
+      "recall",
+      "compile_brief",
+      "get_brief",
+      "query_frontmatter",
+      "list_backlinks",
+      "get_outline",
+      "search_sections",
+      "read_note"
+    ];
+    MCP_VERB_RE = /^mcp:\/\/[a-z][a-z0-9_-]*\/[a-z][a-z0-9_-]*$/;
+    VerbSchema = z9.union([
+      z9.enum([...BASELINE_VERBS, "literal"]),
+      z9.string().regex(MCP_VERB_RE)
+    ]);
+    StepSchema = z9.object({
+      as: z9.string().min(1).regex(/^[a-z_][a-z0-9_]*$/, "alias must be snake_case").describe("D-A2c \u2014 unique snake_case alias for this step's output"),
+      verb: VerbSchema.describe(
+        "Closed enum + literal + mcp:// extension (D-A2a / C-1)"
+      ),
+      args: z9.record(z9.string(), z9.unknown()).optional(),
+      value: z9.unknown().optional()
+    }).describe("One step in an assembly: array");
+    HandleDeclSchema = z9.object({
+      handle: z9.string().min(1),
+      required: z9.boolean().default(true)
+    }).describe("Source or sink handle declaration (D-A4a)");
+    WriteBackSchema = z9.object({
+      sink: z9.string().min(1).describe("Template expression OR literal sink handle"),
+      document_kind: z9.enum(["brief", "observation", "custom"]),
+      properties: z9.record(z9.string(), z9.unknown()).default({}),
+      body_from: z9.string().min(1).describe("Template expression that resolves to the body string")
+    }).describe(
+      "DeliveryAdapter.write chokepoint \u2014 only ground-truth DocId source (C-3)"
+    );
+    ContractFileSchema = z9.object({
+      version: z9.literal(1).describe("v2.0.0 supports version 1 only; v2.x may extend additively"),
+      name: z9.string().min(1).regex(/^[a-z][a-z0-9-]*$/, "name must be kebab-case").describe("Contract name \u2014 used by instantiate_contract and slugify"),
+      description: z9.string().default(""),
+      inputs: z9.record(z9.string(), z9.unknown()).default({}),
+      required: z9.array(z9.string()).default([]),
+      sources: z9.record(z9.string(), HandleDeclSchema).default({}),
+      sinks: z9.record(z9.string(), HandleDeclSchema).default({}),
+      assembly: z9.array(StepSchema).min(1, "assembly must contain at least one step"),
+      output_shape: z9.unknown().optional(),
+      write_back: WriteBackSchema.optional()
+    }).superRefine((data, ctx) => {
+      const aliases = /* @__PURE__ */ new Set();
+      for (const step of data.assembly) {
+        if (aliases.has(step.as)) {
+          ctx.addIssue({
+            code: "custom",
+            path: ["assembly"],
+            message: `duplicate step alias '${step.as}'`
+          });
+        }
+        aliases.add(step.as);
+      }
+    });
+  }
+});
+
+// src/contracts/loader.ts
+import { parseDocument } from "yaml";
+async function startContractRegistry(opts) {
+  const registry = new ContractRegistry();
+  const fileToName = /* @__PURE__ */ new Map();
+  await bootScan(opts, registry, fileToName);
+  opts.onRegistryChange?.("boot");
+  const sub = opts.feed.subscribe(async (event) => {
+    await handleChangeEvent(event, opts, registry, fileToName);
+  });
+  return {
+    registry,
+    dispose: () => sub[Symbol.dispose]()
+  };
+}
+async function bootScan(opts, registry, fileToName) {
+  for await (const ref of opts.source.listDocuments()) {
+    const { resource } = decomposeDocId(ref.id);
+    if (!CONTRACT_PATH_REGEX.test(resource)) continue;
+    let text;
+    try {
+      const doc = await opts.source.readDocument(ref.id);
+      text = extractText(doc);
+    } catch (err) {
+      recordContractLoadError(opts.auditDeps, {
+        file: resource,
+        error_message: messageOf(err),
+        vault: opts.vault.config.name
+      });
+      continue;
+    }
+    parseAndRegister(text, resource, opts, registry, fileToName);
+  }
+}
+async function handleChangeEvent(event, opts, registry, fileToName) {
+  if (event.kind === "rename") {
+    const oldResource = decomposeDocId(event.old_id).resource;
+    const newResource = decomposeDocId(event.new_id).resource;
+    if (CONTRACT_PATH_REGEX.test(oldResource)) {
+      deleteByFile(oldResource, registry, fileToName, opts);
+    }
+    if (CONTRACT_PATH_REGEX.test(newResource)) {
+      await loadFromFeed(event.new_id, newResource, opts, registry, fileToName);
+      opts.onRegistryChange?.("update");
+    } else if (CONTRACT_PATH_REGEX.test(oldResource)) {
+      opts.onRegistryChange?.("delete");
+    }
+    return;
+  }
+  const { resource } = decomposeDocId(event.id);
+  if (!CONTRACT_PATH_REGEX.test(resource)) return;
+  switch (event.kind) {
+    case "delete": {
+      if (deleteByFile(resource, registry, fileToName, opts)) {
+        opts.onRegistryChange?.("delete");
+      }
+      return;
+    }
+    case "create":
+    case "update": {
+      if (event.kind === "update") {
+        deleteByFile(resource, registry, fileToName, opts);
+      }
+      const ok2 = await loadFromFeed(
+        event.id,
+        resource,
+        opts,
+        registry,
+        fileToName
+      );
+      if (ok2) opts.onRegistryChange?.(event.kind);
+      return;
+    }
+  }
+}
+function deleteByFile(file, registry, fileToName, _opts) {
+  const name = fileToName.get(file);
+  if (name === void 0) return false;
+  registry.delete(name);
+  fileToName.delete(file);
+  return true;
+}
+async function loadFromFeed(id, file, opts, registry, fileToName) {
+  let text;
+  try {
+    const doc = await opts.source.readDocument(id);
+    text = extractText(doc);
+  } catch (err) {
+    recordContractLoadError(opts.auditDeps, {
+      file,
+      error_message: messageOf(err),
+      vault: opts.vault.config.name
+    });
+    return false;
+  }
+  return parseAndRegister(text, file, opts, registry, fileToName);
+}
+function parseAndRegister(text, file, opts, registry, fileToName) {
+  let parsed;
+  try {
+    const docNode = parseDocument(text);
+    const raw = docNode.toJS();
+    const validated = ContractFileSchema.safeParse(raw);
+    if (!validated.success) {
+      throw new Error(`zod: ${JSON.stringify(validated.error.format())}`);
+    }
+    parsed = buildParsedContract(validated.data);
+  } catch (err) {
+    recordContractLoadError(opts.auditDeps, {
+      file,
+      error_message: messageOf(err),
+      vault: opts.vault.config.name
+    });
+    return false;
+  }
+  const result = registry.set(parsed.name, parsed);
+  if (!result.ok) {
+    recordContractLoadError(opts.auditDeps, {
+      file,
+      error_message: `duplicate_name: '${parsed.name}' already registered (first-wins per D-A1c)`,
+      vault: opts.vault.config.name
+    });
+    return false;
+  }
+  fileToName.set(file, parsed.name);
+  return true;
+}
+function buildParsedContract(data) {
+  const inputs = data.inputs;
+  const required = data.required;
+  const built = buildInputSchema(inputs, required);
+  const outputShape = data.output_shape !== void 0 ? resolveRefs(data.output_shape) : void 0;
+  const sources = data.sources;
+  const sinks = data.sinks;
+  const assembly = data.assembly;
+  const writeBack = data.write_back;
+  const result = {
+    version: 1,
+    name: data.name,
+    description: data.description,
+    inputs,
+    required,
+    sources,
+    sinks,
+    assembly,
+    inputZodSchema: built.zodSchema,
+    inputJsonSchema: built.jsonSchema
+  };
+  if (outputShape !== void 0) result.output_shape = outputShape;
+  if (writeBack !== void 0) result.write_back = writeBack;
+  return result;
+}
+function extractText(doc) {
+  const block = doc.blocks[0];
+  if (block === void 0) {
+    throw new Error("Document has no blocks (cannot read contract YAML)");
+  }
+  if (block.kind === "paragraph") return block.text;
+  const paragraphs = doc.blocks.filter(
+    (b) => b.kind === "paragraph"
+  );
+  if (paragraphs.length === 0) {
+    throw new Error("Document blocks contain no paragraph text");
+  }
+  return paragraphs.map((b) => b.text).join("\n");
+}
+function messageOf(err) {
+  if (err instanceof Error) return err.message;
+  return String(err);
+}
+var init_loader3 = __esm({
+  "src/contracts/loader.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_types();
+    init_schema4();
+    init_input_schema();
+    init_json_schema_ref();
+    init_registry3();
+    init_audit4();
+    init_registry();
+  }
+});
+
+// src/contracts/auto-register.ts
+function syncAutoRegistered(server, registry, prefix, registered, opts) {
+  if (!opts.enabled) return;
+  const desired = /* @__PURE__ */ new Map();
+  for (const [name, parsed] of registry.entries()) {
+    desired.set(slugify2(name, prefix), parsed);
+  }
+  let mutated = false;
+  for (const [toolName, regd] of Array.from(registered)) {
+    if (!desired.has(toolName)) {
+      regd.remove();
+      registered.delete(toolName);
+      mutated = true;
+    }
+  }
+  for (const [toolName, parsed] of desired) {
+    if (registered.has(toolName)) continue;
+    const contractName = parsed.name;
+    const regd = server.registerTool(
+      toolName,
+      {
+        description: parsed.description,
+        inputSchema: parsed.inputZodSchema
+      },
+      // The callback runs AFTER the SDK validates args against the Zod
+      // schema, so `args` is typed-narrowed to the contract's inputs.
+      async (args2) => {
+        const result = await opts.instantiateHandler(contractName, args2);
+        return {
+          content: [{ type: "text", text: JSON.stringify(result) }]
+        };
+      }
+    );
+    registered.set(toolName, regd);
+    mutated = true;
+  }
+  if (mutated) server.sendToolListChanged();
+}
+var init_auto_register = __esm({
+  "src/contracts/auto-register.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_slug();
+  }
+});
+
+// src/contracts/templates.ts
+function lookup(path7, bindings) {
+  const segments = path7.split(/[.[\]]/).filter(Boolean);
+  if (segments.length === 0) return void 0;
+  const root = {
+    inputs: bindings.inputs,
+    ...bindings.steps,
+    ...bindings.handles ?? {}
+  };
+  let cur = root;
+  for (const seg of segments) {
+    if (cur === null || cur === void 0) return void 0;
+    if (typeof cur !== "object") return void 0;
+    if (Array.isArray(cur)) {
+      const idx = Number(seg);
+      if (!Number.isInteger(idx)) return void 0;
+      cur = cur[idx];
+      continue;
+    }
+    cur = cur[seg];
+  }
+  return cur;
+}
+function resolveString(s, bindings) {
+  const whole = WHOLE_STRING_RE.exec(s);
+  if (whole !== null) {
+    const path7 = whole[1].trim();
+    const v = lookup(path7, bindings);
+    if (v === void 0) {
+      return { ok: false, reason: "unresolved_template", expression: `{{${path7}}}` };
+    }
+    return { ok: true, value: v };
+  }
+  if (!s.includes("{{")) return { ok: true, value: s };
+  let unresolved = null;
+  TOKEN_RE.lastIndex = 0;
+  const replaced = s.replace(TOKEN_RE, (_match, rawPath) => {
+    if (unresolved !== null) return "";
+    const path7 = rawPath.trim();
+    const v = lookup(path7, bindings);
+    if (v === void 0) {
+      unresolved = `{{${path7}}}`;
+      return "";
+    }
+    return typeof v === "string" ? v : JSON.stringify(v);
+  });
+  if (unresolved !== null) {
+    return { ok: false, reason: "unresolved_template", expression: unresolved };
+  }
+  return { ok: true, value: replaced };
+}
+function resolveTemplate(value, bindings) {
+  if (typeof value === "string") {
+    return resolveString(value, bindings);
+  }
+  if (Array.isArray(value)) {
+    const out = [];
+    for (const item of value) {
+      const r = resolveTemplate(item, bindings);
+      if (!r.ok) return r;
+      out.push(r.value);
+    }
+    return { ok: true, value: out };
+  }
+  if (value !== null && typeof value === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) {
+      const r = resolveTemplate(v, bindings);
+      if (!r.ok) return r;
+      out[k] = r.value;
+    }
+    return { ok: true, value: out };
+  }
+  return { ok: true, value };
+}
+var TOKEN_RE, WHOLE_STRING_RE;
+var init_templates = __esm({
+  "src/contracts/templates.ts"() {
+    "use strict";
+    init_esm_shims();
+    TOKEN_RE = /\{\{([^}]+)\}\}/g;
+    WHOLE_STRING_RE = /^\{\{([^}]+)\}\}$/;
+  }
+});
+
+// src/contracts/mcp-clients.ts
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+function wrapAvailable(client, transport) {
+  return {
+    available: true,
+    async callTool(name, args2) {
+      const res = await client.callTool({
+        name,
+        arguments: args2
+      });
+      const content = res.content;
+      if (Array.isArray(content) && content.length > 0) {
+        const first = content[0];
+        if (first.type === "text" && typeof first.text === "string") {
+          try {
+            return JSON.parse(first.text);
+          } catch {
+            return first.text;
+          }
+        }
+      }
+      return res;
+    },
+    [Symbol.dispose]() {
+      transport.close();
+    }
+  };
+}
+function wrapUnavailable() {
+  return {
+    available: false,
+    async callTool() {
+      throw new Error("peer-MCP client unavailable");
+    },
+    [Symbol.dispose]() {
+    }
+  };
+}
+var PeerMcpRegistry;
+var init_mcp_clients = __esm({
+  "src/contracts/mcp-clients.ts"() {
+    "use strict";
+    init_esm_shims();
+    PeerMcpRegistry = class {
+      clients = /* @__PURE__ */ new Map();
+      clientFactory;
+      constructor(clientFactory) {
+        this.clientFactory = clientFactory;
+      }
+      get size() {
+        return this.clients.size;
+      }
+      /**
+       * Boot every `[contracts.mcp_clients.<name>]` entry. Failures are
+       * non-fatal: the name is recorded as unavailable and a WARN line is
+       * written to stderr. Returns when all attempts have settled.
+       */
+      async start(configs) {
+        for (const [name, cfg] of Object.entries(configs)) {
+          try {
+            const { client, transport } = this.clientFactory ? await this.clientFactory(cfg) : await this.defaultConnect(cfg);
+            this.clients.set(name, wrapAvailable(client, transport));
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            process.stderr.write(
+              `[contracts] peer-MCP client '${name}' failed to start: ${msg}
+`
+            );
+            this.clients.set(name, wrapUnavailable());
+          }
+        }
+      }
+      get(name) {
+        return this.clients.get(name);
+      }
+      /** Dispose every client and clear the internal map. Idempotent. */
+      async shutdown() {
+        for (const c of this.clients.values()) {
+          try {
+            c[Symbol.dispose]();
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            process.stderr.write(`[contracts] peer-MCP dispose error: ${msg}
+`);
+          }
+        }
+        this.clients.clear();
+      }
+      async defaultConnect(cfg) {
+        const transport = new StdioClientTransport({
+          command: cfg.command,
+          args: cfg.args ?? [],
+          env: cfg.env
+        });
+        const client = new Client({ name: "vault-memory-peer", version: "2.0.0" });
+        await client.connect(transport);
+        return { client, transport };
+      }
+    };
+  }
+});
+
+// src/contracts/verbs/mcp-extension.ts
+async function callMcpVerb(verb, args2, registry, opts) {
+  const match = MCP_VERB_RE2.exec(verb);
+  if (!match) {
+    return { ok: false, reason: "verb_not_available", verb };
+  }
+  const serverName = match[1];
+  const toolName = match[2];
+  const client = registry.get(serverName);
+  if (!client || !client.available) {
+    return {
+      ok: false,
+      reason: "mcp_client_unavailable",
+      verb,
+      client_name: serverName
+    };
+  }
+  const timeoutMs = Math.max(1, Math.floor(opts.timeoutSeconds * 1e3));
+  let timer;
+  const timeoutPromise = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error("timeout")), timeoutMs);
+  });
+  try {
+    return await Promise.race([client.callTool(toolName, args2), timeoutPromise]);
+  } catch (err) {
+    const cause = err instanceof Error && err.message === "timeout" ? "timeout" : err instanceof Error ? err.message : String(err);
+    return {
+      ok: false,
+      reason: "assembly_step_failed",
+      step_alias: opts.stepAlias,
+      cause
+    };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+var MCP_VERB_RE2;
+var init_mcp_extension = __esm({
+  "src/contracts/verbs/mcp-extension.ts"() {
+    "use strict";
+    init_esm_shims();
+    MCP_VERB_RE2 = /^mcp:\/\/([a-z][a-z0-9_-]*)\/([a-z][a-z0-9_-]*)$/;
+  }
+});
+
+// src/contracts/verbs/index.ts
+async function verbDispatcher(verb, args2, step, deps, opts) {
+  if (verb === "literal") {
+    return step?.value;
+  }
+  if (typeof verb === "string" && verb.startsWith("mcp://")) {
+    return callMcpVerb(verb, args2 ?? {}, deps.peerMcpRegistry, opts);
+  }
+  switch (verb) {
+    case "search_hybrid":
+      return deps.hybridSearch(args2);
+    case "expand":
+      return deps.handleExpand(args2);
+    case "cluster":
+      return deps.handleCluster(args2);
+    case "recall":
+      return deps.handleRecall(args2);
+    case "compile_brief":
+      return deps.handleCompileBrief(args2);
+    case "get_brief":
+      return deps.handleGetBrief(args2);
+    case "query_frontmatter":
+      return deps.handleQueryFrontmatter(args2);
+    case "list_backlinks":
+      return deps.handleListBacklinks(args2);
+    case "get_outline":
+      return deps.handleGetOutline(args2);
+    case "search_sections":
+      return deps.handleSearchSections(args2);
+    case "read_note":
+      return deps.handleReadNote(args2);
+    default:
+      return { ok: false, reason: "verb_not_available", verb };
+  }
+}
+var init_verbs = __esm({
+  "src/contracts/verbs/index.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_mcp_extension();
+  }
+});
+
+// src/contracts/instantiate.ts
+import { z as z10 } from "zod";
+async function instantiateContract(deps, args2) {
+  const parsed = deps.registry.get(args2.name);
+  if (!parsed) return { ok: false, reason: "unknown_contract", name: args2.name };
+  const inputCheck = parsed.inputZodSchema.safeParse(args2.inputs);
+  if (!inputCheck.success) {
+    return { ok: false, reason: "invalid_inputs", issues: inputCheck.error.format() };
+  }
+  const validSourceHandles = Object.keys(parsed.sources);
+  for (const handle of Object.keys(args2.source_overrides ?? {})) {
+    if (!validSourceHandles.includes(handle)) {
+      return {
+        ok: false,
+        reason: "unknown_override_handle",
+        handle,
+        valid_handles: validSourceHandles
+      };
+    }
+  }
+  const validSinkHandles = Object.keys(parsed.sinks);
+  for (const handle of Object.keys(args2.sink_overrides ?? {})) {
+    if (!validSinkHandles.includes(handle)) {
+      return {
+        ok: false,
+        reason: "unknown_override_handle",
+        handle,
+        valid_handles: validSinkHandles
+      };
+    }
+  }
+  const resolvedSources = {};
+  for (const [handle, decl] of Object.entries(parsed.sources)) {
+    const v = args2.source_overrides?.[handle] ?? deps.configDefaults[handle] ?? (decl.handle === "" ? void 0 : decl.handle);
+    if (v === void 0 && decl.required) {
+      return {
+        ok: false,
+        reason: "missing_required_source",
+        handle,
+        hint: `pass via source_overrides or set [contracts.defaults.${handle}] in config.toml`
+      };
+    }
+    if (v !== void 0) resolvedSources[handle] = v;
+  }
+  const resolvedSinks = {};
+  for (const [handle, decl] of Object.entries(parsed.sinks)) {
+    const v = args2.sink_overrides?.[handle] ?? deps.configDefaults[handle] ?? (decl.handle === "" ? void 0 : decl.handle);
+    if (v === void 0 && decl.required) {
+      return {
+        ok: false,
+        reason: "missing_required_source",
+        handle,
+        hint: `pass via sink_overrides or set [contracts.defaults.${handle}] in config.toml`
+      };
+    }
+    if (v !== void 0) {
+      try {
+        deps.memorySinks.resolveMemorySink(v);
+      } catch {
+        return {
+          ok: false,
+          reason: "sink_override_not_a_memory_sink",
+          target: v,
+          hint: "sinks must be a registered MemorySink handle (see list_sinks)"
+        };
+      }
+      resolvedSinks[handle] = v;
+    }
+  }
+  const bindings = {
+    inputs: { ...inputCheck.data, ...resolvedSources, ...resolvedSinks },
+    steps: {},
+    handles: { ...resolvedSources, ...resolvedSinks }
+  };
+  for (const step of parsed.assembly) {
+    const stepResult = await runStep(deps, parsed.name, step, bindings);
+    if ("error" in stepResult) {
+      return stepResult.error;
+    }
+    bindings.steps[step.as] = stepResult.value;
+  }
+  let writeBackResult = null;
+  if (parsed.write_back) {
+    const wb = parsed.write_back;
+    const sinkResolved = resolveTemplate(wb.sink, bindings);
+    if (!sinkResolved.ok) {
+      return { ok: false, reason: "unresolved_template", expression: sinkResolved.expression };
+    }
+    const bodyResolved = resolveTemplate(wb.body_from, bindings);
+    if (!bodyResolved.ok) {
+      return { ok: false, reason: "unresolved_template", expression: bodyResolved.expression };
+    }
+    const propsResolved = resolveTemplate(wb.properties, bindings);
+    if (!propsResolved.ok) {
+      return { ok: false, reason: "unresolved_template", expression: propsResolved.expression };
+    }
+    if (typeof bodyResolved.value !== "string") {
+      return {
+        ok: false,
+        reason: "write_back_failed",
+        cause: `body_from must resolve to a string, got ${typeof bodyResolved.value}`
+      };
+    }
+    const sinkResolvedString = typeof sinkResolved.value === "string" ? sinkResolved.value : String(sinkResolved.value);
+    let sinkObj;
+    try {
+      sinkObj = deps.memorySinks.resolveMemorySink(sinkResolvedString);
+    } catch {
+      return {
+        ok: false,
+        reason: "write_back_failed",
+        cause: `sink "${sinkResolvedString}" did not resolve to a registered MemorySink`
+      };
+    }
+    const sinkHandle = sinkObj.handle;
+    try {
+      const doc = {
+        blocks: [{ kind: "paragraph", text: bodyResolved.value }],
+        properties: propsResolved.value
+      };
+      const placeholderName = String(parsed.name).replace(/[^a-z0-9-]/gi, "_");
+      const placeholderResource = sinkObj.resolveToRelativePath + placeholderName;
+      const placeholderId = `obsidian-fs://${sinkObj.vault}/${placeholderResource}`;
+      const writeRes = await deps.delivery.write(placeholderId, doc, {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        sink: sinkHandle
+      });
+      if (writeRes && writeRes.ok === false) {
+        return {
+          ok: false,
+          reason: "write_back_failed",
+          cause: String(writeRes.reason ?? writeRes.message ?? "unknown write failure")
+        };
+      }
+      writeBackResult = {
+        doc_id: String(writeRes.doc_id),
+        sink: sinkHandle
+      };
+    } catch (err) {
+      const cause = err instanceof Error ? err.message : String(err);
+      return { ok: false, reason: "write_back_failed", cause };
+    }
+  }
+  const bundle = {
+    steps: bindings.steps,
+    write_back: writeBackResult
+  };
+  if (parsed.output_shape) {
+    try {
+      const outputSchema = z10.fromJSONSchema(
+        parsed.output_shape
+      );
+      const check = outputSchema.safeParse(bundle);
+      if (!check.success) {
+        return {
+          ok: false,
+          reason: "validation_failed_on_output_shape",
+          issues: check.error.format()
+        };
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[contracts] output_shape validation skipped: ${msg}
+`);
+    }
+  }
+  return { ok: true, ...bundle };
+}
+async function runStep(deps, contractName, step, bindings) {
+  const resolvedArgs = step.args ? resolveTemplate(step.args, bindings) : { ok: true, value: void 0 };
+  if (!resolvedArgs.ok) {
+    writeAuditRow(deps, contractName, step);
+    return {
+      error: {
+        ok: false,
+        reason: "unresolved_template",
+        expression: resolvedArgs.expression
+      }
+    };
+  }
+  const resolvedValue = step.value !== void 0 ? resolveTemplate(step.value, bindings) : { ok: true, value: void 0 };
+  if (!resolvedValue.ok) {
+    writeAuditRow(deps, contractName, step);
+    return {
+      error: {
+        ok: false,
+        reason: "unresolved_template",
+        expression: resolvedValue.expression
+      }
+    };
+  }
+  let output;
+  try {
+    output = await verbDispatcher(
+      step.verb,
+      resolvedArgs.value,
+      { value: resolvedValue.value },
+      deps,
+      { stepAlias: step.as, timeoutSeconds: deps.stepTimeoutSeconds }
+    );
+  } catch (err) {
+    writeAuditRow(deps, contractName, step);
+    const cause = err instanceof Error ? err.message : String(err);
+    return {
+      error: {
+        ok: false,
+        reason: "assembly_step_failed",
+        step_alias: step.as,
+        cause
+      }
+    };
+  }
+  writeAuditRow(deps, contractName, step);
+  if (output !== null && typeof output === "object" && "ok" in output && output.ok === false) {
+    return { error: output };
+  }
+  return { value: output };
+}
+function writeAuditRow(deps, contractName, step) {
+  recordContractStep(deps, {
+    contract: contractName,
+    verb: step.verb,
+    step_alias: step.as,
+    vault: deps.vault.config.name
+  });
+}
+var init_instantiate = __esm({
+  "src/contracts/instantiate.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_templates();
+    init_verbs();
+    init_audit4();
+  }
+});
+
+// src/contracts/describe.ts
+function describeContract(deps, args2) {
+  const parsed = deps.registry.get(args2.name);
+  if (!parsed) return { ok: false, reason: "unknown_contract", name: args2.name };
+  return {
+    ok: true,
+    json_schema: parsed.inputJsonSchema,
+    summary: renderSummary(parsed)
+  };
+}
+function renderSummary(parsed) {
+  const lines = [];
+  lines.push(`# ${parsed.name}`);
+  lines.push("");
+  if (parsed.description) {
+    lines.push(parsed.description);
+    lines.push("");
+  }
+  if (Object.keys(parsed.inputs).length > 0) {
+    lines.push("## Inputs");
+    for (const [name, spec] of Object.entries(parsed.inputs)) {
+      const s = spec ?? {};
+      const type = typeof s.type === "string" ? s.type : typeof s["$ref"] === "string" ? `\`${String(s["$ref"])}\`` : "any";
+      const required = parsed.required.includes(name) ? "required" : "optional";
+      const desc = typeof s.description === "string" ? s.description : "";
+      const descSuffix = desc ? `: ${desc}` : "";
+      lines.push(`- **${name}** (${type}, ${required})${descSuffix}`);
+    }
+    lines.push("");
+  }
+  if (Object.keys(parsed.sources).length > 0) {
+    lines.push("## Sources");
+    for (const [handle, decl] of Object.entries(parsed.sources)) {
+      const req = decl.required ? "required" : "optional";
+      lines.push(`- **${handle}** \u2192 \`${decl.handle}\` (${req})`);
+    }
+    lines.push("");
+  }
+  if (Object.keys(parsed.sinks).length > 0) {
+    lines.push("## Sinks");
+    for (const [handle, decl] of Object.entries(parsed.sinks)) {
+      const req = decl.required ? "required" : "optional";
+      lines.push(`- **${handle}** \u2192 \`${decl.handle}\` (${req} MemorySink)`);
+    }
+    lines.push("");
+  }
+  if (parsed.assembly.length > 0) {
+    lines.push("## Assembly");
+    parsed.assembly.forEach((step, i) => {
+      const argsRender = step.args ? `(${Object.keys(step.args).join(", ")})` : "()";
+      lines.push(`${i + 1}. **${step.as}** \u2190 \`${step.verb}${argsRender}\``);
+    });
+    lines.push("");
+  }
+  if (parsed.write_back) {
+    lines.push("## write_back");
+    lines.push(
+      `Writes a ${parsed.write_back.document_kind} document to \`${parsed.write_back.sink}\` with body from \`${parsed.write_back.body_from}\`.`
+    );
+    lines.push("");
+  }
+  if (parsed.output_shape) {
+    lines.push("## Output Shape");
+    const props = parsed.output_shape.properties ?? {};
+    const compact = Object.entries(props).map(([k, v]) => {
+      const o = v ?? {};
+      const t = typeof o.type === "string" ? o.type : o.$ref ?? "any";
+      return `${k}: ${t}`;
+    }).join(", ");
+    lines.push(`\`{${compact}}\``);
+    lines.push("");
+  }
+  return lines.join("\n").trim() + "\n";
+}
+var init_describe = __esm({
+  "src/contracts/describe.ts"() {
+    "use strict";
+    init_esm_shims();
+  }
+});
+
+// src/contracts/resources.ts
+function readListContracts(deps, opts = {}) {
+  const out = [];
+  for (const [name, parsed] of deps.registry.entries()) {
+    if (opts.source !== void 0) {
+      const anyMatch = Object.values(parsed.sources).some(
+        (s) => s.handle.startsWith(opts.source)
+      );
+      if (!anyMatch) continue;
+    }
+    out.push({
+      name,
+      description: parsed.description,
+      vault: deps.vaultName,
+      source_count: Object.keys(parsed.sources).length,
+      sink_count: Object.keys(parsed.sinks).length,
+      write_back: parsed.write_back !== void 0
+    });
+  }
+  return { total: out.length, contracts: out };
+}
+function readListContractVerbs(deps) {
+  const usage = deps.contractAudit.aggregateVerbUsage(deps.vaultName);
+  const rows = deps.contractAudit.listByKind("contract_step", {
+    vault: deps.vaultName,
+    limit: 1e4
+  });
+  const verbToContracts = /* @__PURE__ */ new Map();
+  for (const r of rows) {
+    if (r.verb === void 0 || r.contract === void 0) continue;
+    if (!verbToContracts.has(r.verb)) verbToContracts.set(r.verb, /* @__PURE__ */ new Set());
+    verbToContracts.get(r.verb).add(r.contract);
+  }
+  const custom = usage.filter((u) => u.verb.startsWith("mcp://")).map((u) => ({
+    verb: u.verb,
+    declared_in: extractDeclaredIn(u.verb),
+    used_by_contracts: Array.from(verbToContracts.get(u.verb) ?? []).sort(),
+    invocation_count: u.invocation_count,
+    last_seen: u.last_seen
+  }));
+  return { baseline: BASELINE_VERBS2, custom };
+}
+function extractDeclaredIn(verb) {
+  const m = verb.match(/^mcp:\/\/([a-z][a-z0-9_-]*)\//);
+  return m ? `[contracts.mcp_clients.${m[1]}]` : "[contracts.mcp_clients]";
+}
+var BASELINE_VERBS2;
+var init_resources3 = __esm({
+  "src/contracts/resources.ts"() {
+    "use strict";
+    init_esm_shims();
+    BASELINE_VERBS2 = Object.freeze([
+      "search_hybrid",
+      "expand",
+      "cluster",
+      "recall",
+      "compile_brief",
+      "get_brief",
+      "query_frontmatter",
+      "list_backlinks",
+      "get_outline",
+      "search_sections",
+      "read_note"
+    ]);
+  }
+});
+
+// src/contracts/index.ts
+var init_contracts = __esm({
+  "src/contracts/index.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_types();
+    init_types_catalog();
+    init_json_schema_ref();
+    init_input_schema();
+    init_registry3();
+    init_slug();
+    init_audit4();
+    init_schema4();
+    init_loader3();
+    init_auto_register();
+    init_templates();
+    init_mcp_clients();
+    init_verbs();
+    init_mcp_extension();
+    init_instantiate();
+    init_describe();
+    init_resources3();
   }
 });
 
@@ -10348,9 +13424,12 @@ __export(server_exports, {
   setupMemorySinks: () => setupMemorySinks,
   truncateSnippet: () => truncateSnippet
 });
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import {
+  McpServer,
+  ResourceTemplate
+} from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { homedir as homedir4 } from "os";
+import { homedir as homedir5 } from "os";
 import { join as joinPath } from "path";
 async function discoverMemorySinks(configured, vaults) {
   if (configured.length > 0) {
@@ -10417,9 +13496,10 @@ async function serve(options = {}) {
   const activeVault = process.env.VAULT_MEMORY_ACTIVE_VAULT?.trim() || void 0;
   const rerankerBackend = config.server.reranker_backend ?? (config.server.reranker_model ? "onnx" : void 0);
   const reranker = config.server.reranker_model ? rerankerBackend === "ollama" ? new OllamaReranker({ ollama, model: config.server.reranker_model }) : new OnnxReranker({
-    modelDir: config.server.reranker_model_dir ?? joinPath(homedir4(), ".vault-memory", "models", "bge-reranker-v2-m3")
+    modelDir: config.server.reranker_model_dir ?? joinPath(homedir5(), ".vault-memory", "models", "bge-reranker-v2-m3")
   }) : void 0;
   const watchers = /* @__PURE__ */ new Map();
+  const briefDaemons = /* @__PURE__ */ new Map();
   const startCatchupAndWatchers = async () => {
     for (const vault of manager.list()) {
       if (!vault.config.embedding_model && !vault.db.models.getActive()) continue;
@@ -10454,9 +13534,60 @@ async function serve(options = {}) {
       });
       await watcher.start();
       watchers.set(vault.config.name, watcher);
+      const feed = changeFeeds.get(vault.config.name);
+      if (feed) {
+        const daemon = new BriefStalenessDaemon();
+        try {
+          await daemon.start(vault, feed, {
+            memorySinkRegistry,
+            deliveryAdapterFor: (vaultName) => adapterRegistry.resolveDelivery(
+              parseSourceHandle(`obsidian-fs://${vaultName}`)
+            ),
+            sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
+              parseSourceHandle(`obsidian-fs://${vaultName}`)
+            ),
+            log: (m) => process.stderr.write(
+              `[brief-daemon:${vault.config.name}] ${m}
+`
+            )
+          });
+          briefDaemons.set(vault.config.name, daemon);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          process.stderr.write(
+            `[brief-daemon:${vault.config.name}] start failed: ${message}
+`
+          );
+        }
+      }
     }
   };
   const shutdown = async () => {
+    for (const state of contractRegistries.values()) {
+      try {
+        state.started.dispose();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`[contract-registry] dispose error: ${message}
+`);
+      }
+    }
+    try {
+      await peerMcpRegistry.shutdown();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[peer-mcp-registry] shutdown error: ${message}
+`);
+    }
+    for (const d of briefDaemons.values()) {
+      try {
+        await d.shutdown();
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        process.stderr.write(`[brief-daemon] shutdown error: ${message}
+`);
+      }
+    }
     for (const w of watchers.values()) {
       await w.drain();
       await w.stop();
@@ -10479,6 +13610,304 @@ async function serve(options = {}) {
     { capabilities: { tools: {}, resources: {} } }
   );
   serverRef = server;
+  const contractRegistries = /* @__PURE__ */ new Map();
+  const peerMcpRegistry = new PeerMcpRegistry();
+  const buildInstantiateDeps = (vault) => {
+    const state = contractRegistries.get(vault.config.name);
+    if (state === void 0) {
+      throw new Error(
+        `ContractRegistry not initialized for vault "${vault.config.name}"`
+      );
+    }
+    return {
+      vault,
+      registry: state.started.registry,
+      memorySinks: memorySinkRegistry,
+      delivery: adapterRegistry.resolveDelivery(
+        parseSourceHandle(`obsidian-fs://${vault.config.name}`)
+      ),
+      contractAudit: vault.db.contractAudit,
+      configDefaults: config.contracts.defaults,
+      stepTimeoutSeconds: config.contracts.step_timeout_seconds,
+      peerMcpRegistry,
+      // The baseline verbs use the same args the contract YAML supplied
+      // (post-template-resolution). Each thunk forwards to the existing
+      // Phase 1-5 handler in the v1+v2 toolset. Contract authors match
+      // each verb's signature per RESEARCH §A9.
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      hybridSearch: async (args2) => {
+        const p = args2;
+        return handleSearchHybrid(
+          manager,
+          ollama,
+          defaultModel,
+          activeVault,
+          p.query,
+          p.vaults ?? [vault.config.name],
+          p.top_k ?? 10,
+          p.rrf_k ?? 60,
+          p.exclude_paths,
+          reranker,
+          p.recency_weight ?? 0,
+          p.authority_weight ?? 0,
+          p.half_life_days ?? 30,
+          p.include_superseded ?? false
+        );
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handleExpand: async (args2) => {
+        const p = args2;
+        const seeds = p.seed_doc_ids.map((s) => parseDocId(s));
+        return expand(
+          {
+            manager,
+            sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
+              parseSourceHandle(`obsidian-fs://${vaultName}`)
+            )
+          },
+          {
+            seed_doc_ids: seeds,
+            hops: p.hops,
+            direction: p.direction ?? "both",
+            ...p.edge_types !== void 0 ? { edge_types: p.edge_types } : {},
+            ...p.filter_properties !== void 0 ? { filter_properties: p.filter_properties } : {},
+            include_superseded: p.include_superseded ?? false
+          }
+        );
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handleCluster: async (args2) => {
+        const p = args2;
+        let opts;
+        if (p.query !== void 0) {
+          opts = {
+            query: p.query,
+            method: "edge-community",
+            ...p.vault !== void 0 ? { vault: p.vault } : { vault: vault.config.name },
+            ...p.query_top_k !== void 0 ? { query_top_k: p.query_top_k } : {},
+            ...p.force !== void 0 ? { force: p.force } : {}
+          };
+        } else {
+          const seeds = (p.seed_doc_ids ?? []).map((s) => parseDocId(s));
+          opts = {
+            seed_doc_ids: seeds,
+            method: "edge-community",
+            ...p.force !== void 0 ? { force: p.force } : {}
+          };
+        }
+        return cluster(
+          {
+            manager,
+            sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
+              parseSourceHandle(`obsidian-fs://${vaultName}`)
+            ),
+            hybridSearch: async (v, query, limit) => hybridSearch({
+              query,
+              embeddingModel: defaultModel,
+              ollama,
+              vaults: [v],
+              topK: limit,
+              includeBreakdown: false,
+              ...reranker ? { reranker } : {},
+              displayUrlFor: (vaultName, notePath) => displayUrl(adapterRegistry, vaultName, notePath)
+            })
+          },
+          opts
+        );
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handleRecall: async (args2) => {
+        const p = args2;
+        const packets = await handleRecall(
+          {
+            memorySinkRegistry,
+            manager,
+            sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
+              parseSourceHandle(`obsidian-fs://${vaultName}`)
+            ),
+            searchHybrid: async (input) => hybridSearch({
+              query: input.query,
+              embeddingModel: defaultModel,
+              ollama,
+              vaults: input.vaults,
+              topK: input.topK,
+              rrfK: 60,
+              includeBreakdown: false
+            })
+          },
+          { ...p, vaults: p.vaults ?? [vault.config.name] }
+        );
+        return { packets, count: packets.length };
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handleCompileBrief: async (args2) => {
+        const p = args2;
+        return handleCompileBrief(
+          {
+            memorySinkRegistry,
+            manager,
+            deliveryAdapterFor: (vaultName) => adapterRegistry.resolveDelivery(
+              parseSourceHandle(`obsidian-fs://${vaultName}`)
+            ),
+            sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
+              parseSourceHandle(`obsidian-fs://${vaultName}`)
+            ),
+            server,
+            ollama,
+            briefConfig: config.brief
+          },
+          { ...p, vault: p.vault ?? vault.config.name }
+        );
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handleGetBrief: async (args2) => {
+        const p = args2;
+        return handleGetBrief(
+          {
+            memorySinkRegistry,
+            manager,
+            sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
+              parseSourceHandle(`obsidian-fs://${vaultName}`)
+            )
+          },
+          { ...p, vault: p.vault ?? vault.config.name }
+        );
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handleQueryFrontmatter: async (args2) => {
+        const p = args2;
+        const v = p.vault ? manager.require(p.vault) : vault;
+        return queryFrontmatter(v, {
+          where: p.where,
+          limit: p.limit ?? 100
+        });
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handleListBacklinks: async (args2) => {
+        const p = args2;
+        const v = p.vault ? manager.require(p.vault) : vault;
+        return { backlinks: listBacklinks(v, p.path) };
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handleGetOutline: async (args2) => {
+        const p = args2;
+        return getOutline(
+          {
+            manager,
+            sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
+              parseSourceHandle(`obsidian-fs://${vaultName}`)
+            )
+          },
+          p
+        );
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handleSearchSections: async (args2) => {
+        const p = args2;
+        const targetVaults = p.vaults ? p.vaults.map((name) => manager.require(name)) : [vault];
+        const results = await searchSections(
+          {
+            searchHybrid: async (input) => hybridSearch({
+              query: input.query,
+              embeddingModel: defaultModel,
+              ollama,
+              vaults: input.vaults ? input.vaults.map((name) => manager.require(name)) : targetVaults,
+              topK: input.topK,
+              rrfK: 60,
+              includeBreakdown: false
+            }),
+            sectionForHit: (vaultName, notePath, chunkIdx) => {
+              let v;
+              try {
+                v = manager.require(vaultName);
+              } catch {
+                return null;
+              }
+              const note = v.db.notes.getByPath(notePath);
+              if (!note) return null;
+              const chunks = v.db.chunks.getByNote(note.id);
+              const chunk = chunks.find((c) => c.idx === chunkIdx);
+              if (!chunk) return null;
+              const section = v.db.sections.findContainingChunk(note.id, chunk.id);
+              if (!section) return null;
+              let headingPath;
+              try {
+                const parsed = JSON.parse(section.heading_path);
+                headingPath = Array.isArray(parsed) ? parsed : [];
+              } catch {
+                headingPath = [];
+              }
+              return {
+                noteId: note.id,
+                anchor: section.anchor,
+                headingPath,
+                chunkIdFirst: section.chunk_id_first ?? Number.MAX_SAFE_INTEGER
+              };
+            },
+            readDocument: async (vaultName, notePath) => {
+              const docId = formatDocId("obsidian-fs", vaultName, notePath);
+              return adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)).readDocument(docId);
+            },
+            displayUrlFor: (docId, vaultName) => {
+              const source = adapterRegistry.resolveSource(
+                parseSourceHandle(`obsidian-fs://${vaultName}`)
+              );
+              return source.formatDisplayUrl?.(docId) ?? docId;
+            }
+          },
+          {
+            query: p.query,
+            limit: p.limit ?? 10,
+            ...p.vaults !== void 0 ? { vaults: p.vaults } : {},
+            ...p.recency_weight !== void 0 ? { recency_weight: p.recency_weight } : {},
+            ...p.authority_weight !== void 0 ? { authority_weight: p.authority_weight } : {},
+            ...p.include_superseded !== void 0 ? { include_superseded: p.include_superseded } : {}
+          }
+        );
+        return { results, count: results.length };
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      handleReadNote: async (args2) => {
+        const p = args2;
+        return handleReadNote(
+          adapterRegistry,
+          p.vault ?? vault.config.name,
+          p.path
+        );
+      }
+    };
+  };
+  const resolveContractVault = (vaultArg) => {
+    const list = manager.list();
+    if (vaultArg !== void 0) {
+      const v = list.find((x) => x.config.name === vaultArg);
+      if (v === void 0) {
+        return { ok: false, reason: "unknown_vault", vault: vaultArg };
+      }
+      return { ok: true, vault: v };
+    }
+    if (list.length === 1) {
+      const only = list[0];
+      if (only === void 0) {
+        return { ok: false, reason: "ambiguous_vault", available_vaults: [] };
+      }
+      return { ok: true, vault: only };
+    }
+    return {
+      ok: false,
+      reason: "ambiguous_vault",
+      available_vaults: list.map((v) => v.config.name)
+    };
+  };
+  const instantiateHandler = async (name, args2) => {
+    const resolved = resolveContractVault(void 0);
+    if (!resolved.ok) return resolved;
+    const inputs = args2?.inputs ?? {};
+    return instantiateContract(buildInstantiateDeps(resolved.vault), {
+      name,
+      inputs
+    });
+  };
   const handlers = {
     list_vaults: async () => handleListVaults(manager),
     read_note: async (a) => {
@@ -10739,6 +14168,54 @@ async function serve(options = {}) {
       );
       return { packets, count: packets.length };
     },
+    // ── Phase 5 brief tools (Plan 05-02 / BRF-03, BRF-04) ──────────────────
+    compile_brief: async (a) => {
+      const p = a;
+      const result = await handleCompileBrief(
+        {
+          memorySinkRegistry,
+          manager,
+          deliveryAdapterFor: (vaultName) => adapterRegistry.resolveDelivery(
+            parseSourceHandle(`obsidian-fs://${vaultName}`)
+          ),
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
+            parseSourceHandle(`obsidian-fs://${vaultName}`)
+          ),
+          server,
+          ollama,
+          briefConfig: config.brief
+        },
+        p
+      );
+      if (result.ok) {
+        const resource = result.doc_id.replace(
+          `obsidian-fs://${p.vault}/`,
+          ""
+        );
+        suppression.add(resource);
+        if (result.supersededPrior) {
+          const oldResource = result.supersededPrior.replace(
+            /^obsidian-fs:\/\/[^/]+\//,
+            ""
+          );
+          suppression.add(oldResource);
+        }
+      }
+      return result;
+    },
+    get_brief: async (a) => {
+      const p = a;
+      return handleGetBrief(
+        {
+          memorySinkRegistry,
+          manager,
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
+            parseSourceHandle(`obsidian-fs://${vaultName}`)
+          )
+        },
+        p
+      );
+    },
     // ── Phase 3 assembly tools (Plan 03-02 / ASM-02) ───────────────────────
     get_outline: async (a) => {
       const p = a;
@@ -10864,6 +14341,7 @@ async function serve(options = {}) {
         opts = {
           query: p.query,
           method: "edge-community",
+          ...p.vault !== void 0 ? { vault: p.vault } : {},
           ...p.query_top_k !== void 0 ? { query_top_k: p.query_top_k } : {},
           ...p.force !== void 0 ? { force: p.force } : {}
         };
@@ -10911,6 +14389,90 @@ async function serve(options = {}) {
         },
         p
       );
+    },
+    // ── Phase 6 task-contract DSL (Plan 06-02 / D-A1 escape valve) ─────────
+    //
+    // Scans the per-vault contract registries and forces a sync of the
+    // dynamic MCP tool list — regardless of [contracts.auto_register_tools]
+    // (which is what makes this the explicit-control escape valve).
+    // Returns per-vault diffs so the caller can confirm what landed.
+    register_contracts_as_tools: async (a) => {
+      const p = a;
+      const targetVaults = p.vault !== void 0 ? [p.vault] : manager.list().map((v) => v.config.name);
+      if (p.vault !== void 0) {
+        const v = manager.list().find((vault) => vault.config.name === p.vault);
+        if (v === void 0) {
+          return { ok: false, reason: "unknown_vault", vault: p.vault };
+        }
+      }
+      const results = [];
+      const prefix = config.contracts.tool_prefix;
+      for (const vname of targetVaults) {
+        const state = contractRegistries.get(vname);
+        if (state === void 0) continue;
+        const v = manager.list().find((vault) => vault.config.name === vname);
+        if (v === void 0) continue;
+        const before = new Set(state.registered.keys());
+        syncAutoRegistered(
+          server,
+          state.started.registry,
+          prefix,
+          state.registered,
+          { enabled: true, instantiateHandler }
+        );
+        const after = new Set(state.registered.keys());
+        results.push({
+          vault: vname,
+          registered: Array.from(after).filter((n) => !before.has(n)),
+          unregistered: Array.from(before).filter((n) => !after.has(n))
+        });
+      }
+      if (p.vault !== void 0) {
+        const single = results[0] ?? {
+          vault: p.vault,
+          registered: [],
+          unregistered: []
+        };
+        return { ok: true, ...single };
+      }
+      return { ok: true, vaults: results };
+    },
+    // ── Phase 6 task-contract DSL (Plan 06-03 / CON-05, Q-DESCRIBE) ────────
+    //
+    // Pure function over the per-vault ContractRegistry. Returns
+    // {ok:true, json_schema, summary} or one of the sealed
+    // InstantiateError reasons (`unknown_contract`, `ambiguous_vault`,
+    // `unknown_vault`). NO LLM, NO side effects.
+    describe_contract: async (a) => {
+      const p = a;
+      const resolved = resolveContractVault(p.vault);
+      if (!resolved.ok) return resolved;
+      const state = contractRegistries.get(resolved.vault.config.name);
+      if (state === void 0) {
+        return { ok: false, reason: "unknown_contract", name: p.name };
+      }
+      return describeContract(
+        { registry: state.started.registry },
+        { name: p.name }
+      );
+    },
+    // ── Phase 6 task-contract DSL (Plan 06-03 / CON-06) ────────────────────
+    //
+    // Replaces the Plan 06-02 stub. Routes through the per-vault deps
+    // built by `buildInstantiateDeps`. On multi-vault setups, the caller
+    // MUST pass `vault` — otherwise we return the WARNING-6
+    // `ambiguous_vault` envelope (12th reason in the closed
+    // InstantiateError union).
+    instantiate_contract: async (a) => {
+      const p = a;
+      const resolved = resolveContractVault(p.vault);
+      if (!resolved.ok) return resolved;
+      return instantiateContract(buildInstantiateDeps(resolved.vault), {
+        name: p.name,
+        inputs: p.inputs,
+        ...p.source_overrides !== void 0 ? { source_overrides: p.source_overrides } : {},
+        ...p.sink_overrides !== void 0 ? { sink_overrides: p.sink_overrides } : {}
+      });
     }
   };
   for (const tool of TOOLS) {
@@ -10975,6 +14537,172 @@ async function serve(options = {}) {
       ]
     })
   );
+  server.registerResource(
+    "briefs",
+    RESOURCE_URI_LIST_BRIEFS,
+    {
+      title: "Compiled briefs",
+      description: "Discovery of compiled briefs by target. Supports optional `?target=<pattern>` substring filter on `properties.target`. Includes `active`, `stale`, and `superseded` entries so callers can build their own filter / inspect the supersede chain. BRF-09.",
+      mimeType: "application/json"
+    },
+    async (uri) => {
+      const target = uri.searchParams.get("target") ?? void 0;
+      const payload = await readListBriefs(
+        {
+          registry: memorySinkRegistry,
+          manager,
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
+            parseSourceHandle(`obsidian-fs://${vaultName}`)
+          )
+        },
+        target !== void 0 ? { target } : {}
+      );
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify(payload, null, 2)
+          }
+        ]
+      };
+    }
+  );
+  server.registerResource(
+    "contracts",
+    new ResourceTemplate(`${RESOURCE_URI_LIST_CONTRACTS}/{vault}`, {
+      list: void 0
+    }),
+    {
+      title: "Task contracts",
+      description: "Discovery of task contracts available in a vault (CON-04). Each entry carries name, description, source/sink counts, and write_back boolean. Optional `?source=<prefix>` filters to contracts declaring a source whose handle starts with the given prefix.",
+      mimeType: "application/json"
+    },
+    async (uri, variables) => {
+      const vault = String(variables.vault ?? "");
+      const state = contractRegistries.get(vault);
+      if (state === void 0) {
+        return {
+          contents: [
+            {
+              uri: uri.href,
+              mimeType: "application/json",
+              text: JSON.stringify({ error: `unknown vault: ${vault}` })
+            }
+          ]
+        };
+      }
+      const source = uri.searchParams.get("source") ?? void 0;
+      const payload = readListContracts(
+        { registry: state.started.registry, vaultName: vault },
+        source !== void 0 ? { source } : {}
+      );
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify(payload, null, 2)
+          }
+        ]
+      };
+    }
+  );
+  server.registerResource(
+    "contract-verbs",
+    new ResourceTemplate(`${RESOURCE_URI_LIST_CONTRACT_VERBS}/{vault}`, {
+      list: void 0
+    }),
+    {
+      title: "Contract verbs",
+      description: "List baseline assembly verbs + custom (mcp://) verbs in use, with invocation_count + last_seen aggregated from contract_audit (D-A2b). Baseline verbs are constant per ADR-006 \xA7Decision 3.",
+      mimeType: "application/json"
+    },
+    async (uri, variables) => {
+      const vault = String(variables.vault ?? "");
+      const vaultRef = manager.list().find((vt) => vt.config.name === vault);
+      if (vaultRef === void 0) {
+        return {
+          contents: [
+            {
+              uri: uri.href,
+              mimeType: "application/json",
+              text: JSON.stringify({ error: `unknown vault: ${vault}` })
+            }
+          ]
+        };
+      }
+      const payload = readListContractVerbs({
+        contractAudit: vaultRef.db.contractAudit,
+        vaultName: vault
+      });
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify(payload, null, 2)
+          }
+        ]
+      };
+    }
+  );
+  onPhase("start_contract_registries");
+  try {
+    await peerMcpRegistry.start(config.contracts.mcp_clients);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    process.stderr.write(`[peer-mcp-registry] start failed: ${message}
+`);
+  }
+  for (const vault of manager.list()) {
+    const feed = changeFeeds.get(vault.config.name);
+    if (feed === void 0) continue;
+    const source = adapterRegistry.resolveSource(
+      parseSourceHandle(`obsidian-fs://${vault.config.name}`)
+    );
+    const registeredHandles = /* @__PURE__ */ new Map();
+    let started;
+    try {
+      started = await startContractRegistry({
+        vault,
+        feed,
+        source,
+        auditDeps: { contractAudit: vault.db.contractAudit },
+        onRegistryChange: () => {
+          if (config.contracts.auto_register_tools) {
+            syncAutoRegistered(
+              server,
+              started.registry,
+              config.contracts.tool_prefix,
+              registeredHandles,
+              { enabled: true, instantiateHandler }
+            );
+          }
+        }
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      process.stderr.write(
+        `[contract-registry:${vault.config.name}] start failed: ${message}
+`
+      );
+      continue;
+    }
+    if (config.contracts.auto_register_tools) {
+      syncAutoRegistered(
+        server,
+        started.registry,
+        config.contracts.tool_prefix,
+        registeredHandles,
+        { enabled: true, instantiateHandler }
+      );
+    }
+    contractRegistries.set(vault.config.name, {
+      started,
+      registered: registeredHandles
+    });
+  }
   onPhase("connect_transport");
   const transport = new StdioServerTransport();
   await server.connect(transport);
@@ -11524,6 +15252,7 @@ var init_server = __esm({
     init_sentinel();
     init_memory();
     init_tools();
+    init_brief();
     init_search_sections();
     init_outline();
     init_assembly();
@@ -11533,6 +15262,7 @@ var init_server = __esm({
     init_tool_registry();
     init_registry();
     init_obsidian_fs();
+    init_contracts();
     VERSION = "1.0.0";
     MEMORY_AUTO_DISCOVERY_FOLDER = "_memory";
   }
