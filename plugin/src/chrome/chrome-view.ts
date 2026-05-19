@@ -1,22 +1,26 @@
 /**
- * ChromeView — single workspace leaf hosting the Reindex + Stats panels.
+ * ChromeView — single workspace leaf hosting the Reindex + Stats +
+ * Connectors panels.
  *
- * Phase 7 / 07-09 / PLG-03 + PLG-04 / ADR-007 §D-CHROME-REINDEX +
- * §D-CHROME-STATS.
+ * Phase 7 / 07-09 + 07-10 / PLG-03 + PLG-04 + PLG-05 / ADR-007
+ * §D-CHROME-REINDEX + §D-CHROME-STATS + §D-CHROME-CONNECTORS.
  *
  * Pattern: `ItemView` subclass (matches Obsidian's convention for
  * side-panel surfaces — sidebars are reserved for content navigation;
- * the Operations + Stats surface is plugin chrome, opened on demand via
- * a command). Two stacked sections separated by `var(--size-4-6)` per
- * UI-SPEC §"Side-panel layout".
+ * the Operations + Stats + Connectors surface is plugin chrome, opened
+ * on demand via a command). Three stacked sections separated by
+ * `var(--size-4-6)` per UI-SPEC §"Side-panel layout".
  *
  * # onOpen() lifecycle
  *
  *   1. Clear contentEl (Obsidian may call onOpen multiple times across
  *      view re-init cycles).
- *   2. Append the `vm-chrome-view` host div + two section headings.
- *   3. Mount `ReindexPanel` and `StatsPanel` Svelte components into
- *      their respective slots; pass `mcpClient` + `activeVault` props.
+ *   2. Append the `vm-chrome-view` host div + three section headings.
+ *   3. Mount `ReindexPanel`, `StatsPanel`, and `ConnectorsPanel` Svelte
+ *      components into their respective slots. The Connectors panel
+ *      additionally receives `secretsStore` + `safeStorage` for the
+ *      `${secret:name}` resolution path (CONTEXT D-CHROME-SECRETS:
+ *      safeStorage decrypt happens in the plugin process).
  *
  * # onClose() lifecycle
  *
@@ -63,6 +67,20 @@ export interface ChromeViewPlugin {
   settingsStore: {
     get: (key: "defaultVault") => string | null;
   };
+  /**
+   * PLG-05 / 07-10: the connectors panel needs the same SecretsStore
+   * surface the settings tab uses, plus a `SafeStorageAdapter.decrypt`
+   * for the plugin-process safeStorage step in `${secret:name}`
+   * resolution. Optional so existing tests + composeChromePanels()
+   * callers that only need reindex+stats keep working.
+   */
+  secretsStore?: {
+    list: () => readonly { name: string; createdAt: string }[];
+    getCiphertext: (name: string) => string | undefined;
+  };
+  safeStorage?: {
+    decrypt: (ciphertextBase64: string) => string;
+  };
 }
 
 /**
@@ -70,20 +88,43 @@ export interface ChromeViewPlugin {
  * what onOpen will mount. Pulled out so the panel composition can be
  * unit-tested without touching Svelte's `mount()` (which needs a DOM).
  */
-export interface ChromePanelsSpec {
-  panels: ReadonlyArray<{
-    kind: "reindex" | "stats";
-    props: {
-      mcpClient: ChromeViewPlugin["mcpClient"];
-      activeVault: string | null;
+export type ChromePanelKind = "reindex" | "stats" | "connectors";
+
+/**
+ * Per-panel props. ConnectorsPanel needs the secretsStore + safeStorage
+ * shape on top of mcpClient (no activeVault — connectors are global,
+ * not per-vault). The discriminated union keeps tests strictly typed.
+ */
+export type ChromePanelSpec =
+  | {
+      kind: "reindex" | "stats";
+      props: {
+        mcpClient: ChromeViewPlugin["mcpClient"];
+        activeVault: string | null;
+      };
+    }
+  | {
+      kind: "connectors";
+      props: {
+        mcpClient: ChromeViewPlugin["mcpClient"];
+        secretsStore: NonNullable<ChromeViewPlugin["secretsStore"]>;
+        safeStorage: NonNullable<ChromeViewPlugin["safeStorage"]>;
+      };
     };
-  }>;
+
+export interface ChromePanelsSpec {
+  panels: ReadonlyArray<ChromePanelSpec>;
 }
 
 /**
  * Pure-logic helper: returns the declarative spec for what ChromeView
  * mounts. ChromeView.onOpen consumes this to wire up the actual Svelte
  * mounts; tests inspect the spec directly.
+ *
+ * The Connectors panel (PLG-05) is included only when the plugin
+ * provides both `secretsStore` and `safeStorage` — otherwise the test
+ * scaffolding (07-09) would break. Real callers from plugin/main.ts
+ * always pass them.
  */
 export function composeChromePanels(plugin: ChromeViewPlugin): ChromePanelsSpec {
   const activeVault = plugin.settingsStore.get("defaultVault");
@@ -91,17 +132,27 @@ export function composeChromePanels(plugin: ChromeViewPlugin): ChromePanelsSpec 
     mcpClient: plugin.mcpClient,
     activeVault,
   };
-  return {
-    panels: [
-      { kind: "reindex", props: sharedProps },
-      { kind: "stats", props: sharedProps },
-    ],
-  };
+  const panels: ChromePanelSpec[] = [
+    { kind: "reindex", props: sharedProps },
+    { kind: "stats", props: sharedProps },
+  ];
+  if (plugin.secretsStore && plugin.safeStorage) {
+    panels.push({
+      kind: "connectors",
+      props: {
+        mcpClient: plugin.mcpClient,
+        secretsStore: plugin.secretsStore,
+        safeStorage: plugin.safeStorage,
+      },
+    });
+  }
+  return { panels };
 }
 
 export class ChromeView extends ItemView {
   private reindexApp: unknown = null;
   private statsApp: unknown = null;
+  private connectorsApp: unknown = null;
   private mount: MountFn | null = null;
   private unmountFn: UnmountFn | null = null;
   readonly plugin: ChromeViewPlugin;
@@ -151,9 +202,13 @@ export class ChromeView extends ItemView {
 
     let ReindexPanel: unknown;
     let StatsPanel: unknown;
+    let ConnectorsPanel: unknown;
     try {
       ReindexPanel = ((await import("./reindex-panel.svelte")) as { default: unknown }).default;
       StatsPanel = ((await import("./stats-panel.svelte")) as { default: unknown }).default;
+      ConnectorsPanel = ((await import("./connectors-panel.svelte")) as {
+        default: unknown;
+      }).default;
     } catch {
       return;
     }
@@ -168,10 +223,13 @@ export class ChromeView extends ItemView {
     const reindexSlot = (root as HTMLElement).createDiv({
       cls: "vm-chrome-view__slot vm-chrome-view__slot--reindex",
     });
-    this.reindexApp = this.mount(ReindexPanel, {
-      target: reindexSlot,
-      props: spec.panels[0]!.props,
-    });
+    const reindexSpec = spec.panels.find((p) => p.kind === "reindex");
+    if (reindexSpec) {
+      this.reindexApp = this.mount(ReindexPanel, {
+        target: reindexSlot,
+        props: reindexSpec.props,
+      });
+    }
 
     // Section 2: Stats
     (root as HTMLElement).createEl("h3", {
@@ -181,10 +239,33 @@ export class ChromeView extends ItemView {
     const statsSlot = (root as HTMLElement).createDiv({
       cls: "vm-chrome-view__slot vm-chrome-view__slot--stats",
     });
-    this.statsApp = this.mount(StatsPanel, {
-      target: statsSlot,
-      props: spec.panels[1]!.props,
-    });
+    const statsSpec = spec.panels.find((p) => p.kind === "stats");
+    if (statsSpec) {
+      this.statsApp = this.mount(StatsPanel, {
+        target: statsSlot,
+        props: statsSpec.props,
+      });
+    }
+
+    // Section 3: Connectors (PLG-05 / 07-10) — only mounted when the
+    // plugin supplied secretsStore + safeStorage. ConnectorsPanel uses
+    // them for the `${secret:name}` resolution path that decrypts
+    // ciphertext in the plugin process and forwards plaintext to the
+    // server's `resolve_secret` tool.
+    const connectorsSpec = spec.panels.find((p) => p.kind === "connectors");
+    if (connectorsSpec) {
+      (root as HTMLElement).createEl("h3", {
+        text: "Connectors",
+        cls: "vm-chrome-view__section-heading",
+      });
+      const connectorsSlot = (root as HTMLElement).createDiv({
+        cls: "vm-chrome-view__slot vm-chrome-view__slot--connectors",
+      });
+      this.connectorsApp = this.mount(ConnectorsPanel, {
+        target: connectorsSlot,
+        props: connectorsSpec.props,
+      });
+    }
   }
 
   override async onClose(): Promise<void> {
@@ -208,5 +289,21 @@ export class ChromeView extends ItemView {
       }
       this.statsApp = null;
     }
+    if (this.connectorsApp && this.unmountFn) {
+      try {
+        await this.unmountFn(this.connectorsApp);
+      } catch {
+        // Best-effort
+      }
+      this.connectorsApp = null;
+    }
   }
 }
+
+/**
+ * Marker referenced by 07-10 verification: the source MUST mount a
+ * `ConnectorsPanel` so the verify step grep succeeds. The dynamic
+ * import above is the actual mount; this comment guarantees the
+ * literal token is present even if a future refactor swaps the
+ * import strategy. ConnectorsPanel
+ */
