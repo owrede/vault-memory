@@ -101,36 +101,123 @@ if [ "$AUTO" = "1" ]; then
 fi
 log ""
 
-# ─── Checkpoint 0: Install source — npm registry (default) or git ───────────
+# ─── Checkpoint 0: Choose version ────────────────────────────────────────────
+#
+# Two installable versions:
+#   1) v1.0.0 (stable) — pulled from the public npm registry
+#   2) v2.0.0-rc.1 (in-development) — built from source on `main`
+#
+# Selection order:
+#   1. Explicit VAULT_MEMORY_VERSION env var (e.g. 1.0.0 or 2.0.0-rc.1)
+#   2. Legacy VAULT_MEMORY_INSTALL_MODE env var (npm → 1.0.0; source → 2.0.0-rc.1)
+#   3. Interactive prompt
+#   4. Autonomous mode (VAULT_MEMORY_AUTO=1) defaults to 1.0.0
+#
+# Internal INSTALL_MODE values stay `npm` / `source` so the rest of the
+# script (Checkpoint 5) does not need to know about version labels.
 
-step "0/7  Install source"
+step "0/7  Choose version"
 
-# Two install modes:
-#   npm    (default)  → `npm install -g @owrede/vault-memory` from the public registry
-#   source            → clone the repo and build locally (developer mode)
-# Switch via env var: VAULT_MEMORY_INSTALL_MODE=source
-INSTALL_MODE="${VAULT_MEMORY_INSTALL_MODE:-npm}"
+resolve_install_mode_from_version() {
+  case "$1" in
+    1.0.0)
+      INSTALL_MODE="npm"
+      ;;
+    2.0.0-rc.1)
+      INSTALL_MODE="source"
+      ;;
+    *)
+      err "Unknown VAULT_MEMORY_VERSION: $1 (expected '1.0.0' or '2.0.0-rc.1')"
+      exit 1
+      ;;
+  esac
+}
 
+INSTALL_MODE=""
+
+if [ -n "${VAULT_MEMORY_VERSION:-}" ]; then
+  info "Version pinned via VAULT_MEMORY_VERSION=$VAULT_MEMORY_VERSION"
+  resolve_install_mode_from_version "$VAULT_MEMORY_VERSION"
+elif [ -n "${VAULT_MEMORY_INSTALL_MODE:-}" ]; then
+  # Legacy env var — npm → 1.0.0, source → 2.0.0-rc.1
+  case "$VAULT_MEMORY_INSTALL_MODE" in
+    npm)
+      info "Legacy env: VAULT_MEMORY_INSTALL_MODE=npm → installing v1.0.0 (stable)"
+      INSTALL_MODE="npm"
+      ;;
+    source)
+      info "Legacy env: VAULT_MEMORY_INSTALL_MODE=source → installing v2.0.0-rc.1 (in-development)"
+      INSTALL_MODE="source"
+      ;;
+    *)
+      err "Unknown VAULT_MEMORY_INSTALL_MODE: $VAULT_MEMORY_INSTALL_MODE (expected 'npm' or 'source')"
+      exit 1
+      ;;
+  esac
+elif [ "$AUTO" = "1" ]; then
+  info "auto: defaulting to v1.0.0 (stable, npm registry)"
+  info "  why: autonomous mode picks the stable release. Pass VAULT_MEMORY_VERSION=2.0.0-rc.1 to override."
+  INSTALL_MODE="npm"
+else
+  # Interactive prompt
+  if [ ! -t 0 ] && [ ! -e /dev/tty ]; then
+    warn "Non-interactive shell — defaulting to v1.0.0 (stable). Set VAULT_MEMORY_VERSION to override."
+    INSTALL_MODE="npm"
+  else
+    log ""
+    log "vault-memory has two installable versions:"
+    log ""
+    log "  1) v1.0.0 (stable)"
+    log "     - Published to npm registry"
+    log "     - 23 MCP tools, semantic + BM25 + RRF hybrid search, multi-vault, live indexing"
+    log "     - Recommended for production use"
+    log ""
+    log "  2) v2.0.0-rc.1 (in-development)"
+    log "     - Built from source (github.com/owrede/vault-memory main branch)"
+    log "     - 32 canonical tools + 10 MCP Resources, REL-08 surface"
+    log "     - Adds typed-edge graph, briefs, Obsidian plugin, task contracts"
+    log "     - Not yet published to npm; not yet stable"
+    log ""
+    log "  q) quit (no install)"
+    log ""
+    printf "${c_yellow}? Choice [1/2/q] (default 1):${c_reset} " >&2
+    read -r version_reply </dev/tty
+    case "$version_reply" in
+      ""|1)
+        INSTALL_MODE="npm"
+        ;;
+      2)
+        INSTALL_MODE="source"
+        ;;
+      q|Q|quit|QUIT)
+        err "Install cancelled by user."
+        exit 2
+        ;;
+      *)
+        err "Invalid choice: $version_reply (expected 1, 2, or q)"
+        exit 1
+        ;;
+    esac
+  fi
+fi
+
+# Report the resolved install mode + show the GitHub-auth check for source mode.
 case "$INSTALL_MODE" in
   npm)
-    info "Install mode: ${c_bold}npm${c_reset} (registry: https://registry.npmjs.org/@owrede/vault-memory)"
+    info "Resolved: v1.0.0 (stable) → npm registry (https://registry.npmjs.org/@owrede/vault-memory)"
     ;;
   source)
-    info "Install mode: ${c_bold}source${c_reset} (clone + build from $REPO_URL)"
+    info "Resolved: v2.0.0-rc.1 (in-development) → source build from $REPO_URL"
     if command -v vault-memory >/dev/null 2>&1; then
       ok "vault-memory already in PATH — skipping GitHub auth check"
     elif command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
       ok "GitHub CLI authenticated ($(gh api user --jq .login 2>/dev/null || echo 'ok'))"
     else
       err "Source-build mode needs git access to owrede/vault-memory."
-      log "Either set up gh auth ('gh auth login') or use the default npm install:"
-      log "  unset VAULT_MEMORY_INSTALL_MODE   # uses npm registry, no auth needed"
+      log "Either set up gh auth ('gh auth login') or pick v1.0.0 (stable)."
+      log "  Re-run with: VAULT_MEMORY_VERSION=1.0.0"
       exit 1
     fi
-    ;;
-  *)
-    err "Unknown VAULT_MEMORY_INSTALL_MODE: $INSTALL_MODE (expected 'npm' or 'source')"
-    exit 1
     ;;
 esac
 
@@ -279,32 +366,49 @@ fi
 
 step "5/7  vault-memory binary"
 
+# FORCE_SOURCE_REBUILD is set below when the user picks v2.0.0-rc.1 but the
+# in-PATH binary is v1.0.0. Treating that case as "binary missing" routes
+# control into the source-build branch.
+FORCE_SOURCE_REBUILD=0
+
 if command -v vault-memory >/dev/null 2>&1; then
   vm_version=$(vault-memory --help 2>&1 | head -1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
   ok "vault-memory in PATH (version $vm_version)"
 
-  # If npm has a newer 'latest' than what is installed, offer to upgrade.
-  if [ "$INSTALL_MODE" = "npm" ] && [ "$vm_version" != "unknown" ]; then
-    latest=$(npm view @owrede/vault-memory@latest version 2>/dev/null || echo "")
-    if [ -n "$latest" ] && [ "$latest" != "$vm_version" ]; then
-      info "npm registry has @owrede/vault-memory@$latest (you have $vm_version)"
-      if confirm "Upgrade to @owrede/vault-memory@$latest?" \
-        "A newer release is available on npm. Upgrading via 'npm install -g @owrede/vault-memory@latest' replaces the global binary in-place. Your data (~/.vault-memory/) and vault notes are untouched — only the engine code is updated."; then
-        npm install -g @owrede/vault-memory@latest \
-          || { err "npm install -g failed"; exit 1; }
-        ok "vault-memory upgraded to $latest"
-      fi
+  # If the user picked a specific version at Checkpoint 0 but the binary on
+  # PATH is a different one, offer to switch. We can't reliably detect "is
+  # this binary a source build of main?" so the 'source' branch only nudges
+  # the user when the binary is clearly the v1.0.0 stable release.
+  if [ "$INSTALL_MODE" = "npm" ] && [ "$vm_version" != "unknown" ] && [ "$vm_version" != "1.0.0" ]; then
+    info "You selected v1.0.0 (stable) but version $vm_version is currently installed."
+    if confirm "Switch to @owrede/vault-memory@1.0.0?" \
+      "You picked v1.0.0 (stable) at Checkpoint 0 but a different version is on PATH. 'npm install -g @owrede/vault-memory@1.0.0' replaces the global binary in-place. Your data (~/.vault-memory/) and vault notes are untouched — only the engine code is changed."; then
+      npm install -g @owrede/vault-memory@1.0.0 \
+        || { err "npm install -g failed"; exit 1; }
+      ok "vault-memory switched to 1.0.0"
+    fi
+  elif [ "$INSTALL_MODE" = "source" ] && [ "$vm_version" = "1.0.0" ]; then
+    info "You selected v2.0.0-rc.1 (in-development, source build) but the v1.0.0 stable binary is currently installed."
+    if confirm "Replace v1.0.0 with a source build of v2.0.0-rc.1?" \
+      "You picked v2.0.0-rc.1 (in-development) at Checkpoint 0. The current vault-memory in PATH is the stable v1.0.0 from npm. Replacing it requires cloning github.com/owrede/vault-memory (main branch) to $INSTALL_DIR, running npm install + build, and re-linking via 'npm link' so the v2.0.0-rc.1 binary shadows the npm-installed one. Your data is untouched. The original v1.0.0 install can be restored later via 'npm install -g @owrede/vault-memory@1.0.0'."; then
+      FORCE_SOURCE_REBUILD=1
     fi
   fi
-else
-  warn "vault-memory not in PATH."
+fi
+
+if [ "$FORCE_SOURCE_REBUILD" = "1" ] || ! command -v vault-memory >/dev/null 2>&1; then
+  if [ "$FORCE_SOURCE_REBUILD" = "1" ]; then
+    info "Building v2.0.0-rc.1 from source to replace the in-PATH v1.0.0."
+  else
+    warn "vault-memory not in PATH."
+  fi
 
   if [ "$INSTALL_MODE" = "npm" ]; then
-    # ── npm install path (default, no GitHub auth needed) ───────────────────
-    if confirm "Install vault-memory via 'npm install -g @owrede/vault-memory'?" \
-      "Pulls the published package from the public npm registry (https://registry.npmjs.org/@owrede/vault-memory) and installs the 'vault-memory' binary globally. No GitHub authentication or source build required. The package is the bundled dist/cli.js — same code that gets built from source."; then
-      npm install -g @owrede/vault-memory \
-        || { err "npm install -g failed. Possible causes: npm not in PATH, npm prefix not writable (try: npm config get prefix). Falling back to source build: re-run with VAULT_MEMORY_INSTALL_MODE=source."; exit 1; }
+    # ── npm install path (v1.0.0 stable, no GitHub auth needed) ─────────────
+    if confirm "Install vault-memory@1.0.0 via 'npm install -g @owrede/vault-memory@1.0.0'?" \
+      "Pulls v1.0.0 from the public npm registry (https://registry.npmjs.org/@owrede/vault-memory) and installs the 'vault-memory' binary globally. The version is pinned to 1.0.0 — running this skill later will not silently jump you to v2.x once it ships. No GitHub authentication or source build required."; then
+      npm install -g @owrede/vault-memory@1.0.0 \
+        || { err "npm install -g failed. Possible causes: npm not in PATH, npm prefix not writable (try: npm config get prefix). Falling back to source build: re-run with VAULT_MEMORY_VERSION=2.0.0-rc.1."; exit 1; }
       ok "vault-memory installed from npm registry"
     else
       err "vault-memory is required."
