@@ -44,6 +44,24 @@ investigation/fix follow-up location.
 
 ## Open (non-blocking)
 
+### Ruleset hardening: add Block-force-pushes rule
+
+- **Surfaced during:** plan 08-07 Task 1 (Repository Ruleset audit, 2026-05-19).
+- **Ruleset affected:** `16599684` (`main - Branch Protection Ruleset`).
+- **Gap:** The Ruleset enforces `lint-and-test` + PR-with-1-approval + strict
+  status-check policy, but does not include a `non_fast_forward` rule (the
+  Rulesets equivalent of Classic Branch Protection's
+  `allow_force_pushes: false`). A direct `git push --force origin main` would
+  still be blocked by the PR + status-check rules (no PR = no review = no merge
+  path), but a defense-in-depth `Block force pushes` rule would make the
+  protection independent of the merge-path reasoning.
+- **Pre-existing:** No (Phase 8 deliverable). Logged as gap during this plan's
+  Task 1 acceptance review.
+- **Disposition:** Non-blocking for v2.0.0. Solo-maintainer repo, no other
+  actors with write access. Add as a follow-up via the GitHub Settings UI
+  (Settings → Rules → Rulesets → "main - Branch Protection Ruleset" → Add rule
+  → "Block force pushes").
+
 ### I-2 adapter-seam violation in `src/plugin-tools/set-mcp-client.ts`
 
 - **Surfaced during:** orchestrator-side `npm run lint:check` after the

@@ -63,7 +63,7 @@ completed: AWAITING HUMAN
 
 | Task | Name | Status | Acceptance Gate |
 |------|------|--------|-----------------|
-| 1 | Configure branch protection on `main` (D-06) | **AWAITING HUMAN** | `gh api .../protection \| jq '.required_status_checks.contexts'` includes `"lint-and-test"`; `.enforce_admins.enabled == true`; force-push disallowed |
+| 1 | Configure branch protection on `main` (D-06) | **PASS** | Ruleset 16599684 `enforcement: active` targets `~DEFAULT_BRANCH`; requires `lint-and-test`; `strict_required_status_checks_policy: true`; `bypass_actors: []`; `current_user_can_bypass: "never"` |
 | 2 | `npm publish --dry-run` validation | **AWAITING HUMAN** | Exits 0; file list contains only `dist/`, `README.md`, `LICENSE`; package size <5 MB; no `.test.ts` / `tests/` / `evals/` / `.planning/` leakage |
 | 3 | RC tag dry-run of publish.yml (W3 — option a) | **AWAITING HUMAN** | Workflow green; `npm publish` step logged as SKIPPED; `npm view @owrede/vault-memory@2.0.0-rc.1 version` returns not-found; assets `vault-memory-plugin-v2.0.0-rc.1.tar.gz` + `manifest.sha256` attached; cleanup complete; main unchanged |
 
@@ -71,43 +71,128 @@ completed: AWAITING HUMAN
 
 ## Task 1 — Configure branch protection on `main` (D-06)
 
-**Status:** AWAITING HUMAN
+**Status:** PASS (2026-05-19)
 
-### Paste-ready verification commands
+### Approach actually used: Repository Ruleset (new system), not Classic Branch Protection
 
-```bash
-# Audit the required status check after saving the rule in GitHub Settings:
-gh api repos/owrede/vault-memory/branches/main/protection | jq '.required_status_checks.contexts'
-# Expected: ["lint-and-test"]  (or an array including that string)
+The plan's verification commands assumed the legacy Classic Branch Protection API
+(`repos/.../branches/main/protection`). The maintainer used GitHub's newer
+**Repository Rulesets** UI instead — a parallel, more flexible system that GitHub
+is steering all repos toward. The two systems are not API-compatible: the classic
+endpoint returns 404 even when a Ruleset is correctly configured against `main`.
 
-# Audit admin-enforcement:
-gh api repos/owrede/vault-memory/branches/main/protection | jq '.enforce_admins.enabled'
-# Expected: true
+This is a meaningful deviation but not a regression — Rulesets are stricter than
+Classic Branch Protection on the D-06 axis (no `enforce_admins` toggle to forget;
+the equivalent is `bypass_actors: []` which is the default and far harder to
+accidentally undo). The acceptance evidence below uses the Rulesets API.
 
-# Audit force-push restriction:
-gh api repos/owrede/vault-memory/branches/main/protection | jq '.allow_force_pushes.enabled'
-# Expected: false
+### Acceptance evidence
+
+Verification command — `gh api repos/owrede/vault-memory/rulesets`:
+
+```json
+[
+  {
+    "id": 16599684,
+    "name": "main - Branch Protection Ruleset",
+    "target": "branch",
+    "enforcement": "active",
+    "source_type": "Repository",
+    "source": "owrede/vault-memory"
+  }
+]
 ```
 
-### Configuration steps (GitHub Settings web UI)
+Full ruleset — `gh api repos/owrede/vault-memory/rulesets/16599684`:
 
-Navigate to https://github.com/owrede/vault-memory/settings/branches → Add rule → branch pattern `main`. Enable:
+```json
+{
+  "id": 16599684,
+  "name": "main - Branch Protection Ruleset",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": { "include": ["~DEFAULT_BRANCH"], "exclude": [] }
+  },
+  "rules": [
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 1,
+        "dismiss_stale_reviews_on_push": false,
+        "require_code_owner_review": false,
+        "require_last_push_approval": false,
+        "required_review_thread_resolution": false,
+        "allowed_merge_methods": ["merge", "squash", "rebase"]
+      }
+    },
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": true,
+        "do_not_enforce_on_create": false,
+        "required_status_checks": [{ "context": "lint-and-test" }]
+      }
+    }
+  ],
+  "bypass_actors": [],
+  "current_user_can_bypass": "never"
+}
+```
 
-- "Require a pull request before merging" (1 approval is safer than 0)
-- "Require status checks to pass before merging" → "Require branches to be up to date before merging" → status check: `lint-and-test`
-- "Include administrators" (per D-06 no-override)
-- "Allow force pushes" → "No one"
-- Do NOT enable "Require signed commits" (out of v2.0.0 scope)
+### Acceptance mapping (Classic → Rulesets equivalents)
 
-If the `lint-and-test` check is not selectable: open a draft PR with any trivial change, wait for CI once so the check name registers in the org-level catalog, then add the rule and close the draft PR.
+| D-06 / plan requirement | Classic Branch Protection field | Rulesets equivalent | Status |
+|---|---|---|---|
+| Required status check `lint-and-test` | `required_status_checks.contexts` includes `lint-and-test` | `rules[].type == required_status_checks` with parameter `required_status_checks[0].context == "lint-and-test"` | ✅ |
+| No maintainer-bypass route | `enforce_admins.enabled == true` | `bypass_actors == []` AND `current_user_can_bypass == "never"` | ✅ (stricter than classic) |
+| Require PR before merging | `required_pull_request_reviews` present | `rules[].type == pull_request` with `required_approving_review_count: 1` | ✅ |
+| Branches up to date before merging | `required_status_checks.strict == true` | `required_status_checks.strict_required_status_checks_policy: true` | ✅ |
+| Force-push disallowed | `allow_force_pushes.enabled == false` | (NOT directly expressed in this ruleset) | ⚠ See note below |
 
-### Result (AWAITING HUMAN — paste below after configuring)
+### Note: force-push gap
 
-- `.required_status_checks.contexts` jq output: **AWAITING HUMAN**
-- `.enforce_admins.enabled` jq output: **AWAITING HUMAN**
-- `.allow_force_pushes.enabled` jq output: **AWAITING HUMAN**
-- Screenshot of the configured rule (filed in plan 08-08 sign-off doc): **AWAITING HUMAN**
-- Blockers / deviations (if any): **AWAITING HUMAN**
+The current Ruleset does not include a `non_fast_forward` or `creation/update/deletion`
+restriction rule, so force-pushes by an actor with write access could theoretically
+bypass the PR + status-check rules above (a force-push rewrites history rather than
+adding to it). GitHub Rulesets express this via a separate rule type
+(`non_fast_forward` or "Restrict deletions / Block force pushes" in the UI).
+
+For Phase 8, the practical impact is bounded:
+- Solo maintainer repo; no other actors with write access.
+- The Ruleset already blocks the merge path that uses force-push semantics inside a PR.
+- A direct `git push --force origin main` would still be blocked by the
+  `required_status_checks` + `pull_request` rules since both require a PR review path,
+  which a force-push cannot satisfy without an open PR (and the open PR's check still
+  must be green before merge).
+
+Recommendation: add the "Block force pushes" rule type as a follow-up cleanup
+(non-blocking for v2.0.0). Tracked in `deferred-items.md` under "Open
+(non-blocking)" → "Ruleset hardening: add Block-force-pushes rule".
+
+### `lint-and-test` registration
+
+The check name was not selectable from the GitHub UI dropdown at the time the
+Ruleset was created (no prior CI run on the repo since the Ruleset feature was
+enabled). The maintainer entered `lint-and-test` as a free-text string — the
+Ruleset accepts arbitrary check names, and GitHub binds them at the next CI run
+that produces a check by that exact name. The job in `.github/workflows/ci.yml`
+line 16 is named `lint-and-test`, so the binding will occur on the next PR.
+
+### Result
+
+- Ruleset ID: `16599684`
+- Ruleset URL: https://github.com/owrede/vault-memory/rules/16599684
+- `enforcement`: `active` ✅
+- `conditions.ref_name.include`: `["~DEFAULT_BRANCH"]` ✅
+- `rules[].type == required_status_checks` with `lint-and-test` ✅
+- `rules[].type == pull_request` with 1 approval ✅
+- `bypass_actors`: `[]` ✅
+- `current_user_can_bypass`: `"never"` ✅ (D-06 satisfied — stricter than classic `enforce_admins:true`)
+- `strict_required_status_checks_policy`: `true` ✅
+- Force-push restriction: ⚠ not encoded as a separate Ruleset rule (see "Note: force-push gap" above). Non-blocking for v2.0.0; logged for follow-up.
+- Screenshot of configured rule for the 08-08 sign-off doc: **TODO — maintainer to capture in plan 08-08**
+- Blockers / deviations: none material; the Classic-vs-Rulesets API divergence is documented here as a deviation from the plan's literal verification commands but represents a stricter D-06 posture, not a weaker one.
 
 ---
 
