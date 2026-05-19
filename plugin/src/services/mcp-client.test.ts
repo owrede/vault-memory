@@ -16,32 +16,31 @@ import {
 } from "./mcp-client.js";
 
 interface NotificationHandler {
-  schema: { method: { value: string } | string };
+  schema: unknown;
   handler: (notif: { method: string; params: unknown }) => void;
 }
 
 class StubClient {
   callTool = vi.fn();
   close = vi.fn(async () => {});
+  notificationHandlers: NotificationHandler[] = [];
   setNotificationHandler = vi.fn(
-    (schema: NotificationHandler["schema"], handler: NotificationHandler["handler"]) => {
+    (schema: unknown, handler: NotificationHandler["handler"]) => {
       this.notificationHandlers.push({ schema, handler });
     },
   );
-  notificationHandlers: NotificationHandler[] = [];
 
-  /** Drive a synthetic notification (test helper). */
+  /**
+   * Drive a synthetic notification. The real `Client` matches by the
+   * Zod schema's `method` literal; in the test we accept any method
+   * string and dispatch to every registered handler, then let the
+   * handler itself filter (matches our wrapper's behavior — the wrapper
+   * registers one ProgressNotificationSchema handler and routes by
+   * params.progressToken).
+   */
   emit(method: string, params: unknown): void {
     for (const h of this.notificationHandlers) {
-      const schemaMethod =
-        typeof h.schema === "object" && h.schema !== null && "method" in h.schema
-          ? typeof (h.schema as { method: unknown }).method === "string"
-            ? (h.schema as { method: string }).method
-            : (h.schema as { method: { value: string } }).method.value
-          : (h.schema as unknown as string);
-      if (schemaMethod === method) {
-        h.handler({ method, params });
-      }
+      h.handler({ method, params });
     }
   }
 }
