@@ -392,10 +392,70 @@ if command -v vault-memory >/dev/null 2>&1; then
       ok "vault-memory switched to 1.0.0"
     fi
   elif [ "$INSTALL_MODE" = "source" ] && [ "$vm_version" = "1.0.0" ]; then
-    info "You selected v2.0.0-rc.1 (in-development, source build) but the v1.0.0 stable binary is currently installed."
-    if confirm "Replace v1.0.0 with a source build of v2.0.0-rc.1?" \
-      "You picked v2.0.0-rc.1 (in-development) at Checkpoint 0. The current vault-memory in PATH is the stable v1.0.0 from npm. Replacing it requires cloning github.com/owrede/vault-memory (main branch) to $INSTALL_DIR, running npm install + build, and re-linking via 'npm link' so the v2.0.0-rc.1 binary shadows the npm-installed one. Your data is untouched. The original v1.0.0 install can be restored later via 'npm install -g @owrede/vault-memory@1.0.0'."; then
+    # Print the full upgrade warning so the user knows what they are signing
+    # up for. Then ask via confirm_destructive — this fires even in AUTO mode
+    # (a destructive op must never auto-yes).
+    log ""
+    log "${c_yellow}${c_bold}╔══════════════════════════════════════════════════════════════╗${c_reset}"
+    log "${c_yellow}${c_bold}║  UPGRADE WARNING: v1.0.0 → v2.0.0-rc.1                       ║${c_reset}"
+    log "${c_yellow}${c_bold}╚══════════════════════════════════════════════════════════════╝${c_reset}"
+    log ""
+    log "You selected v2.0.0-rc.1 (in-development), but v1.0.0 (stable) is"
+    log "currently installed. This is a ${c_bold}full replacement${c_reset} — both versions"
+    log "cannot run side-by-side because they share the same global binary"
+    log "name (\`vault-memory\`) and the same data directory (~/.vault-memory/)."
+    log ""
+    log "${c_bold}What WILL change:${c_reset}"
+    log "  • Global binary: npm-installed v1.0.0 → source-linked v2.0.0-rc.1"
+    log "    (clone of $REPO_URL @ main, npm link from $INSTALL_DIR)"
+    log "  • Database schema in ~/.vault-memory/*.db will be ${c_bold}migrated${c_reset}"
+    log "    automatically on the next \`vault-memory serve\` (typed-edges, briefs,"
+    log "    task-contracts, additional tables). Migration is forward-only."
+    log "  • A ${c_bold}full re-index${c_reset} is recommended after the upgrade — new edge"
+    log "    types (mentions, frontmatter-refs, hyperlinks) and new tables"
+    log "    require fresh data to populate. v1 indexes still work but miss"
+    log "    the new graph signal until re-built."
+    log "  • MCP tool surface: 23 v1 tools → 32 canonical tools + 10 Resources."
+    log "    Existing tool names + shapes are preserved (backwards-compatible)."
+    log ""
+    log "${c_bold}What will NOT change:${c_reset}"
+    log "  • Your Markdown notes (they live in the vault, not in vault-memory)"
+    log "  • Vault registration in ~/.vault-memory/config.toml"
+    log "  • Ollama / bge-m3 model"
+    log "  • Other vaults registered with vault-memory — ALL of them upgrade"
+    log "    together (single global binary, single data dir)"
+    log ""
+    log "${c_red}${c_bold}No automatic downgrade path:${c_reset}"
+    log "  • The migrated DBs cannot be opened by v1.0.0 anymore (v1 does"
+    log "    not understand the new schema)."
+    log "  • To go back to v1.0.0 you need BOTH:"
+    log "      1. \`npm install -g @owrede/vault-memory@1.0.0\` (revert binary)"
+    log "      2. Restore ~/.vault-memory/ from a backup made BEFORE the"
+    log "         upgrade, OR delete the DBs and let v1 re-index from scratch"
+    log "  • RECOMMENDED before proceeding: \`tar -czf ~/vault-memory-v1-backup.tar.gz ~/.vault-memory\`"
+    log ""
+    log "${c_bold}Scope of impact:${c_reset} ALL vaults registered with vault-memory will"
+    log "use v2.0.0-rc.1 after this. There is no per-vault version selection."
+    log "Inspect ~/.vault-memory/config.toml to see which vaults are affected."
+    log ""
+
+    # Inventory which vaults will be impacted so the user can see them by name.
+    if [ -f "$CONFIG_FILE" ]; then
+      registered_vaults=$(grep -E "^name = " "$CONFIG_FILE" 2>/dev/null | sed 's/name = //; s/"//g' | tr '\n' ',' | sed 's/,$//; s/,/, /g')
+      if [ -n "$registered_vaults" ]; then
+        log "  Registered vaults that will switch to v2.0.0-rc.1: ${c_bold}$registered_vaults${c_reset}"
+        log ""
+      fi
+    fi
+
+    if confirm_destructive "Proceed with full replacement v1.0.0 → v2.0.0-rc.1?"; then
       FORCE_SOURCE_REBUILD=1
+      ok "Upgrade accepted. Proceeding with source build of v2.0.0-rc.1."
+    else
+      err "Upgrade declined. v1.0.0 stays in place."
+      log "  To install v2.0.0-rc.1 later, re-run with VAULT_MEMORY_VERSION=2.0.0-rc.1"
+      log "  and confirm the destructive prompt."
+      exit 2
     fi
   fi
 fi
@@ -507,12 +567,34 @@ fi
 
 log ""
 step "Initial index"
-if confirm "Run 'vault-memory index' now? (≈2 min for a typical vault)" \
-  "Builds the vector index for every Markdown note in this vault — required before semantic search returns results. Incremental on subsequent runs (only re-embeds changed notes). The index lives in ~/.vault-memory/<vault>.db — your notes themselves are not modified."; then
-  vault-memory index || { err "Index build failed"; exit 1; }
-  ok "Index built"
+
+# Two flavours of the index prompt:
+#  - Normal (incremental): first install OR no version change
+#  - Post-upgrade: FORCE_SOURCE_REBUILD=1 was set above, indicating
+#    v1.0.0 → v2.0.0-rc.1. Recommend a FULL re-index so the new typed-edge
+#    tables and additional indexes are populated for ALL notes.
+if [ "${FORCE_SOURCE_REBUILD:-0}" = "1" ]; then
+  warn "Upgrade detected (v1.0.0 → v2.0.0-rc.1). A FULL re-index is strongly recommended."
+  log "  Reason: v2 adds new edge types (mentions, frontmatter-refs, hyperlinks)"
+  log "  and new tables (briefs, contracts) that the v1 index never populated."
+  log "  Schema migration on first \`vault-memory serve\` will create the tables;"
+  log "  the re-index fills them."
+  log ""
+  if confirm "Run 'vault-memory index --full' now? (≈5-15 min for a 90 MB vault)" \
+    "Full re-index rebuilds the vector index AND populates the new v2 graph signal (typed edges, briefs scaffold) for every note. Required to make semantic+graph search return v2-quality results. Incremental updates after this will be fast as usual."; then
+    vault-memory index --full || { err "Full re-index failed"; exit 1; }
+    ok "Vault re-indexed under v2.0.0-rc.1"
+  else
+    warn "Skipped. v2 graph signal will be empty until you run 'vault-memory index --full' manually."
+  fi
 else
-  info "Skipped. You can run 'vault-memory index' later."
+  if confirm "Run 'vault-memory index' now? (≈2 min for a typical vault)" \
+    "Builds the vector index for every Markdown note in this vault — required before semantic search returns results. Incremental on subsequent runs (only re-embeds changed notes). The index lives in ~/.vault-memory/<vault>.db — your notes themselves are not modified."; then
+    vault-memory index || { err "Index build failed"; exit 1; }
+    ok "Index built"
+  else
+    info "Skipped. You can run 'vault-memory index' later."
+  fi
 fi
 
 # ─── Checkpoint 7: End-to-end smoketest ──────────────────────────────────────
