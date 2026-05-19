@@ -12,6 +12,7 @@ import { describe, it, expect, vi } from "vitest";
 import type { RegisteredTool } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { syncPluginTools, PLUGIN_TOOL_NAMES } from "./index.js";
 import { RuntimeConfigStore } from "./runtime-config.js";
+import { SuppressionSet } from "../adapters/change-feed/obsidian-fs/suppression.js";
 
 function makeFakeServer() {
   const sendToolListChanged = vi.fn();
@@ -50,6 +51,7 @@ function makeDeps() {
     contractCountFor: () => 0,
     reindexVault: async () => {},
     notifier: () => {},
+    suppression: new SuppressionSet({ ttlMs: 2000 }),
   };
 }
 
@@ -66,27 +68,27 @@ describe("syncPluginTools", () => {
     expect(f.sendToolListChanged).not.toHaveBeenCalled();
   });
 
-  it("(b) enabled=true: registers all five with their declared names", () => {
+  it("(b) enabled=true: registers all six with their declared names", () => {
     const f = makeFakeServer();
     const registered = new Map<string, RegisteredTool>();
     syncPluginTools(f.server as never, registered, {
       enabled: true,
       ...makeDeps(),
     });
-    expect(registered.size).toBe(5);
+    expect(registered.size).toBe(6);
     const names = Array.from(registered.keys()).sort();
     expect(names).toEqual([...PLUGIN_TOOL_NAMES].sort());
     expect(f.sendToolListChanged).toHaveBeenCalledTimes(1);
   });
 
-  it("(c) flipping from enabled=true to enabled=false removes all five (idempotent)", () => {
+  it("(c) flipping from enabled=true to enabled=false removes all six (idempotent)", () => {
     const f = makeFakeServer();
     const registered = new Map<string, RegisteredTool>();
     syncPluginTools(f.server as never, registered, {
       enabled: true,
       ...makeDeps(),
     });
-    expect(registered.size).toBe(5);
+    expect(registered.size).toBe(6);
 
     syncPluginTools(f.server as never, registered, {
       enabled: false,

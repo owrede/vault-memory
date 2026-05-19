@@ -2109,6 +2109,10 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
     peerMcpStatus,
     contractCountFor,
     reindexVault,
+    // Plan 07-07 / CAN-08 — same shared instance the contract loader
+    // sees, so the plugin's `suppress_contract_write` call and the
+    // change-feed handler observe the same entries.
+    suppression,
     notifier: (notification) => {
       // Forward to the underlying MCP server transport. The McpServer
       // wraps a low-level Server with `server.server`; the notification

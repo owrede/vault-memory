@@ -39,6 +39,9 @@ import type {
   TriggerReindexInput,
   TriggerReindexProgress,
 } from "./trigger-reindex.js";
+import { suppressContractWriteTool } from "./suppress-contract-write.js";
+import type { SuppressContractWriteInput } from "./suppress-contract-write.js";
+import type { SuppressionSet } from "../adapters/change-feed/obsidian-fs/suppression.js";
 import type { RuntimeConfigStore } from "./runtime-config.js";
 
 // Re-exports — consumed by server.ts wiring + tests.
@@ -47,12 +50,17 @@ export { resolveSecretTool } from "./resolve-secret.js";
 export { setMcpClientTool } from "./set-mcp-client.js";
 export { getRuntimeStatsTool } from "./get-runtime-stats.js";
 export { triggerReindexTool } from "./trigger-reindex.js";
+export { suppressContractWriteTool } from "./suppress-contract-write.js";
 export { RuntimeConfigStore } from "./runtime-config.js";
 
 /**
  * Canonical list of plugin-control tool names. ORDER is significant only for
  * stable `tools/list` output — pinned here so the gating test can match
  * deterministically.
+ *
+ * Plan 07-07 added `suppress_contract_write` (CAN-08). The v1-baseline
+ * tools-list snapshot stays byte-identical because the gate is default-OFF
+ * — these names only land on the wire when `[plugin] enabled = true`.
  */
 export const PLUGIN_TOOL_NAMES = [
   "set_runtime_config",
@@ -60,6 +68,7 @@ export const PLUGIN_TOOL_NAMES = [
   "set_mcp_client",
   "get_runtime_stats",
   "trigger_reindex",
+  "suppress_contract_write",
 ] as const;
 
 export type PluginToolName = (typeof PLUGIN_TOOL_NAMES)[number];
@@ -87,6 +96,14 @@ export interface SyncPluginToolsOpts {
     method: "notifications/progress";
     params: { progressToken: string; progress: number; total?: number };
   }) => void;
+  /**
+   * Phase 7 / Plan 07-07 / CAN-08. Shared SuppressionSet consumed by
+   * `suppress_contract_write`. Required when `enabled === true` — the
+   * server bootstrap owns the singleton instance and threads it both
+   * here and into `startContractRegistry` so a single set sees both
+   * pathways.
+   */
+  suppression: SuppressionSet;
 }
 
 /**
@@ -251,6 +268,31 @@ export function syncPluginTools(
                 reindexVault: opts.reindexVault,
                 notifier: opts.notifier,
               });
+              return ok(result);
+            } catch (err) {
+              return errorResponse(err instanceof Error ? err.message : String(err));
+            }
+          },
+        ) as RegisteredTool,
+    },
+    {
+      name: "suppress_contract_write",
+      reg: () =>
+        server.registerTool(
+          suppressContractWriteTool.name,
+          {
+            description: suppressContractWriteTool.description,
+            inputSchema: suppressContractWriteTool.inputSchema.shape,
+          },
+          async (args: unknown) => {
+            try {
+              const validated = suppressContractWriteTool.inputSchema.parse(
+                args,
+              ) as SuppressContractWriteInput;
+              const result = await suppressContractWriteTool.handler(
+                validated,
+                { suppression: opts.suppression },
+              );
               return ok(result);
             } catch (err) {
               return errorResponse(err instanceof Error ? err.message : String(err));

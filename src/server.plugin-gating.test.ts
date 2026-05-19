@@ -24,6 +24,7 @@ import {
   PLUGIN_TOOL_NAMES,
   RuntimeConfigStore,
 } from "./plugin-tools/index.js";
+import { SuppressionSet } from "./adapters/change-feed/obsidian-fs/suppression.js";
 
 const DEFAULT_DEPS = {
   runtimeConfig: new RuntimeConfigStore({}),
@@ -33,6 +34,7 @@ const DEFAULT_DEPS = {
   contractCountFor: () => 0,
   reindexVault: async () => {},
   notifier: () => {},
+  suppression: new SuppressionSet({ ttlMs: 2000 }),
 };
 
 async function makeLinkedClientServer() {
@@ -88,7 +90,7 @@ describe("Plan 07-04: plugin-control tool gating", () => {
     }
   });
 
-  it("plugin.enabled = true → all five plugin tools appear in tools/list", async () => {
+  it("plugin.enabled = true → all six plugin tools appear in tools/list", async () => {
     const { server, client, cleanup } = await makeLinkedClientServer();
     try {
       const registered = new Map<string, RegisteredTool>();
@@ -99,10 +101,11 @@ describe("Plan 07-04: plugin-control tool gating", () => {
       for (const pluginToolName of PLUGIN_TOOL_NAMES) {
         expect(names).toContain(pluginToolName);
       }
-      // Exactly five tools registered — and only the plugin tools (since
+      // Exactly six tools registered — and only the plugin tools (since
       // this server isolates them from the rest of the 23-tool surface).
+      // Plan 07-07 added the sixth: `suppress_contract_write`.
       expect(names.filter((n) => (PLUGIN_TOOL_NAMES as readonly string[]).includes(n)))
-        .toHaveLength(5);
+        .toHaveLength(6);
     } finally {
       await cleanup();
     }
@@ -114,7 +117,7 @@ describe("Plan 07-04: plugin-control tool gating", () => {
       const registered = new Map<string, RegisteredTool>();
       syncPluginTools(server, registered, { enabled: true, ...DEFAULT_DEPS });
       let result = await client.listTools();
-      expect(result.tools.length).toBeGreaterThanOrEqual(5);
+      expect(result.tools.length).toBeGreaterThanOrEqual(6);
 
       syncPluginTools(server, registered, { enabled: false, ...DEFAULT_DEPS });
       result = await client.listTools();
