@@ -9,11 +9,11 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
-// ../../../node_modules/tsup/assets/esm_shims.js
+// node_modules/tsup/assets/esm_shims.js
 import path from "path";
 import { fileURLToPath } from "url";
 var init_esm_shims = __esm({
-  "../../../node_modules/tsup/assets/esm_shims.js"() {
+  "node_modules/tsup/assets/esm_shims.js"() {
     "use strict";
   }
 });
