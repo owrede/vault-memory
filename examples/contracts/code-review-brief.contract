@@ -3,23 +3,21 @@
   "vmFormatVersion": 1,
   "contract": {
     "version": 1,
-    "name": "meeting-prep",
-    "description": "Compile a meeting prep brief from the meeting note + 1-hop linked context.\nOutput is a brief written into the briefs sink. Useful for Q2-OKR-style\nreview meetings where context across linked projects matters.\n",
+    "name": "code-review-brief",
+    "description": "Compile a code-review brief from a PR-style doc + related context found\nvia hybrid search. Useful for asynchronous review where the reviewer\nneeds both the change description and the prior-art surface.\n",
     "inputs": {
-      "meeting_doc_id": {
+      "pr_doc_id": {
         "$ref": "#/types/DocId",
-        "description": "DocId of the meeting note (e.g. obsidian-fs://test-vault/meetings/...)."
+        "description": "DocId of the PR-style doc to review."
       },
-      "context_hops": {
-        "type": "integer",
-        "minimum": 1,
-        "maximum": 2,
-        "default": 1,
-        "description": "How many wikilink hops to expand from the meeting note."
+      "search_query": {
+        "type": "string",
+        "description": "Hybrid-search query that surfaces related context."
       }
     },
     "required": [
-      "meeting_doc_id"
+      "pr_doc_id",
+      "search_query"
     ],
     "sources": {
       "default_source": {
@@ -35,29 +33,18 @@
     },
     "assembly": [
       {
-        "as": "meeting",
+        "as": "pr",
         "verb": "read_note",
         "args": {
-          "doc_id": "{{inputs.meeting_doc_id}}"
+          "doc_id": "{{inputs.pr_doc_id}}"
         }
       },
       {
-        "as": "linked",
-        "verb": "expand",
+        "as": "related",
+        "verb": "search_hybrid",
         "args": {
-          "seed_doc_ids": [
-            "{{inputs.meeting_doc_id}}"
-          ],
-          "hops": "{{inputs.context_hops}}",
-          "direction": "both"
-        }
-      },
-      {
-        "as": "clustered",
-        "verb": "cluster",
-        "args": {
-          "seed_doc_ids": "{{linked.doc_ids}}",
-          "method": "edge-community"
+          "query": "{{inputs.search_query}}",
+          "top_k": 10
         }
       },
       {
@@ -65,9 +52,9 @@
         "verb": "compile_brief",
         "args": {
           "vault": "test-vault",
-          "target": "{{inputs.meeting_doc_id}}--prep",
-          "source_doc_ids": "{{linked.doc_ids}}",
-          "purpose": "Meeting prep brief",
+          "target": "{{inputs.pr_doc_id}}--review",
+          "source_doc_ids": "{{related.doc_ids}}",
+          "purpose": "Code review brief",
           "max_tokens": 2000
         }
       }
@@ -98,9 +85,9 @@
       "sink": "{{default_sink}}",
       "document_kind": "brief",
       "properties": {
-        "target": "{{inputs.meeting_doc_id}}--prep",
+        "target": "{{inputs.pr_doc_id}}--review",
         "source": "agent",
-        "purpose": "Meeting prep brief"
+        "purpose": "Code review brief"
       },
       "body_from": "{{compiled.body}}"
     }
@@ -108,23 +95,18 @@
   "editor": {
     "nodes": [
       {
-        "id": "step:meeting",
+        "id": "step:pr",
         "x": 0,
         "y": 0
       },
       {
-        "id": "step:linked",
+        "id": "step:related",
         "x": 220,
         "y": 0
       },
       {
-        "id": "step:clustered",
-        "x": 440,
-        "y": 0
-      },
-      {
         "id": "step:compiled",
-        "x": 660,
+        "x": 440,
         "y": 0
       }
     ],

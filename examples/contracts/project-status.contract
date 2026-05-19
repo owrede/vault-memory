@@ -3,23 +3,23 @@
   "vmFormatVersion": 1,
   "contract": {
     "version": 1,
-    "name": "meeting-prep",
-    "description": "Compile a meeting prep brief from the meeting note + 1-hop linked context.\nOutput is a brief written into the briefs sink. Useful for Q2-OKR-style\nreview meetings where context across linked projects matters.\n",
+    "name": "project-status",
+    "description": "Compile a project status brief for a tagged project. Discovers all\ndocs whose frontmatter `project: <key>` matches, clusters them, and\nhands the result to compile_brief. Useful for weekly status rollups\nwhere the universe of relevant docs is tag-defined.\n",
     "inputs": {
-      "meeting_doc_id": {
-        "$ref": "#/types/DocId",
-        "description": "DocId of the meeting note (e.g. obsidian-fs://test-vault/meetings/...)."
+      "project_key": {
+        "type": "string",
+        "description": "Frontmatter project key (e.g. \"atlas-1\")."
       },
-      "context_hops": {
+      "freshness_days": {
         "type": "integer",
         "minimum": 1,
-        "maximum": 2,
-        "default": 1,
-        "description": "How many wikilink hops to expand from the meeting note."
+        "maximum": 365,
+        "default": 30,
+        "description": "Filter docs to those modified within the last N days."
       }
     },
     "required": [
-      "meeting_doc_id"
+      "project_key"
     ],
     "sources": {
       "default_source": {
@@ -35,28 +35,19 @@
     },
     "assembly": [
       {
-        "as": "meeting",
-        "verb": "read_note",
+        "as": "tagged_docs",
+        "verb": "query_frontmatter",
         "args": {
-          "doc_id": "{{inputs.meeting_doc_id}}"
-        }
-      },
-      {
-        "as": "linked",
-        "verb": "expand",
-        "args": {
-          "seed_doc_ids": [
-            "{{inputs.meeting_doc_id}}"
-          ],
-          "hops": "{{inputs.context_hops}}",
-          "direction": "both"
+          "where": {
+            "project": "{{inputs.project_key}}"
+          }
         }
       },
       {
         "as": "clustered",
         "verb": "cluster",
         "args": {
-          "seed_doc_ids": "{{linked.doc_ids}}",
+          "seed_doc_ids": "{{tagged_docs.doc_ids}}",
           "method": "edge-community"
         }
       },
@@ -65,10 +56,10 @@
         "verb": "compile_brief",
         "args": {
           "vault": "test-vault",
-          "target": "{{inputs.meeting_doc_id}}--prep",
-          "source_doc_ids": "{{linked.doc_ids}}",
-          "purpose": "Meeting prep brief",
-          "max_tokens": 2000
+          "target": "{{inputs.project_key}}--status",
+          "source_doc_ids": "{{tagged_docs.doc_ids}}",
+          "purpose": "Project status brief",
+          "max_tokens": 2500
         }
       }
     ],
@@ -98,9 +89,9 @@
       "sink": "{{default_sink}}",
       "document_kind": "brief",
       "properties": {
-        "target": "{{inputs.meeting_doc_id}}--prep",
+        "target": "{{inputs.project_key}}--status",
         "source": "agent",
-        "purpose": "Meeting prep brief"
+        "purpose": "Project status brief"
       },
       "body_from": "{{compiled.body}}"
     }
@@ -108,23 +99,18 @@
   "editor": {
     "nodes": [
       {
-        "id": "step:meeting",
+        "id": "step:tagged_docs",
         "x": 0,
         "y": 0
       },
       {
-        "id": "step:linked",
+        "id": "step:clustered",
         "x": 220,
         "y": 0
       },
       {
-        "id": "step:clustered",
-        "x": 440,
-        "y": 0
-      },
-      {
         "id": "step:compiled",
-        "x": 660,
+        "x": 440,
         "y": 0
       }
     ],
