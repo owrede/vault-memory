@@ -14,7 +14,9 @@ is operable from inside Obsidian without dropping to a terminal.
 The plugin talks to a running `vault-memory serve` MCP server over local stdio.
 You install the CLI **first**, then install the plugin on top.
 
-> **Screencast:** deferred to Phase 8 — see [ROADMAP.md](../../../.planning/ROADMAP.md).
+> **Screencast:** [![Plugin walkthrough (5-7 min)](./screencast-thumbnail.png)](https://github.com/owrede/vault-memory/releases/download/v2.0.0/vault-memory-plugin-walkthrough.mp4)
+>
+> Click the thumbnail to watch the 5–7 minute install → first contract authored → first `instantiate_contract` walkthrough (MP4, attached as a GitHub Release asset at v2.0.0).
 
 ## Prerequisites
 

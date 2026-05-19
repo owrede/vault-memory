@@ -7,7 +7,9 @@ You edit `.contract` JSON files in a three-pane IDE-style view; the plugin
 emits canonical YAML on save. The YAML is what the Phase 6 `ContractRegistry`
 loads.
 
-> **Screencast:** deferred to Phase 8 — see [ROADMAP.md](../../../.planning/ROADMAP.md).
+> **Screencast:** [![Plugin walkthrough (5-7 min)](./screencast-thumbnail.png)](https://github.com/owrede/vault-memory/releases/download/v2.0.0/vault-memory-plugin-walkthrough.mp4)
+>
+> Click the thumbnail to watch the 5–7 minute install → first contract authored → first `instantiate_contract` walkthrough (MP4, attached as a GitHub Release asset at v2.0.0).
 
 ## Overview
 
