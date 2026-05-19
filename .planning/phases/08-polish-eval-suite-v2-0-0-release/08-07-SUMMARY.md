@@ -3,7 +3,7 @@ phase: 08-polish-eval-suite-v2-0-0-release
 plan: 07
 subsystem: infra
 tags: [release, branch-protection, ci, github-actions, rc-dry-run, npm-publish]
-status: AWAITING HUMAN
+status: complete-with-findings
 
 # Dependency graph
 requires:
@@ -31,20 +31,20 @@ key-files:
   modified: []
 
 key-decisions:
-  - "AWAITING HUMAN — fill in after task 1 (branch-protection settings finalized)"
-  - "AWAITING HUMAN — fill in after task 2 (npm publish --dry-run file list)"
-  - "AWAITING HUMAN — fill in after task 3 (option a temporary-conditional path used, OR option b fork path used)"
+  - "Task 1: Used Repository Rulesets (new system), not Classic Branch Protection. Stricter equivalents documented in mapping table. Ruleset 16599684 active."
+  - "Task 2: npm publish --dry-run package shape clean (5 files, 524.6 kB packed, no src/tests/evals leakage). dist/cli.js.map (1.5 MB) ships in tarball — logged as non-blocking footprint finding."
+  - "Task 3: Used option (a) temporary `-rc.*` conditional on throwaway branch. W3 primary gate PASSED (Publish to npm = skipped); npm not polluted (404). PUBLISH.YML BUG SURFACED: `Build plugin tarball` step fails because `cd plugin && npm ci` does not install workspace-hoisted deps. Must be fixed in plan 08-08 before the live v2.0.0 cut."
 
 requirements-completed: [REL-01]
 
 # Metrics
-duration: AWAITING HUMAN
-completed: AWAITING HUMAN
+duration: ~50 minutes (Task 1: ruleset config + verification; Task 2: dry-run; Task 3: throwaway-branch dry-run + cleanup; SUMMARY recording inline)
+completed: 2026-05-19
 ---
 
 # Phase 8 Plan 07: Branch Protection + RC Tag Dry-Run Summary
 
-**AWAITING HUMAN** — branch protection on `main` requires the `lint-and-test` CI status check with `enforce_admins:true`; publish.yml validated end-to-end via a `v2.0.0-rc.1` tag with `npm publish` skipped via a `-rc.*` guard on a throwaway branch; public npm registry not polluted; ready for the live v2.0.0 cut in plan 08-08.
+Branch protection on `main` is active via Repository Ruleset 16599684 (stricter equivalent of the plan's classic-branch-protection target — `bypass_actors:[]` + `current_user_can_bypass:"never"` are stronger than `enforce_admins:true`). The `npm publish --dry-run` validated a clean 5-file tarball. The RC tag dry-run of publish.yml **proved the `-rc.*` skip-publish guard works** (the primary W3 gate) but **surfaced a separate publish.yml bug** in the `Build plugin tarball` step (workspace dep hoisting issue) that plan 08-08 MUST fix before the live v2.0.0 cut. Public npm was NOT polluted (`npm view @owrede/vault-memory@2.0.0-rc.1` returns 404). Cleanup complete; `main` HEAD unchanged at `49a4b83`.
 
 ## Status
 
@@ -52,9 +52,9 @@ completed: AWAITING HUMAN
 
 ## Performance
 
-- **Duration:** AWAITING HUMAN
-- **Started:** AWAITING HUMAN
-- **Completed:** AWAITING HUMAN
+- **Duration:** ~50 minutes (inline conversational pacing — task-by-task)
+- **Started:** 2026-05-19 17:55 (local)
+- **Completed:** 2026-05-19 18:25 (local)
 - **Tasks:** 3 (all `checkpoint:human-action`)
 - **Files created:** 1 (this SUMMARY)
 - **Files modified:** 0 (the throwaway-branch edits in Task 3 live only on the discarded `release-dry-run` branch)
@@ -65,7 +65,7 @@ completed: AWAITING HUMAN
 |------|------|--------|-----------------|
 | 1 | Configure branch protection on `main` (D-06) | **PASS** | Ruleset 16599684 `enforcement: active` targets `~DEFAULT_BRANCH`; requires `lint-and-test`; `strict_required_status_checks_policy: true`; `bypass_actors: []`; `current_user_can_bypass: "never"` |
 | 2 | `npm publish --dry-run` validation | **PASS** | 5 files in tarball, 524.6 kB packed / 2.1 MB unpacked; only `dist/cli.js`, `dist/cli.js.map`, `LICENSE`, `README.md`, `package.json`; no leakage. Dry-run exits non-zero on the registry version-collision check (1.0.0 already published) — false negative; release.mjs bumps to 2.0.0 in 08-08 |
-| 3 | RC tag dry-run of publish.yml (W3 — option a) | **AWAITING HUMAN** | Workflow green; `npm publish` step logged as SKIPPED; `npm view @owrede/vault-memory@2.0.0-rc.1 version` returns not-found; assets `vault-memory-plugin-v2.0.0-rc.1.tar.gz` + `manifest.sha256` attached; cleanup complete; main unchanged |
+| 3 | RC tag dry-run of publish.yml (W3 — option a) | **MIXED — W3 gate PASS, plugin-tarball step FAIL** | W3 primary gate (Publish to npm = `skipped`): PASS ✅. npm not polluted: PASS ✅ (`npm view ... 2.0.0-rc.1` returns 404). Plugin tarball build: FAIL ❌ — pre-existing 08-06 publish.yml bug surfaced before live cut. Release not created (workflow halted at failed step). Cleanup complete; main unchanged at `49a4b83` |
 
 ---
 
@@ -269,109 +269,234 @@ integrity: sha512-XhE8M3CwNy5Ps[...]TsqVQNfGA27EQ==
 
 ## Task 3 — RC tag dry-run of publish.yml via `-rc.*` skip-publish guard (W3 — option a)
 
-**Status:** AWAITING HUMAN
+**Status:** MIXED — W3 primary gate PASS; publish.yml plugin-tarball step has a pre-existing 08-06 bug that MUST be fixed in 08-08 before the live cut
 
-### Paste-ready verification commands
+### Headline result
 
-**Pre-flight (verify plans 08-01..08-06 landed; tree clean; on main; pulled):**
+The dry-run did exactly what it was designed to do: it surfaced a real publish.yml bug
+in a place where we could fix it before cutting v2.0.0 live. The W3 conditional guard
+worked perfectly — `Publish to npm` was skipped on the `-rc.*` tag, npm was not polluted,
+the canonical 404 proof holds. The Release was not created because the plugin-tarball
+build step (08-06's primary 08-08-enabling deliverable) failed.
 
-```bash
-git fetch --all --prune
-git checkout main
-git pull --ff-only
-git status
-git log --oneline -10
-```
+### Workflow run
 
-**Step A — stage the dry-run on a throwaway branch (NOT main):**
+- Approach used: option (a) temporary `-rc.*` conditional on throwaway `release-dry-run` branch
+- Workflow run URL: https://github.com/owrede/vault-memory/actions/runs/26110050088
+- Job ID: 76784548741
+- Triggered: 2026-05-19T16:16:17Z via `git push origin v2.0.0-rc.1`
+- Duration: 52s (failed fast at the plugin-tarball step)
+- Trigger commit (on throwaway branch only): `9989f68 release: v2.0.0-rc.1 dry-run (skip npm publish for -rc.* refs)`
 
-```bash
-git checkout -b release-dry-run
-npm version 2.0.0-rc.1 --no-git-tag-version
-# Then edit .github/workflows/publish.yml — locate the `npm publish` step and add:
-#   if: ${{ !contains(github.ref_name, '-rc.') }}
-# above the `run: npm publish --access public --provenance` line.
-git diff
-git commit -am "release: v2.0.0-rc.1 dry-run (skip npm publish for -rc.* refs)"
-```
+### Step-by-step conclusions (full audit)
 
-**Step B — tag and push the tag (triggers publish.yml):**
+| # | Step | Conclusion |
+|---|------|------------|
+| 1 | Set up job | success |
+| 2 | Checkout | success |
+| 3 | Setup Node 22 | success |
+| 4 | Install dependencies | success |
+| 5 | Type check | success |
+| 6 | Test | success |
+| 7 | Build | success |
+| 8 | Verify package.json version matches tag | success (`2.0.0-rc.1` matched) |
+| 9 | **Publish to npm** | **skipped** ← **W3 primary gate PASS** |
+| 10 | Extract CHANGELOG section for this tag | success |
+| 11 | **Build plugin tarball** | **failure** ← see "Finding for 08-08" below |
+| 12 | Generate manifest.sha256 | skipped (blocked by 11) |
+| 13 | Create GitHub Release | skipped (blocked by 11) |
+| 14 | Post Setup Node 22 | skipped |
+| 15 | Post Checkout | success |
+| 16 | Complete job | success |
 
-```bash
-git tag -a v2.0.0-rc.1 -m "v2.0.0-rc.1 dry-run (npm publish skipped via -rc.* guard)"
-git push origin v2.0.0-rc.1
-gh run watch
-```
-
-**Step C — verify workflow output:**
-
-```bash
-# Workflow run URL (use the most recent run for publish.yml):
-gh run list --workflow=publish.yml --limit=3
-# Confirm the `npm publish` step is logged as SKIPPED in the run log:
-gh run view --log <RUN_ID> | grep -A2 -E "(Publish to npm|publish.*skipped|conditional)"
-
-# Release assets:
-gh release view v2.0.0-rc.1 --json assets | jq '.assets[].name'
-# Expected: includes "vault-memory-plugin-v2.0.0-rc.1.tar.gz" and "manifest.sha256"
-
-# Release body (should contain the RC-1 CHANGELOG section):
-gh release view v2.0.0-rc.1 --json body | jq -r '.body'
-
-# CANONICAL PROOF that public npm was NOT polluted:
-npm view @owrede/vault-memory@2.0.0-rc.1 version
-# Expected: ERROR / "not found"
-```
-
-**Step D — CRITICAL cleanup:**
+### W3 primary gate evidence
 
 ```bash
-gh release delete v2.0.0-rc.1 --yes
-git push origin :v2.0.0-rc.1
-git tag -d v2.0.0-rc.1
-# If you pushed the throwaway branch to origin:
-git push origin :release-dry-run || true
-git checkout main
-git branch -D release-dry-run
-
-# Verify main is unchanged (HEAD on main matches pre-dry-run state):
-git log --oneline -5
+$ gh run view 26110050088 --json jobs --jq '.jobs[].steps[] | select(.name == "Publish to npm")'
+{
+  "name": "Publish to npm",
+  "conclusion": "skipped",
+  "status": "completed"
+}
 ```
 
-### Acceptance criteria
+Conditional `if: ${{ !contains(github.ref_name, '-rc.') }}` evaluated to `false` on
+the `v2.0.0-rc.1` ref, so the step was correctly skipped. On a clean `v2.0.0` tag in
+plan 08-08, the same conditional will evaluate to `true` and npm publish will run.
 
-- Workflow ran to completion (green)
-- `npm publish` step logged as **SKIPPED** (the conditional evaluated false) — primary W3 gate
-- `npm view @owrede/vault-memory@2.0.0-rc.1 version` returns **not-found** — canonical proof no public-npm pollution
-- Release assets included `vault-memory-plugin-v2.0.0-rc.1.tar.gz` and `manifest.sha256`
-- Release body contained the RC-1 CHANGELOG section
-- All cleanup completed: tag deleted (local + remote), Release deleted, `release-dry-run` branch deleted (local + remote if pushed), main unchanged
+### Public-npm pollution check
 
-### Result (AWAITING HUMAN — paste below after running)
+```bash
+$ npm view @owrede/vault-memory@2.0.0-rc.1 version
+npm error 404  The requested resource '@owrede/vault-memory@2.0.0-rc.1' could not be
+found or you do not have permission to access it.
+```
 
-- Approach used: option (a) temporary `-rc.*` conditional on throwaway branch [DEFAULT] / option (b) fork repository: **AWAITING HUMAN**
-- Workflow run URL: **AWAITING HUMAN**
-- Workflow status: **AWAITING HUMAN**
-- SKIPPED-`npm publish`-step log excerpt:
-  ```
-  AWAITING HUMAN — paste the workflow log line showing the `Publish to npm` step status as Skipped
-  ```
-- `gh release view ... --json assets` output: **AWAITING HUMAN**
-- `gh release view ... --json body` head: **AWAITING HUMAN**
-- `npm view @owrede/vault-memory@2.0.0-rc.1 version` output (must be ERROR / not-found): **AWAITING HUMAN**
-- Cleanup confirmation (tag deleted local+remote, Release deleted, branch deleted, `git log --oneline -5` on main unchanged): **AWAITING HUMAN**
-- Findings for plan 08-08 (any failure modes, surprises, or edits to the live cut procedure): **AWAITING HUMAN**
+404 = canonical proof public npm was not polluted. The `2.0.0-rc.1` version number
+remains available for re-use (irrelevant here — we will never publish that version).
+
+### Finding for plan 08-08: publish.yml `Build plugin tarball` step is broken
+
+**Root cause:** The workspace structure declares `"workspaces": ["plugin"]` at the
+repository root, so `@modelcontextprotocol/sdk` (a top-level dep) is hoisted to the
+root `node_modules/`. The publish.yml step does `cd plugin && npm ci`, which only
+installs the plugin's own direct deps — the SDK isn't pulled in. Then
+`node esbuild.config.mjs production` tries to resolve
+`@modelcontextprotocol/sdk/client/index.js` from `plugin/src/services/mcp-client.ts`
+and fails.
+
+**Failure excerpt** (from `gh run view 26110050088 --log-failed`):
+
+```
+Error: Build failed with 3 errors:
+src/services/mcp-client.ts:47:23: ERROR: Could not resolve "@modelcontextprotocol/sdk/client/index.js"
+src/services/mcp-client.ts:48:37: ERROR: Could not resolve "@modelcontextprotocol/sdk/client/stdio.js"
+src/services/mcp-client.ts:52:7:  ERROR: Could not resolve "@modelcontextprotocol/sdk/types.js"
+```
+
+**Required fix in plan 08-08** (one of two options — planner picks):
+
+Option 1 — install at workspace root first, then build plugin:
+
+```yaml
+- name: Build plugin tarball
+  run: |
+    set -euo pipefail
+    npm ci                  # ← workspace-root install, hoists @modelcontextprotocol/sdk to plugin/node_modules
+    cd plugin
+    node esbuild.config.mjs production
+    cd ..
+    TARBALL="vault-memory-plugin-v${GITHUB_REF_NAME#v}.tar.gz"
+    tar -czf "$TARBALL" -C plugin .
+    echo "TARBALL=$TARBALL" >> "$GITHUB_ENV"
+```
+
+(Note: the workflow's earlier `Install dependencies` step already ran `npm ci` at the
+root, so this `npm ci` is redundant. The actually-minimal fix is to drop the
+`cd plugin && npm ci` line entirely and just `cd plugin && node esbuild.config.mjs production`.)
+
+Option 2 — declare `@modelcontextprotocol/sdk` as a direct dep in `plugin/package.json`
+and run `cd plugin && npm ci` as before. Heavier change; ties the plugin to a specific
+SDK version that may drift from the root version. Not recommended.
+
+**Recommended option: Option 1 (drop the redundant `cd plugin && npm ci` line).**
+
+### npm tarball regression check (also for 08-08 concern)
+
+The 1.5 MB `dist/cli.js.map` shipping in the tarball (noted in Task 2) is unrelated
+to this failure. The npm-side dry-run validates only the `@owrede/vault-memory` npm
+package; the plugin tarball is a separate GitHub Release asset that has its own
+build pipeline.
+
+### Side-effect ledger (for audit)
+
+| Action | Reverted? | Evidence |
+|---|---|---|
+| `git checkout -b release-dry-run` | yes | `git branch -D release-dry-run` |
+| `npm version 2.0.0-rc.1 --no-git-tag-version` | yes | branch deleted; main never touched |
+| `.github/workflows/publish.yml` edit (added `if:` guard) | yes | edit only ever on `release-dry-run` branch; branch deleted |
+| `git tag v2.0.0-rc.1` (local) | yes | `git tag -d v2.0.0-rc.1` |
+| `git push origin v2.0.0-rc.1` (remote tag) | yes | `git push origin :v2.0.0-rc.1` — `[deleted] v2.0.0-rc.1` |
+| Workflow run `26110050088` | NO (immutable) | retained as evidence in GitHub Actions history |
+| GitHub Release `v2.0.0-rc.1` | n/a — never created | workflow failed before the Release-creation step |
+| npm publish of `2.0.0-rc.1` | n/a — never happened | W3 gate worked; `npm view` returns 404 |
+
+`main` HEAD: `49a4b83` (unchanged from pre-dry-run state).
+
+### Acceptance criteria recap
+
+| Criterion | Status |
+|---|---|
+| Workflow ran to completion | yes (with failure at step 11; expected outcome of a dry-run is to surface bugs) |
+| `npm publish` step logged as **skipped** (primary W3 gate) | ✅ PASS |
+| `npm view @owrede/vault-memory@2.0.0-rc.1 version` returns **not-found** | ✅ PASS |
+| Release assets included plugin tarball + `manifest.sha256` | ❌ FAIL — Release never created because step 11 failed |
+| Release body contained the RC-1 CHANGELOG section | n/a — Release never created |
+| Cleanup: tag deleted local+remote, branch deleted local, main unchanged | ✅ PASS |
+
+### Verdict
+
+The dry-run **succeeded in its purpose**: it surfaced a real publish.yml bug
+(the plugin-tarball step is non-functional in CI) before the live v2.0.0 cut. If
+plan 08-08 had run live without this dry-run, the v2.0.0 publish.yml workflow
+would have skipped `npm publish` impossibly (since the conditional would not be
+present on main) — wait, no: WITHOUT the conditional, it would have publish.yml
+WOULD have published v2.0.0 to npm successfully (the npm-publish step has no
+dependency on the plugin-tarball step), but then failed at the plugin-tarball
+step and never created the GitHub Release. Result: npm has v2.0.0; GitHub has
+no Release; `vm-install` skill (Phase 7) breaks because it fetches the plugin
+tarball from a non-existent Release.
+
+The W3 gate worked exactly as designed — npm was not touched.
+The plugin-tarball bug fix is now plan 08-08's first task.
 
 ---
 
 ## Deviations from Plan
 
-**AWAITING HUMAN** — record any deviations from the documented procedure here (e.g., used option b fork path, lint-and-test name did not register and required a draft-PR rehearsal, RC dry-run surfaced a publish.yml bug, etc.). If the plan was followed exactly, write "None — plan executed exactly as written."
+Two material deviations from the literal plan procedure, both surfaced and resolved during execution:
+
+1. **Task 1 used Repository Rulesets, not Classic Branch Protection.** The plan's
+   `gh api .../branches/main/protection` verification command returns 404 against
+   a Rulesets-protected branch. Replaced with `gh api .../rulesets/<id>` which
+   captures stricter equivalents (`bypass_actors: []`, `current_user_can_bypass:
+   "never"` are strictly stronger than classic `enforce_admins: true`). Full
+   mapping table in the Task 1 section. Non-blocking deviation.
+
+2. **Task 3 surfaced a publish.yml bug** (`Build plugin tarball` step fails to
+   resolve `@modelcontextprotocol/sdk` because `cd plugin && npm ci` does not
+   install hoisted workspace deps). This is exactly what the dry-run was designed
+   to surface, but is also a new finding for plan 08-08: the bug must be fixed
+   on `main` before the live v2.0.0 cut. Recommended fix documented in the
+   "Finding for plan 08-08" subsection of Task 3.
+
+3. **Task 1 force-push restriction not encoded** as a separate Ruleset rule
+   (the Rulesets equivalent of Classic Branch Protection's
+   `allow_force_pushes: false`). The Ruleset's PR + status-check rules block
+   the merge path, but a defense-in-depth `non_fast_forward` rule is missing.
+   Logged in `deferred-items.md` as a non-blocking ruleset-hardening follow-up.
 
 ## Carryover to Plan 08-08
 
-- **Live v2.0.0 cut consumes:** branch protection (already configured), validated publish.yml shape, screencast MP4 + thumbnail PNG (still deferred per `deferred-items.md`).
-- The temporary `-rc.*` conditional NEVER touched main; plan 08-08 cuts the live `v2.0.0` tag from main where no guard exists, so `npm publish` runs normally.
+| Item | Disposition |
+|------|-------------|
+| Branch protection on main | DONE — Ruleset `16599684` active. No further action in 08-08 beyond capturing a screenshot for the sign-off doc. |
+| npm tarball shape validated | DONE — 5 files, 524.6 kB packed, clean. release.mjs will bump 1.0.0 → 2.0.0 in 08-08. |
+| publish.yml `npm publish` step path | VALIDATED — `if:` guard pattern works. NOT present on main; live v2.0.0 cut will publish normally. |
+| **publish.yml `Build plugin tarball` step** | **MUST FIX FIRST in 08-08** — the live cut will not produce a GitHub Release until this step is repaired. Fix recommendation in the Task 3 "Finding for plan 08-08" section above. |
+| publish.yml CHANGELOG section extraction | VALIDATED — step ran successfully on `v2.0.0-rc.1` dry-run. |
+| Screencast MP4 + thumbnail PNG | STILL DEFERRED to 08-08 per `deferred-items.md`. |
+| Force-push restriction on main (Ruleset hardening) | DEFERRED, non-blocking. Logged in `deferred-items.md`. |
+
+## Side-effects audit
+
+The dry-run touched origin in three reversible ways. Reversal commands all executed
+in cleanup step:
+
+```bash
+# Performed:
+git checkout -b release-dry-run                       # local only
+npm version 2.0.0-rc.1 --no-git-tag-version           # local only
+# (edited publish.yml on the branch)
+git commit -am "release: v2.0.0-rc.1 dry-run (skip npm publish for -rc.* refs)"
+git tag -a v2.0.0-rc.1 -m "..."
+git push origin v2.0.0-rc.1                           # remote tag created → workflow triggered
+
+# Reversed in cleanup:
+git checkout main
+git push origin :v2.0.0-rc.1                          # remote tag deleted
+git tag -d v2.0.0-rc.1                                # local tag deleted
+git branch -D release-dry-run                         # local branch deleted
+
+# Verified post-cleanup:
+git log --oneline -5                                  # main at 49a4b83 unchanged
+git tag --list 'v*'                                   # no v2.0.0-rc.1
+git branch --list 'release-dry-run'                   # empty
+```
+
+The workflow run `26110050088` and its job step history remain in GitHub Actions
+history (immutable). No npm publish happened (`npm view ...@2.0.0-rc.1` returns 404).
+No GitHub Release was created (workflow failed before the Release-creation step).
 
 ## Self-Check
 
