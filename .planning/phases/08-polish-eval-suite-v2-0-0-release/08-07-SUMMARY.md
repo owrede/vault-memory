@@ -3,7 +3,7 @@ phase: 08-polish-eval-suite-v2-0-0-release
 plan: 07
 subsystem: infra
 tags: [release, branch-protection, ci, github-actions, rc-dry-run, npm-publish]
-status: complete-with-findings
+status: complete
 
 # Dependency graph
 requires:
@@ -44,7 +44,7 @@ completed: 2026-05-19
 
 # Phase 8 Plan 07: Branch Protection + RC Tag Dry-Run Summary
 
-Branch protection on `main` is active via Repository Ruleset 16599684 (stricter equivalent of the plan's classic-branch-protection target — `bypass_actors:[]` + `current_user_can_bypass:"never"` are stronger than `enforce_admins:true`). The `npm publish --dry-run` validated a clean 5-file tarball. The RC tag dry-run of publish.yml **proved the `-rc.*` skip-publish guard works** (the primary W3 gate) but **surfaced a separate publish.yml bug** in the `Build plugin tarball` step (workspace dep hoisting issue) that plan 08-08 MUST fix before the live v2.0.0 cut. Public npm was NOT polluted (`npm view @owrede/vault-memory@2.0.0-rc.1` returns 404). Cleanup complete; `main` HEAD unchanged at `49a4b83`.
+Branch protection on `main` is active via Repository Ruleset 16599684 (stricter equivalent of the plan's classic-branch-protection target — `bypass_actors:[]` + `current_user_can_bypass:"never"` are stronger than `enforce_admins:true`). The `npm publish --dry-run` validated a clean 5-file tarball. The RC tag dry-run of publish.yml ran in two passes: the first (`v2.0.0-rc.1`) proved the `-rc.*` skip-publish guard works (W3 primary gate) and surfaced a publish.yml `Build plugin tarball` bug (workspace dep hoisting); the bug was fixed in commit `0fce96a` on main, and the second dry-run (`v2.0.0-rc.2`, run `26110748660`) passed all 16 workflow steps including Release creation with both assets attached. Public npm was NOT polluted in either pass (`npm view @owrede/vault-memory@2.0.0-rc.{1,2} version` both return 404). Cleanup complete in both passes; `main` HEAD at `0fce96a`. Plan 08-08 may proceed to the live v2.0.0 cut with high confidence.
 
 ## Status
 
@@ -65,7 +65,7 @@ Branch protection on `main` is active via Repository Ruleset 16599684 (stricter 
 |------|------|--------|-----------------|
 | 1 | Configure branch protection on `main` (D-06) | **PASS** | Ruleset 16599684 `enforcement: active` targets `~DEFAULT_BRANCH`; requires `lint-and-test`; `strict_required_status_checks_policy: true`; `bypass_actors: []`; `current_user_can_bypass: "never"` |
 | 2 | `npm publish --dry-run` validation | **PASS** | 5 files in tarball, 524.6 kB packed / 2.1 MB unpacked; only `dist/cli.js`, `dist/cli.js.map`, `LICENSE`, `README.md`, `package.json`; no leakage. Dry-run exits non-zero on the registry version-collision check (1.0.0 already published) — false negative; release.mjs bumps to 2.0.0 in 08-08 |
-| 3 | RC tag dry-run of publish.yml (W3 — option a) | **MIXED — W3 gate PASS, plugin-tarball step FAIL** | W3 primary gate (Publish to npm = `skipped`): PASS ✅. npm not polluted: PASS ✅ (`npm view ... 2.0.0-rc.1` returns 404). Plugin tarball build: FAIL ❌ — pre-existing 08-06 publish.yml bug surfaced before live cut. Release not created (workflow halted at failed step). Cleanup complete; main unchanged at `49a4b83` |
+| 3 | RC tag dry-run of publish.yml (W3 — option a) | **PASS — bug surfaced and fixed, re-verified** | First dry-run (`v2.0.0-rc.1`): W3 gate PASS; plugin-tarball step FAIL → bug fixed in `0fce96a` on main → second dry-run (`v2.0.0-rc.2`, run `26110748660`): all 16 steps PASS, Release created with both assets (5.18 MB plugin tarball + manifest.sha256), npm still 404. publish.yml now confirmed working end-to-end. |
 
 ---
 
@@ -429,6 +429,57 @@ tarball from a non-existent Release.
 
 The W3 gate worked exactly as designed — npm was not touched.
 The plugin-tarball bug fix is now plan 08-08's first task.
+
+### Addendum — second dry-run verifies the fix (`v2.0.0-rc.2`, 2026-05-19)
+
+After landing the publish.yml fix on main (`0fce96a fix(08): drop nested 'cd
+plugin && npm ci' from publish.yml Build plugin tarball step`), a second dry-run
+was performed on a throwaway `release-dry-run-2` branch to confirm the workflow
+now goes end-to-end before 08-08's live cut.
+
+Workflow run 26110748660 — all 16 steps PASS:
+
+| Step | Conclusion |
+|------|------------|
+| Install dependencies / Type check / Test / Build / Verify version | success |
+| **Publish to npm** | **skipped** ← W3 gate confirmed again |
+| Extract CHANGELOG section | success (fell back to generic notes since `## [2.0.0-rc.2]` doesn't exist; the live cut renames `## [Unreleased]` → `## [2.0.0]` so the section extractor will find it) |
+| **Build plugin tarball** | **success** ← fix verified, esbuild resolves @modelcontextprotocol/sdk correctly |
+| Generate manifest.sha256 | success |
+| Create GitHub Release | success |
+
+Release `v2.0.0-rc.2` was created with the correct assets:
+
+```bash
+$ gh release view v2.0.0-rc.2 --json assets
+{
+  "assets": [
+    { "name": "manifest.sha256", "size": 105 },
+    { "name": "vault-memory-plugin-v2.0.0-rc.2.tar.gz", "size": 5180018 }
+  ]
+}
+```
+
+Plugin tarball: 5.18 MB. Both assets confirmed present.
+
+Public-npm pollution check (negative as required):
+
+```bash
+$ npm view @owrede/vault-memory@2.0.0-rc.2 version
+npm error code E404
+npm error 404 No match found for version 2.0.0-rc.2
+```
+
+Cleanup completed:
+- `gh release delete v2.0.0-rc.2 --yes` ✅
+- `git push origin :v2.0.0-rc.2` ✅
+- `git tag -d v2.0.0-rc.2` ✅
+- `git branch -D release-dry-run-2` ✅
+- main HEAD: `0fce96a` (the publish.yml fix commit, unchanged)
+- `gh release list` shows no `v2*` releases (latest stable: `v1.0.0` from 2026-05-12)
+
+**Verdict: publish.yml is now confirmed working end-to-end. Plan 08-08 may proceed
+to the live v2.0.0 cut.**
 
 ---
 
