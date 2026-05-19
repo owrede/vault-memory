@@ -47,11 +47,12 @@ patterns-established:
 requirements-completed:
   - REL-03
   - REL-04
-  - REL-09  # partial — full REL-09 sign-off carries into plan 08-08
+  - REL-09  # partial — README cold-read approved 2026-05-19; full REL-09 sign-off carries into plan 08-08
 
 # Metrics
 duration: ~25min
 completed: 2026-05-19
+maintainer-signoff: "approved 2026-05-19"
 ---
 
 # Phase 8 Plan 02: README v2 rewrite Summary
@@ -60,10 +61,10 @@ completed: 2026-05-19
 
 ## Performance
 
-- **Duration:** ~25 min (Tasks 1-2; Task 3 is a blocking human checkpoint and pauses execution)
+- **Duration:** ~25 min (Tasks 1-2 autonomous); Task 3 paused for maintainer checkpoint, resumed and resolved 2026-05-19.
 - **Started:** 2026-05-19T13:54:00Z (approx, plan start)
-- **Completed:** 2026-05-19T14:19:13Z (Tasks 1-2 complete; Task 3 awaiting maintainer)
-- **Tasks completed:** 2 of 3 (Task 3 is a blocking human-verify checkpoint, NOT executed by this agent)
+- **Completed:** 2026-05-19 (Tasks 1-2 autonomous landed 2026-05-19T14:19:13Z; Task 3 maintainer cold-read approved on resume 2026-05-19)
+- **Tasks completed:** 3 of 3 (Task 3 resolved via maintainer "approved" sign-off on the human-verify checkpoint)
 - **Files modified:** 1 (README.md)
 - **Files created:** 2 (deferred-items.md, this SUMMARY.md)
 
@@ -82,9 +83,9 @@ Each task was committed atomically:
 
 1. **Task 1: Compose the new six-section README (replace existing content)** — `8916110` (docs)
 2. **Task 2: Validate links and voice discipline; verify diagram renders** — `c694fca` (docs)
-3. **Task 3: Maintainer cold-read sign-off (REL-09)** — NOT YET COMMITTED. Blocking human-verify checkpoint. Pending maintainer "approved" or revision asks.
+3. **Task 3: Maintainer cold-read sign-off (REL-09)** — resolved 2026-05-19 by maintainer reply "approved" on the human-verify checkpoint. No code change required; SUMMARY metadata commit `docs(08-02): record README v2 cold-read sign-off` records the approval.
 
-_The plan-completion metadata commit will be made by the orchestrator after the maintainer checkpoint resolves and the agent resumes._
+_Plan-completion metadata commit captures the maintainer approval and the deferred-items.md cleanup; the orchestrator merges the worktree branch on completion._
 
 ## Files Created/Modified
 
@@ -146,9 +147,13 @@ Resolved links:
 
 ### Maintainer sign-off line
 
-_To be filled in by the maintainer at Task 3 checkpoint resolution. Expected line:_
+| Task | Verification gate | Status | Recorded |
+|---|---|---|---|
+| Task 1 | Six-section structure + required keywords + strict-ASCII diagram | approved (automated gates passed) | 2026-05-19 (commit `8916110`) |
+| Task 2 | Link resolution + voice discipline + ASCII gate + lint | approved (automated gates passed, MIGRATION-V1-TO-V2 forward reference flagged) | 2026-05-19 (commit `c694fca`) |
+| Task 3 | Maintainer cold-read sign-off (REL-09 partial) | **approved 2026-05-19** | this commit |
 
-> Maintainer ([name]) cold-read README.md on [date] and signed off via "approved" on the Task 3 human-verify checkpoint. REL-09 satisfied for the README portion; full REL-09 closure carries to plan 08-08 (Phase 8 sign-off doc)._
+> Maintainer (owrede@gmail.com) cold-read README.md on 2026-05-19 and signed off via "approved" on the Task 3 human-verify checkpoint. The forward reference to `docs/v2/MIGRATION-V1-TO-V2.md` (sibling Wave 1 plan 08-03 deliverable) is acknowledged and accepted per the Task 3 acceptance criteria. REL-09 satisfied for the README portion; full REL-09 closure carries to plan 08-08 (Phase 8 sign-off doc).
 
 ## Decisions Made
 
@@ -172,9 +177,9 @@ None.
 
 ## Next Phase Readiness
 
-- README is ready for the Task 3 human-verify cold-read checkpoint.
-- After maintainer sign-off ("approved" or revisions), full REL-09 closure carries to plan 08-08 (Phase 8 sign-off doc).
-- Wave 1 sibling plan 08-03 must land before the `docs/v2/MIGRATION-V1-TO-V2.md` link in §6 resolves; the orchestrator's Wave 1 sequencing handles this.
+- README maintainer cold-read sign-off received 2026-05-19 ("approved"). REL-09 partial closure recorded; full REL-09 closure carries to plan 08-08 (Phase 8 sign-off doc).
+- Wave 1 sibling plan 08-03 must land before the `docs/v2/MIGRATION-V1-TO-V2.md` link in §6 resolves; the orchestrator's Wave 1 sequencing handles this. Maintainer accepted the forward reference at the checkpoint.
+- Plan 08-02 is complete and ready for orchestrator merge of the worktree branch.
 
 ## Threat Flags
 
@@ -192,10 +197,12 @@ None. The README changes do not introduce new security surface; they replace pro
 
 - `8916110`: FOUND — Task 1 `docs(08-02): rewrite README around v2 six-section structure`
 - `c694fca`: FOUND — Task 2 `docs(08-02): validate README links + voice + diagram; log deferred lint`
+- `e761790`: FOUND — initial SUMMARY snapshot at checkpoint `docs(08-02): plan summary; pausing at maintainer cold-read checkpoint`
+- (this commit): Task 3 closure `docs(08-02): record README v2 cold-read sign-off`
 
 ## Self-Check: PASSED
 
 ---
 *Phase: 08-polish-eval-suite-v2-0-0-release*
 *Plan: 02*
-*Tasks 1-2 completed: 2026-05-19; Task 3 (maintainer cold-read sign-off) pending*
+*Tasks 1-3 completed: 2026-05-19. Maintainer cold-read approved 2026-05-19.*
