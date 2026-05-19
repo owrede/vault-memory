@@ -44,6 +44,7 @@
 import { PluginSettingTab, Setting, Notice, type App } from "obsidian";
 import type VaultMemoryPlugin from "../../main.js";
 import type { VaultMemorySettings } from "../services/settings-store.js";
+import { SecretsPanelMount } from "./secrets-panel-mount.js";
 
 /**
  * Restart-required notice copy template — exported so 07-08 Task 3's
@@ -55,6 +56,9 @@ const RESTART_NOTICE_PREFIX = "Restart required to apply.";
 
 export class VaultMemorySettingsTab extends PluginSettingTab {
   readonly vmPlugin: VaultMemoryPlugin;
+  /** Set during display(); cleared on hide() so $state subscriptions
+   *  don't leak across settings-tab open/close cycles. */
+  private secretsMount: SecretsPanelMount | null = null;
 
   constructor(app: App, plugin: VaultMemoryPlugin) {
     super(app, plugin);
@@ -149,13 +153,25 @@ export class VaultMemorySettingsTab extends PluginSettingTab {
     });
 
     // ---- Secrets section ----
-    // Task 3 (07-08) mounts the secrets-panel Svelte component into the
-    // host div below. The host element is created here so the layout is
-    // stable across tasks; the mount itself is wired in task 3.
+    // Mount the secrets-panel Svelte component into a stable host div so
+    // its $state subscriptions and DOM tree are owned by this tab's
+    // lifecycle. The mount is destroyed in hide() below.
     containerEl.createEl("h3", { text: "Secrets" });
-    containerEl.createDiv({
+    const secretsHost = containerEl.createDiv({
       attr: { "data-testid": "secrets-panel-host" },
     });
+    // Tear down any prior mount before constructing a new one — display()
+    // can be called multiple times for the same tab instance.
+    this.secretsMount?.destroy();
+    this.secretsMount = new SecretsPanelMount(secretsHost, {
+      secretsStore: this.vmPlugin.secretsStore,
+      safeStorage: this.vmPlugin.safeStorage,
+    });
+  }
+
+  override hide(): void {
+    this.secretsMount?.destroy();
+    this.secretsMount = null;
   }
 
   /**

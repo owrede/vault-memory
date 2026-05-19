@@ -47,6 +47,8 @@ import {
   VaultMemoryMcpClient,
 } from "./src/services/mcp-client.js";
 import { SettingsStore } from "./src/services/settings-store.js";
+import { SafeStorageAdapter } from "./src/services/safe-storage.js";
+import { SecretsStore } from "./src/services/secrets-store.js";
 import { VaultMemorySettingsTab } from "./src/chrome/settings-tab.js";
 import { ChromeView, VIEW_TYPE_CHROME } from "./src/chrome/chrome-view.js";
 
@@ -57,6 +59,10 @@ export default class VaultMemoryPlugin extends Plugin {
   // the view constructor / settings-tab constructor.
   settingsStore!: SettingsStore;
   mcpClient!: VaultMemoryMcpClient;
+  /** PLG-02 — Electron safeStorage wrapper; wired in onload() step (1b). */
+  safeStorage!: SafeStorageAdapter;
+  /** PLG-02 — typed secrets store backed by data.json (ciphertext only). */
+  secretsStore!: SecretsStore;
 
   /** True when boot-time `mcpClient.connect()` failed with ENOENT. */
   cliMissing = false;
@@ -67,6 +73,14 @@ export default class VaultMemoryPlugin extends Plugin {
     // (1) Settings — must be first so step (2) can read serverCommand.
     this.settingsStore = new SettingsStore(this);
     await this.settingsStore.load();
+
+    // (1b) PLG-02 services — discover Electron safeStorage once and
+    // construct the secrets store. Both are needed by the settings tab
+    // (step 6) but neither performs network or process-spawning work, so
+    // they can run before the MCP connect attempt.
+    this.safeStorage = new SafeStorageAdapter();
+    this.secretsStore = new SecretsStore(this, this.safeStorage);
+    await this.secretsStore.load();
 
     // (2) MCP client construction (no spawn yet — that's step 3).
     this.mcpClient = new VaultMemoryMcpClient({
