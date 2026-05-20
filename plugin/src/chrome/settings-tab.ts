@@ -45,6 +45,7 @@ import { PluginSettingTab, Setting, Notice, type App } from "obsidian";
 import type VaultMemoryPlugin from "../../main.js";
 import type { VaultMemorySettings } from "../services/settings-store.js";
 import { SecretsPanelMount } from "./secrets-panel-mount.js";
+import { renderChangelog } from "../changelog.js";
 
 /**
  * Restart-required notice copy template — exported so 07-08 Task 3's
@@ -169,61 +170,19 @@ export class VaultMemorySettingsTab extends PluginSettingTab {
     });
 
     // ---- Changelog section ----
-    // Loads bundled CHANGELOG-plugin.md + CHANGELOG-cli.md from the
-    // plugin's install dir (read via Obsidian's vault adapter). Two
-    // collapsible <details> blocks so users can see "what's new" for
-    // both the plugin half and the CLI/MCP server half without leaving
-    // Obsidian.
-    containerEl.createEl("h3", { text: "Changelog" });
+    // Pattern from perspecta-obsidian: a single TypeScript module
+    // (../changelog.ts) holds structured ChangelogEntry[] for the
+    // plugin half and the CLI/MCP server half. renderChangelog()
+    // produces a clean DOM tree (h3 sections, h4 versions, ul/li
+    // changes) — no <pre>, no async file reads, no markdown parsing.
+    // The same data feeds generateChangelogMarkdown() for the bundled
+    // CHANGELOG-plugin.md companion file.
+    containerEl.createEl("h2", { text: "Changelog" });
     const changelogHost = containerEl.createDiv({
       cls: "vm-changelog-host",
       attr: { "data-testid": "changelog-host" },
     });
-    void this.renderChangelogs(changelogHost);
-  }
-
-  /**
-   * Read the two bundled changelog files from the plugin's install dir
-   * and render each as a collapsible <details> block. Async because
-   * Obsidian's vault adapter is async. Best-effort — if either file is
-   * missing (e.g. older plugin tarball), the section degrades to a
-   * one-line "no changelog bundled" notice instead of breaking the tab.
-   */
-  private async renderChangelogs(host: HTMLElement): Promise<void> {
-    const dir = this.vmPlugin.manifest.dir;
-    if (!dir) {
-      host.createEl("p", {
-        text: "Changelog: plugin manifest has no install dir — cannot locate bundled files.",
-        cls: "vm-changelog-host__error",
-      });
-      return;
-    }
-
-    const adapter = this.vmPlugin.app.vault.adapter;
-    const tryRead = async (relPath: string): Promise<string | null> => {
-      try {
-        const exists = await adapter.exists(`${dir}/${relPath}`);
-        if (!exists) return null;
-        return await adapter.read(`${dir}/${relPath}`);
-      } catch {
-        return null;
-      }
-    };
-
-    const renderBlock = (label: string, body: string | null, open: boolean) => {
-      const details = host.createEl("details", { cls: "vm-changelog-block" });
-      if (open) details.setAttribute("open", "");
-      details.createEl("summary", { text: label });
-      const pre = details.createEl("pre", { cls: "vm-changelog-body" });
-      pre.setText(body ?? `(${label} not bundled in this plugin version)`);
-    };
-
-    const [pluginCl, cliCl] = await Promise.all([
-      tryRead("CHANGELOG-plugin.md"),
-      tryRead("CHANGELOG-cli.md"),
-    ]);
-    renderBlock(`Obsidian plugin (v${this.vmPlugin.manifest.version})`, pluginCl, true);
-    renderBlock("CLI / MCP server", cliCl, false);
+    renderChangelog(changelogHost);
   }
 
   override hide(): void {

@@ -1,0 +1,110 @@
+{
+  "vmFormatVersion": 1,
+  "contract": {
+    "version": 1,
+    "name": "smoketest-trivial",
+    "description": "Trivial contract for the CON-09 non-Claude smoketest. Uses literal-only\nassembly to avoid requiring an LLM in CI environments. Writes to the\ndefault MemorySink with provenance matching default-memory-v1.\n",
+    "inputs": {
+      "message": {
+        "type": "string",
+        "description": "Message to embed in the trivial observation body."
+      }
+    },
+    "required": [
+      "message"
+    ],
+    "sources": {
+      "default_source": {
+        "handle": "obsidian-fs://test-vault",
+        "required": false
+      }
+    },
+    "sinks": {
+      "default_sink": {
+        "handle": "default",
+        "required": true
+      }
+    },
+    "assembly": [
+      {
+        "as": "payload",
+        "verb": "literal",
+        "value": "{{inputs.message}}"
+      },
+      {
+        "as": "observed_at",
+        "verb": "literal",
+        "value": "2026-05-18T00:00:00Z"
+      }
+    ],
+    "output_shape": {
+      "type": "object",
+      "properties": {
+        "steps": {
+          "type": "object"
+        },
+        "write_back": {
+          "type": "object",
+          "properties": {
+            "doc_id": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "doc_id"
+          ]
+        }
+      },
+      "required": [
+        "write_back"
+      ]
+    },
+    "write_back": {
+      "sink": "{{default_sink}}",
+      "document_kind": "observation",
+      "properties": {
+        "source": "agent",
+        "confidence": "direct",
+        "evidence": [],
+        "status": "active",
+        "observed_at": "{{observed_at}}",
+        "superseded_by": null,
+        "type": "smoketest"
+      },
+      "body_from": "{{payload}}"
+    }
+  },
+  "editor": {
+    "selection": null,
+    "viewport": {
+      "x": 0,
+      "y": 0,
+      "zoom": 1
+    },
+    "nodes": [
+      {
+        "id": "step-0",
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "size": {
+          "width": 200,
+          "height": 100
+        }
+      },
+      {
+        "id": "step-1",
+        "position": {
+          "x": 220,
+          "y": 0
+        },
+        "size": {
+          "width": 200,
+          "height": 100
+        }
+      }
+    ],
+    "preservedComments": []
+  }
+}

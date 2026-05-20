@@ -1343,10 +1343,12 @@ install_obsidian_plugin() {
 # user-edited examples and never pollute a vault that already has
 # contracts of its own.
 #
-# Source: the plugin tarball ships an `examples/_contracts/*.yaml` tree
-# (in this repo, plugin/examples/_contracts/). After install_obsidian_plugin
-# extracts the tarball into $PLUGIN_DIR, those YAML files are available at
-# $PLUGIN_DIR/examples/_contracts/.
+# Source: the plugin tarball ships an `examples/_contracts/*.contract`
+# tree (in this repo, plugin/examples/_contracts/). After
+# install_obsidian_plugin extracts the tarball into $PLUGIN_DIR, those
+# .contract envelope files are available at $PLUGIN_DIR/examples/_contracts/.
+# We ship .contract (canvas-editor format) not raw .yaml so a click in
+# the Obsidian file explorer opens the canvas, not the OS file opener.
 #
 # Users get four reference contracts (meeting-prep, project-status,
 # code-review-brief, smoketest-trivial) on first install, with a header
@@ -1380,7 +1382,7 @@ seed_example_contracts() {
   fi
 
   mkdir -p "$dst"
-  cp "$src"/*.yaml "$dst/" 2>/dev/null || {
+  cp "$src"/*.contract "$dst/" 2>/dev/null || {
     warn "  Failed to copy example contracts from $src"
     return 1
   }
@@ -1391,9 +1393,10 @@ seed_example_contracts() {
   cat > "$dst/README.md" <<'EOF'
 # Example Contracts
 
-These four YAML files are reference task contracts shipped by
+These four `.contract` files are reference task contracts shipped by
 `/vmem:install`. They demonstrate the v2 contract DSL — the agentic
-workflow primitive vault-memory exposes to MCP-aware agents.
+workflow primitive vault-memory exposes to MCP-aware agents. Click any
+one in Obsidian's file explorer to open it in the canvas editor.
 
 Each contract is a sequence of steps that an agent can instantiate via
 the `instantiate_contract` MCP tool. Steps compose via `{{template}}`
@@ -1402,12 +1405,12 @@ non-negotiable memory-namespace safety invariant).
 
 ## Files
 
-- `meeting-prep.yaml` — surfaces context for an upcoming meeting from
+- `meeting-prep.contract` — surfaces context for an upcoming meeting from
   notes, recent calendar items, and topic keywords
-- `project-status.yaml` — rolls up a project's current state from
+- `project-status.contract` — rolls up a project's current state from
   related notes + recent commits
-- `code-review-brief.yaml` — assembles a code-review context bundle
-- `smoketest-trivial.yaml` — minimal literal-only contract used in CI
+- `code-review-brief.contract` — assembles a code-review context bundle
+- `smoketest-trivial.contract` — minimal literal-only contract used in CI
 
 ## Next steps
 
