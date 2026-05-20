@@ -71,15 +71,28 @@ jobs:
         #     dist-tag.
         run: |
           set -euo pipefail
+          # Provenance opt-out: NPM_DISABLE_PROVENANCE=1 (set as a repo
+          # variable or via a one-off workflow_dispatch input) skips the
+          # --provenance flag. Used to recover from sigstore-attestation
+          # orphan states where a prior failed publish wrote a sigstore
+          # log entry but never landed the package version, leaving the
+          # registry unable to accept a retry of that exact version.
+          # Default: provenance ON for all publishes.
+          PROVENANCE_FLAG="--provenance"
+          if [ "${NPM_DISABLE_PROVENANCE:-0}" = "1" ]; then
+            echo "::warning::NPM_DISABLE_PROVENANCE=1 — publishing WITHOUT sigstore provenance attestation"
+            PROVENANCE_FLAG=""
+          fi
           if [[ "${GITHUB_REF_NAME}" =~ -(rc|beta|alpha) ]]; then
             echo "Detected prerelease tag '${GITHUB_REF_NAME}' → publishing under 'next' dist-tag"
-            npm publish --access public --provenance --tag next
+            npm publish --access public $PROVENANCE_FLAG --tag next
           else
             echo "Detected stable tag '${GITHUB_REF_NAME}' → publishing under default 'latest' dist-tag"
-            npm publish --access public --provenance
+            npm publish --access public $PROVENANCE_FLAG
           fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_DISABLE_PROVENANCE: ${{ vars.NPM_DISABLE_PROVENANCE || '0' }}
 
       - name: Extract CHANGELOG section for this tag
         # Reads CHANGELOG.md and writes the section for the matching version
