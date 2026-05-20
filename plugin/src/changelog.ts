@@ -18,6 +18,21 @@ export interface ChangelogEntry {
  */
 export const PLUGIN_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.3.0",
+    date: "2026-05-20",
+    changes: [
+      "UX redesign — Slice C (inspector). The right pane was a generic key/value form. It now explains in plain language what a step does, what each field is for, and what makes a good contract.",
+      'When a step is selected: category-coloured header (matching the canvas node + palette card) with Lucide icon, plain-language title, canonical verb in monospace, paragraph explanation of what the verb does, and the verb\'s output shape (e.g. "{ docs: Array<{doc_id, title, score, snippet}> }"). No more bare `read_note` headers.',
+      'Each arg is now a labelled card: plain-language label ("Document to read"), the canonical arg key as small monospace ("doc_id"), help text explaining the field, required-star where applicable. Inputs whose value is a {{alias.field}} mustache get a "← upstream" badge naming the source step so you can read the dataflow without leaving the inspector.',
+      'Inputs whose value is the "?" placeholder (default from the verb catalog) render with a warning-coloured border + "(empty — fill me)" placeholder — so unfilled steps stand out visually.',
+      'Number / json / textarea arg shapes are inferred from verb-catalog.argDocs and the inspector picks the right input control + parses the typed value back to the right JSON type on commit (so a typed "20" becomes a number, not the string "20").',
+      'New "Used by" section: lists every downstream step that references this step\'s output via `{{alias.field}}`. Makes dataflow visible from either end of the connection.',
+      'When nothing is selected: contract-overview mode with name (kebab-case validated), one-paragraph description, an "At a glance" 3x2 stat grid (inputs / required / sources / sinks / steps / write_back), and a Tips section computed from what\'s missing in the contract — "No description", "No required inputs", "No Compose step", "No write_back", "Steps with unfilled placeholders: …". Tips are warning-coloured for "you should fix this" and info-coloured for "FYI".',
+      "Inspector now uses Obsidian's native input + textarea styling (CSS variables, focus rings via --interactive-accent). All borders, backgrounds, and accents resolve to Obsidian variables so the pane respects every theme.",
+      "Slice C completes the 3-slice UX redesign. The contract editor now has three coordinated panes: palette teaches what steps exist, canvas shows the workflow visually, inspector explains what each step does and what makes the contract good.",
+    ],
+  },
+  {
     version: "2.2.0",
     date: "2026-05-20",
     changes: [
