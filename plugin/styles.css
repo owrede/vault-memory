@@ -81,27 +81,17 @@
   outline-offset: 2px;
 }
 
-/* Plan 07-05 — Variant C three-pane editor root.
+/* 2.0.5 — dead-code removal.
  *
- * The Svelte editor shell mounts under `.vm-contract-editor` (set by
- * view.ts), then the inner `.vm-editor-root` is the CSS grid with
- * palette / canvas / inspector columns. Per UI-SPEC §"Color" all
- * surfaces resolve to Obsidian variables — no hex literals here.
+ * Previously this section declared a SECOND grid container at
+ * `.vm-contract-editor .vm-editor-root` (an intermediate div inside
+ * the host) that competed with the top-of-file `.vm-contract-editor`
+ * grid. That demoted the three panes from direct children of the
+ * outer grid to grandchildren, silently breaking the grid-area:
+ * <palette|canvas|inspector> placement. Both the wrapper div and
+ * this rule are now gone. The outer `.vm-contract-editor` grid is
+ * the single source of truth for editor layout.
  */
-.vm-contract-editor .vm-editor-root {
-  display: grid;
-  grid-template-columns: 260px 1fr 320px;
-  width: 100%;
-  height: 100%;
-  background: var(--background-primary);
-}
-
-/* Svelte Flow viewport must fill the canvas slot. */
-.vm-contract-editor .vm-canvas-pane {
-  width: 100%;
-  height: 100%;
-  background: var(--background-primary);
-}
 
 /* -------------------------------------------------------------------------
  * Chrome side-panel — Phase 7 / 07-09 / PLG-03 + PLG-04
