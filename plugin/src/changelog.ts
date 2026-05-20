@@ -18,6 +18,17 @@ export interface ChangelogEntry {
  */
 export const PLUGIN_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.1.0",
+    date: "2026-05-20",
+    changes: [
+      'UX redesign — Slice A (palette). The left pane is now a learnable list of contract steps grouped by what they accomplish ("Read a document", "Search the vault", "Navigate the graph", "Reference earlier work", "Compose", "Escape-hatch") rather than by technical surface ("Read verbs", "Assembly verbs", "Escape-hatch"). Each card carries a plain-language title (e.g. "Read a note"), the canonical verb name as a monospace subtitle (e.g. `read_note`), a one-line description, a 4px coloured strip on the left signalling category, and an explicit drag-grip on the left edge that highlights on hover. Cursor changes to grab/grabbing. Cards lift on hover (subtle shadow + translateY). All colours reference Obsidian CSS variables — no hex literals — so the pane respects every theme.',
+      'New verb catalog file (plugin/src/views/contract-editor/palette/verb-catalog.ts) — single source of truth for palette UI copy. Each baseline verb + `literal` has metadata: category, plain-language title, one-line description, Lucide icon, default args skeleton. The completeness test enforces that every Phase 6 baseline verb has a row, so adding a verb upstream + forgetting the UI copy is a build-time failure.',
+      "Palette header now includes a one-paragraph orientation: drag a step onto the canvas, Read/Search steps usually come first, Compose usually comes last.",
+      "Peer-MCP verbs (when configured) appear in their own section with a dashed border so users can distinguish first-party from peer steps at a glance. The section carries an inline note that peer outputs are advisory, not real DocIds.",
+      "This is Slice A of a 3-slice UX redesign. Slice B will redesign the canvas (coloured nodes, icons, edges from {{template}} references, resizable nodes, comment notes, controls at the bottom). Slice C will redesign the inspector (plain-language verb explanations, labelled form fields, used-by relationships).",
+    ],
+  },
+  {
     version: "2.0.5",
     date: "2026-05-20",
     changes: [
