@@ -18,6 +18,14 @@ export interface ChangelogEntry {
  */
 export const PLUGIN_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.0.5",
+    date: "2026-05-20",
+    changes: [
+      'Fix: contract editor layout — palette and canvas were invisible; only the inspector\'s top-right corner ("Co" of "Contract details") peeked into the visible area. Root cause was two competing CSS grid containers: the outer `.vm-contract-editor` div created by view.ts defines `grid-template-areas: "palette canvas inspector"`, but the editor.svelte template (since 2.0.1) introduced an intermediate `.vm-editor-root` div with its OWN `display: grid`. That demoted the panes from direct children of the outer grid to grandchildren — `grid-area: palette` etc. silently stopped placing them.',
+      "Fix: removed the `.vm-editor-root` wrapper div entirely. PalettePane / SvelteFlowProvider(CanvasPane) / InspectorPane now render as direct DOM children of the parent `.vm-contract-editor` host, so the outer grid's grid-area assignments apply again. SvelteFlowProvider's template is just `{@render children?.()}` — no wrapping element — so layout-transparent.",
+    ],
+  },
+  {
     version: "2.0.4",
     date: "2026-05-20",
     changes: [

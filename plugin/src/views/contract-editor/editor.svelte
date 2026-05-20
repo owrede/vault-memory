@@ -39,42 +39,29 @@
 </script>
 
 <!--
-  Wrap the entire editor in <SvelteFlowProvider> so `useSvelteFlow()`
-  inside CanvasPane resolves to the same store the <SvelteFlow>
-  component creates. Without the provider, useSvelteFlow throws
-  "To call useStore outside of <SvelteFlow /> you need to wrap your
-  component in a <SvelteFlowProvider />" at module init — exactly
-  what the user saw when opening a .contract from the file explorer.
--->
-<SvelteFlowProvider>
-  <div class="vm-editor-root" role="application" aria-label="vault-memory contract editor">
-    <PalettePane {mcpClient} />
-    <div class="vm-canvas-slot">
-      <CanvasPane
-        {file}
-        selection={selectedAlias}
-        {onChange}
-        {onSelect}
-      />
-    </div>
-    <InspectorPane {file} {selectedAlias} {onChange} />
-  </div>
-</SvelteFlowProvider>
+  No wrapping <div> — render the three panes as direct DOM children of
+  the parent `.vm-contract-editor` host (created by view.ts:renderEditor).
+  styles.css defines `.vm-contract-editor` as a CSS grid with
+  grid-template-areas "palette canvas inspector" + the corresponding
+  grid-area: <palette|canvas|inspector> on each child. Grid items must
+  be DIRECT children of the grid container — an intermediate
+  `.vm-editor-root` div (used in 2.0.1) broke the layout by demoting
+  the panes from direct children to grandchildren, so grid-area
+  assignments stopped applying. Result was a half-rendered tab with
+  panes overlapping in the top-right corner (the "Co" cutout the user
+  reported in 2.0.4).
 
-<style>
-  .vm-editor-root {
-    display: grid;
-    grid-template-columns: 260px 1fr 320px;
-    grid-template-rows: 1fr;
-    width: 100%;
-    height: 100%;
-    background: var(--background-primary);
-    color: var(--text-normal);
-    font-family: var(--font-interface);
-  }
-  .vm-canvas-slot {
-    min-width: 0;
-    min-height: 0;
-    background: var(--background-primary);
-  }
-</style>
+  SvelteFlowProvider renders no DOM (its template is just
+  `{@render children?.()}`), so it's transparent to layout — safe to
+  wrap the canvas slot without breaking the parent grid.
+-->
+<PalettePane {mcpClient} />
+<SvelteFlowProvider>
+  <CanvasPane
+    {file}
+    selection={selectedAlias}
+    {onChange}
+    {onSelect}
+  />
+</SvelteFlowProvider>
+<InspectorPane {file} {selectedAlias} {onChange} />
