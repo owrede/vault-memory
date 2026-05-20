@@ -463,6 +463,39 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
     void shutdown().finally(() => process.exit(0));
   });
 
+  // Stdin-EOF watchdog. When stdio-MCP parents (Claude, Obsidian plugin)
+  // die, they don't always succeed at SIGTERM-ing this child cleanly —
+  // the parent may have been killed itself (force-quit Obsidian), the
+  // transport.close() may not propagate, or the SIGTERM may race with
+  // sustained file-IO and get queued. In all those cases stdin closes,
+  // emitting 'end' (FIN received) or 'close' (FD closed). We exit then.
+  //
+  // Without this watchdog, EVERY plugin reload accumulates a zombie
+  // `vault-memory serve` process holding ~22k chokidar FDs. After 10–15
+  // reloads the system runs out of file descriptors (`kern.maxfiles`)
+  // and Obsidian itself fails to scandir its vault with ENFILE.
+  // Discovered the hard way 2026-05-20.
+  //
+  // Brief grace period: the MCP SDK reads stdin in object-mode chunks;
+  // a final `tools/call` may still be processing when stdin closes. The
+  // 500 ms timer lets in-flight work complete before exit; shutdown()
+  // runs through the watcher/changeFeed drain just like the signal path.
+  let stdinClosing = false;
+  const onStdinClose = (reason: "end" | "close") => {
+    if (stdinClosing) return;
+    stdinClosing = true;
+    // eslint-disable-next-line no-console -- direct stderr is intentional;
+    // logger may already be draining as part of shutdown.
+    process.stderr.write(
+      `[vault-memory] stdin ${reason} — parent process gone; shutting down.\n`,
+    );
+    setTimeout(() => {
+      void shutdown().finally(() => process.exit(0));
+    }, 500);
+  };
+  process.stdin.on("end", () => onStdinClose("end"));
+  process.stdin.on("close", () => onStdinClose("close"));
+
   const server = new McpServer(
     { name: "vault-memory", version: VERSION },
     // Plan 02-06 (MEM-09): advertise `resources` capability so MCP clients

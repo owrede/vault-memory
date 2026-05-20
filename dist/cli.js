@@ -14359,6 +14359,20 @@ async function serve(options = {}) {
   process.on("SIGTERM", () => {
     void shutdown().finally(() => process.exit(0));
   });
+  let stdinClosing = false;
+  const onStdinClose = (reason) => {
+    if (stdinClosing) return;
+    stdinClosing = true;
+    process.stderr.write(
+      `[vault-memory] stdin ${reason} \u2014 parent process gone; shutting down.
+`
+    );
+    setTimeout(() => {
+      void shutdown().finally(() => process.exit(0));
+    }, 500);
+  };
+  process.stdin.on("end", () => onStdinClose("end"));
+  process.stdin.on("close", () => onStdinClose("close"));
   const server = new McpServer(
     { name: "vault-memory", version: VERSION },
     // Plan 02-06 (MEM-09): advertise `resources` capability so MCP clients
