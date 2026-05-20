@@ -57,6 +57,18 @@ export const VIEW_TYPE_CHROME = "vault-memory-chrome";
  * make composeChromePanels stand-alone unit-testable.
  */
 export interface ChromeViewPlugin {
+  /**
+   * Obsidian app handle — needed by the Contracts panel to enumerate
+   * `.contract` and `_contracts/*.yaml` files and to open them in the
+   * existing ContractEditorView. Optional so tests that only exercise
+   * reindex/stats/connectors composition don't have to construct one.
+   */
+  app?: unknown;
+  /**
+   * Open a contract file in the contract editor view. Called by the
+   * Contracts panel on row click. Optional for the same reason as `app`.
+   */
+  openContract?: (path: string) => Promise<void> | void;
   mcpClient: {
     callTool: (name: string, args: Record<string, unknown>) => Promise<unknown>;
     onProgress: (
@@ -88,7 +100,7 @@ export interface ChromeViewPlugin {
  * what onOpen will mount. Pulled out so the panel composition can be
  * unit-tested without touching Svelte's `mount()` (which needs a DOM).
  */
-export type ChromePanelKind = "reindex" | "stats" | "connectors";
+export type ChromePanelKind = "contracts" | "reindex" | "stats" | "connectors";
 
 /**
  * Per-panel props. ConnectorsPanel needs the secretsStore + safeStorage
@@ -96,6 +108,13 @@ export type ChromePanelKind = "reindex" | "stats" | "connectors";
  * not per-vault). The discriminated union keeps tests strictly typed.
  */
 export type ChromePanelSpec =
+  | {
+      kind: "contracts";
+      props: {
+        app: unknown;
+        onOpenContract: (path: string) => Promise<void> | void;
+      };
+    }
   | {
       kind: "reindex" | "stats";
       props: {
@@ -132,10 +151,22 @@ export function composeChromePanels(plugin: ChromeViewPlugin): ChromePanelsSpec 
     mcpClient: plugin.mcpClient,
     activeVault,
   };
-  const panels: ChromePanelSpec[] = [
-    { kind: "reindex", props: sharedProps },
-    { kind: "stats", props: sharedProps },
-  ];
+  const panels: ChromePanelSpec[] = [];
+  // Contracts panel goes FIRST (this is the product surface). Only
+  // mounted when the plugin supplies `app` + `openContract` — tests
+  // that don't need the contracts list skip this and still test the
+  // admin sections in isolation.
+  if (plugin.app && plugin.openContract) {
+    panels.push({
+      kind: "contracts",
+      props: {
+        app: plugin.app,
+        onOpenContract: plugin.openContract,
+      },
+    });
+  }
+  panels.push({ kind: "reindex", props: sharedProps });
+  panels.push({ kind: "stats", props: sharedProps });
   if (plugin.secretsStore && plugin.safeStorage) {
     panels.push({
       kind: "connectors",
@@ -150,6 +181,7 @@ export function composeChromePanels(plugin: ChromeViewPlugin): ChromePanelsSpec 
 }
 
 export class ChromeView extends ItemView {
+  private contractsApp: unknown = null;
   private reindexApp: unknown = null;
   private statsApp: unknown = null;
   private connectorsApp: unknown = null;
@@ -167,7 +199,7 @@ export class ChromeView extends ItemView {
   }
 
   override getDisplayText(): string {
-    return "vault-memory";
+    return "vault-memory: Contracts";
   }
 
   override getIcon(): string {
@@ -200,10 +232,14 @@ export class ChromeView extends ItemView {
       }
     }
 
+    let ContractsPanel: unknown;
     let ReindexPanel: unknown;
     let StatsPanel: unknown;
     let ConnectorsPanel: unknown;
     try {
+      ContractsPanel = ((await import("./contracts-panel.svelte")) as {
+        default: unknown;
+      }).default;
       ReindexPanel = ((await import("./reindex-panel.svelte")) as { default: unknown }).default;
       StatsPanel = ((await import("./stats-panel.svelte")) as { default: unknown }).default;
       ConnectorsPanel = ((await import("./connectors-panel.svelte")) as {
@@ -215,12 +251,63 @@ export class ChromeView extends ItemView {
 
     const spec = composeChromePanels(this.plugin);
 
-    // Section 1: Operations (Reindex)
-    (root as HTMLElement).createEl("h3", {
+    // Section 0 (TOP — product surface): Contracts
+    // Lists every .contract and _contracts/*.yaml file in the vault.
+    // Click on a row opens the contract in ContractEditorView (the
+    // canvas-based agentic-workflow editor). This is what users see
+    // first on opening the panel.
+    const contractsSpec = spec.panels.find((p) => p.kind === "contracts");
+    if (contractsSpec) {
+      (root as HTMLElement).createEl("h3", {
+        text: "Contracts",
+        cls: "vm-chrome-view__section-heading",
+      });
+      const contractsSlot = (root as HTMLElement).createDiv({
+        cls: "vm-chrome-view__slot vm-chrome-view__slot--contracts",
+      });
+      this.contractsApp = this.mount(ContractsPanel, {
+        target: contractsSlot,
+        props: contractsSpec.props,
+      });
+    }
+
+    // Admin sections (Operations, Stats, Connectors) live inside a
+    // collapsible <details> at the bottom of the panel. Users don't
+    // need to see Reindex/Stats every time — they're admin actions,
+    // not the product. Closed by default; open state persists across
+    // sessions via localStorage so power users keep them open.
+    const adminWasOpen = (() => {
+      try {
+        return localStorage.getItem("vm-chrome-admin-open") === "1";
+      } catch {
+        return false;
+      }
+    })();
+    const details = (root as HTMLElement).createEl("details", {
+      cls: "vm-chrome-view__admin",
+    });
+    if (adminWasOpen) (details as HTMLDetailsElement).open = true;
+    (details as HTMLElement).createEl("summary", {
+      text: "Advanced (reindex, stats, connectors)",
+      cls: "vm-chrome-view__admin-summary",
+    });
+    details.addEventListener("toggle", () => {
+      try {
+        localStorage.setItem(
+          "vm-chrome-admin-open",
+          (details as HTMLDetailsElement).open ? "1" : "0",
+        );
+      } catch {
+        // localStorage may be unavailable — best effort.
+      }
+    });
+
+    // Operations (Reindex) — inside admin
+    (details as HTMLElement).createEl("h4", {
       text: "Operations",
       cls: "vm-chrome-view__section-heading",
     });
-    const reindexSlot = (root as HTMLElement).createDiv({
+    const reindexSlot = (details as HTMLElement).createDiv({
       cls: "vm-chrome-view__slot vm-chrome-view__slot--reindex",
     });
     const reindexSpec = spec.panels.find((p) => p.kind === "reindex");
@@ -231,12 +318,12 @@ export class ChromeView extends ItemView {
       });
     }
 
-    // Section 2: Stats
-    (root as HTMLElement).createEl("h3", {
+    // Stats — inside admin
+    (details as HTMLElement).createEl("h4", {
       text: "Stats",
       cls: "vm-chrome-view__section-heading",
     });
-    const statsSlot = (root as HTMLElement).createDiv({
+    const statsSlot = (details as HTMLElement).createDiv({
       cls: "vm-chrome-view__slot vm-chrome-view__slot--stats",
     });
     const statsSpec = spec.panels.find((p) => p.kind === "stats");
@@ -247,18 +334,18 @@ export class ChromeView extends ItemView {
       });
     }
 
-    // Section 3: Connectors (PLG-05 / 07-10) — only mounted when the
-    // plugin supplied secretsStore + safeStorage. ConnectorsPanel uses
-    // them for the `${secret:name}` resolution path that decrypts
-    // ciphertext in the plugin process and forwards plaintext to the
-    // server's `resolve_secret` tool.
+    // Connectors (PLG-05 / 07-10) — only mounted when the plugin
+    // supplied secretsStore + safeStorage. ConnectorsPanel uses them
+    // for the `${secret:name}` resolution path that decrypts ciphertext
+    // in the plugin process and forwards plaintext to the server's
+    // `resolve_secret` tool.
     const connectorsSpec = spec.panels.find((p) => p.kind === "connectors");
     if (connectorsSpec) {
-      (root as HTMLElement).createEl("h3", {
+      (details as HTMLElement).createEl("h4", {
         text: "Connectors",
         cls: "vm-chrome-view__section-heading",
       });
-      const connectorsSlot = (root as HTMLElement).createDiv({
+      const connectorsSlot = (details as HTMLElement).createDiv({
         cls: "vm-chrome-view__slot vm-chrome-view__slot--connectors",
       });
       this.connectorsApp = this.mount(ConnectorsPanel, {
@@ -273,6 +360,14 @@ export class ChromeView extends ItemView {
   }
 
   private async disposeSvelte(): Promise<void> {
+    if (this.contractsApp && this.unmountFn) {
+      try {
+        await this.unmountFn(this.contractsApp);
+      } catch {
+        // Best-effort
+      }
+      this.contractsApp = null;
+    }
     if (this.reindexApp && this.unmountFn) {
       try {
         await this.unmountFn(this.reindexApp);

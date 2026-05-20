@@ -37,7 +37,7 @@
  * "Save" / "Apply" actions only.
  */
 
-import { Modal, Notice, Plugin } from "obsidian";
+import { Modal, Notice, Plugin, type TFile } from "obsidian";
 import {
   ContractEditorView,
   VIEW_TYPE_CONTRACT,
@@ -135,7 +135,7 @@ export default class VaultMemoryPlugin extends Plugin {
     // to "vault-memory:open-chrome").
     this.addCommand({
       id: "open-chrome",
-      name: "Open vault-memory panel",
+      name: "Open Contracts panel",
       callback: () => {
         void this.activateChromeView();
       },
@@ -286,5 +286,25 @@ export default class VaultMemoryPlugin extends Plugin {
       }).setViewState({ type: VIEW_TYPE_CHROME, active: true });
     }
     workspace.revealLeaf(leaf);
+  }
+
+  /**
+   * Open a contract file in the main editor area. Wired into the
+   * ContractsPanel side-panel rows so clicking a contract opens its
+   * canvas editor (for .contract) or a plain text view (for .yaml).
+   *
+   * Resolves the path to a TFile via the Obsidian Vault API and asks
+   * the workspace to open it in a new leaf. The ContractEditorView
+   * registration handles the .contract extension; .yaml falls back to
+   * the default markdown/text view.
+   */
+  async openContract(path: string): Promise<void> {
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!file || !("extension" in file)) {
+      new Notice(`Contract not found: ${path}`, 5000);
+      return;
+    }
+    const leaf = this.app.workspace.getLeaf(false);
+    await leaf.openFile(file as TFile);
   }
 }

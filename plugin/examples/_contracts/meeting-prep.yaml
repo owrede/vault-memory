@@ -1,0 +1,73 @@
+# Reference contract — meeting-prep (CON-07; RESEARCH Example 1).
+# Compile a meeting-prep brief from a meeting note + 1-2 hop linked context.
+# Anchored to evals/fixtures/v2-test-vault/meetings/2026-04-15-q2-okr-review.md.
+# See docs/v2/adr/006-task-contract-dsl.md §Decision 12.
+version: 1
+name: meeting-prep
+description: |
+  Compile a meeting prep brief from the meeting note + 1-hop linked context.
+  Output is a brief written into the briefs sink. Useful for Q2-OKR-style
+  review meetings where context across linked projects matters.
+inputs:
+  meeting_doc_id:
+    $ref: "#/types/DocId"
+    description: DocId of the meeting note (e.g. obsidian-fs://test-vault/meetings/...).
+  context_hops:
+    type: integer
+    minimum: 1
+    maximum: 2
+    default: 1
+    description: How many wikilink hops to expand from the meeting note.
+required: [meeting_doc_id]
+sources:
+  default_source:
+    handle: "obsidian-fs://test-vault"
+    required: true
+sinks:
+  default_sink:
+    handle: "_memory/_briefs"
+    required: true
+assembly:
+  - as: meeting
+    verb: read_note
+    args:
+      doc_id: "{{inputs.meeting_doc_id}}"
+  - as: linked
+    verb: expand
+    args:
+      seed_doc_ids: ["{{inputs.meeting_doc_id}}"]
+      hops: "{{inputs.context_hops}}"
+      direction: both
+  - as: clustered
+    verb: cluster
+    args:
+      seed_doc_ids: "{{linked.doc_ids}}"
+      method: edge-community
+  - as: compiled
+    verb: compile_brief
+    args:
+      vault: test-vault
+      target: "{{inputs.meeting_doc_id}}--prep"
+      source_doc_ids: "{{linked.doc_ids}}"
+      purpose: "Meeting prep brief"
+      max_tokens: 2000
+output_shape:
+  type: object
+  properties:
+    steps:
+      type: object
+    write_back:
+      type: object
+      properties:
+        doc_id:
+          type: string
+      required: [doc_id]
+  required: [write_back]
+write_back:
+  sink: "{{default_sink}}"
+  document_kind: brief
+  properties:
+    target: "{{inputs.meeting_doc_id}}--prep"
+    source: agent
+    purpose: "Meeting prep brief"
+  body_from: "{{compiled.body}}"

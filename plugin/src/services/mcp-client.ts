@@ -341,7 +341,16 @@ function peelEnvelope(res: unknown): unknown {
       `Malformed MCP envelope: response is not an object (got ${typeof res})`,
     );
   }
-  const content = (res as { content?: unknown }).content;
+  const content = (res as { content?: unknown; isError?: unknown }).content;
+  // isError envelope: the server signalled a tool-level error. The text
+  // payload is a human-readable message (NOT JSON). Surface it as a
+  // distinct error type so the UI can show "Server: <msg>" rather than
+  // claiming the envelope is malformed.
+  if ((res as { isError?: unknown }).isError === true) {
+    const first = Array.isArray(content) ? (content[0] as { text?: string }) : undefined;
+    const msg = typeof first?.text === "string" ? first.text : "(no detail)";
+    throw new McpToolError(msg);
+  }
   if (!Array.isArray(content) || content.length === 0) {
     throw new Error(
       "Malformed MCP envelope: missing or empty `content` array — " +
@@ -360,5 +369,18 @@ function peelEnvelope(res: unknown): unknown {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     throw new Error(`Malformed MCP envelope: content[0].text is not valid JSON — ${msg}`);
+  }
+}
+
+/**
+ * Thrown when an MCP tool call returns `isError: true`. Distinct from
+ * `Error` so UI code can render "Server: <msg>" instead of "Malformed
+ * envelope: …". The `.message` carries the server's human-readable
+ * description verbatim.
+ */
+export class McpToolError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "McpToolError";
   }
 }

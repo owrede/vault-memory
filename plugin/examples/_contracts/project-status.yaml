@@ -1,0 +1,69 @@
+# Reference contract — project-status (CON-07; RESEARCH Example 6).
+# Compile a project status brief from frontmatter-tagged docs + recent activity.
+# Anchored to evals/fixtures/v2-test-vault/projects/atlas-1.md (project_key: atlas-1).
+# See docs/v2/adr/006-task-contract-dsl.md §Decision 12.
+version: 1
+name: project-status
+description: |
+  Compile a project status brief for a tagged project. Discovers all
+  docs whose frontmatter `project: <key>` matches, clusters them, and
+  hands the result to compile_brief. Useful for weekly status rollups
+  where the universe of relevant docs is tag-defined.
+inputs:
+  project_key:
+    type: string
+    description: Frontmatter project key (e.g. "atlas-1").
+  freshness_days:
+    type: integer
+    minimum: 1
+    maximum: 365
+    default: 30
+    description: Filter docs to those modified within the last N days.
+required: [project_key]
+sources:
+  default_source:
+    handle: "obsidian-fs://test-vault"
+    required: true
+sinks:
+  default_sink:
+    handle: "_memory/_briefs"
+    required: true
+assembly:
+  - as: tagged_docs
+    verb: query_frontmatter
+    args:
+      where:
+        project: "{{inputs.project_key}}"
+  - as: clustered
+    verb: cluster
+    args:
+      seed_doc_ids: "{{tagged_docs.doc_ids}}"
+      method: edge-community
+  - as: compiled
+    verb: compile_brief
+    args:
+      vault: test-vault
+      target: "{{inputs.project_key}}--status"
+      source_doc_ids: "{{tagged_docs.doc_ids}}"
+      purpose: "Project status brief"
+      max_tokens: 2500
+output_shape:
+  type: object
+  properties:
+    steps:
+      type: object
+    write_back:
+      type: object
+      properties:
+        doc_id:
+          type: string
+      required: [doc_id]
+  required: [write_back]
+write_back:
+  sink: "{{default_sink}}"
+  document_kind: brief
+  properties:
+    target: "{{inputs.project_key}}--status"
+    source: agent
+    purpose: "Project status brief"
+  body_from: "{{compiled.body}}"

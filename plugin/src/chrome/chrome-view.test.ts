@@ -42,10 +42,10 @@ describe("ChromeView — metadata + mounting surface", () => {
     expect(view.getViewType()).toBe(VIEW_TYPE_CHROME);
   });
 
-  it("getDisplayText() returns the human-readable label 'vault-memory'", () => {
+  it("getDisplayText() returns the human-readable label 'vault-memory: Contracts'", () => {
     const leaf = new WorkspaceLeaf();
     const view = new ChromeView(leaf, makeFakePlugin());
-    expect(view.getDisplayText()).toBe("vault-memory");
+    expect(view.getDisplayText()).toBe("vault-memory: Contracts");
   });
 
   it("getIcon() returns 'activity' (Lucide icon name)", () => {

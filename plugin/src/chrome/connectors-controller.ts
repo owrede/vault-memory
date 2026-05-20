@@ -136,7 +136,12 @@ export function createConnectorsController(
       const entries = resp && Array.isArray(resp.clients) ? resp.clients : [];
       commit({ entries, loading: false });
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      let message = err instanceof Error ? err.message : String(err);
+      if (/method not found|tool not found|-32601/i.test(message)) {
+        message =
+          "Plugin tools are not exposed by the server. Add `[plugin] enabled = true` " +
+          "to ~/.vault-memory/config.toml, then restart Obsidian (or re-run /vmem:install).";
+      }
       commit({ loading: false, loadError: message });
     }
   }

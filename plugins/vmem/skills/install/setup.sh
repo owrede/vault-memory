@@ -1142,6 +1142,15 @@ log_level = "info"
 ollama_endpoint = "$OLLAMA_ENDPOINT"
 default_embedding_model = "$EMBEDDING_MODEL"
 
+# [plugin] enabled = true exposes the five plugin-control MCP tools
+# (set_runtime_config, resolve_secret, set_mcp_client, get_runtime_stats,
+# trigger_reindex) that the Obsidian plugin needs for its side panel
+# (Stats, Connectors, Reindex). Without this, the plugin opens to
+# "Could not load stats" / "Could not load connectors" errors. Safe to
+# leave on — these tools are no-ops when no client calls them.
+[plugin]
+enabled = true
+
 [[vaults]]
 name = "$(basename "$VAULT_ROOT" | tr '[:upper:] ' '[:lower:]_')"
 path = "$VAULT_ROOT"
@@ -1151,6 +1160,48 @@ EOF
     ok "Default config written to $CONFIG_FILE"
   fi
 fi
+
+# Always ensure [plugin] enabled = true is present (item: plugin side panel
+# requires plugin-control tools to be exposed). Idempotent: only inserts the
+# block if it doesn't already exist or is set to false.
+ensure_plugin_block_enabled() {
+  [ ! -f "$CONFIG_FILE" ] && return 0
+  # If [plugin] block exists with enabled = true, do nothing.
+  if grep -E '^\s*\[plugin\]\s*$' "$CONFIG_FILE" >/dev/null 2>&1; then
+    # Block exists — check enabled
+    if awk '/^\[plugin\]/{flag=1;next} /^\[/{flag=0} flag && /^[[:space:]]*enabled[[:space:]]*=[[:space:]]*true/{found=1} END{exit !found}' "$CONFIG_FILE"; then
+      info "  [plugin] enabled=true already in config"
+      return 0
+    fi
+    # Block exists but enabled is false or missing — flip it.
+    if command -v node >/dev/null 2>&1; then
+      node -e "
+        const fs = require('fs');
+        const p = '$CONFIG_FILE';
+        let s = fs.readFileSync(p, 'utf8');
+        s = s.replace(/(\[plugin\][^\[]*?)enabled\s*=\s*false/, '\$1enabled = true');
+        if (!/(\[plugin\][^\[]*?)enabled\s*=\s*true/.test(s)) {
+          s = s.replace(/(\[plugin\]\s*\n)/, '\$1enabled = true\n');
+        }
+        fs.writeFileSync(p, s);
+      " && ok "  [plugin] enabled flipped to true in config"
+    else
+      warn "  Could not auto-edit [plugin] block — manually set 'enabled = true'."
+    fi
+  else
+    # No [plugin] block at all — append it.
+    cat >> "$CONFIG_FILE" <<'EOF'
+
+# Added by /vmem:install — required for the Obsidian plugin's side panel
+# (Stats, Connectors, Reindex). Without this the plugin shows MCP errors.
+[plugin]
+enabled = true
+EOF
+    ok "  Added [plugin] enabled = true block to config"
+  fi
+}
+
+ensure_plugin_block_enabled
 
 log ""
 step "Initial index"
@@ -1280,10 +1331,100 @@ install_obsidian_plugin() {
   fi
 
   seed_plugin_data_json
+  seed_example_contracts
 
   ok "Plugin installed at v$target_version: $PLUGIN_DIR"
   info "  Restart Obsidian (or 'Reload app without saving') to load the plugin."
   return 0
+}
+
+# Copy bundled example contracts into the user's vault at
+# _contracts/examples/ on first install. Gated so we never overwrite
+# user-edited examples and never pollute a vault that already has
+# contracts of its own.
+#
+# Source: the plugin tarball ships an `examples/_contracts/*.yaml` tree
+# (in this repo, plugin/examples/_contracts/). After install_obsidian_plugin
+# extracts the tarball into $PLUGIN_DIR, those YAML files are available at
+# $PLUGIN_DIR/examples/_contracts/.
+#
+# Users get four reference contracts (meeting-prep, project-status,
+# code-review-brief, smoketest-trivial) on first install, with a header
+# comment explaining what they are. This addresses the user's complaint
+# that opening the plugin showed no contracts and no way to understand
+# how the contract system works.
+seed_example_contracts() {
+  if [ ! -d "$OBSIDIAN_DIR" ]; then return 0; fi
+  local src="$PLUGIN_DIR/examples/_contracts"
+  if [ ! -d "$src" ]; then
+    info "  Bundled example contracts not found in $src — skipping seed."
+    return 0
+  fi
+  local dst="$VAULT_ROOT/_contracts/examples"
+
+  # Don't pollute if the user has contracts of their own already.
+  if [ -d "$VAULT_ROOT/_contracts" ]; then
+    local existing
+    existing=$(find "$VAULT_ROOT/_contracts" -maxdepth 1 -type f \( -name '*.yaml' -o -name '*.yml' -o -name '*.contract' \) 2>/dev/null | head -1)
+    if [ -n "$existing" ] && [ ! -d "$dst" ]; then
+      info "  Vault already has contracts at _contracts/ — not seeding examples."
+      return 0
+    fi
+  fi
+
+  # Idempotent: only create the examples/ dir if it doesn't exist yet,
+  # OR if it exists but is empty (a previous failed seed attempt).
+  if [ -d "$dst" ] && [ "$(find "$dst" -type f | head -1)" ]; then
+    info "  Example contracts already present at _contracts/examples/"
+    return 0
+  fi
+
+  mkdir -p "$dst"
+  cp "$src"/*.yaml "$dst/" 2>/dev/null || {
+    warn "  Failed to copy example contracts from $src"
+    return 1
+  }
+
+  # Drop a README into the examples dir so the user understands they're
+  # reference material, safe to delete, and the entry point to learn the
+  # contract DSL.
+  cat > "$dst/README.md" <<'EOF'
+# Example Contracts
+
+These four YAML files are reference task contracts shipped by
+`/vmem:install`. They demonstrate the v2 contract DSL — the agentic
+workflow primitive vault-memory exposes to MCP-aware agents.
+
+Each contract is a sequence of steps that an agent can instantiate via
+the `instantiate_contract` MCP tool. Steps compose via `{{template}}`
+references; sinks must resolve to a `MemorySink` (per the project's
+non-negotiable memory-namespace safety invariant).
+
+## Files
+
+- `meeting-prep.yaml` — surfaces context for an upcoming meeting from
+  notes, recent calendar items, and topic keywords
+- `project-status.yaml` — rolls up a project's current state from
+  related notes + recent commits
+- `code-review-brief.yaml` — assembles a code-review context bundle
+- `smoketest-trivial.yaml` — minimal literal-only contract used in CI
+
+## Next steps
+
+- Open any of these files in the **Contracts** side panel of the
+  vault-memory plugin to inspect them
+- Copy one into `_contracts/` (without the `examples/` prefix) to make
+  it a "real" contract available to your agents
+- Read the contract DSL reference at
+  https://github.com/owrede/vault-memory/blob/main/docs/v2/adr/006-task-contract-dsl.md
+- Safe to delete this whole folder if you don't need the examples
+
+These files will NOT be re-seeded on subsequent `/vmem:install` runs.
+EOF
+
+  local count
+  count=$(ls -1 "$dst"/*.yaml 2>/dev/null | wc -l | tr -d ' ')
+  ok "  Seeded $count example contracts at _contracts/examples/"
 }
 
 # Seed/refresh .obsidian/plugins/vault-memory/data.json with absolute binary
@@ -1395,6 +1536,8 @@ elif [ -d "$PLUGIN_DIR" ] && [ -f "$PLUGIN_DIR/manifest.json" ]; then
     # earlier runs that didn't include this step. Idempotent + non-destructive
     # for user-set values.
     seed_plugin_data_json
+    # Idempotent re-seed of examples (no-op if already present).
+    seed_example_contracts
   else
     warn "Obsidian plugin installed (v$installed_v) differs from target (v$target_plugin_v)."
     if confirm "Update Obsidian plugin to v$target_plugin_v?" \

@@ -79,7 +79,16 @@ export function createStatsController(deps: StatsControllerDeps): StatsControlle
         )) as RuntimeStats;
         commit({ loading: false, stats: result, error: null });
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        let message = err instanceof Error ? err.message : String(err);
+        // Friendlier surface when the server doesn't expose the plugin
+        // tool family (configurable [plugin] enabled = false). The JSON-RPC
+        // error code -32601 (Method not found) or the SDK's "Tool not found"
+        // text both indicate the same misconfiguration.
+        if (/method not found|tool not found|-32601/i.test(message)) {
+          message =
+            "Plugin tools are not exposed by the server. Add `[plugin] enabled = true` " +
+            "to ~/.vault-memory/config.toml, then restart Obsidian (or re-run /vmem:install).";
+        }
         commit({ loading: false, stats: null, error: message });
       }
     },
