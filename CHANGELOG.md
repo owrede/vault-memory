@@ -519,6 +519,12 @@ The following five v1 tools are deprecated in v2.0.0 and promoted to MCP Resourc
 ### Changed
 
 - **Obsidian plugin error messages reference `/vmem:install`** (was: `vm-install skill` / `/vm-install`). Two strings updated in `plugin/src/services/mcp-client.ts` (the `CliNotFoundError` thrown in both the spawn-time and connect-time error paths) and one banner string in `plugin/src/chrome/settings-tab.ts` (the "CLI not found" banner in the settings tab). The new strings point users at the renamed marketplace plugin `vmem` (replacing the old `install-vault-memory` with its duplicated `/install-vault-memory:install-vault-memory` slug) and the verb-split surface: `/vmem:install`, `/vmem:health`, `/vmem:reindex`. See `ISSUE-marketplace-plugin-rename-vmem.md`.
+- **`CHANGELOG.md` now ships in the npm tarball** — added to the `files` field in `package.json` so users running `npm view @owrede/vault-memory@<version>` or extracting the tarball can read per-release notes without leaving npm.
+- **`publish.yml` adds an `NPM_DISABLE_PROVENANCE` escape hatch** — repo variable `NPM_DISABLE_PROVENANCE=1` skips the `--provenance` flag on `npm publish`. Recovery path for sigstore-attestation-orphan states. Default off; provenance stays on for all normal publishes.
+
+### Skipped: v2.0.0-rc.3
+
+- **v2.0.0-rc.3 was tagged but never published to npm.** The first publish attempt for rc.3 wrote a sigstore log entry but the actual package PUT failed with `404 Not Found` from the npm registry; multiple subsequent retries with different tarball contents and provenance disabled all hit the same 404 (registry-internal poisoned state). rc.4 supersedes rc.3 and contains every change rc.3 would have shipped.
 
 ### Fixed
 
