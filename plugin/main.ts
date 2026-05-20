@@ -37,7 +37,7 @@
  * "Save" / "Apply" actions only.
  */
 
-import { Modal, Notice, Plugin, type TFile } from "obsidian";
+import { Modal, Notice, Plugin } from "obsidian";
 import {
   ContractEditorView,
   VIEW_TYPE_CONTRACT,
@@ -299,13 +299,29 @@ export default class VaultMemoryPlugin extends Plugin {
    * the default markdown/text view.
    */
   async openContract(path: string): Promise<void> {
-    const file = this.app.vault.getAbstractFileByPath(path);
-    if (!file || !("extension" in file)) {
-      new Notice(`Contract not found: ${path}`, 5000);
+    if (!path || !path.trim()) {
+      new Notice("vault-memory: cannot open contract — empty path.", 5000);
       return;
     }
-    const leaf = this.app.workspace.getLeaf(false);
-    await leaf.openFile(file as TFile);
+    const file = this.app.vault.getAbstractFileByPath(path);
+    if (!file || !("extension" in file)) {
+      new Notice(`vault-memory: contract not found at "${path}".`, 5000);
+      return;
+    }
+    // Use openLinkText so Obsidian's standard "open in existing or new
+    // leaf" logic kicks in — including its built-in error reporting.
+    // openLinkText handles the leaf-selection edge cases that
+    // getLeaf(false) + leaf.openFile trip over (e.g. when the only
+    // workspace pane is the side panel itself; openFile on the side
+    // panel's leaf emits Obsidian's native "<filename> konnte nicht
+    // geöffnet werden" notice because that leaf already hosts the
+    // ChromeView, not a TextFileView).
+    try {
+      await this.app.workspace.openLinkText(path, "", false);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      new Notice(`vault-memory: failed to open ${path} — ${msg}`, 5000);
+    }
   }
 
   /**
@@ -386,9 +402,15 @@ export default class VaultMemoryPlugin extends Plugin {
     };
 
     const text = JSON.stringify(scaffold, null, 2) + "\n";
-    const file = await this.app.vault.create(candidate, text);
-    const leaf = this.app.workspace.getLeaf(false);
-    await leaf.openFile(file);
+    await this.app.vault.create(candidate, text);
+    // Same openLinkText idiom as openContract() — see comment there.
+    try {
+      await this.app.workspace.openLinkText(candidate, "", false);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      new Notice(`vault-memory: created ${candidate} but failed to open — ${msg}`, 5000);
+      return;
+    }
     new Notice(`Created ${candidate}`, 3000);
   }
 }
