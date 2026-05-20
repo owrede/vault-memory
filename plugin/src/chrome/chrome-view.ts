@@ -69,6 +69,11 @@ export interface ChromeViewPlugin {
    * Contracts panel on row click. Optional for the same reason as `app`.
    */
   openContract?: (path: string) => Promise<void> | void;
+  /**
+   * Create a new untitled .contract file (minimal scaffold) and open it
+   * in the canvas editor. Called by the Contracts panel's "+ New" button.
+   */
+  createContract?: () => Promise<void> | void;
   mcpClient: {
     callTool: (name: string, args: Record<string, unknown>) => Promise<unknown>;
     onProgress: (
@@ -113,6 +118,7 @@ export type ChromePanelSpec =
       props: {
         app: unknown;
         onOpenContract: (path: string) => Promise<void> | void;
+        onCreateContract: () => Promise<void> | void;
       };
     }
   | {
@@ -156,12 +162,13 @@ export function composeChromePanels(plugin: ChromeViewPlugin): ChromePanelsSpec 
   // mounted when the plugin supplies `app` + `openContract` — tests
   // that don't need the contracts list skip this and still test the
   // admin sections in isolation.
-  if (plugin.app && plugin.openContract) {
+  if (plugin.app && plugin.openContract && plugin.createContract) {
     panels.push({
       kind: "contracts",
       props: {
         app: plugin.app,
         onOpenContract: plugin.openContract,
+        onCreateContract: plugin.createContract,
       },
     });
   }

@@ -307,4 +307,76 @@ export default class VaultMemoryPlugin extends Plugin {
     const leaf = this.app.workspace.getLeaf(false);
     await leaf.openFile(file as TFile);
   }
+
+  /**
+   * Create a new `.contract` file with a minimal valid scaffold and
+   * open it in the canvas editor.
+   *
+   * Path picking: `_contracts/untitled.contract` if free, otherwise
+   * `_contracts/untitled-N.contract` with N starting at 2. The folder
+   * is created if it doesn't exist (Obsidian's mkdir is idempotent).
+   *
+   * Scaffold: one literal step ("Hello from your new contract.") so the
+   * canvas opens with a non-empty assembly — the user can replace it
+   * immediately. No source/sink — those are optional in the schema; the
+   * user wires them when they're ready. vmFormatVersion is the same
+   * constant the codec emits on save, so the file round-trips cleanly.
+   */
+  async createContract(): Promise<void> {
+    const folder = "_contracts";
+    try {
+      const folderExists = this.app.vault.getAbstractFileByPath(folder);
+      if (!folderExists) {
+        await this.app.vault.createFolder(folder);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!msg.toLowerCase().includes("already exists")) {
+        throw err;
+      }
+    }
+
+    let candidate = `${folder}/untitled.contract`;
+    let n = 2;
+    while (this.app.vault.getAbstractFileByPath(candidate)) {
+      candidate = `${folder}/untitled-${n}.contract`;
+      n++;
+      if (n > 9999) {
+        new Notice("Could not allocate a free untitled-N.contract path.", 5000);
+        return;
+      }
+    }
+
+    const scaffold = {
+      vmFormatVersion: 1,
+      contract: {
+        name: candidate.replace(/^.*\//, "").replace(/\.contract$/, ""),
+        description: "New contract — describe what this contract does in one sentence.",
+        assembly: [
+          {
+            verb: "literal",
+            value: "Hello from your new contract.",
+          },
+        ],
+      },
+      editor: {
+        selection: null,
+        viewport: { x: 0, y: 0, zoom: 1 },
+        nodes: [
+          {
+            id: "step-0",
+            position: { x: 0, y: 0 },
+            size: { width: 200, height: 100 },
+          },
+        ],
+        preservedComments: [],
+      },
+    };
+
+    const text = JSON.stringify(scaffold, null, 2) + "\n";
+    const file = await this.app.vault.create(candidate, text);
+    const leaf = this.app.workspace.getLeaf(false);
+    await leaf.openFile(file);
+    new Notice(`Created ${candidate}`, 3000);
+  }
 }
