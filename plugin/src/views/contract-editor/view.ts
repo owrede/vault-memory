@@ -120,12 +120,25 @@ export class ContractEditorView extends TextFileView {
       this.clear();
     }
 
+    // Empty file (zero bytes) is a common case — e.g., file created by a
+    // tool other than this plugin, or an interrupted seed step. Render a
+    // friendlier message with a one-click repair instead of the raw
+    // "Unexpected end of JSON input" JSON-parser error.
+    const trimmed = data.trim();
+    if (trimmed.length === 0) {
+      this.renderEmptyFile();
+      return;
+    }
+
     let raw: unknown;
     try {
       raw = JSON.parse(data);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.renderError(`malformed .contract file (invalid JSON) — ${message}`);
+      this.renderError(
+        `malformed .contract file (invalid JSON) — ${message}`,
+        /*offerRepair=*/ true,
+      );
       return;
     }
 
@@ -134,7 +147,7 @@ export class ContractEditorView extends TextFileView {
       const issue = result.error.issues[0];
       const path = issue?.path.join(".") ?? "<root>";
       const msg = issue?.message ?? "schema validation failed";
-      this.renderError(`invalid .contract — at \`${path}\`: ${msg}`);
+      this.renderError(`invalid .contract — at \`${path}\`: ${msg}`, /*offerRepair=*/ true);
       return;
     }
 
@@ -279,7 +292,7 @@ export class ContractEditorView extends TextFileView {
     }) as unknown as SvelteComponent;
   }
 
-  private renderError(message: string): void {
+  private renderError(message: string, offerRepair = false): void {
     if (this.svelteApp) {
       void unmount(this.svelteApp);
       this.svelteApp = null;
@@ -287,5 +300,96 @@ export class ContractEditorView extends TextFileView {
     this.contentEl.empty();
     const banner = this.contentEl.createDiv({ cls: "vm-error-banner" });
     banner.setText(`Error: ${message}`);
+    if (offerRepair) {
+      this.contentEl.createDiv({
+        cls: "vm-error-help",
+        text:
+          "If this file was created in error, you can replace its contents " +
+          "with a minimal scaffold and start editing in the canvas. The " +
+          "original (broken) content will be overwritten — copy it elsewhere " +
+          "first if you need to recover anything.",
+      });
+      const btnRow = this.contentEl.createDiv({ cls: "vm-error-actions" });
+      const repair = btnRow.createEl("button", {
+        text: "Replace with scaffold",
+        cls: "vm-error-repair-btn",
+      });
+      repair.addEventListener("click", () => {
+        void this.writeScaffold();
+      });
+    }
+  }
+
+  /**
+   * Rendered when the file is zero bytes / whitespace-only. Distinct
+   * surface from renderError so the language can be inviting ("empty
+   * file — start by writing a scaffold") rather than alarming.
+   */
+  private renderEmptyFile(): void {
+    if (this.svelteApp) {
+      void unmount(this.svelteApp);
+      this.svelteApp = null;
+    }
+    this.contentEl.empty();
+    const wrap = this.contentEl.createDiv({ cls: "vm-empty-contract" });
+    wrap.createEl("h3", { text: "This .contract file is empty" });
+    wrap.createEl("p", {
+      text:
+        "Empty .contract files happen when an external tool creates the " +
+        "file but doesn't write any content. Click the button below to " +
+        "fill it with a minimal valid scaffold (one literal step) so you " +
+        "can start editing in the canvas.",
+    });
+    const btn = wrap.createEl("button", {
+      text: "Initialize with scaffold",
+      cls: "vm-error-repair-btn",
+    });
+    btn.addEventListener("click", () => {
+      void this.writeScaffold();
+    });
+  }
+
+  /**
+   * Write a minimal valid scaffold to the current file. Mirrors the
+   * scaffold produced by main.ts createContract() so the look-and-feel
+   * is identical regardless of how the file came to exist. After write,
+   * Obsidian's TextFileView lifecycle re-invokes setViewData with the
+   * new contents — the editor mounts as normal.
+   */
+  private async writeScaffold(): Promise<void> {
+    const file = this.file;
+    if (!file) return;
+    const basename = file.basename;
+    const scaffold = {
+      vmFormatVersion: 1,
+      contract: {
+        name: basename,
+        description:
+          "New contract — describe what this contract does in one sentence.",
+        assembly: [
+          {
+            verb: "literal",
+            value: "Hello from your new contract.",
+          },
+        ],
+      },
+      editor: {
+        selection: null,
+        viewport: { x: 0, y: 0, zoom: 1 },
+        nodes: [
+          {
+            id: "step-0",
+            position: { x: 0, y: 0 },
+            size: { width: 200, height: 100 },
+          },
+        ],
+        preservedComments: [],
+      },
+    };
+    const text = JSON.stringify(scaffold, null, 2) + "\n";
+    await this.app.vault.modify(file, text);
+    // Manually re-trigger setViewData so the editor mounts immediately
+    // without waiting for the next focus event.
+    this.setViewData(text, true);
   }
 }

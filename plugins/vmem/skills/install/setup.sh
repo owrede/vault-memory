@@ -1381,11 +1381,56 @@ seed_example_contracts() {
     return 0
   fi
 
+  # Sanity-check the source: every .contract file must be non-empty AND
+  # parse as JSON. If any source file is missing/empty/broken we ABORT
+  # the seed and leave the user's vault untouched — better to skip
+  # examples than to drop empty .contract files that the editor will
+  # surface as "Unexpected end of JSON input" errors.
+  local n_src=0 n_bad=0
+  for f in "$src"/*.contract; do
+    [ -e "$f" ] || continue
+    n_src=$((n_src + 1))
+    if [ ! -s "$f" ]; then
+      warn "  Source contract $f is empty — refusing to seed."
+      n_bad=$((n_bad + 1))
+    elif command -v node >/dev/null 2>&1; then
+      if ! node -e "JSON.parse(require('fs').readFileSync('$f', 'utf8'))" 2>/dev/null; then
+        warn "  Source contract $f does not parse as JSON — refusing to seed."
+        n_bad=$((n_bad + 1))
+      fi
+    fi
+  done
+  if [ "$n_src" = "0" ]; then
+    warn "  No .contract files found in $src — skipping seed."
+    return 0
+  fi
+  if [ "$n_bad" != "0" ]; then
+    warn "  $n_bad of $n_src source contracts are bad — aborting seed."
+    return 1
+  fi
+
   mkdir -p "$dst"
   cp "$src"/*.contract "$dst/" 2>/dev/null || {
     warn "  Failed to copy example contracts from $src"
     return 1
   }
+
+  # Verify the copy actually landed non-empty (defensive — guards against
+  # weird permission / disk-quota states where cp returns 0 but writes
+  # zero bytes).
+  local n_dst_bad=0
+  for f in "$dst"/*.contract; do
+    [ -e "$f" ] || continue
+    if [ ! -s "$f" ]; then
+      warn "  Destination contract $f is empty after copy — removing."
+      rm -f "$f"
+      n_dst_bad=$((n_dst_bad + 1))
+    fi
+  done
+  if [ "$n_dst_bad" != "0" ]; then
+    err "  $n_dst_bad destination files were empty after cp — copy is broken on this system."
+    return 1
+  fi
 
   # Drop a README into the examples dir so the user understands they're
   # reference material, safe to delete, and the entry point to learn the
