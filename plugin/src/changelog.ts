@@ -18,6 +18,16 @@ export interface ChangelogEntry {
  */
 export const PLUGIN_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.0.3",
+    date: "2026-05-20",
+    changes: [
+      'Fix (round 3): "" konnte nicht geöffnet werden when opening a .contract from the FILE EXPLORER (not the side panel). The earlier 2.0.2 fix addressed the side-panel path (openContract → workspace.openLinkText) but the file-explorer path goes through Obsidian\'s view-mount → ContractEditorView lifecycle directly, which is sensitive to any exception thrown during onLoadFile or setViewData. Obsidian swallows the exception and emits the empty-name notice instead of a useful error.',
+      "Hardened ContractEditorView.setViewData with an outer try/catch — any exception (JSON parse, schema validation, Svelte mount failure, missing plugin reference, …) now renders an in-view error banner instead of bubbling up to Obsidian's view-mount path.",
+      "Added ContractEditorView.onLoadFile override that wraps the super-call in try/catch + console.error diagnostic. If the file-read step itself fails (file vanished, permission denied, FS error), the error surfaces as a banner in the editor area instead of the empty-name notice.",
+      'Fix: stdin-EOF watchdog in the CLI server (src/server.ts). When the parent Obsidian process dies for ANY reason — clean exit, crash, force-quit, ignored SIGTERM — the kernel closes stdin\'s read end. The server now detects this and shuts down within 500ms. Without this, the user accumulated 13 zombie `vault-memory serve` processes across a day of plugin reloads, each holding ~22k chokidar FDs. System-wide FD exhaustion (264k vs macOS\'s 245k cap) caused Obsidian to fail with "ENFILE: file table overflow" on next vault open. This watchdog is the permanent defense.',
+    ],
+  },
+  {
     version: "2.0.2",
     date: "2026-05-20",
     changes: [

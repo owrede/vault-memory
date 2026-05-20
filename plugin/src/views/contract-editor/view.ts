@@ -101,6 +101,44 @@ export class ContractEditorView extends TextFileView {
     return VIEW_TYPE_CONTRACT;
   }
 
+  /**
+   * Override Obsidian's `onLoadFile` so that any error in our file-load
+   * path produces a visible banner instead of bubbling up as Obsidian's
+   * native '"" konnte nicht geöffnet werden' notice. The super-call
+   * (super.onLoadFile) is the one that reads the file's bytes from
+   * disk and invokes setViewData(); wrapping it lets us catch FS-level
+   * errors (e.g. file vanished between vault index and click) too.
+   *
+   * If anything throws, write a diagnostic line to the developer
+   * console (Cmd-Opt-I in Obsidian) AND render an in-view error
+   * banner. The view itself stays mounted, so Obsidian doesn't think
+   * the open failed.
+   */
+  override async onLoadFile(file: Parameters<TextFileView["onLoadFile"]>[0]): Promise<void> {
+    try {
+      await super.onLoadFile(file);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // eslint-disable-next-line no-console -- diagnostic; this path is
+      // exactly the one the user reported, so leaving the log in until
+      // we have telemetry-grade observability.
+      console.error(
+        "[vault-memory] onLoadFile threw — this is the path that " +
+          "produces Obsidian's empty-name notice. Stack:",
+        err,
+      );
+      try {
+        this.renderError(
+          `vault-memory plugin could not load this file: ${message}`,
+          /*offerRepair=*/ false,
+        );
+      } catch {
+        // Last-ditch — don't re-throw or Obsidian's view-mount layer
+        // will emit the empty-name notice that started this saga.
+      }
+    }
+  }
+
   override getDisplayText(): string {
     return this.file?.basename ?? "Contract";
   }
@@ -116,43 +154,72 @@ export class ContractEditorView extends TextFileView {
    * (threat T-07-05-01: tampered `.contract` never reaches the canvas).
    */
   override setViewData(data: string, clear: boolean): void {
-    if (clear) {
-      this.clear();
-    }
-
-    // Empty file (zero bytes) is a common case — e.g., file created by a
-    // tool other than this plugin, or an interrupted seed step. Render a
-    // friendlier message with a one-click repair instead of the raw
-    // "Unexpected end of JSON input" JSON-parser error.
-    const trimmed = data.trim();
-    if (trimmed.length === 0) {
-      this.renderEmptyFile();
-      return;
-    }
-
-    let raw: unknown;
+    // Wrap the entire body so that any thrown exception is converted
+    // to a visible error pane instead of bubbling up to Obsidian's
+    // view-mount path, which emits '"" konnte nicht geöffnet werden'
+    // when the mount throws before a view title is established. The
+    // user's UX is "I clicked a contract and got an empty-name toast";
+    // far better is "I clicked a contract and got a banner explaining
+    // what's broken".
     try {
-      raw = JSON.parse(data);
+      if (clear) {
+        this.clear();
+      }
+
+      // Empty file (zero bytes) is a common case — e.g., file created by a
+      // tool other than this plugin, or an interrupted seed step. Render a
+      // friendlier message with a one-click repair instead of the raw
+      // "Unexpected end of JSON input" JSON-parser error.
+      const trimmed = data.trim();
+      if (trimmed.length === 0) {
+        this.renderEmptyFile();
+        return;
+      }
+
+      let raw: unknown;
+      try {
+        raw = JSON.parse(data);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        this.renderError(
+          `malformed .contract file (invalid JSON) — ${message}`,
+          /*offerRepair=*/ true,
+        );
+        return;
+      }
+
+      const result = ContractDocumentSchema.safeParse(raw);
+      if (!result.success) {
+        const issue = result.error.issues[0];
+        const path = issue?.path.join(".") ?? "<root>";
+        const msg = issue?.message ?? "schema validation failed";
+        this.renderError(
+          `invalid .contract — at \`${path}\`: ${msg}`,
+          /*offerRepair=*/ true,
+        );
+        return;
+      }
+
+      this.currentJson = result.data;
+      this.renderEditor();
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.renderError(
-        `malformed .contract file (invalid JSON) — ${message}`,
-        /*offerRepair=*/ true,
-      );
-      return;
+      // Use a try/catch inside the catch because renderError itself
+      // touches contentEl — if that's the source of the throw we
+      // need to fail soft rather than recurse.
+      try {
+        this.renderError(
+          `vault-memory plugin crashed while opening this file: ${message}`,
+          /*offerRepair=*/ false,
+        );
+      } catch {
+        // Surface to the developer console at least. Don't re-throw —
+        // Obsidian's view-mount handler interprets any throw as
+        // "couldn't open file" and emits the empty-name notice.
+        // eslint-disable-next-line no-console -- last-ditch diagnostic
+        console.error("[vault-memory] setViewData crashed:", err);
+      }
     }
-
-    const result = ContractDocumentSchema.safeParse(raw);
-    if (!result.success) {
-      const issue = result.error.issues[0];
-      const path = issue?.path.join(".") ?? "<root>";
-      const msg = issue?.message ?? "schema validation failed";
-      this.renderError(`invalid .contract — at \`${path}\`: ${msg}`, /*offerRepair=*/ true);
-      return;
-    }
-
-    this.currentJson = result.data;
-    this.renderEditor();
   }
 
   /**
