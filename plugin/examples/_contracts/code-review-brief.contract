@@ -92,47 +92,29 @@
     }
   },
   "editor": {
+    "nodes": [
+      {
+        "id": "step:pr",
+        "x": 0,
+        "y": 0
+      },
+      {
+        "id": "step:related",
+        "x": 220,
+        "y": 0
+      },
+      {
+        "id": "step:compiled",
+        "x": 440,
+        "y": 0
+      }
+    ],
     "selection": null,
     "viewport": {
       "x": 0,
       "y": 0,
       "zoom": 1
     },
-    "nodes": [
-      {
-        "id": "step-0",
-        "position": {
-          "x": 0,
-          "y": 0
-        },
-        "size": {
-          "width": 200,
-          "height": 100
-        }
-      },
-      {
-        "id": "step-1",
-        "position": {
-          "x": 220,
-          "y": 0
-        },
-        "size": {
-          "width": 200,
-          "height": 100
-        }
-      },
-      {
-        "id": "step-2",
-        "position": {
-          "x": 440,
-          "y": 0
-        },
-        "size": {
-          "width": 200,
-          "height": 100
-        }
-      }
-    ],
-    "preservedComments": []
+    "yamlComments": {}
   }
 }

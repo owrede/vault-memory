@@ -347,29 +347,41 @@ export default class VaultMemoryPlugin extends Plugin {
       }
     }
 
+    // Scaffold must satisfy ContractDocumentSchema (plugin/src/shared-types
+    // → src/contracts/contract-file-schema). The non-obvious fields:
+    //   - contract.version: literal 1 (NOT vmFormatVersion's 1 — those are
+    //     two distinct version numbers, one for the envelope and one for
+    //     the inner contract block)
+    //   - contract.assembly[].as: snake_case alias (each step's output
+    //     key); the schema's superRefine enforces uniqueness
+    //   - contract.name: kebab-case (regex /^[a-z][a-z0-9-]*$/) — derived
+    //     from the file basename, which is "untitled" or "untitled-N"
+    //     (both kebab-case)
+    //   - editor.nodes[].id: `step:<alias>` (NOT `step-<index>`)
+    //   - editor.nodes[].x/y: flat at the node level (NOT nested)
+    //   - editor.yamlComments: {} (NOT preservedComments — the field
+    //     was renamed in the schema)
+    const stepAlias = "intro";
     const scaffold = {
       vmFormatVersion: 1,
       contract: {
+        version: 1,
         name: candidate.replace(/^.*\//, "").replace(/\.contract$/, ""),
-        description: "New contract — describe what this contract does in one sentence.",
+        description:
+          "New contract — describe what this contract does in one sentence.",
         assembly: [
           {
+            as: stepAlias,
             verb: "literal",
             value: "Hello from your new contract.",
           },
         ],
       },
       editor: {
+        nodes: [{ id: `step:${stepAlias}`, x: 0, y: 0 }],
         selection: null,
         viewport: { x: 0, y: 0, zoom: 1 },
-        nodes: [
-          {
-            id: "step-0",
-            position: { x: 0, y: 0 },
-            size: { width: 200, height: 100 },
-          },
-        ],
-        preservedComments: [],
+        yamlComments: {},
       },
     };
 

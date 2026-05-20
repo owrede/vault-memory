@@ -359,31 +359,45 @@ export class ContractEditorView extends TextFileView {
   private async writeScaffold(): Promise<void> {
     const file = this.file;
     if (!file) return;
-    const basename = file.basename;
+    // Coerce the basename into a kebab-case slug that satisfies
+    // ContractFileSchema's `name` regex (/^[a-z][a-z0-9-]*$/). The
+    // file's actual filename is preserved; only the in-document `name`
+    // field is normalised. If we can't produce anything kebab-case from
+    // the filename (e.g. all-symbols), fall back to "untitled".
+    const slugifyContractName = (raw: string): string => {
+      let s = raw
+        .toLowerCase()
+        .replace(/[^a-z0-9-]+/g, "-")
+        .replace(/-+/g, "-")
+        .replace(/^-+|-+$/g, "");
+      if (!s || !/^[a-z]/.test(s)) s = "untitled";
+      return s;
+    };
+    const contractName = slugifyContractName(file.basename);
+    const stepAlias = "intro";
+    // Scaffold mirrors createContract() in main.ts — see that comment
+    // block for the schema-correctness notes (version: 1, snake_case
+    // aliases, flat node positions, yamlComments key).
     const scaffold = {
       vmFormatVersion: 1,
       contract: {
-        name: basename,
+        version: 1,
+        name: contractName,
         description:
           "New contract — describe what this contract does in one sentence.",
         assembly: [
           {
+            as: stepAlias,
             verb: "literal",
             value: "Hello from your new contract.",
           },
         ],
       },
       editor: {
+        nodes: [{ id: `step:${stepAlias}`, x: 0, y: 0 }],
         selection: null,
         viewport: { x: 0, y: 0, zoom: 1 },
-        nodes: [
-          {
-            id: "step-0",
-            position: { x: 0, y: 0 },
-            size: { width: 200, height: 100 },
-          },
-        ],
-        preservedComments: [],
+        yamlComments: {},
       },
     };
     const text = JSON.stringify(scaffold, null, 2) + "\n";

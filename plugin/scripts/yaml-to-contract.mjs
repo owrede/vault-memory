@@ -32,22 +32,26 @@ const DEFAULT_VIEWPORT = { x: 0, y: 0, zoom: 1 };
 
 /**
  * Build a deterministic LTR layout for a contract — one node per
- * assembly step, 220 px apart. Matches the codec's buildDefaultEditorState
- * exactly so the first canvas open shows the same layout the codec
- * would have produced.
+ * assembly step, 220 px apart. Matches the schema in
+ * src/contracts/contract-file-schema.ts exactly:
+ *   - editor.nodes[].id = `step:<alias>` (NOT `step-<index>`)
+ *   - editor.nodes[].x/y are flat at the node level (NOT nested under position)
+ *   - editor.yamlComments = {} (NOT preservedComments)
+ *   - extra keys (size, label, …) round-trip via passthrough but are
+ *     not required, so we omit them to stay minimal
  */
 function buildDefaultEditorState(contract) {
   const assembly = Array.isArray(contract.assembly) ? contract.assembly : [];
-  const nodes = assembly.map((_step, i) => ({
-    id: `step-${i}`,
-    position: { x: i * DEFAULT_NODE_DX, y: 0 },
-    size: { width: DEFAULT_NODE_DX - 20, height: DEFAULT_NODE_DY - 20 },
+  const nodes = assembly.map((step, i) => ({
+    id: `step:${step?.as ?? `step-${i}`}`,
+    x: i * DEFAULT_NODE_DX,
+    y: 0,
   }));
   return {
+    nodes,
     selection: null,
     viewport: { ...DEFAULT_VIEWPORT },
-    nodes,
-    preservedComments: [],
+    yamlComments: {},
   };
 }
 

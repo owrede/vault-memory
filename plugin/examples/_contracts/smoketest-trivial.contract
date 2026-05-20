@@ -75,36 +75,24 @@
     }
   },
   "editor": {
+    "nodes": [
+      {
+        "id": "step:payload",
+        "x": 0,
+        "y": 0
+      },
+      {
+        "id": "step:observed_at",
+        "x": 220,
+        "y": 0
+      }
+    ],
     "selection": null,
     "viewport": {
       "x": 0,
       "y": 0,
       "zoom": 1
     },
-    "nodes": [
-      {
-        "id": "step-0",
-        "position": {
-          "x": 0,
-          "y": 0
-        },
-        "size": {
-          "width": 200,
-          "height": 100
-        }
-      },
-      {
-        "id": "step-1",
-        "position": {
-          "x": 220,
-          "y": 0
-        },
-        "size": {
-          "width": 200,
-          "height": 100
-        }
-      }
-    ],
-    "preservedComments": []
+    "yamlComments": {}
   }
 }
