@@ -18,6 +18,25 @@ export interface ChangelogEntry {
  */
 export const PLUGIN_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.2.0",
+    date: "2026-05-20",
+    changes: [
+      "UX redesign — Slice B (canvas). The contract canvas is now legible at a glance instead of looking like an unstyled graph debugger.",
+      'Step nodes carry a 4px coloured strip on the left (category hint matching the palette), a Lucide icon, a plain-language title (e.g. "Read a note"), the snake_case alias as the prominent line, the canonical verb in small monospace, and a one-line arg preview ("doc_id: ←meeting, hops: 1") so users can read what each step will do without opening the inspector.',
+      "Status dot in the top-right of each node (●/⚠/✕) reserved for the in-editor validation pass coming in Slice C.",
+      "Edges between steps are drawn automatically from {{alias.field}} references in step args. Edge colour matches the source step's category, so a graph of mostly-blue-edged steps signals a read-heavy contract; green edges signal compose-heavy.",
+      "Step nodes are now resizable via xyflow's NodeResizer — handles appear on selection, snap to a 180×90 minimum. Resize persists to editor.nodes.width/height.",
+      "New CommentNode — borderless, italic, muted free-text annotations users can drop anywhere on the canvas to explain what the contract does. Double-click to edit, ⌘↵ or click-outside to save, Esc to discard. Stored as editor.nodes entries with kind: 'comment' and text: string — round-trips losslessly through the YAML companion via the codec's passthrough.",
+      'Floating "+ Comment" button top-right of the canvas to drop a fresh comment into the middle of the viewport.',
+      "Canvas Controls (zoom in/out/fit/lock) repositioned to the bottom-right, styled with Obsidian backgrounds + borders so they look native instead of foreign. Lock control hidden — the canvas is meant to be edited, not pinned.",
+      "MiniMap added at the bottom-left for navigating large contracts.",
+      "Background dot grid now fills the entire canvas (was previously clipped to the lower-left because of the layout regression that landed in 2.0.5 — now consistent).",
+      "Empty-state hint when a contract has no assembly steps yet: 'Drag a step from the left palette onto the canvas. Most contracts start with a Read or Search step and end with a Compose step.' Disappears as soon as the first step lands.",
+      "Default args from the verb catalog now populate when a verb is dropped onto the canvas, so the new step appears with the right shape pre-filled (e.g. dropping search_hybrid gives you {query: ?, limit: 20}).",
+      "This is Slice B of a 3-slice UX redesign. Slice C — inspector — coming next: plain-language verb explanations, labelled form fields, used-by relationships, contract-level overview when nothing is selected.",
+    ],
+  },
+  {
     version: "2.1.0",
     date: "2026-05-20",
     changes: [

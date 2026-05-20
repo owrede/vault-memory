@@ -1,7 +1,7 @@
 {
   "id": "vault-memory",
   "name": "vault-memory",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "minAppVersion": "1.5.0",
   "description": "Local-first agentic knowledge layer for Obsidian — semantic memory, briefs, and visual task contract editor.",
   "author": "Oliver Wrede",
