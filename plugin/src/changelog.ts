@@ -18,6 +18,18 @@ export interface ChangelogEntry {
  */
 export const PLUGIN_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.0.2",
+    date: "2026-05-20",
+    changes: [
+      'Fix: "" konnte nicht geöffnet werden — Obsidian\'s native "couldn\'t open <file>" notice with an empty filename when clicking a contract row in the side panel. Root cause was twofold: (a) openContract() used workspace.getLeaf(false).openFile(file), which on the side panel returns the side-panel leaf itself, and openFile rejects in-place view swap. (b) getViewData() returned "" when the parsed envelope was null, which could cause Obsidian\'s autosave path to overwrite the on-disk .contract file with empty content the next time the workspace decided to save (tab switch, sleep, etc.) — silently destroying user content and producing cascading empty-name notices when other contracts then tried to open against the broken state.',
+      "Fix: openContract + createContract now route through workspace.openLinkText, which handles the leaf-selection edge cases properly (finds a main-pane leaf, creates one if needed, never tries to clobber the side panel). Both methods wrap the call in try/catch and surface failures as proper vault-memory: notices with the file path.",
+      "Fix: getViewData() returns this.data (the file's on-disk bytes preserved by TextFileView) instead of \"\" when the in-memory envelope is null. A view that never successfully mounted now round-trips the existing file content unchanged on accidental saves, instead of nuking the file.",
+      "Fix: contract scaffolds and converted YAML→.contract examples now satisfy ContractDocumentSchema. Five mismatches were present in 2.0.1: missing contract.version: 1, missing assembly[].as snake_case alias, editor.nodes[].id was `step-<N>` instead of `step:<alias>`, position was nested instead of flat x/y at node level, and editor.preservedComments instead of editor.yamlComments.",
+      "Added: plugin/scripts/validate-examples.mjs — sanity-checks every bundled .contract file against the real Zod schema before each release.",
+      'Added: empty-file / malformed-JSON paths in the contract editor now render a friendly "Initialize with scaffold" or "Replace with scaffold" button instead of just the raw JSON-parser error.',
+    ],
+  },
+  {
     version: "2.0.1",
     date: "2026-05-20",
     changes: [

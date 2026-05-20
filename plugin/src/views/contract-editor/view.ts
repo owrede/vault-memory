@@ -162,8 +162,23 @@ export class ContractEditorView extends TextFileView {
    * `.yaml` companion stay on independent code paths.
    */
   override getViewData(): string {
-    if (!this.currentJson) return "";
-    return JSON.stringify(this.currentJson, null, 2);
+    // If we have a successfully-parsed envelope, serialize it back out.
+    if (this.currentJson) {
+      return JSON.stringify(this.currentJson, null, 2);
+    }
+    // No parsed state — typical when setViewData failed (malformed JSON,
+    // schema mismatch, or empty file). Returning "" here would cause
+    // Obsidian's TextFileView save path to OVERWRITE the file with an
+    // empty string the next time the workspace decides to save (tab
+    // switch, autosave timer, etc.) — silently destroying user content
+    // and producing follow-on '"" konnte nicht geöffnet werden' notices
+    // when other contracts try to open against the now-broken state.
+    //
+    // Safer: return the raw `data` field that TextFileView populates from
+    // the file's actual on-disk bytes. That way a getViewData() on a
+    // view that never successfully mounted just round-trips the existing
+    // file content unchanged.
+    return this.data ?? "";
   }
 
   override clear(): void {
