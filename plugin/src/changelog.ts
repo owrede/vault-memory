@@ -18,6 +18,14 @@ export interface ChangelogEntry {
  */
 export const PLUGIN_CHANGELOG: ChangelogEntry[] = [
   {
+    version: "2.0.4",
+    date: "2026-05-20",
+    changes: [
+      'Fix: contract editor canvas now mounts. The 2.0.3 setViewData/onLoadFile try/catch wrappers caught the real underlying error — "To call useStore outside of <SvelteFlow /> you need to wrap your component in a <SvelteFlowProvider />" — thrown by @xyflow/svelte\'s useSvelteFlow() hook at canvas-pane.svelte module init. The hook was called at script top level but the matching <SvelteFlow> component is rendered inside the same component\'s template, so the store wasn\'t available yet.',
+      "Wrapped the entire editor.svelte root in <SvelteFlowProvider> so useSvelteFlow() inside CanvasPane resolves to the same store that <SvelteFlow> creates further down the tree. This is the standard xyflow pattern when the flow API is consumed by siblings/ancestors of the flow canvas itself.",
+    ],
+  },
+  {
     version: "2.0.3",
     date: "2026-05-20",
     changes: [

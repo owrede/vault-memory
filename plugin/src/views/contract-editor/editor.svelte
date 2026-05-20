@@ -14,6 +14,7 @@
 -->
 
 <script lang="ts">
+  import { SvelteFlowProvider } from "@xyflow/svelte";
   import PalettePane from "./palette/palette-pane.svelte";
   import CanvasPane from "./canvas/canvas-pane.svelte";
   import InspectorPane from "./inspector/inspector-pane.svelte";
@@ -37,18 +38,28 @@
   }
 </script>
 
-<div class="vm-editor-root" role="application" aria-label="vault-memory contract editor">
-  <PalettePane {mcpClient} />
-  <div class="vm-canvas-slot">
-    <CanvasPane
-      {file}
-      selection={selectedAlias}
-      {onChange}
-      {onSelect}
-    />
+<!--
+  Wrap the entire editor in <SvelteFlowProvider> so `useSvelteFlow()`
+  inside CanvasPane resolves to the same store the <SvelteFlow>
+  component creates. Without the provider, useSvelteFlow throws
+  "To call useStore outside of <SvelteFlow /> you need to wrap your
+  component in a <SvelteFlowProvider />" at module init — exactly
+  what the user saw when opening a .contract from the file explorer.
+-->
+<SvelteFlowProvider>
+  <div class="vm-editor-root" role="application" aria-label="vault-memory contract editor">
+    <PalettePane {mcpClient} />
+    <div class="vm-canvas-slot">
+      <CanvasPane
+        {file}
+        selection={selectedAlias}
+        {onChange}
+        {onSelect}
+      />
+    </div>
+    <InspectorPane {file} {selectedAlias} {onChange} />
   </div>
-  <InspectorPane {file} {selectedAlias} {onChange} />
-</div>
+</SvelteFlowProvider>
 
 <style>
   .vm-editor-root {
