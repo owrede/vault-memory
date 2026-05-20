@@ -1,7 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "vmem",
-  "version": "0.3.6",
+  "version": "0.3.7",
   "description": "Local-first agentic memory layer for Obsidian — install, diagnose, and reindex vault-memory from Claude Code via /vmem:install, /vmem:health, /vmem:reindex.",
   "author": {
     "name": "Oliver Wrede",
