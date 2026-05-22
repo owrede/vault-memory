@@ -22,10 +22,7 @@ export {
 } from "./sink.js";
 
 export { MemorySinkRegistry } from "./registry.js";
-export type {
-  MemorySinkConfig,
-  RegisterMemorySinksOptions,
-} from "./registry.js";
+export type { MemorySinkConfig, RegisterMemorySinksOptions } from "./registry.js";
 
 export {
   DEFAULT_MEMORY_V1,

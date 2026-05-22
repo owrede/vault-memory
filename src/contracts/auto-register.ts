@@ -33,10 +33,7 @@
  * Zero `fs` / `path` / `yaml` / `chokidar`.
  */
 
-import type {
-  McpServer,
-  RegisteredTool,
-} from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer, RegisteredTool } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ContractRegistry } from "./registry.js";
 import type { ParsedContract } from "./types.js";
 import { slugify } from "./slug.js";

@@ -23,30 +23,22 @@ describe("resolveRefs (D-A3a, T-06-01-01 gate)", () => {
     }) as { foo: Record<string, unknown> };
     // Per Example 3 spread order: catalog first, author additions second.
     expect(out.foo.type).toBe("string");
-    expect(out.foo.pattern).toBe(
-      (TYPES_CATALOG.DocId as Record<string, unknown>).pattern,
-    );
+    expect(out.foo.pattern).toBe((TYPES_CATALOG.DocId as Record<string, unknown>).pattern);
     expect(out.foo.description).toBe("override");
     // The literal $ref key is stripped from the output.
     expect(out.foo.$ref).toBeUndefined();
   });
 
   it("Test 6: unknown $ref target throws synchronously with the bad ref in the message", () => {
-    expect(() => resolveRefs({ foo: { $ref: "#/types/Unknown" } })).toThrow(
-      /Unknown.*\$ref/i,
-    );
+    expect(() => resolveRefs({ foo: { $ref: "#/types/Unknown" } })).toThrow(/Unknown.*\$ref/i);
   });
 
   it("Test 7: $ref to http:// URL is REJECTED (only #/types/<name> form allowed)", () => {
-    expect(() => resolveRefs({ foo: { $ref: "http://example.com/x" } })).toThrow(
-      /#\/types/,
-    );
+    expect(() => resolveRefs({ foo: { $ref: "http://example.com/x" } })).toThrow(/#\/types/);
   });
 
   it("Test 7b: $ref to file:// or JSON-Pointer also rejected", () => {
-    expect(() =>
-      resolveRefs({ foo: { $ref: "file:///etc/passwd" } }),
-    ).toThrow();
+    expect(() => resolveRefs({ foo: { $ref: "file:///etc/passwd" } })).toThrow();
     expect(() => resolveRefs({ foo: { $ref: "#/properties/foo" } })).toThrow();
   });
 
@@ -56,9 +48,7 @@ describe("resolveRefs (D-A3a, T-06-01-01 gate)", () => {
       nested: { $ref: "#/types/Handle" },
     }) as { items: Array<Record<string, unknown>>; nested: Record<string, unknown> };
     expect(out.items[0]?.type).toBe("string");
-    expect(out.items[0]?.pattern).toBe(
-      (TYPES_CATALOG.DocId as Record<string, unknown>).pattern,
-    );
+    expect(out.items[0]?.pattern).toBe((TYPES_CATALOG.DocId as Record<string, unknown>).pattern);
     expect(out.nested.type).toBe("string");
   });
 

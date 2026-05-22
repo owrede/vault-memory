@@ -37,9 +37,7 @@ describe("DaemonStateQueries (Phase 5 / D-09)", () => {
 
     // Only one row per vault (PRIMARY KEY invariant).
     const count = db.handle
-      .prepare<[], { c: number }>(
-        "SELECT COUNT(*) AS c FROM daemon_state WHERE vault_name = ?",
-      )
+      .prepare<[], { c: number }>("SELECT COUNT(*) AS c FROM daemon_state WHERE vault_name = ?")
       .get("vault-a");
     expect(count?.c).toBe(1);
   });

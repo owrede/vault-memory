@@ -47,8 +47,7 @@ import type { MemorySinkHandle } from "../types.js";
  *                     `obsidian-fs:/atlas/_memory/` (single slash),
  *                     `notion-api://...` (non-obsidian-fs scheme, Phase 2).
  */
-export const MEMORY_SINK_HANDLE_PATTERN =
-  /^obsidian-fs:\/\/[a-z0-9][a-z0-9-]*\/[^\s]+\/$/;
+export const MEMORY_SINK_HANDLE_PATTERN = /^obsidian-fs:\/\/[a-z0-9][a-z0-9-]*\/[^\s]+\/$/;
 
 /**
  * Allowed characters inside a single path segment of the resource portion

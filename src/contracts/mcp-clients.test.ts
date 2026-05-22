@@ -30,7 +30,11 @@ afterEach(() => {
 function makeStubFactory(
   toolResult: unknown = { content: [{ type: "text", text: JSON.stringify({ hello: "world" }) }] },
   shouldFail = false,
-): { factory: ClientFactory; closeSpy: ReturnType<typeof vi.fn>; callToolSpy: ReturnType<typeof vi.fn> } {
+): {
+  factory: ClientFactory;
+  closeSpy: ReturnType<typeof vi.fn>;
+  callToolSpy: ReturnType<typeof vi.fn>;
+} {
   const closeSpy = vi.fn();
   const callToolSpy = vi.fn(async () => toolResult);
   const factory: ClientFactory = async () => {

@@ -42,10 +42,7 @@ const MCP_VERB_RE = /^mcp:\/\/[a-z][a-z0-9_-]*\/[a-z][a-z0-9_-]*$/;
  * Verb schema = closed enum (baseline + literal) OR mcp:// peer pattern.
  * Anything else — including any v1 write tool name — fails validation.
  */
-const VerbSchema = z.union([
-  z.enum([...BASELINE_VERBS, "literal"]),
-  z.string().regex(MCP_VERB_RE),
-]);
+const VerbSchema = z.union([z.enum([...BASELINE_VERBS, "literal"]), z.string().regex(MCP_VERB_RE)]);
 
 const StepSchema = z
   .object({
@@ -54,9 +51,7 @@ const StepSchema = z
       .min(1)
       .regex(/^[a-z_][a-z0-9_]*$/, "alias must be snake_case")
       .describe("D-A2c — unique snake_case alias for this step's output"),
-    verb: VerbSchema.describe(
-      "Closed enum + literal + mcp:// extension (D-A2a / C-1)",
-    ),
+    verb: VerbSchema.describe("Closed enum + literal + mcp:// extension (D-A2a / C-1)"),
     args: z.record(z.string(), z.unknown()).optional(),
     value: z.unknown().optional(),
   })
@@ -71,26 +66,16 @@ const HandleDeclSchema = z
 
 const WriteBackSchema = z
   .object({
-    sink: z
-      .string()
-      .min(1)
-      .describe("Template expression OR literal sink handle"),
+    sink: z.string().min(1).describe("Template expression OR literal sink handle"),
     document_kind: z.enum(["brief", "observation", "custom"]),
     properties: z.record(z.string(), z.unknown()).default({}),
-    body_from: z
-      .string()
-      .min(1)
-      .describe("Template expression that resolves to the body string"),
+    body_from: z.string().min(1).describe("Template expression that resolves to the body string"),
   })
-  .describe(
-    "DeliveryAdapter.write chokepoint — only ground-truth DocId source (C-3)",
-  );
+  .describe("DeliveryAdapter.write chokepoint — only ground-truth DocId source (C-3)");
 
 export const ContractFileSchema = z
   .object({
-    version: z
-      .literal(1)
-      .describe("v2.0.0 supports version 1 only; v2.x may extend additively"),
+    version: z.literal(1).describe("v2.0.0 supports version 1 only; v2.x may extend additively"),
     name: z
       .string()
       .min(1)

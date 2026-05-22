@@ -26,10 +26,7 @@
  */
 
 import { createHash, randomBytes } from "node:crypto";
-import type {
-  DeliveryAdapter,
-  WriteResult,
-} from "../../adapters/delivery/types.js";
+import type { DeliveryAdapter, WriteResult } from "../../adapters/delivery/types.js";
 import { formatDocId } from "../../adapters/registry.js";
 import type { SourceConnector } from "../../adapters/source/types.js";
 import type { Document } from "../../types.js";
@@ -170,9 +167,7 @@ export async function handleRecordObservation(
       : registry.getDefaultMemorySink();
 
   if (sink.vault !== args.vault) {
-    throw new Error(
-      `Sink "${sink.name}" belongs to vault "${sink.vault}", not "${args.vault}"`,
-    );
+    throw new Error(`Sink "${sink.name}" belongs to vault "${sink.vault}", not "${args.vault}"`);
   }
 
   // ── Build the property bag ───────────────────────────────────────────────
@@ -211,9 +206,7 @@ export async function handleRecordObservation(
 
   // ── Mint a DocId, retrying with fresh hash suffix on path collision ─────
   const observedAtForNaming =
-    typeof properties.observed_at === "string"
-      ? properties.observed_at
-      : observedAtDefault;
+    typeof properties.observed_at === "string" ? properties.observed_at : observedAtDefault;
   const slug = slugify(args.claim);
 
   const delivery = deps.deliveryAdapterFor(args.vault);
@@ -224,16 +217,11 @@ export async function handleRecordObservation(
     // WR-04 (b): per-retry salt is cryptographically random — six hex
     // chars of fresh entropy. Two same-millisecond calls with identical
     // claim/observed_at no longer produce identical collision chains.
-    const suffix = hashSuffix(
-      args.claim,
-      observedAtForNaming,
-      randomBytes(3).toString("hex"),
-    );
+    const suffix = hashSuffix(args.claim, observedAtForNaming, randomBytes(3).toString("hex"));
     const filename = `${dateSlug(observedAtForNaming)}-${slug}-${suffix}.md`;
     // `sink.resolveToRelativePath` already ends in "/" (enforced by the
     // MemorySinkHandle regex in Plan 02-02). Safe to concatenate.
-    const relativeResource =
-      sink.resolveToRelativePath + OBSERVATIONS_SUBFOLDER + filename;
+    const relativeResource = sink.resolveToRelativePath + OBSERVATIONS_SUBFOLDER + filename;
     const docId = formatDocId("obsidian-fs", args.vault, relativeResource);
 
     // Path-collision check: if the candidate DocId already resolves to

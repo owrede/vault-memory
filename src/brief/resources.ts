@@ -96,9 +96,8 @@ export async function readListBriefs(
   // single-vault via `manager.require()` (which throws on unknown vault
   // — same contract as `handleGetBrief`). Otherwise we fan out over
   // every vault the manager knows about.
-  const vaults = opts.vault !== undefined
-    ? [deps.manager.require(opts.vault)]
-    : deps.manager.list();
+  const vaults =
+    opts.vault !== undefined ? [deps.manager.require(opts.vault)] : deps.manager.list();
 
   const out: ListBriefEntry[] = [];
   for (const vault of vaults) {
@@ -139,8 +138,7 @@ export async function readListBriefs(
       const target = typeof props.target === "string" ? props.target : "";
       if (opts.target !== undefined && !target.includes(opts.target)) continue;
 
-      const compiledAt =
-        typeof props.compiled_at === "string" ? props.compiled_at : "";
+      const compiledAt = typeof props.compiled_at === "string" ? props.compiled_at : "";
       const purpose = typeof props.purpose === "string" ? props.purpose : "";
       const status = typeof props.status === "string" ? props.status : "active";
       const sourceCount = vault.db.briefSources.sourcesForBrief(doc.id).length;

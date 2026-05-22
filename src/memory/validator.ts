@@ -81,10 +81,7 @@ export type GuardFailure = WriteConflict & {
  * `props` is missing, the key is missing, or the property bag itself
  * is non-object.
  */
-function getAt(
-  props: Record<string, unknown> | undefined,
-  key: string,
-): unknown {
+function getAt(props: Record<string, unknown> | undefined, key: string): unknown {
   if (!props || typeof props !== "object") return undefined;
   return props[key];
 }
@@ -129,8 +126,7 @@ export function validateAgentWrite(
       reason: "non_agent_write_inside_sink",
       sinkName: sink.name,
       message:
-        `source:"${String(source)}" writes are not permitted into ` +
-        `MemorySink "${sink.name}".`,
+        `source:"${String(source)}" writes are not permitted into ` + `MemorySink "${sink.name}".`,
       suggestion:
         "Memory sinks accept source:'agent' writes only. User notes belong in the surrounding vault.",
     };

@@ -134,9 +134,9 @@ describe("searchSections — chunk → section promotion", () => {
   it("(b) multiple chunk hits in same section → one result; score = max", async () => {
     const deps = buildDeps({
       candidates: [
-        makeHit({ notePath: "alpha.md", chunkIdx: 5, score: 0.30 }),
-        makeHit({ notePath: "alpha.md", chunkIdx: 6, score: 0.80 }),
-        makeHit({ notePath: "alpha.md", chunkIdx: 7, score: 0.50 }),
+        makeHit({ notePath: "alpha.md", chunkIdx: 5, score: 0.3 }),
+        makeHit({ notePath: "alpha.md", chunkIdx: 6, score: 0.8 }),
+        makeHit({ notePath: "alpha.md", chunkIdx: 7, score: 0.5 }),
       ],
       resolutions: new Map([
         ["alpha.md#5", { noteId: 100, anchor: "A", headingPath: ["H"], chunkIdFirst: 5 }],
@@ -147,7 +147,7 @@ describe("searchSections — chunk → section promotion", () => {
     });
     const out = await searchSections(deps, { query: "q", limit: 10 });
     expect(out).toHaveLength(1);
-    expect(out[0]!.score).toBe(0.80);
+    expect(out[0]!.score).toBe(0.8);
     // All three chunks listed.
     expect(out[0]!.chunk_ids.slice().sort()).toEqual([5, 6, 7]);
     // Snippet sourced from the best-scoring chunk (idx 6).
@@ -157,9 +157,9 @@ describe("searchSections — chunk → section promotion", () => {
   it("(c) chunks across multiple notes → one section hit per (note, section)", async () => {
     const deps = buildDeps({
       candidates: [
-        makeHit({ notePath: "alpha.md", chunkIdx: 1, score: 0.50 }),
-        makeHit({ notePath: "beta.md", chunkIdx: 1, score: 0.60 }),
-        makeHit({ notePath: "alpha.md", chunkIdx: 2, score: 0.40 }),
+        makeHit({ notePath: "alpha.md", chunkIdx: 1, score: 0.5 }),
+        makeHit({ notePath: "beta.md", chunkIdx: 1, score: 0.6 }),
+        makeHit({ notePath: "alpha.md", chunkIdx: 2, score: 0.4 }),
       ],
       resolutions: new Map([
         ["alpha.md#1", { noteId: 1, anchor: "A1", headingPath: ["Alpha"], chunkIdFirst: 1 }],
@@ -223,9 +223,15 @@ describe("searchSections — chunk → section promotion", () => {
       resolutions: new Map([
         // Preamble — must be dropped.
         ["alpha.md#1", { noteId: 1, anchor: "preamble", headingPath: [], chunkIdFirst: 0 }],
-        ["alpha.md#2", {
-          noteId: 1, anchor: "real", headingPath: ["Real", "Heading"], chunkIdFirst: 2,
-        }],
+        [
+          "alpha.md#2",
+          {
+            noteId: 1,
+            anchor: "real",
+            headingPath: ["Real", "Heading"],
+            chunkIdFirst: 2,
+          },
+        ],
       ]),
       docs: new Map([["alpha.md", makeDoc("alpha.md")]]),
     });

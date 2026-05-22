@@ -18,10 +18,7 @@ import type { Vault } from "../vault/index.js";
 import { StubDelivery } from "../adapters/stub/delivery.js";
 import { StubSource } from "../adapters/stub/source.js";
 import { provisionSink } from "../adapters/delivery/obsidian-fs/sentinel.js";
-import {
-  MemorySinkRegistry,
-  parseMemorySinkHandle,
-} from "../memory/index.js";
+import { MemorySinkRegistry, parseMemorySinkHandle } from "../memory/index.js";
 import { computeChunkIdFragment } from "../chunker/chunk-id.js";
 import type { Document, DocId, MemorySink } from "../types.js";
 import { parseDocId } from "../adapters/registry.js";
@@ -35,8 +32,7 @@ const BRIEF_SINK_REL_PATH = "_memory/_briefs/";
 function stubServer(opts: { sampling?: boolean } = {}): McpServer {
   return {
     server: {
-      getClientCapabilities: () =>
-        opts.sampling ? { sampling: {} } : undefined,
+      getClientCapabilities: () => (opts.sampling ? { sampling: {} } : undefined),
       createMessage: async () => ({
         content: { type: "text", text: "stub" },
         model: "stub",
@@ -66,10 +62,7 @@ async function buildFixture() {
   };
 
   const manager = new VaultManager();
-  (manager as unknown as { vaults: Map<string, Vault> }).vaults.set(
-    VAULT_NAME,
-    vault,
-  );
+  (manager as unknown as { vaults: Map<string, Vault> }).vaults.set(VAULT_NAME, vault);
 
   const registry = new MemorySinkRegistry();
   const briefSinkHandle = parseMemorySinkHandle(
@@ -350,12 +343,8 @@ describe("handleGetBrief — D-13 decision tree", () => {
     // Construct a synthetic cycle: A → B → A. This should never happen
     // under the forward-only invariant but the defensive guard catches
     // any future regression.
-    const docA = parseDocId(
-      `obsidian-fs://${VAULT_NAME}/_memory/_briefs/cycle--A.md`,
-    );
-    const docB = parseDocId(
-      `obsidian-fs://${VAULT_NAME}/_memory/_briefs/cycle--B.md`,
-    );
+    const docA = parseDocId(`obsidian-fs://${VAULT_NAME}/_memory/_briefs/cycle--A.md`);
+    const docB = parseDocId(`obsidian-fs://${VAULT_NAME}/_memory/_briefs/cycle--B.md`);
     fixture.docs.set(docA, {
       id: docA,
       source: docA as never,
@@ -389,9 +378,7 @@ describe("handleGetBrief — D-13 decision tree", () => {
     // findBriefByTarget skips superseded — so we need at least one
     // active brief that redirects via `superseded_by` for the chain to
     // start. We use a third "active" entry that points to A.
-    const docHead = parseDocId(
-      `obsidian-fs://${VAULT_NAME}/_memory/_briefs/cycle--head.md`,
-    );
+    const docHead = parseDocId(`obsidian-fs://${VAULT_NAME}/_memory/_briefs/cycle--head.md`);
     fixture.docs.set(docHead, {
       id: docHead,
       source: docHead as never,

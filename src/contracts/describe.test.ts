@@ -183,9 +183,7 @@ describe("describeContract (CON-05, Q-DESCRIBE)", () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.summary).toContain("- **src** → `obsidian-fs://a` (required)");
-    expect(r.summary).toContain(
-      "- **snk** → `obsidian-fs://b/_memory/` (optional MemorySink)",
-    );
+    expect(r.summary).toContain("- **snk** → `obsidian-fs://b/_memory/` (optional MemorySink)");
   });
 
   it("Test 7: pure — works with minimal registry-only deps (no DB/network/FS surface)", () => {

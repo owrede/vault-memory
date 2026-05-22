@@ -19,11 +19,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { RegisteredTool } from "@modelcontextprotocol/sdk/server/mcp.js";
 
-import {
-  syncPluginTools,
-  PLUGIN_TOOL_NAMES,
-  RuntimeConfigStore,
-} from "./plugin-tools/index.js";
+import { syncPluginTools, PLUGIN_TOOL_NAMES, RuntimeConfigStore } from "./plugin-tools/index.js";
 import { SuppressionSet } from "./adapters/change-feed/obsidian-fs/suppression.js";
 
 const DEFAULT_DEPS = {
@@ -50,22 +46,18 @@ async function makeLinkedClientServer() {
   // is still legal.
   const sentinel = server.registerTool(
     "__gating_sentinel__",
-    { description: "test sentinel — not part of the public API", inputSchema: { _: z.string().optional() } },
+    {
+      description: "test sentinel — not part of the public API",
+      inputSchema: { _: z.string().optional() },
+    },
     async () => ({ content: [{ type: "text" as const, text: "{}" }] }),
   );
   // Disable so it doesn't pollute tools/list payloads.
   sentinel.disable();
 
-  const client = new Client(
-    { name: "gating-test-client", version: "test" },
-    { capabilities: {} },
-  );
-  const [clientTransport, serverTransport] =
-    InMemoryTransport.createLinkedPair();
-  await Promise.all([
-    server.connect(serverTransport),
-    client.connect(clientTransport),
-  ]);
+  const client = new Client({ name: "gating-test-client", version: "test" }, { capabilities: {} });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
   const cleanup = async () => {
     await client.close();
     await server.close();
@@ -104,8 +96,9 @@ describe("Plan 07-04: plugin-control tool gating", () => {
       // Exactly six tools registered — and only the plugin tools (since
       // this server isolates them from the rest of the 23-tool surface).
       // Plan 07-07 added the sixth: `suppress_contract_write`.
-      expect(names.filter((n) => (PLUGIN_TOOL_NAMES as readonly string[]).includes(n)))
-        .toHaveLength(6);
+      expect(
+        names.filter((n) => (PLUGIN_TOOL_NAMES as readonly string[]).includes(n)),
+      ).toHaveLength(6);
     } finally {
       await cleanup();
     }

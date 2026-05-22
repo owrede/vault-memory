@@ -3,11 +3,7 @@ import { mkdtemp, readFile, writeFile, rm, mkdir, access } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import {
-  isProcessAlive,
-  releaseLock,
-  tryAcquireLock,
-} from "./lock.js";
+import { isProcessAlive, releaseLock, tryAcquireLock } from "./lock.js";
 
 /**
  * Phase 5 / D-08 — lockfile primitive tests.
@@ -50,11 +46,7 @@ describe("brief lockfile (D-08)", () => {
     // Seed: write a lockfile holding the current process.pid (which IS
     // alive — POSIX kill(pid, 0) returns 0).
     await mkdir(join(root, "locks"), { recursive: true });
-    await writeFile(
-      join(root, "locks", "v1.lock"),
-      `${process.pid}\n`,
-      "utf8",
-    );
+    await writeFile(join(root, "locks", "v1.lock"), `${process.pid}\n`, "utf8");
     const res = await tryAcquireLock("v1", { rootOverride: root });
     expect(res.acquired).toBe(false);
     if (res.acquired) throw new Error("type narrowing");
@@ -66,11 +58,7 @@ describe("brief lockfile (D-08)", () => {
     // PID 999999 is effectively never alive on a test runner — kill(pid, 0)
     // throws ESRCH. (We don't pick 1 because that's init / launchd and EPERM.)
     await mkdir(join(root, "locks"), { recursive: true });
-    await writeFile(
-      join(root, "locks", "v1.lock"),
-      `999999\n`,
-      "utf8",
-    );
+    await writeFile(join(root, "locks", "v1.lock"), `999999\n`, "utf8");
 
     const res = await tryAcquireLock("v1", { rootOverride: root });
     expect(res.acquired).toBe(true);
@@ -78,10 +66,7 @@ describe("brief lockfile (D-08)", () => {
     expect(res.pid).toBe(process.pid);
     expect(res.stolenFromPid).toBe(999999);
 
-    const contents = await readFile(
-      join(root, "locks", "v1.lock"),
-      "utf8",
-    );
+    const contents = await readFile(join(root, "locks", "v1.lock"), "utf8");
     expect(contents).toBe(`${process.pid}\n`);
   });
 
@@ -92,9 +77,7 @@ describe("brief lockfile (D-08)", () => {
     await releaseLock("v1", { rootOverride: root });
 
     // File is gone.
-    await expect(
-      readFile(join(root, "locks", "v1.lock"), "utf8"),
-    ).rejects.toThrow();
+    await expect(readFile(join(root, "locks", "v1.lock"), "utf8")).rejects.toThrow();
 
     // Re-acquire is a clean acquire (no stolenFromPid).
     const b = await tryAcquireLock("v1", { rootOverride: root });
@@ -110,11 +93,7 @@ describe("brief lockfile (D-08)", () => {
 
   it("treats a malformed (non-numeric) lockfile as orphaned and acquires", async () => {
     await mkdir(join(root, "locks"), { recursive: true });
-    await writeFile(
-      join(root, "locks", "v1.lock"),
-      "not-a-pid\n",
-      "utf8",
-    );
+    await writeFile(join(root, "locks", "v1.lock"), "not-a-pid\n", "utf8");
 
     const res = await tryAcquireLock("v1", { rootOverride: root });
     expect(res.acquired).toBe(true);
@@ -122,16 +101,11 @@ describe("brief lockfile (D-08)", () => {
     // stolenFromPid is set to -1 sentinel because we couldn't read a PID.
     expect(res.stolenFromPid).toBe(-1);
 
-    const contents = await readFile(
-      join(root, "locks", "v1.lock"),
-      "utf8",
-    );
+    const contents = await readFile(join(root, "locks", "v1.lock"), "utf8");
     expect(contents).toBe(`${process.pid}\n`);
   });
 
   it("releaseLock is safe to call when the lock isn't held (no-throw)", async () => {
-    await expect(
-      releaseLock("never-locked", { rootOverride: root }),
-    ).resolves.toBeUndefined();
+    await expect(releaseLock("never-locked", { rootOverride: root })).resolves.toBeUndefined();
   });
 });

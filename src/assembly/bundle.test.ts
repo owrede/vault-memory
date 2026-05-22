@@ -237,8 +237,7 @@ function buildFixture(
     },
   });
 
-  const docIdFor = (notePath: string): string =>
-    `obsidian-fs://${VAULT_NAME}/${notePath}`;
+  const docIdFor = (notePath: string): string => `obsidian-fs://${VAULT_NAME}/${notePath}`;
 
   return {
     vault,
@@ -711,10 +710,7 @@ describe("getDocumentBundle — vaults filter happy path", () => {
   afterEach(() => fx?.cleanup());
 
   it("vaults filter that INCLUDES the DocId's vault passes through", async () => {
-    fx = buildFixture(
-      [{ notePath: "x.md", title: "X", frontmatter: { title: "X" } }],
-      [],
-    );
+    fx = buildFixture([{ notePath: "x.md", title: "X", frontmatter: { title: "X" } }], []);
     const out = await getDocumentBundle(
       { manager: fx.manager, sourceConnectorFor: fx.sourceConnectorFor },
       { doc_id: fx.docIdFor("x.md"), vaults: [VAULT_NAME] },
@@ -722,4 +718,3 @@ describe("getDocumentBundle — vaults filter happy path", () => {
     expect(out.anchor.title).toBe("X");
   });
 });
-

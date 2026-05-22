@@ -40,10 +40,7 @@ export type DescribeResult =
   | { ok: true; json_schema: object; summary: string }
   | { ok: false; reason: "unknown_contract"; name: string };
 
-export function describeContract(
-  deps: DescribeDeps,
-  args: DescribeArgs,
-): DescribeResult {
+export function describeContract(deps: DescribeDeps, args: DescribeArgs): DescribeResult {
   const parsed = deps.registry.get(args.name);
   if (!parsed) return { ok: false, reason: "unknown_contract", name: args.name };
   return {
@@ -124,11 +121,8 @@ function renderSummary(parsed: ParsedContract): string {
   // ## Output Shape
   if (parsed.output_shape) {
     lines.push("## Output Shape");
-    const props =
-      ((parsed.output_shape as { properties?: Record<string, unknown> }).properties ?? {}) as Record<
-        string,
-        unknown
-      >;
+    const props = ((parsed.output_shape as { properties?: Record<string, unknown> }).properties ??
+      {}) as Record<string, unknown>;
     const compact = Object.entries(props)
       .map(([k, v]) => {
         const o = (v ?? {}) as { type?: string; $ref?: string };

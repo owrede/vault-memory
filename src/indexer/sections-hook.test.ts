@@ -1,11 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Database } from "../db/index.js";
 import type { Vault } from "../vault/index.js";
-import {
-  buildSectionsForNote,
-  extractStatus,
-  mapChunksToSections,
-} from "./indexer.js";
+import { buildSectionsForNote, extractStatus, mapChunksToSections } from "./indexer.js";
 
 /**
  * Phase 3 / 03-01 Task 7: indexer's section hook + denormalized

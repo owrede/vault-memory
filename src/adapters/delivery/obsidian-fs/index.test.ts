@@ -17,10 +17,7 @@ import type { Vault } from "../../../vault/index.js";
 import { ObsidianFsDelivery } from "./index.js";
 import { formatDocId } from "../../registry.js";
 import { provisionSink } from "./sentinel.js";
-import {
-  MemorySinkRegistry,
-  parseMemorySinkHandle,
-} from "../../../memory/index.js";
+import { MemorySinkRegistry, parseMemorySinkHandle } from "../../../memory/index.js";
 import type { Document, MemorySink } from "../../../types.js";
 
 function makeVault(path: string, writeEnabled = true): Vault {
@@ -277,9 +274,7 @@ describe("ObsidianFsDelivery", () => {
 describe("ObsidianFsDelivery — WR-08 audit is_memory_sink_write derivation", () => {
   const SINK_REL_PATH = "_memory/";
 
-  function fullyValidAgentProps(
-    overrides: Record<string, unknown> = {},
-  ): Record<string, unknown> {
+  function fullyValidAgentProps(overrides: Record<string, unknown> = {}): Record<string, unknown> {
     return {
       source: "agent",
       confidence: "direct",
@@ -306,9 +301,7 @@ describe("ObsidianFsDelivery — WR-08 audit is_memory_sink_write derivation", (
       dbPath: ":memory:",
     };
     const registry = new MemorySinkRegistry();
-    const sinkHandle = parseMemorySinkHandle(
-      `obsidian-fs://wr08-vault/${SINK_REL_PATH}`,
-    );
+    const sinkHandle = parseMemorySinkHandle(`obsidian-fs://wr08-vault/${SINK_REL_PATH}`);
     await registry.registerMemorySinks(
       [{ name: "default", handle: sinkHandle, contract: "default-memory-v1" }],
       {
@@ -333,11 +326,7 @@ describe("ObsidianFsDelivery — WR-08 audit is_memory_sink_write derivation", (
   it("write(): is_memory_sink_write=true when DocId resolves into a sink, even without opts.sink", async () => {
     const f = await makeFixtureWithRegistry();
     try {
-      const sinkId = formatDocId(
-        "obsidian-fs",
-        "wr08-vault",
-        `${SINK_REL_PATH}wr08-write.md`,
-      );
+      const sinkId = formatDocId("obsidian-fs", "wr08-vault", `${SINK_REL_PATH}wr08-write.md`);
       const res = await f.delivery.write(
         sinkId,
         {
@@ -361,11 +350,7 @@ describe("ObsidianFsDelivery — WR-08 audit is_memory_sink_write derivation", (
   it("update(): is_memory_sink_write=true when DocId resolves into a sink, even without opts.sink", async () => {
     const f = await makeFixtureWithRegistry();
     try {
-      const sinkId = formatDocId(
-        "obsidian-fs",
-        "wr08-vault",
-        `${SINK_REL_PATH}wr08-update.md`,
-      );
+      const sinkId = formatDocId("obsidian-fs", "wr08-vault", `${SINK_REL_PATH}wr08-update.md`);
       const first = await f.delivery.write(
         sinkId,
         {
@@ -409,11 +394,7 @@ describe("ObsidianFsDelivery — WR-08 audit is_memory_sink_write derivation", (
       // a future regression to the flag-derivation function would not have
       // failed this test because the function was never invoked on this
       // path. The rename + sibling pair closes that gap.
-      const sinkId = formatDocId(
-        "obsidian-fs",
-        "wr08-vault",
-        `${SINK_REL_PATH}wr08-delete.md`,
-      );
+      const sinkId = formatDocId("obsidian-fs", "wr08-vault", `${SINK_REL_PATH}wr08-delete.md`);
       const first = await f.delivery.write(
         sinkId,
         {
@@ -457,9 +438,7 @@ describe("ObsidianFsDelivery — WR-08 audit is_memory_sink_write derivation", (
       // Probe the same registry that ObsidianFsDelivery would consult.
       // We need a reference to it — construct one matching the fixture.
       const registry = new MemorySinkRegistry();
-      const sinkHandle = parseMemorySinkHandle(
-        `obsidian-fs://wr08-vault/${SINK_REL_PATH}`,
-      );
+      const sinkHandle = parseMemorySinkHandle(`obsidian-fs://wr08-vault/${SINK_REL_PATH}`);
       await registry.registerMemorySinks(
         [{ name: "default", handle: sinkHandle, contract: "default-memory-v1" }],
         {
@@ -495,11 +474,7 @@ describe("ObsidianFsDelivery — WR-08 audit is_memory_sink_write derivation", (
   it("write() outside any sink: is_memory_sink_write=false even with registry configured", async () => {
     const f = await makeFixtureWithRegistry();
     try {
-      const outsideId = formatDocId(
-        "obsidian-fs",
-        "wr08-vault",
-        "notes/outside.md",
-      );
+      const outsideId = formatDocId("obsidian-fs", "wr08-vault", "notes/outside.md");
       const res = await f.delivery.write(
         outsideId,
         {
@@ -530,11 +505,7 @@ describe("ObsidianFsDelivery — WR-08 audit is_memory_sink_write derivation", (
     };
     const noRegistryDelivery = new ObsidianFsDelivery(vault, "wr08-client");
     try {
-      const id = formatDocId(
-        "obsidian-fs",
-        "wr08-noreg-vault",
-        "anywhere.md",
-      );
+      const id = formatDocId("obsidian-fs", "wr08-noreg-vault", "anywhere.md");
       const res = await noRegistryDelivery.write(
         id,
         { blocks: [{ kind: "paragraph", text: "x" }] },

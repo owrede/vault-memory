@@ -99,9 +99,7 @@ export class PeerMcpRegistry {
         this.clients.set(name, wrapAvailable(client, transport));
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        process.stderr.write(
-          `[contracts] peer-MCP client '${name}' failed to start: ${msg}\n`,
-        );
+        process.stderr.write(`[contracts] peer-MCP client '${name}' failed to start: ${msg}\n`);
         this.clients.set(name, wrapUnavailable());
       }
     }

@@ -546,7 +546,7 @@ export function buildSectionsForNote(
   const insertedIds: number[] = [];
   for (let i = 0; i < sections.length; i++) {
     const s = sections[i]!;
-    const parentId = s.parent_index === null ? null : insertedIds[s.parent_index] ?? null;
+    const parentId = s.parent_index === null ? null : (insertedIds[s.parent_index] ?? null);
     const pair = rangePairs[i] ?? { first: null, last: null };
     const row: InsertSectionRow = {
       note_id: noteId,
@@ -578,9 +578,10 @@ export function mapChunksToSections(
   chunks: ChunkRow[],
   sectionRanges: Array<{ start: number; end: number }>,
 ): Array<{ first: number | null; last: number | null }> {
-  const out: Array<{ first: number | null; last: number | null }> = sectionRanges.map(
-    () => ({ first: null, last: null }),
-  );
+  const out: Array<{ first: number | null; last: number | null }> = sectionRanges.map(() => ({
+    first: null,
+    last: null,
+  }));
   for (const chunk of chunks) {
     const offset = chunk.start_offset;
     let chosenIdx: number | null = null;
@@ -617,8 +618,7 @@ function computeSectionOffsetRanges(
   const ranges: Array<{ start: number; end: number }> = [];
   const hasPreamble =
     sections.length > 0 && sections[0]!.level === 0 && sections[0]!.heading_text === "";
-  const firstHeadingOffset =
-    headings.length === 0 ? content.length : headings[0]!.startOffset;
+  const firstHeadingOffset = headings.length === 0 ? content.length : headings[0]!.startOffset;
   if (hasPreamble) {
     ranges.push({ start: 0, end: firstHeadingOffset });
   }

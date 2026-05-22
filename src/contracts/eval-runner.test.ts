@@ -30,10 +30,7 @@ import { ContractFileSchema } from "./schema.js";
 import { buildInputSchema } from "./input-schema.js";
 import { ContractRegistry } from "./registry.js";
 import { PeerMcpRegistry } from "./mcp-clients.js";
-import {
-  instantiateContract,
-  type InstantiateDeps,
-} from "./instantiate.js";
+import { instantiateContract, type InstantiateDeps } from "./instantiate.js";
 import type { ParsedContract } from "./types.js";
 import type { DocId } from "../types.js";
 
@@ -65,9 +62,7 @@ interface ScenarioFile {
 async function loadContract(name: string): Promise<ParsedContract> {
   const path = `evals/fixtures/v2-test-vault/_contracts/${name}.yaml`;
   const text = await readFile(path, "utf8");
-  const validated = ContractFileSchema.parse(
-    parseDocument(text).toJS() as unknown,
-  );
+  const validated = ContractFileSchema.parse(parseDocument(text).toJS() as unknown);
   const built = buildInputSchema(validated.inputs, validated.required);
   return {
     version: 1,
@@ -83,9 +78,7 @@ async function loadContract(name: string): Promise<ParsedContract> {
     ...(validated.output_shape !== undefined
       ? { output_shape: validated.output_shape as object }
       : {}),
-    ...(validated.write_back !== undefined
-      ? { write_back: validated.write_back }
-      : {}),
+    ...(validated.write_back !== undefined ? { write_back: validated.write_back } : {}),
   };
 }
 
@@ -131,9 +124,7 @@ function buildEvalDeps(registry: ContractRegistry): EvalRunDeps {
     return {
       ok: true,
       doc_id:
-        "obsidian-fs://test-vault/_memory/_briefs/" +
-        target.replace(/[^a-z0-9-]/gi, "_") +
-        ".md",
+        "obsidian-fs://test-vault/_memory/_briefs/" + target.replace(/[^a-z0-9-]/gi, "_") + ".md",
       body:
         "# Stub brief for " +
         target +
@@ -229,9 +220,7 @@ describe("contract eval scenarios (CON-08 + CON-10)", () => {
           // The shape only constrains structure of the returned bundle;
           // it does not validate every property exhaustively.
           const outSchema = z.fromJSONSchema(
-            scenario.expected_output_shape as unknown as Parameters<
-              typeof z.fromJSONSchema
-            >[0],
+            scenario.expected_output_shape as unknown as Parameters<typeof z.fromJSONSchema>[0],
           );
           const check = outSchema.safeParse({
             steps: result.steps,
@@ -281,9 +270,7 @@ describe("contract eval scenarios (CON-08 + CON-10)", () => {
           expect(refResult.ok).toBe(true);
           if (!refResult.ok) continue;
           // CON-10 parity: same step keys + same sink type on write_back.
-          expect(Object.keys(result.steps).sort()).toEqual(
-            Object.keys(refResult.steps).sort(),
-          );
+          expect(Object.keys(result.steps).sort()).toEqual(Object.keys(refResult.steps).sort());
           expect(result.write_back?.sink).toBe(refResult.write_back?.sink);
         }
       }

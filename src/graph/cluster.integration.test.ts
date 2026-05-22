@@ -48,10 +48,7 @@ interface ClusterYaml {
   queries: ClusterYamlQuery[];
 }
 
-const YAML_PATH = resolve(
-  process.cwd(),
-  "evals/fixtures/v2-test-vault/_queries/cluster.yaml",
-);
+const YAML_PATH = resolve(process.cwd(), "evals/fixtures/v2-test-vault/_queries/cluster.yaml");
 
 function loadYaml(): ClusterYaml {
   const raw = readFileSync(YAML_PATH, "utf8");

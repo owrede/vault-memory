@@ -15,9 +15,7 @@
 
 import type { ParsedContract } from "./types.js";
 
-export type RegistrySetResult =
-  | { ok: true }
-  | { ok: false; reason: "duplicate_name" };
+export type RegistrySetResult = { ok: true } | { ok: false; reason: "duplicate_name" };
 
 export class ContractRegistry {
   private readonly contracts = new Map<string, ParsedContract>();

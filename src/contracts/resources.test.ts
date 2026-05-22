@@ -12,11 +12,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { Database } from "../db/database.js";
 import { ContractRegistry } from "./registry.js";
 import { buildInputSchema } from "./input-schema.js";
-import {
-  readListContracts,
-  readListContractVerbs,
-  BASELINE_VERBS,
-} from "./resources.js";
+import { readListContracts, readListContractVerbs, BASELINE_VERBS } from "./resources.js";
 import type { ParsedContract } from "./types.js";
 
 function makeContract(opts: {

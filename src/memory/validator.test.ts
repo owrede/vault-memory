@@ -36,11 +36,7 @@ const INSIDE_SINK_ID: DocId = formatDocId(
   "_memory/observations/2026-01-01-foo.md",
 );
 
-const OUTSIDE_SINK_ID: DocId = formatDocId(
-  "obsidian-fs",
-  "atlas",
-  "notes/random.md",
-);
+const OUTSIDE_SINK_ID: DocId = formatDocId("obsidian-fs", "atlas", "notes/random.md");
 
 const VALID_PROPS: Record<string, unknown> = {
   source: "agent",
@@ -52,9 +48,7 @@ const VALID_PROPS: Record<string, unknown> = {
   type: "fact",
 };
 
-function withProps(
-  overrides: Record<string, unknown>,
-): Partial<Document> {
+function withProps(overrides: Record<string, unknown>): Partial<Document> {
   return { properties: { ...VALID_PROPS, ...overrides } };
 }
 
@@ -62,12 +56,7 @@ function withProps(
 
 describe("validateAgentWrite — Guard B (cheap, runs first)", () => {
   it("agent_write_outside_sink: source:'agent' with sink=null", () => {
-    const failure = validateAgentWrite(
-      OUTSIDE_SINK_ID,
-      withProps({}),
-      null,
-      null,
-    );
+    const failure = validateAgentWrite(OUTSIDE_SINK_ID, withProps({}), null, null);
     expect(failure).not.toBeNull();
     if (!failure) return;
     expect(failure.ok).toBe(false);
@@ -202,12 +191,7 @@ describe("validateAgentWrite — Guard A (Zod safeParse + cross-field)", () => {
 
 describe("validateAgentWrite — negative controls (passes)", () => {
   it("returns null when sink=null and source=undefined (ordinary v1 write)", () => {
-    const failure = validateAgentWrite(
-      OUTSIDE_SINK_ID,
-      { properties: { foo: "bar" } },
-      null,
-      null,
-    );
+    const failure = validateAgentWrite(OUTSIDE_SINK_ID, { properties: { foo: "bar" } }, null, null);
     expect(failure).toBeNull();
   });
 
@@ -223,12 +207,7 @@ describe("validateAgentWrite — negative controls (passes)", () => {
 
   it("returns null when sink set + source='agent' + all keys valid", () => {
     const sink = makeSink();
-    const failure = validateAgentWrite(
-      INSIDE_SINK_ID,
-      withProps({}),
-      sink,
-      DEFAULT_MEMORY_V1,
-    );
+    const failure = validateAgentWrite(INSIDE_SINK_ID, withProps({}), sink, DEFAULT_MEMORY_V1);
     expect(failure).toBeNull();
   });
 
@@ -238,8 +217,7 @@ describe("validateAgentWrite — negative controls (passes)", () => {
       INSIDE_SINK_ID,
       withProps({
         status: "superseded",
-        superseded_by:
-          "obsidian-fs://atlas/_memory/observations/2026-01-01-prior.md",
+        superseded_by: "obsidian-fs://atlas/_memory/observations/2026-01-01-prior.md",
         superseded_reason: "newer observation supersedes this",
       }),
       sink,

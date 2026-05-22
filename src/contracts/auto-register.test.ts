@@ -12,10 +12,7 @@ import { z } from "zod";
 import { ContractRegistry } from "./registry.js";
 import { syncAutoRegistered } from "./auto-register.js";
 import type { ParsedContract } from "./types.js";
-import type {
-  McpServer,
-  RegisteredTool,
-} from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer, RegisteredTool } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Fake McpServer + RegisteredTool
@@ -86,10 +83,10 @@ describe("syncAutoRegistered (D-A1, Pattern 4)", () => {
   let server: FakeMcpServer;
   let registry: ContractRegistry;
   let registered: Map<string, RegisteredTool>;
-  const instantiateHandler = async (
-    _name: string,
-    _args: unknown,
-  ): Promise<unknown> => ({ ok: false, reason: "not_yet_implemented" });
+  const instantiateHandler = async (_name: string, _args: unknown): Promise<unknown> => ({
+    ok: false,
+    reason: "not_yet_implemented",
+  });
 
   beforeEach(() => {
     server = new FakeMcpServer();

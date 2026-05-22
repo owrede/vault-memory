@@ -37,11 +37,7 @@
  */
 
 import type { DeliveryAdapter } from "../adapters/delivery/types.js";
-import {
-  decomposeDocId,
-  formatDocId,
-  parseDocId,
-} from "../adapters/registry.js";
+import { decomposeDocId, formatDocId, parseDocId } from "../adapters/registry.js";
 import type { SourceConnector } from "../adapters/source/types.js";
 import type { OllamaClient } from "../ollama/client.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -147,10 +143,7 @@ function resolveBriefSink(deps: CompileBriefDeps, sinkArg: string | undefined) {
  * call sites compile against indexed docs so this branch only matters
  * for unit-test fakes.
  */
-function resolveSourcesToChunks(
-  vault: Vault,
-  docIds: readonly DocId[],
-): ChunkSource[] {
+function resolveSourcesToChunks(vault: Vault, docIds: readonly DocId[]): ChunkSource[] {
   const out: ChunkSource[] = [];
   for (const docId of docIds) {
     const { resource } = decomposeDocId(docId);
@@ -290,11 +283,7 @@ export async function handleCompileBrief(
   const sourceHashes = buildSourceHashes(chunkSources);
 
   // ── 4. Resolve LLM strategy ───────────────────────────────────────
-  const strategy = resolveLlmStrategy(
-    deps.server,
-    deps.briefConfig,
-    args.prepared_text,
-  );
+  const strategy = resolveLlmStrategy(deps.server, deps.briefConfig, args.prepared_text);
   if (strategy.kind === "unavailable") {
     return {
       ok: false,
@@ -306,9 +295,7 @@ export async function handleCompileBrief(
 
   // ── 5. Build prompt + dispatch ────────────────────────────────────
   const titleOf = makeTitleResolver(vault);
-  const citations = parsedSourceDocIds
-    .map((id) => `- [[${titleOf(id)}]] (${id})`)
-    .join("\n");
+  const citations = parsedSourceDocIds.map((id) => `- [[${titleOf(id)}]] (${id})`).join("\n");
   const systemText =
     "You are compiling a concise, evidence-grounded brief from the source documents below. " +
     "Emit `[[Title]]` wikilinks for each cited source so the knowledge graph indexes the brief. " +
@@ -411,9 +398,7 @@ export async function handleCompileBrief(
     return {
       ok: false,
       reason: "write_failed",
-      message:
-        writeRes.message ??
-        `Delivery refused brief write: reason=${writeRes.reason}`,
+      message: writeRes.message ?? `Delivery refused brief write: reason=${writeRes.reason}`,
     };
   }
 

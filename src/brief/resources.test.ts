@@ -24,10 +24,7 @@ import type { Vault } from "../vault/index.js";
 import { StubDelivery } from "../adapters/stub/delivery.js";
 import { StubSource } from "../adapters/stub/source.js";
 import { provisionSink } from "../adapters/delivery/obsidian-fs/sentinel.js";
-import {
-  MemorySinkRegistry,
-  parseMemorySinkHandle,
-} from "../memory/index.js";
+import { MemorySinkRegistry, parseMemorySinkHandle } from "../memory/index.js";
 import { computeChunkIdFragment } from "../chunker/chunk-id.js";
 import type { Document, DocId, MemorySink } from "../types.js";
 import { parseDocId } from "../adapters/registry.js";
@@ -70,10 +67,7 @@ async function buildFixture() {
     dbPath: ":memory:",
   };
   const manager = new VaultManager();
-  (manager as unknown as { vaults: Map<string, Vault> }).vaults.set(
-    VAULT_NAME,
-    vault,
-  );
+  (manager as unknown as { vaults: Map<string, Vault> }).vaults.set(VAULT_NAME, vault);
 
   const registry = new MemorySinkRegistry();
   const briefSinkHandle = parseMemorySinkHandle(
@@ -180,7 +174,7 @@ describe("readListBriefs (BRF-09)", () => {
       target,
       source_doc_ids: [src],
       purpose,
-      ..._now ? { _now } : {},
+      ...(_now ? { _now } : {}),
     });
     if (!res.ok) throw new Error(`compile failed: ${JSON.stringify(res)}`);
     return res.doc_id as DocId;

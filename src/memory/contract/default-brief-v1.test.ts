@@ -146,9 +146,7 @@ describe("DEFAULT_BRIEF_V1 — cross-field invariants", () => {
     expect(result.success).toBe(false);
     if (!result.success) {
       // The error must reference source_hashes on its path.
-      const onSourceHashes = result.error.issues.some((i) =>
-        i.path.includes("source_hashes"),
-      );
+      const onSourceHashes = result.error.issues.some((i) => i.path.includes("source_hashes"));
       expect(onSourceHashes).toBe(true);
     }
   });

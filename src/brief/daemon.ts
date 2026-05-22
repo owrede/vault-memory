@@ -47,11 +47,7 @@
  * `DeliveryAdapter` / `SourceConnector` / `ChangeFeed` seams.
  */
 
-import type {
-  ChangeEvent,
-  ChangeFeed,
-  Disposable,
-} from "../adapters/change-feed/types.js";
+import type { ChangeEvent, ChangeFeed, Disposable } from "../adapters/change-feed/types.js";
 import type { DeliveryAdapter } from "../adapters/delivery/types.js";
 import type { SourceConnector } from "../adapters/source/types.js";
 import { decomposeDocId } from "../adapters/registry.js";
@@ -110,8 +106,7 @@ export class BriefStalenessDaemon {
   private acquired = false;
   private readonly pendingDeletes = new Map<DocId, PendingDelete>();
   private now: () => number = Date.now;
-  private log: (msg: string) => void = (m) =>
-    process.stderr.write(`[brief-daemon] ${m}\n`);
+  private log: (msg: string) => void = (m) => process.stderr.write(`[brief-daemon] ${m}\n`);
 
   /**
    * Acquire the per-vault lock, run the startup scan, subscribe to
@@ -119,20 +114,14 @@ export class BriefStalenessDaemon {
    * `{acquired: false, ownerPid}` on lock contention WITHOUT
    * subscribing or throwing — the second server boots normally.
    */
-  async start(
-    vault: Vault,
-    feed: ChangeFeed,
-    deps: DaemonDeps,
-  ): Promise<DaemonStartResult> {
+  async start(vault: Vault, feed: ChangeFeed, deps: DaemonDeps): Promise<DaemonStartResult> {
     this.vault = vault;
     this.deps = deps;
     if (deps.now) this.now = deps.now;
     if (deps.log) this.log = deps.log;
 
     const lockOpts =
-      deps.lockRootOverride !== undefined
-        ? { rootOverride: deps.lockRootOverride }
-        : {};
+      deps.lockRootOverride !== undefined ? { rootOverride: deps.lockRootOverride } : {};
     const lock = await tryAcquireLock(vault.config.name, lockOpts);
     if (!lock.acquired) {
       // D-08: structured WARN + return early. The lock-contention path
@@ -157,9 +146,7 @@ export class BriefStalenessDaemon {
     // value, but we log the value so operators can compare against
     // the post-scan cursor to verify the daemon is current.
     const startCursor = vault.db.daemonState.getCursor(vault.config.name);
-    this.log(
-      `start vault=${vault.config.name} startCursor=${startCursor ?? "null"}`,
-    );
+    this.log(`start vault=${vault.config.name} startCursor=${startCursor ?? "null"}`);
 
     // ── Startup full scan (D-09 correctness floor) ─────────────────
     await this.runStartupScan();
@@ -305,9 +292,7 @@ export class BriefStalenessDaemon {
           continue;
         }
         const chunks = vault.db.chunks.getByNote(note.id);
-        const found = chunks.find(
-          (c) => c.chunk_id_fragment === row.chunkIdFragment,
-        );
+        const found = chunks.find((c) => c.chunk_id_fragment === row.chunkIdFragment);
         if (!found) {
           currentHashes.set(key, null); // Chunk was renamed / deleted.
           continue;
@@ -504,9 +489,7 @@ export class BriefStalenessDaemon {
     const name = deps.briefSinkName ?? DEFAULT_BRIEF_SINK_NAME;
     const sink = deps.memorySinkRegistry.resolveMemorySink(name);
     if (sink.vault !== vaultName) {
-      throw new Error(
-        `Brief sink "${name}" belongs to vault "${sink.vault}", not "${vaultName}"`,
-      );
+      throw new Error(`Brief sink "${name}" belongs to vault "${sink.vault}", not "${vaultName}"`);
     }
     return sink;
   }

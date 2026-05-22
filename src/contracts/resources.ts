@@ -64,9 +64,7 @@ export function readListContracts(
   const out: ListContractsEntry[] = [];
   for (const [name, parsed] of deps.registry.entries()) {
     if (opts.source !== undefined) {
-      const anyMatch = Object.values(parsed.sources).some((s) =>
-        s.handle.startsWith(opts.source!),
-      );
+      const anyMatch = Object.values(parsed.sources).some((s) => s.handle.startsWith(opts.source!));
       if (!anyMatch) continue;
     }
     out.push({
@@ -122,9 +120,7 @@ export interface ListContractVerbsResource {
   custom: ListContractVerbsEntry[];
 }
 
-export function readListContractVerbs(
-  deps: ListContractVerbsDeps,
-): ListContractVerbsResource {
+export function readListContractVerbs(deps: ListContractVerbsDeps): ListContractVerbsResource {
   const usage = deps.contractAudit.aggregateVerbUsage(deps.vaultName);
   // List ALL `contract_step` rows once and reduce in-process so the
   // `used_by_contracts` join is O(N) without adding a SQL helper.
@@ -144,13 +140,15 @@ export function readListContractVerbs(
 
   const custom = usage
     .filter((u) => u.verb.startsWith("mcp://"))
-    .map((u): ListContractVerbsEntry => ({
-      verb: u.verb,
-      declared_in: extractDeclaredIn(u.verb),
-      used_by_contracts: Array.from(verbToContracts.get(u.verb) ?? []).sort(),
-      invocation_count: u.invocation_count,
-      last_seen: u.last_seen,
-    }));
+    .map(
+      (u): ListContractVerbsEntry => ({
+        verb: u.verb,
+        declared_in: extractDeclaredIn(u.verb),
+        used_by_contracts: Array.from(verbToContracts.get(u.verb) ?? []).sort(),
+        invocation_count: u.invocation_count,
+        last_seen: u.last_seen,
+      }),
+    );
 
   return { baseline: BASELINE_VERBS, custom };
 }

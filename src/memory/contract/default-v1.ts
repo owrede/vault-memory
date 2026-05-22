@@ -58,10 +58,7 @@ const baseShape = z
           message: "Required (non-null DocId) when status is 'superseded'",
         });
       }
-      if (
-        typeof data.superseded_reason !== "string" ||
-        data.superseded_reason.length === 0
-      ) {
+      if (typeof data.superseded_reason !== "string" || data.superseded_reason.length === 0) {
         ctx.addIssue({
           code: "custom",
           path: ["superseded_reason"],

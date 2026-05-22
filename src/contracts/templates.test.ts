@@ -80,10 +80,7 @@ describe("resolveTemplate (D-A2c, C-7)", () => {
   });
 
   it("Test 9: non-string leaves pass through unchanged", () => {
-    const r = resolveTemplate(
-      { foo: 42, bar: null, baz: true },
-      { inputs: {}, steps: {} },
-    );
+    const r = resolveTemplate({ foo: 42, bar: null, baz: true }, { inputs: {}, steps: {} });
     expect(r).toEqual({ ok: true, value: { foo: 42, bar: null, baz: true } });
   });
 

@@ -41,26 +41,15 @@ export {
   type StartedContractRegistry,
   type RegistryChangeKind,
 } from "./loader.js";
-export {
-  syncAutoRegistered,
-  type SyncAutoRegisteredOpts,
-} from "./auto-register.js";
-export {
-  resolveTemplate,
-  type TemplateBindings,
-  type TemplateResolveResult,
-} from "./templates.js";
+export { syncAutoRegistered, type SyncAutoRegisteredOpts } from "./auto-register.js";
+export { resolveTemplate, type TemplateBindings, type TemplateResolveResult } from "./templates.js";
 export {
   PeerMcpRegistry,
   type PeerMcpClient,
   type PeerMcpClientConfig,
   type ClientFactory,
 } from "./mcp-clients.js";
-export {
-  verbDispatcher,
-  type VerbDeps,
-  type VerbDispatchOpts,
-} from "./verbs/index.js";
+export { verbDispatcher, type VerbDeps, type VerbDispatchOpts } from "./verbs/index.js";
 export { callMcpVerb } from "./verbs/mcp-extension.js";
 export {
   instantiateContract,

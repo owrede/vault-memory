@@ -31,11 +31,7 @@ export const HOT_SWAPPABLE_KEYS = [
 
 export type HotSwappableKey = (typeof HOT_SWAPPABLE_KEYS)[number];
 
-export const RESTART_REQUIRED_KEYS = [
-  "ollama_url",
-  "embedding_model",
-  "fts_tokenizer",
-] as const;
+export const RESTART_REQUIRED_KEYS = ["ollama_url", "embedding_model", "fts_tokenizer"] as const;
 
 export type RestartRequiredKey = (typeof RESTART_REQUIRED_KEYS)[number];
 
