@@ -22,15 +22,16 @@
  *
  * # Adapter-seam discipline
  *
- * Imports `zod`, `smol-toml`, and node:fs/promises. The config-file mutator
- * is the ONLY plugin-tool that writes to `~/.vault-memory/config.toml`;
- * justified by D-CHROME-CONNECTORS (the connector list is the user-visible
- * source of truth, hot-swap would orphan running peer-MCP clients).
+ * TOML read/write goes through `src/config/{readConfigToml,writeConfigToml}`
+ * — the canonical seam-licensed site (ADR-002 §I-2 + §I-6 allow-list
+ * `src/config/`). This is the ONLY plugin-tool that mutates
+ * `~/.vault-memory/config.toml`; justified by D-CHROME-CONNECTORS (the
+ * connector list is the user-visible source of truth, hot-swap would
+ * orphan running peer-MCP clients).
  */
 
 import { z } from "zod";
-import { parse as parseToml, stringify as stringifyToml } from "smol-toml";
-import { readFile, writeFile } from "node:fs/promises";
+import { readConfigToml, writeConfigToml } from "../config/index.js";
 
 /**
  * Raw object shape exposed to the MCP SDK (`registerTool({inputSchema})`).
@@ -42,20 +43,13 @@ import { readFile, writeFile } from "node:fs/promises";
  * (`SetMcpClientArgs`) which the handler re-parses with.
  */
 export const SetMcpClientShape = {
-  name: z
-    .string()
-    .min(1)
-    .optional()
-    .describe("Client name (required for Variants A and B)."),
+  name: z.string().min(1).optional().describe("Client name (required for Variants A and B)."),
   command: z
     .string()
     .min(1)
     .optional()
     .describe("Executable path. Required for Variant A (add/update)."),
-  args: z
-    .array(z.string())
-    .optional()
-    .describe("Argv tail for child_process.spawn (Variant A)."),
+  args: z.array(z.string()).optional().describe("Argv tail for child_process.spawn (Variant A)."),
   env_secrets: z
     .record(z.string(), z.string())
     .optional()
@@ -76,10 +70,7 @@ export const SetMcpClientShape = {
 const SetMcpClientArgs = z.union([
   // Variant A — add/update
   z.object({
-    name: z
-      .string()
-      .min(1)
-      .describe("Peer-MCP client name (used as TOML table key)."),
+    name: z.string().min(1).describe("Peer-MCP client name (used as TOML table key)."),
     command: z
       .string()
       .min(1)
@@ -124,10 +115,7 @@ export type SetMcpClientResult =
   | { ok: true; clients: McpClientInventoryEntry[] };
 
 type TomlRoot = Record<string, unknown> & {
-  contracts?: { mcp_clients?: Record<string, McpClientTomlEntry> } & Record<
-    string,
-    unknown
-  >;
+  contracts?: { mcp_clients?: Record<string, McpClientTomlEntry> } & Record<string, unknown>;
 };
 
 interface McpClientTomlEntry {
@@ -137,47 +125,25 @@ interface McpClientTomlEntry {
   env_secrets?: Record<string, string>;
 }
 
-async function readConfig(configPath: string): Promise<TomlRoot> {
-  try {
-    const raw = await readFile(configPath, "utf-8");
-    return parseToml(raw) as TomlRoot;
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException).code;
-    if (code === "ENOENT") return {};
-    throw err;
-  }
-}
-
-async function writeConfig(configPath: string, root: TomlRoot): Promise<void> {
-  // smol-toml stringify is total over JSON-serializable values; the round-trip
-  // here is parse → mutate → stringify, which preserves field types (TOML
-  // strings stay strings, booleans stay booleans, integers stay integers).
-  // Comments and blank lines are NOT preserved — this is documented in the
-  // ADR-007 threat model under "TOML round-trip side effects".
-  await writeFile(configPath, stringifyToml(root), "utf-8");
-}
-
 async function handler(
   args: SetMcpClientInput,
   deps: SetMcpClientDeps,
 ): Promise<SetMcpClientResult> {
   // Variant C — list
   if ("list" in args) {
-    const root = await readConfig(deps.configPath);
+    const root = (await readConfigToml(deps.configPath)) as TomlRoot;
     const map = root.contracts?.mcp_clients ?? {};
-    const clients: McpClientInventoryEntry[] = Object.entries(map).map(
-      ([name, entry]) => ({
-        name,
-        command: entry.command ?? "",
-        args: entry.args ?? [],
-        // SECURITY: emit key-list only — values stay in plugin storage.
-        env_secrets: Object.keys(entry.env_secrets ?? {}),
-      }),
-    );
+    const clients: McpClientInventoryEntry[] = Object.entries(map).map(([name, entry]) => ({
+      name,
+      command: entry.command ?? "",
+      args: entry.args ?? [],
+      // SECURITY: emit key-list only — values stay in plugin storage.
+      env_secrets: Object.keys(entry.env_secrets ?? {}),
+    }));
     return { ok: true, clients };
   }
 
-  const root = await readConfig(deps.configPath);
+  const root = (await readConfigToml(deps.configPath)) as TomlRoot;
   if (root.contracts === undefined) root.contracts = {};
   // We control the shape; cast to a mutable record for the local mutation.
   const contracts = root.contracts as { mcp_clients?: Record<string, McpClientTomlEntry> };
@@ -188,7 +154,7 @@ async function handler(
   if ("remove" in args) {
     if (args.name in clients) {
       delete clients[args.name];
-      await writeConfig(deps.configPath, root);
+      await writeConfigToml(deps.configPath, root);
     } else {
       // Idempotent — nothing to write, but still report success.
     }
@@ -203,7 +169,7 @@ async function handler(
   if (args.args !== undefined) entry.args = args.args;
   if (args.env_secrets !== undefined) entry.env_secrets = args.env_secrets;
   clients[args.name] = entry;
-  await writeConfig(deps.configPath, root);
+  await writeConfigToml(deps.configPath, root);
   return {
     ok: true,
     name: args.name,
