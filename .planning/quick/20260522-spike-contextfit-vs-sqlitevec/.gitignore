@@ -1,0 +1,4 @@
+# Spike results are run locally against the user's real vault.
+# Never commit raw outputs or sandbox metadata — may contain
+# vault-private note titles, paths, snippets.
+results/

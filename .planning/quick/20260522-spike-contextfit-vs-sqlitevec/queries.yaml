@@ -1,0 +1,181 @@
+# Spike Queries — contextfit vs. sqlite-vec
+#
+# Struktur pro Query:
+#   id:              stabile Kurz-ID (q01..qNN)
+#   lang:            en | de
+#   text:            der Anfragetext
+#   intent:          Kategorisierung (decision_lookup, open_loop, person_context,
+#                    topic_summary, current_state, reference_lookup,
+#                    cross_doc, vague_advice)
+#   adversarial_for: optional — verweist auf eine Schwester-Query in anderer Sprache
+#   vault_specific:  optional, true wenn du sie selbst geschrieben hast
+#   expected_paths:  optional — Liste bekannter relevanter Notiz-Pfade,
+#                    relativ zum Vault-Root. Wenn gesetzt, wird Recall
+#                    automatisch berechnet UND zusätzlich die manuelle
+#                    Bewertung als Konsistenz-Check angeboten.
+
+queries:
+  # ─── EN: themenagnostische Agent-Memory-Probes ─────────────────────────
+
+  - id: q01
+    lang: en
+    text: "What decisions have I documented recently?"
+    intent: decision_lookup
+    notes: "Broad — finds all decision-type notes"
+
+  - id: q02
+    lang: en
+    text: "What tasks are still open and need follow-up?"
+    intent: open_loop
+    notes: "Status filter — pending/todo/open notes"
+
+  - id: q03
+    lang: en
+    text: "Summarize what I know about my main current project"
+    intent: topic_summary
+    notes: "Vague advice — embedding-favored typically"
+
+  - id: q04
+    lang: en
+    text: "Who are the key people I'm working with right now?"
+    intent: person_context
+    notes: "Cross-doc — needs to surface multiple person-pages"
+
+  - id: q05
+    lang: en
+    text: "What's the current state of my consulting engagements?"
+    intent: current_state
+    notes: "Temporal — recent over old"
+
+  - id: q06
+    lang: en
+    text: "How does retrieval-augmented generation work?"
+    intent: reference_lookup
+    notes: "Reference / technical — should hit reference-type notes"
+
+  - id: q07
+    lang: en
+    text: "What ideas have I been exploring on AI agents?"
+    intent: topic_summary
+    notes: "Mid-specificity topic — embedding/BM25 should both work"
+
+  - id: q08
+    lang: en
+    text: "What did I learn from my last client meeting?"
+    intent: person_context
+    adversarial_for: null
+    notes: "Episodic — recent meeting note"
+
+  - id: q09
+    lang: en
+    text: "What should I focus on this week?"
+    intent: vague_advice
+    notes: "Maximally vague — episode_relevance_score territory"
+
+  - id: q10
+    lang: en
+    text: "Connection between consulting work and personal research"
+    intent: cross_doc
+    notes: "Cross-doc reasoning — should surface notes from both clusters"
+
+  - id: q11
+    lang: en
+    text: "Notes mentioning pricing or rate cards"
+    intent: reference_lookup
+    notes: "Lexical-heavy — BM25 should be strong here"
+
+  - id: q12
+    lang: en
+    text: "Recent decisions about tooling or stack choices"
+    intent: decision_lookup
+    notes: "Temporal + decision — combined filter"
+
+  # ─── DE: Adversarials — selbe Intentionen, andere Vokabular ──────────
+
+  - id: q21
+    lang: de
+    text: "Welche Entscheidungen habe ich kürzlich dokumentiert?"
+    intent: decision_lookup
+    adversarial_for: q01
+
+  - id: q22
+    lang: de
+    text: "Welche Aufgaben sind noch offen und brauchen Follow-up?"
+    intent: open_loop
+    adversarial_for: q02
+
+  - id: q23
+    lang: de
+    text: "Fasse zusammen, was ich über mein aktuelles Hauptprojekt weiß"
+    intent: topic_summary
+    adversarial_for: q03
+
+  - id: q24
+    lang: de
+    text: "Mit welchen wichtigen Personen arbeite ich gerade?"
+    intent: person_context
+    adversarial_for: q04
+
+  - id: q25
+    lang: de
+    text: "Wie ist der aktuelle Stand meiner Beratungsmandate?"
+    intent: current_state
+    adversarial_for: q05
+
+  - id: q26
+    lang: de
+    text: "Wie funktioniert Retrieval-Augmented Generation?"
+    intent: reference_lookup
+    adversarial_for: q06
+    notes: "Eigenname RAG bleibt englisch — sollte beide Backends gleich treffen"
+
+  - id: q27
+    lang: de
+    text: "Welche Ideen erkunde ich gerade rund um KI-Agenten?"
+    intent: topic_summary
+    adversarial_for: q07
+    notes: "KI vs AI — Vokabular-Mismatch zu erwartendem englischen Original"
+
+  - id: q28
+    lang: de
+    text: "Was habe ich aus dem letzten Kundentermin mitgenommen?"
+    intent: person_context
+    adversarial_for: q08
+
+  - id: q29
+    lang: de
+    text: "Worauf sollte ich diese Woche meinen Fokus legen?"
+    intent: vague_advice
+    adversarial_for: q09
+
+  - id: q30
+    lang: de
+    text: "Notizen zu Preisen oder Tagessätzen"
+    intent: reference_lookup
+    adversarial_for: q11
+    notes: "Tagessätze ist Vault-Vokabular — kein direktes EN-Pendant"
+
+  # ─── Vault-spezifische Slots — bitte selbst ausfüllen ────────────────
+  #
+  # Mindestens 3, gerne 5. Jeweils mit `expected_paths`-Liste (relative
+  # Pfade zu Notizen, die du als korrekten Treffer kennst). Dann rechnet
+  # die Auswertung automatisch Recall@K für diese Queries.
+  #
+  # Beispiel (auskommentieren und anpassen):
+  #
+  # - id: q41
+  #   lang: de
+  #   text: "Was ist der aktuelle Status des Mandats bei <Kunde>?"
+  #   intent: current_state
+  #   vault_specific: true
+  #   expected_paths:
+  #     - "Clients/Kunde-XY/Status 2026-Q2.md"
+  #     - "Meetings/2026-05-15 Kunde-XY Steuerung.md"
+  #
+  # - id: q42
+  #   lang: en
+  #   text: "When did I start the <project-name> initiative?"
+  #   intent: temporal_lookup
+  #   vault_specific: true
+  #   expected_paths:
+  #     - "Projects/<project-name>/README.md"
