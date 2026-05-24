@@ -102,7 +102,7 @@
       bind:this={textareaEl}
       onblur={commit}
       onkeydown={onKeyDown}
-      placeholder="Write a comment… (⌘↵ or click outside to save, Esc to cancel)"
+      placeholder="Write a note… (⌘↵ or click outside to save, Esc to cancel)"
     ></textarea>
   {:else}
     <div class="vm-comment-node__text">

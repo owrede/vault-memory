@@ -115,10 +115,24 @@ export async function fetchPeerMcpVerbs(
     if (!verb.startsWith("mcp://")) continue;
     const match = verb.match(/^mcp:\/\/([a-z][a-z0-9_-]*)\//);
     if (!match || !match[1]) continue;
-    out.push({
+    // The server-side `ListContractVerbsResource` does not surface a
+    // `description` today (the resource is derived from audit rows, not
+    // from peer-server `tools/list` metadata). We forward-pluck the
+    // field opportunistically so when the host server starts including
+    // it (future enhancement), the palette tooltip lights up without
+    // another plugin change.
+    const rawDescription = (entry as { description?: unknown }).description;
+    const description = typeof rawDescription === "string" && rawDescription.length > 0
+      ? rawDescription
+      : undefined;
+    const verbObj: PeerMcpVerb = {
       verb,
       server: match[1],
-    });
+    };
+    if (description !== undefined) {
+      verbObj.description = description;
+    }
+    out.push(verbObj);
   }
   return out;
 }

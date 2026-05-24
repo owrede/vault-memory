@@ -22,7 +22,7 @@
   import type { ResourceClient } from "./palette/peer-mcp.js";
 
   let {
-    file,
+    file: initialFile,
     onChange,
     mcpClient,
   }: {
@@ -30,6 +30,27 @@
     onChange: (next: ContractDocumentShape) => void;
     mcpClient: ResourceClient | null;
   } = $props();
+
+  // editor.svelte owns the live contract state. view.ts mounts us with
+  // the parsed file once; from then on every mutation flows through
+  // apply() which (a) replaces the reference here so the panes
+  // re-render, and (b) forwards to view.ts via onChange for save +
+  // YAML emission. Without this layer, dropping a palette item or
+  // creating a connection updated view.ts's currentJson but the file
+  // prop the panes read from stayed frozen — visible bug: nothing
+  // appeared on the canvas after a drop.
+  //
+  // Uses $state.raw so the inner contract object isn't wrapped in a
+  // deep reactive proxy. Reactivity fires only when we REPLACE the
+  // reference in apply(); xyflow's bind:nodes mutations don't trip
+  // cross-component effects, which was the cause of the literal-card
+  // freeze before the queueMicrotask fix in canvas-pane.
+  let liveFile = $state.raw<ContractDocumentShape>(initialFile);
+
+  function apply(next: ContractDocumentShape): void {
+    liveFile = next;
+    onChange(next);
+  }
 
   let selectedAlias = $state<string | null>(null);
 
@@ -58,10 +79,10 @@
 <PalettePane {mcpClient} />
 <SvelteFlowProvider>
   <CanvasPane
-    {file}
+    file={liveFile}
     selection={selectedAlias}
-    {onChange}
+    onChange={apply}
     {onSelect}
   />
 </SvelteFlowProvider>
-<InspectorPane {file} {selectedAlias} {onChange} />
+<InspectorPane file={liveFile} {selectedAlias} onChange={apply} />

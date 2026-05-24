@@ -295,7 +295,7 @@ export class ChromeView extends ItemView {
     });
     if (adminWasOpen) (details as HTMLDetailsElement).open = true;
     (details as HTMLElement).createEl("summary", {
-      text: "Advanced (reindex, stats, connectors)",
+      text: "Advanced (re-read notes, stats, connectors)",
       cls: "vm-chrome-view__admin-summary",
     });
     details.addEventListener("toggle", () => {

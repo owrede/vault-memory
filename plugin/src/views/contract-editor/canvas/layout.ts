@@ -36,9 +36,10 @@
 
 import type { ContractFileShape } from "../../../shared-types.js";
 
-/** Node width in CSS pixels — locked by UI-SPEC §"Spacing Scale" exceptions. */
-export const NODE_WIDTH = 220;
-/** Node height in CSS pixels — locked by UI-SPEC. */
+/** Node width in CSS pixels — bumped from 220 to 240 in Phase B redesign
+ *  to give the plain-language description line breathing room. */
+export const NODE_WIDTH = 240;
+/** Node height in CSS pixels. */
 export const NODE_HEIGHT = 120;
 /** Gutter between adjacent columns / rows in CSS pixels. */
 export const NODE_GUTTER = 40;

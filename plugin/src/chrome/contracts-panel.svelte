@@ -186,7 +186,7 @@
       class="vm-contracts-panel__new"
       onclick={() => void newContract()}
       disabled={creating}
-      title="Create a new .contract file with a minimal scaffold and open it in the canvas editor"
+      title="Create a new contract and open it in the canvas editor"
     >
       {creating ? "Creating…" : "+ New contract"}
     </button>
@@ -194,15 +194,15 @@
 
   {#if loadError}
     <div class="vm-contracts-panel__error">
-      Could not list contracts: {loadError}
+      Couldn't list your contracts: {loadError}
     </div>
   {:else if rows.length === 0}
     <div class="vm-contracts-panel__empty">
       <p>No contracts in this vault yet.</p>
       <p>
-        Contracts are reusable agent workflows. Use <strong>+ New contract</strong>
-        above to create one, or run <code>/vmem:install</code> to drop the
-        bundled example contracts into <code>_contracts/examples/</code>.
+        Contracts are reusable agent workflows. Click <strong>+ New contract</strong>
+        above to start one, or run <code>/vmem:install</code> to drop the
+        bundled examples into <code>_contracts/examples/</code>.
       </p>
     </div>
   {:else}
@@ -222,23 +222,23 @@
             {#if row.firstVerb || row.source || row.sink || row.steps !== null}
               <span class="vm-contracts-panel__meta">
                 {#if row.steps !== null}
-                  <span class="vm-contracts-panel__pill" title="Number of assembly steps">
+                  <span class="vm-contracts-panel__pill" title="Number of steps in this contract">
                     {row.steps} step{row.steps === 1 ? "" : "s"}
                   </span>
                 {/if}
                 {#if row.firstVerb}
-                  <span class="vm-contracts-panel__pill vm-contracts-panel__pill--verb" title="First assembly verb">
+                  <span class="vm-contracts-panel__pill vm-contracts-panel__pill--verb" title="First action in this contract">
                     {row.firstVerb}
                   </span>
                 {/if}
                 {#if row.source}
-                  <span class="vm-contracts-panel__pill vm-contracts-panel__pill--src" title="Source handle">
-                    src: {row.source}
+                  <span class="vm-contracts-panel__pill vm-contracts-panel__pill--src" title="Where notes come from">
+                    from: {row.source}
                   </span>
                 {/if}
                 {#if row.sink}
-                  <span class="vm-contracts-panel__pill vm-contracts-panel__pill--sink" title="Sink handle">
-                    sink: {row.sink}
+                  <span class="vm-contracts-panel__pill vm-contracts-panel__pill--sink" title="Where the result is saved">
+                    saves to: {row.sink}
                   </span>
                 {/if}
               </span>

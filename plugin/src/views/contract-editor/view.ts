@@ -95,6 +95,10 @@ export class ContractEditorView extends TextFileView {
   constructor(leaf: WorkspaceLeaf, plugin: VaultMemoryPlugin) {
     super(leaf);
     this.plugin = plugin;
+    // Tag containerEl so styles.css can hide the markdown DOM that
+    // TextFileView inflates by default (CodeMirror, inline title,
+    // status footer with the "N Wörter · M Zeichen" line).
+    this.containerEl.addClass("vm-contract-view");
   }
 
   override getViewType(): string {
@@ -129,7 +133,7 @@ export class ContractEditorView extends TextFileView {
       );
       try {
         this.renderError(
-          `vault-memory plugin could not load this file: ${message}`,
+          `Couldn't open this contract: ${message}. Try closing and reopening the file, or check the developer console (Cmd+Opt+I) for details.`,
           /*offerRepair=*/ false,
         );
       } catch {
@@ -182,7 +186,7 @@ export class ContractEditorView extends TextFileView {
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         this.renderError(
-          `malformed .contract file (invalid JSON) — ${message}`,
+          `This contract file looks corrupted — ${message}. You can replace it with a fresh blank contract below, or close this tab and edit the raw file by hand.`,
           /*offerRepair=*/ true,
         );
         return;
@@ -192,9 +196,9 @@ export class ContractEditorView extends TextFileView {
       if (!result.success) {
         const issue = result.error.issues[0];
         const path = issue?.path.join(".") ?? "<root>";
-        const msg = issue?.message ?? "schema validation failed";
+        const msg = issue?.message ?? "the file's structure doesn't match what the editor expects";
         this.renderError(
-          `invalid .contract — at \`${path}\`: ${msg}`,
+          `This contract has a problem the editor can't fix automatically (in "${path}": ${msg}). You can replace it with a fresh blank contract below.`,
           /*offerRepair=*/ true,
         );
         return;
@@ -209,7 +213,7 @@ export class ContractEditorView extends TextFileView {
       // need to fail soft rather than recurse.
       try {
         this.renderError(
-          `vault-memory plugin crashed while opening this file: ${message}`,
+          `Something went wrong opening this contract: ${message}. Try reopening the file, or check the developer console (Cmd+Opt+I) for details.`,
           /*offerRepair=*/ false,
         );
       } catch {
@@ -381,19 +385,17 @@ export class ContractEditorView extends TextFileView {
     }
     this.contentEl.empty();
     const banner = this.contentEl.createDiv({ cls: "vm-error-banner" });
-    banner.setText(`Error: ${message}`);
+    banner.setText(message);
     if (offerRepair) {
       this.contentEl.createDiv({
         cls: "vm-error-help",
         text:
-          "If this file was created in error, you can replace its contents " +
-          "with a minimal scaffold and start editing in the canvas. The " +
-          "original (broken) content will be overwritten — copy it elsewhere " +
-          "first if you need to recover anything.",
+          "Heads up: replacing the contract overwrites whatever is in this file. " +
+          "If there's anything you want to keep, copy it somewhere safe first.",
       });
       const btnRow = this.contentEl.createDiv({ cls: "vm-error-actions" });
       const repair = btnRow.createEl("button", {
-        text: "Replace with scaffold",
+        text: "Start over with a blank contract",
         cls: "vm-error-repair-btn",
       });
       repair.addEventListener("click", () => {
@@ -414,16 +416,13 @@ export class ContractEditorView extends TextFileView {
     }
     this.contentEl.empty();
     const wrap = this.contentEl.createDiv({ cls: "vm-empty-contract" });
-    wrap.createEl("h3", { text: "This .contract file is empty" });
+    wrap.createEl("h3", { text: "This contract is empty" });
     wrap.createEl("p", {
       text:
-        "Empty .contract files happen when an external tool creates the " +
-        "file but doesn't write any content. Click the button below to " +
-        "fill it with a minimal valid scaffold (one literal step) so you " +
-        "can start editing in the canvas.",
+        "There's nothing in this contract yet. Click the button below to start with a sample step — you can edit or replace it on the canvas right away.",
     });
     const btn = wrap.createEl("button", {
-      text: "Initialize with scaffold",
+      text: "Start with a sample step",
       cls: "vm-error-repair-btn",
     });
     btn.addEventListener("click", () => {
@@ -466,7 +465,7 @@ export class ContractEditorView extends TextFileView {
         version: 1,
         name: contractName,
         description:
-          "New contract — describe what this contract does in one sentence.",
+          "Describe what this contract does in one sentence.",
         assembly: [
           {
             as: stepAlias,

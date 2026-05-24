@@ -2,7 +2,7 @@
  * layout.test.ts — Phase 7 / Plan 07-05 / Task 1.
  *
  * Pattern F doc-block: D-UI (UI-SPEC §"Canvas Interaction Grammar" — node
- * 220×120, grid snap 20, LTR topological default layout). The pure layout
+ * 240×120, grid snap 20, LTR topological default layout). The pure layout
  * helper computes a deterministic LTR position grid from the assembly's
  * `{{alias.field}}` read-back references.
  *
@@ -33,9 +33,9 @@ describe("computeDefaultLayout", () => {
     const layout = computeDefaultLayout(assembly);
     expect(layout).toHaveLength(3);
     expect(layout[0]).toEqual({ id: "step:first", x: 0, y: 0 });
-    // Column 1 = (220 + 40) * 1 = 260; column 2 = 520
-    expect(layout[1]).toEqual({ id: "step:second", x: 260, y: 0 });
-    expect(layout[2]).toEqual({ id: "step:third", x: 520, y: 0 });
+    // Column 1 = (240 + 40) * 1 = 280; column 2 = 560
+    expect(layout[1]).toEqual({ id: "step:second", x: 280, y: 0 });
+    expect(layout[2]).toEqual({ id: "step:third", x: 560, y: 0 });
   });
 
   it("places a diamond (two steps depend on one upstream, one sink consumes both)", () => {
@@ -50,13 +50,13 @@ describe("computeDefaultLayout", () => {
     // seed in col 0
     expect(layout[0]).toEqual({ id: "step:seed", x: 0, y: 0 });
     // branch_a + branch_b both depend on seed → col 1, stacked by y (row 0, row 1)
-    expect(layout[1]?.x).toBe(260);
-    expect(layout[2]?.x).toBe(260);
+    expect(layout[1]?.x).toBe(280);
+    expect(layout[2]?.x).toBe(280);
     expect(layout[1]?.y).toBe(0);
     // Column height = (120 + 40) * 1 = 160
     expect(layout[2]?.y).toBe(160);
     // sink depends on both branches → col 2
-    expect(layout[3]).toEqual({ id: "step:sink", x: 520, y: 0 });
+    expect(layout[3]).toEqual({ id: "step:sink", x: 560, y: 0 });
   });
 
   it("is idempotent — same input yields identical output across two calls", () => {

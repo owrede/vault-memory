@@ -9,13 +9,39 @@
  * into the same grid.
  */
 
+/*
+ * ContractEditorView extends TextFileView, which inflates a markdown
+ * editor (CodeMirror, inline title, metadata footer, status bar) inside
+ * `.view-content` before our `setViewData` runs. Hide those siblings
+ * via descendant selectors (Obsidian wraps inline-title in extra
+ * containers in newer versions, so direct-child selectors miss it).
+ */
+.workspace-leaf-content[data-type="vault-memory-contract-editor"] .view-content,
+.vm-contract-view .view-content {
+  position: relative;
+  padding: 0;
+  overflow: hidden;
+}
+.vm-contract-view .view-content .markdown-source-view,
+.vm-contract-view .view-content .markdown-reading-view,
+.vm-contract-view .view-content .cm-editor,
+.vm-contract-view .view-content .inline-title,
+.vm-contract-view .view-content .metadata-container,
+.vm-contract-view .view-content .embedded-backlinks,
+.vm-contract-view .view-content .mod-footer,
+.vm-contract-view .view-content .markdown-preview-view {
+  display: none !important;
+}
+.vm-contract-view .view-content > .vm-contract-editor {
+  position: absolute;
+  inset: 0;
+}
+
 .vm-contract-editor {
   display: grid;
-  grid-template-columns: 260px 1fr 320px;
-  grid-template-rows: 40px 1fr;
-  grid-template-areas:
-    "toolbar toolbar toolbar"
-    "palette canvas inspector";
+  grid-template-columns: 280px minmax(0, 1fr) 320px;
+  grid-template-rows: 1fr;
+  grid-template-areas: "palette canvas inspector";
   width: 100%;
   height: 100%;
   background: var(--background-primary);

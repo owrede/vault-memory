@@ -60,9 +60,9 @@
     await controller.reindexThis();
     if (state.status === "complete") {
       new Notice(
-        `Reindex complete — ${state.completedVaults.length} vault${
+        `Done — re-read ${state.completedVaults.length} vault${
           state.completedVaults.length === 1 ? "" : "s"
-        } processed`,
+        }.`,
         5000,
       );
     }
@@ -72,9 +72,9 @@
     await controller.reindexAll();
     if (state.status === "complete") {
       new Notice(
-        `Reindex complete — ${state.completedVaults.length} vault${
+        `Done — re-read ${state.completedVaults.length} vault${
           state.completedVaults.length === 1 ? "" : "s"
-        } processed`,
+        }.`,
         5000,
       );
     }
@@ -90,7 +90,7 @@
       onclick={onClickThis}
       data-testid="reindex-this"
     >
-      Reindex this vault
+      Re-read this vault
     </button>
     <button
       type="button"
@@ -99,7 +99,7 @@
       onclick={onClickAll}
       data-testid="reindex-all"
     >
-      Reindex all vaults
+      Re-read all vaults
     </button>
   </div>
 
@@ -122,17 +122,17 @@
       {/if}
     </div>
     <div class="vm-reindex-panel__status">
-      Reindexing: {state.progress}{state.total !== undefined ? ` / ${state.total}` : ""} chunks
+      Reading your notes: {state.progress}{state.total !== undefined ? ` / ${state.total}` : ""} chunks
     </div>
   {:else if state.status === "complete"}
     <div class="vm-reindex-panel__status vm-reindex-panel__status--success">
-      Reindex complete — {state.completedVaults.length} vault{state.completedVaults.length === 1
+      Done — re-read {state.completedVaults.length} vault{state.completedVaults.length === 1
         ? ""
-        : "s"} processed
+        : "s"}.
     </div>
   {:else if state.status === "error"}
     <div class="vm-reindex-panel__status vm-reindex-panel__status--error">
-      Reindex failed: {state.error}. See vault-memory log for details.
+      Something went wrong: {state.error}. Check the vault-memory log for details.
     </div>
   {/if}
 </div>

@@ -1,25 +1,43 @@
 <!--
-  palette-pane — left pane of the contract editor (Slice A redesign).
+  palette-pane — left column of the contract editor.
 
-  Renders the verb catalog grouped by what a user accomplishes (read /
-  search / navigate / reference / compose / escape) rather than by
-  technical surface. Each row is a draggable card with:
-    - Lucide icon for its category (Obsidian's setIcon)
-    - Plain-language title (e.g. "Read a note")
-    - Monospace verb subtitle (e.g. `read_note`)
-    - One-line description
-    - Drag handle (left edge) — cursor: grab; lifts on hover
+  Layout:
+    1. Source dropdown (top): single-select <select> listing all connected
+       MCP servers. vault-memory is always present; peer servers appear as
+       discovered. Verb list below shows ONLY the selected server's tools.
+       A small "Refresh" button next to the dropdown re-runs discovery
+       on demand (also triggered automatically on mount and on
+       `visibilitychange` to "visible").
+    2. Scrollable verb list grouped by category. Category headers are
+       click-to-collapse (chevron flips). Per-server collapse-state memory
+       so collapsed categories stay collapsed when you switch servers.
 
-  Styling references Obsidian CSS variables exclusively — no hex
-  literals — so the palette matches the active theme. Section headers
-  use the same .nav-header style Obsidian uses in the file explorer.
+  # MCP discovery architecture (read this before changing discovery)
+
+  The plugin holds ONE MCP client connection — to the vault-memory
+  server itself (see `plugin/src/services/mcp-client.ts`). It does NOT
+  enumerate the user's other MCP servers directly. Peer-MCP sources in
+  the dropdown are discovered through the host server's resource
+  `vault-memory://contract-verbs`, which returns the set of peer
+  servers/tools observed in the current vault's contracts (i.e. verbs
+  that have actually been used in `contract_step` audit rows, plus
+  whatever the host has configured under `[contracts.mcp_clients.*]`).
+
+  So this dropdown lists "peer servers the host knows about" — which
+  in practice means peer servers that have been declared in TOML and
+  invoked at least once. Servers the host has not been configured to
+  proxy to are invisible to the plugin. That is by design: the plugin
+  trusts the host to be the single MCP bus.
+
+  Each verb card is a draggable <div role="button">. Native HTML5 drag
+  with MIME `application/x-vault-memory-verb` + text/plain fallback so
+  Electron-quirky drop targets still resolve the verb.
 -->
 
 <script lang="ts">
   import { onMount, onDestroy } from "svelte";
   import { setIcon } from "obsidian";
   import { groupByCategory, lookupVerb, VERB_CATEGORY_META } from "./verb-catalog.js";
-  import type { VerbMeta } from "./verb-catalog.js";
   import { fetchPeerMcpVerbs, type PeerMcpVerb, type ResourceClient } from "./peer-mcp.js";
 
   let {
@@ -29,13 +47,33 @@
   } = $props();
 
   let peerMcp = $state<PeerMcpVerb[]>([]);
+  /** True while a discovery refresh is in flight — disables the refresh button + spins the icon. */
+  let refreshing = $state<boolean>(false);
+
+  const VAULT_MEMORY_ID = "vault-memory";
+  let selectedSource = $state<string>(VAULT_MEMORY_ID);
+
+  /** Search filter applied across action title, name, and description. */
+  let searchQuery = $state<string>("");
+
+  /**
+   * Per-server set of collapsed category ids. Keyed by source id, so
+   * switching servers preserves each server's expand/collapse state.
+   */
+  let collapsedPerSource = $state<Record<string, Set<string>>>({});
 
   async function refresh(): Promise<void> {
-    if (!mcpClient) {
-      peerMcp = [];
-      return;
+    if (refreshing) return;
+    refreshing = true;
+    try {
+      if (!mcpClient) {
+        peerMcp = [];
+        return;
+      }
+      peerMcp = await fetchPeerMcpVerbs(mcpClient);
+    } finally {
+      refreshing = false;
     }
-    peerMcp = await fetchPeerMcpVerbs(mcpClient);
   }
 
   onMount(() => {
@@ -51,11 +89,6 @@
     }
   }
 
-  /**
-   * Mount a Lucide icon into the element via Obsidian's setIcon. Called
-   * as `use:lucideIcon={name}` so Svelte handles the action lifecycle.
-   * Re-mounts on parameter change.
-   */
   function lucideIcon(node: HTMLElement, iconName: string): { update(next: string): void; destroy(): void } {
     setIcon(node, iconName);
     return {
@@ -69,222 +102,470 @@
     };
   }
 
-  function dragStartVerb(event: DragEvent, verb: string): void {
+  function onDragStart(event: DragEvent, verb: string): void {
     if (!event.dataTransfer) return;
-    event.dataTransfer.effectAllowed = "copy";
+    event.dataTransfer.effectAllowed = "copyMove";
     event.dataTransfer.setData("application/x-vault-memory-verb", verb);
-    // Native HTML5 drag image — we ask the browser to use the item itself.
-    // Setting an explicit dragImage keeps the cursor-following preview
-    // stable across browsers; without it, some Electron versions show
-    // a blank rectangle.
+    event.dataTransfer.setData("text/plain", verb);
     const card = event.currentTarget as HTMLElement;
-    if (card?.cloneNode) {
-      try {
-        event.dataTransfer.setDragImage(card, 12, 12);
-      } catch {
-        // Best-effort; setDragImage throws on some headless contexts.
-      }
-    }
+    card?.classList.add("is-dragging");
+  }
+
+  function onDragEnd(event: DragEvent): void {
+    const card = event.currentTarget as HTMLElement | null;
+    card?.classList.remove("is-dragging");
+  }
+
+  function tooltip(title: string, verbName: string, description: string): string {
+    return `${title}\n\n${description}\n\nDrag onto the canvas to add this step.`;
+  }
+
+  /** Lowercased, trimmed search query for case-insensitive substring matching. */
+  const normalizedQuery = $derived(searchQuery.trim().toLowerCase());
+
+  function matchesSearch(
+    title: string,
+    verbName: string,
+    description: string,
+  ): boolean {
+    if (normalizedQuery.length === 0) return true;
+    const hay = `${title} ${verbName} ${description}`.toLowerCase();
+    return hay.includes(normalizedQuery);
+  }
+
+  function clearSearch(): void {
+    searchQuery = "";
   }
 
   const groups = groupByCategory();
-  const peerCategoryMeta = VERB_CATEGORY_META["escape"]; // peer-MCP uses the escape colour token
-  void lookupVerb; // re-exported for inspector consumers
+  /** Groups with their items filtered by the current search query. */
+  const filteredGroups = $derived(
+    groups
+      .map((g) => ({
+        category: g.category,
+        items: g.items.filter((item) =>
+          matchesSearch(item.title, item.verb, item.description),
+        ),
+      }))
+      .filter((g) => g.items.length > 0),
+  );
+  /** Total vault-memory matches after filtering, for empty-state check. */
+  const filteredVaultMemoryCount = $derived(
+    filteredGroups.reduce((sum, g) => sum + g.items.length, 0),
+  );
+  const peerCategoryMeta = VERB_CATEGORY_META["escape"];
+  void lookupVerb;
+
+  type SourceOption = { id: string; label: string; count: number };
+  const vaultMemoryVerbCount = groups.reduce((sum, g) => sum + g.items.length, 0);
+  const sources = $derived<SourceOption[]>([
+    { id: VAULT_MEMORY_ID, label: "vault-memory", count: vaultMemoryVerbCount },
+    ...Array.from(
+      peerMcp.reduce<Map<string, number>>((acc, v) => {
+        acc.set(v.server, (acc.get(v.server) ?? 0) + 1);
+        return acc;
+      }, new Map()),
+    ).map(([id, count]) => ({ id, label: id, count })),
+  ]);
+
+  const collapsedSet = $derived(collapsedPerSource[selectedSource] ?? new Set<string>());
+
+  function toggleCategory(categoryId: string): void {
+    const current = collapsedPerSource[selectedSource] ?? new Set<string>();
+    const next = new Set(current);
+    if (next.has(categoryId)) next.delete(categoryId);
+    else next.add(categoryId);
+    collapsedPerSource = { ...collapsedPerSource, [selectedSource]: next };
+  }
+
+  const visiblePeers = $derived(
+    selectedSource === VAULT_MEMORY_ID
+      ? []
+      : peerMcp
+          .filter((v) => v.server === selectedSource)
+          .filter((v) => matchesSearch(v.verb, v.verb, v.server)),
+  );
+
+  const showVaultMemory = $derived(selectedSource === VAULT_MEMORY_ID);
 </script>
 
-<aside class="vm-palette-pane" aria-label="Verb palette">
-  <header class="vm-palette-header">
-    <h2 class="vm-palette-title">Steps</h2>
-    <p class="vm-palette-help">
-      Drag a step onto the canvas. Each step is one action your contract
-      runs in order. Steps starting with <strong>Read</strong> or
-      <strong>Search</strong> usually come first; <strong>Compose</strong>
-      usually comes last.
-    </p>
-  </header>
-
-  {#each groups as group (group.category.id)}
-    <section class="vm-palette-section">
-      <div class="vm-palette-section-header">
-        <span class="vm-palette-section-icon" use:lucideIcon={group.category.icon}></span>
-        <h3 class="vm-palette-section-title">{group.category.label}</h3>
-      </div>
-      <ul class="vm-palette-list">
-        {#each group.items as item (item.verb)}
-          <li>
-            <button
-              type="button"
-              class="vm-palette-card"
-              draggable="true"
-              ondragstart={(e) => dragStartVerb(e, item.verb)}
-              data-verb={item.verb}
-              style:--vm-cat-color="var({group.category.colorVar})"
-              aria-label="{item.title} ({item.verb}) — drag onto canvas"
-            >
-              <span class="vm-palette-card-grip" aria-hidden="true">
-                <span class="vm-palette-card-grip-dot"></span>
-                <span class="vm-palette-card-grip-dot"></span>
-                <span class="vm-palette-card-grip-dot"></span>
-                <span class="vm-palette-card-grip-dot"></span>
-                <span class="vm-palette-card-grip-dot"></span>
-                <span class="vm-palette-card-grip-dot"></span>
-              </span>
-              <span class="vm-palette-card-body">
-                <span class="vm-palette-card-title">{item.title}</span>
-                <span class="vm-palette-card-verb">{item.verb}</span>
-                <span class="vm-palette-card-desc">{item.description}</span>
-              </span>
-            </button>
-          </li>
-        {/each}
-      </ul>
-    </section>
-  {/each}
-
-  {#if peerMcp.length > 0}
-    <section class="vm-palette-section">
-      <div class="vm-palette-section-header">
-        <span class="vm-palette-section-icon" use:lucideIcon={"plug"}></span>
-        <h3 class="vm-palette-section-title">Peer MCP</h3>
-      </div>
-      <p class="vm-palette-section-desc">
-        Tools provided by other MCP servers you've connected (e.g. GitHub,
-        Linear). Use sparingly — peer outputs are advisory, not real DocIds.
-      </p>
-      <ul class="vm-palette-list">
-        {#each peerMcp as entry (entry.verb)}
-          <li>
-            <button
-              type="button"
-              class="vm-palette-card vm-palette-card--peer"
-              draggable="true"
-              ondragstart={(e) => dragStartVerb(e, entry.verb)}
-              data-verb={entry.verb}
-              style:--vm-cat-color="var({peerCategoryMeta.colorVar})"
-              title="From {entry.server}"
-              aria-label="{entry.verb} from {entry.server} — drag onto canvas"
-            >
-              <span class="vm-palette-card-grip" aria-hidden="true">
-                <span class="vm-palette-card-grip-dot"></span>
-                <span class="vm-palette-card-grip-dot"></span>
-                <span class="vm-palette-card-grip-dot"></span>
-                <span class="vm-palette-card-grip-dot"></span>
-                <span class="vm-palette-card-grip-dot"></span>
-                <span class="vm-palette-card-grip-dot"></span>
-              </span>
-              <span class="vm-palette-card-body">
-                <span class="vm-palette-card-title">{entry.server}</span>
-                <span class="vm-palette-card-verb">{entry.verb}</span>
-              </span>
-            </button>
-          </li>
-        {/each}
-      </ul>
-    </section>
+<aside class="vm-palette-pane" aria-label="Actions palette">
+  <div class="vm-palette-sources" aria-label="MCP source">
+    <label class="vm-palette-sources-label" for="vm-source-select">Source</label>
+    <select
+      id="vm-source-select"
+      class="vm-palette-source-select dropdown"
+      bind:value={selectedSource}
+      aria-label="Select MCP source"
+    >
+      {#each sources as src (src.id)}
+        <option value={src.id}>{src.label} ({src.count})</option>
+      {/each}
+    </select>
+    <button
+      type="button"
+      class="vm-palette-source-refresh clickable-icon"
+      onclick={() => void refresh()}
+      disabled={refreshing}
+      title="Refresh MCP sources"
+      aria-label="Refresh MCP sources"
+    >
+      <span
+        class="vm-palette-refresh-icon"
+        class:is-spinning={refreshing}
+        use:lucideIcon={"refresh-cw"}
+      ></span>
+    </button>
+  </div>
+  {#if !mcpClient}
+    <div class="vm-palette-source-warning" role="status">
+      Connect to vault-memory to see more sources.
+    </div>
   {/if}
+
+  <div class="vm-palette-search">
+    <input
+      type="search"
+      class="vm-palette-search-input search-input"
+      placeholder="Search actions…"
+      bind:value={searchQuery}
+      aria-label="Search actions"
+    />
+    {#if normalizedQuery.length > 0}
+      <button
+        type="button"
+        class="vm-palette-search-clear"
+        onclick={clearSearch}
+        title="Clear search"
+        aria-label="Clear search"
+      >×</button>
+    {/if}
+  </div>
+
+  <div class="vm-palette-scroll">
+    {#if showVaultMemory}
+      {#each filteredGroups as group (group.category.id)}
+        {@const isCollapsed = collapsedSet.has(group.category.id)}
+        <section class="vm-palette-section" class:is-collapsed={isCollapsed}>
+          <button
+            type="button"
+            class="vm-palette-section-header"
+            onclick={() => toggleCategory(group.category.id)}
+            aria-expanded={!isCollapsed}
+          >
+            <span class="vm-palette-section-chevron" use:lucideIcon={isCollapsed ? "chevron-right" : "chevron-down"}></span>
+            <span class="vm-palette-section-icon" use:lucideIcon={group.category.icon}></span>
+            <span class="vm-palette-section-title">{group.category.label}</span>
+            <span class="vm-palette-section-count">{group.items.length}</span>
+          </button>
+          {#if !isCollapsed}
+            <div class="vm-palette-list">
+              {#each group.items as item (item.verb)}
+                <div
+                  class="vm-palette-card"
+                  draggable="true"
+                  role="button"
+                  tabindex="0"
+                  ondragstart={(e) => onDragStart(e, item.verb)}
+                  ondragend={onDragEnd}
+                  data-verb={item.verb}
+                  style:--vm-cat-color="var({group.category.colorVar})"
+                  title={tooltip(item.title, item.verb, item.description)}
+                  aria-label="{item.title} ({item.verb}) — drag onto canvas"
+                >
+                  <span class="vm-palette-card-grip" aria-hidden="true"></span>
+                  <span class="vm-palette-card-title">{item.title}</span>
+                  <span class="vm-palette-card-verb">{item.verb}</span>
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </section>
+      {/each}
+    {/if}
+
+    {#if visiblePeers.length > 0}
+      {@const peerCatId = `peer:${selectedSource}`}
+      {@const isCollapsed = collapsedSet.has(peerCatId)}
+      <section class="vm-palette-section" class:is-collapsed={isCollapsed}>
+        <button
+          type="button"
+          class="vm-palette-section-header"
+          onclick={() => toggleCategory(peerCatId)}
+          aria-expanded={!isCollapsed}
+        >
+          <span class="vm-palette-section-chevron" use:lucideIcon={isCollapsed ? "chevron-right" : "chevron-down"}></span>
+          <span class="vm-palette-section-icon" use:lucideIcon={"plug"}></span>
+          <span class="vm-palette-section-title">{selectedSource}</span>
+          <span class="vm-palette-section-count">{visiblePeers.length}</span>
+        </button>
+        {#if !isCollapsed}
+          <div class="vm-palette-list">
+            {#each visiblePeers as entry (entry.verb)}
+              <div
+                class="vm-palette-card"
+                draggable="true"
+                role="button"
+                tabindex="0"
+                ondragstart={(e) => onDragStart(e, entry.verb)}
+                ondragend={onDragEnd}
+                data-verb={entry.verb}
+                style:--vm-cat-color="var({peerCategoryMeta.colorVar})"
+                title={entry.description
+                  ? `${entry.verb}\n\n${entry.description}\n\nFrom ${entry.server} (an external MCP server). Output is advisory.\n\nDrag onto the canvas to add this step.`
+                  : `${entry.verb}\n\nFrom ${entry.server} (an external MCP server). Output is advisory.\n\nDrag onto the canvas to add this step.`}
+                aria-label="{entry.verb} from {entry.server} — drag onto canvas"
+              >
+                <span class="vm-palette-card-grip" aria-hidden="true"></span>
+                <span class="vm-palette-card-title">{entry.verb}</span>
+                <span class="vm-palette-card-verb">{entry.server}</span>
+              </div>
+            {/each}
+          </div>
+        {/if}
+      </section>
+    {/if}
+
+    {#if showVaultMemory && filteredVaultMemoryCount === 0 && normalizedQuery.length > 0}
+      <div class="vm-palette-empty" role="status">
+        <p>No actions match "{searchQuery}".</p>
+        <p>Try a different search or <button type="button" class="vm-palette-empty-link" onclick={clearSearch}>clear the filter</button>.</p>
+      </div>
+    {/if}
+
+    {#if !showVaultMemory && visiblePeers.length === 0}
+      <div class="vm-palette-empty" role="status">
+        {#if normalizedQuery.length > 0}
+          <p>No actions match "{searchQuery}" in this source.</p>
+          <p><button type="button" class="vm-palette-empty-link" onclick={clearSearch}>Clear the filter</button> or try another source.</p>
+        {:else}
+          <p>This source has no tools.</p>
+        {/if}
+      </div>
+    {/if}
+  </div>
 </aside>
 
 <style>
   .vm-palette-pane {
-    background: var(--background-secondary);
-    color: var(--text-normal);
-    font-family: var(--font-interface);
-    font-size: var(--font-ui-small);
-    height: 100%;
-    overflow-y: auto;
-    border-right: 1px solid var(--background-modifier-border);
-    padding-bottom: var(--size-4-4);
-  }
-
-  /* ── Header ── */
-  .vm-palette-header {
-    padding: var(--size-4-4) var(--size-4-4) var(--size-4-3);
-    border-bottom: 1px solid var(--background-modifier-border);
-    background: var(--background-secondary-alt, var(--background-secondary));
-  }
-  .vm-palette-title {
-    margin: 0 0 var(--size-2-2);
-    font-size: var(--font-ui-medium);
-    font-weight: var(--font-semibold);
-    color: var(--text-normal);
-  }
-  .vm-palette-help {
-    margin: 0;
-    color: var(--text-muted);
-    font-size: var(--font-ui-smaller);
-    line-height: 1.4;
-  }
-  .vm-palette-help strong {
-    color: var(--text-normal);
-    font-weight: var(--font-medium);
-  }
-
-  /* ── Section ── */
-  .vm-palette-section {
-    padding: var(--size-4-3) var(--size-4-3) 0;
-  }
-  .vm-palette-section-header {
-    display: flex;
-    align-items: center;
-    gap: var(--size-2-2);
-    padding: 0 var(--size-2-2) var(--size-2-2);
-    color: var(--text-muted);
-  }
-  .vm-palette-section-icon {
-    display: inline-flex;
-    width: 16px;
-    height: 16px;
-    color: var(--text-muted);
-  }
-  .vm-palette-section-icon :global(svg) {
-    width: 16px;
-    height: 16px;
-  }
-  .vm-palette-section-title {
-    margin: 0;
-    font-size: var(--font-ui-smaller);
-    font-weight: var(--font-semibold);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--text-muted);
-  }
-  .vm-palette-section-desc {
-    margin: 0 var(--size-2-2) var(--size-2-2);
-    font-size: var(--font-ui-smaller);
-    color: var(--text-faint);
-    line-height: 1.4;
-  }
-  .vm-palette-list {
-    list-style: none;
-    margin: 0;
-    padding: 0;
     display: flex;
     flex-direction: column;
-    gap: var(--size-2-1);
+    height: 100%;
+    font-size: var(--font-ui-small);
   }
 
-  /* ── Card ── */
-  .vm-palette-card {
-    /* Reset native button so the card looks like a draggable list item. */
+  /* ── Source dropdown ── */
+  .vm-palette-sources {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: center;
+    gap: var(--size-2-3);
+    padding: var(--size-4-2) var(--size-4-3);
+    border-bottom: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+  }
+  .vm-palette-sources-label {
+    font-size: 10px;
+    font-weight: var(--font-semibold);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    flex: 0 0 auto;
+  }
+  .vm-palette-source-select {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: var(--font-ui-small);
+  }
+  .vm-palette-source-refresh {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border-radius: var(--radius-s);
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .vm-palette-source-refresh:hover:not(:disabled) {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+  }
+  .vm-palette-source-refresh:disabled {
+    opacity: 0.5;
+    cursor: progress;
+  }
+  .vm-palette-refresh-icon {
+    display: inline-flex;
+    width: 14px;
+    height: 14px;
+  }
+  .vm-palette-refresh-icon :global(svg) {
+    width: 14px;
+    height: 14px;
+  }
+  .vm-palette-refresh-icon.is-spinning :global(svg) {
+    animation: vm-palette-spin 900ms linear infinite;
+  }
+  @keyframes vm-palette-spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  .vm-palette-source-warning {
+    flex: 0 0 auto;
+    padding: var(--size-2-2) var(--size-4-3);
+    background: var(--background-modifier-error-rgb, var(--background-secondary));
+    background: rgba(var(--background-modifier-error-rgb, 255 200 80) / 0.08);
+    border-bottom: 1px solid var(--background-modifier-border);
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+    font-style: italic;
+  }
+
+  /* ── Search box ── */
+  .vm-palette-search {
+    flex: 0 0 auto;
+    position: relative;
+    padding: var(--size-2-3) var(--size-4-3);
+    border-bottom: 1px solid var(--background-modifier-border);
+  }
+  .vm-palette-search-input {
+    width: 100%;
+    box-sizing: border-box;
+    font-size: var(--font-ui-small);
+  }
+  .vm-palette-search-clear {
+    position: absolute;
+    right: calc(var(--size-4-3) + 6px);
+    top: 50%;
+    transform: translateY(-50%);
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    border-radius: 50%;
+  }
+  .vm-palette-search-clear:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+  }
+
+  .vm-palette-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: var(--size-4-2) var(--size-4-3) var(--size-4-4);
+  }
+
+  /* ── Section / category ── */
+  .vm-palette-section + .vm-palette-section {
+    margin-top: var(--size-4-3);
+  }
+  .vm-palette-section-header {
     all: unset;
     box-sizing: border-box;
     width: 100%;
     display: flex;
-    align-items: stretch;
+    align-items: center;
     gap: var(--size-2-2);
-    padding: var(--size-2-2) var(--size-2-2) var(--size-2-2) 0;
+    padding: var(--size-2-2) var(--size-2-1);
+    color: var(--text-muted);
+    cursor: pointer;
+    user-select: none;
+    border-radius: var(--radius-s);
+  }
+  .vm-palette-section-header:hover {
+    background: var(--background-modifier-hover);
+    color: var(--text-normal);
+  }
+  .vm-palette-section-header:focus-visible {
+    outline: 2px solid var(--interactive-accent);
+    outline-offset: 2px;
+  }
+  .vm-palette-section-chevron,
+  .vm-palette-section-icon {
+    display: inline-flex;
+    width: 12px;
+    height: 12px;
+    flex: 0 0 auto;
+  }
+  .vm-palette-section-chevron :global(svg),
+  .vm-palette-section-icon :global(svg) {
+    width: 12px;
+    height: 12px;
+  }
+  .vm-palette-section-title {
+    margin: 0;
+    flex: 1 1 auto;
+    font-size: 10px;
+    font-weight: var(--font-semibold);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .vm-palette-section-count {
+    flex: 0 0 auto;
+    font-size: var(--font-ui-smaller);
+    color: var(--text-faint);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ── Empty state ── */
+  .vm-palette-empty {
+    padding: var(--size-4-6) var(--size-4-3);
+    text-align: center;
+    color: var(--text-muted);
+    font-size: var(--font-ui-smaller);
+  }
+  .vm-palette-empty p {
+    margin: 0 0 var(--size-2-2);
+  }
+  .vm-palette-empty-link {
+    all: unset;
+    color: var(--text-accent);
+    cursor: pointer;
+    text-decoration: underline;
+  }
+  .vm-palette-empty-link:hover {
+    color: var(--text-accent-hover, var(--text-accent));
+  }
+
+  /* ── Verb list ── */
+  .vm-palette-list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--size-2-3);
+    padding-top: var(--size-2-2);
+  }
+
+  /* ── Card ── */
+  .vm-palette-card {
+    display: flex;
+    align-items: center;
+    gap: var(--size-2-3);
+    min-height: 30px;
+    padding: var(--size-2-2) var(--size-2-3) var(--size-2-2) 0;
     border-radius: var(--radius-s);
     border: 1px solid var(--background-modifier-border);
+    border-left: 4px solid var(--vm-cat-color, var(--text-muted));
     background: var(--background-primary);
+    color: var(--text-normal);
     cursor: grab;
     user-select: none;
-    /* The 4px coloured strip on the left signals the category. */
-    border-left: 4px solid var(--vm-cat-color, var(--text-muted));
-    transition: transform 80ms ease-out, box-shadow 80ms ease-out, background 80ms;
+    transition: background 80ms, border-color 80ms, transform 80ms, box-shadow 80ms,
+      opacity 80ms;
   }
   .vm-palette-card:hover {
     background: var(--background-modifier-hover);
-    box-shadow: var(--shadow-s, 0 1px 2px rgba(0, 0, 0, 0.06));
+    border-color: var(--interactive-accent);
+    border-left-color: var(--vm-cat-color, var(--interactive-accent));
+    box-shadow: var(--shadow-s, 0 1px 3px rgba(0, 0, 0, 0.12));
     transform: translateY(-1px);
   }
   .vm-palette-card:focus-visible {
@@ -295,61 +576,45 @@
     cursor: grabbing;
     transform: translateY(0);
   }
+  .vm-palette-card.is-dragging {
+    opacity: 0.55;
+    transform: scale(0.97);
+    box-shadow: none;
+  }
 
-  /* Grip — six dots in a 2-column grid. Pure CSS; no images. */
   .vm-palette-card-grip {
-    display: grid;
-    grid-template-columns: 4px 4px;
-    grid-auto-rows: 4px;
-    gap: 3px;
-    align-self: center;
-    padding: 0 var(--size-2-2);
+    flex: 0 0 auto;
+    width: 8px;
+    height: 14px;
+    margin-left: var(--size-2-2);
+    background-image: radial-gradient(circle, var(--text-faint) 1px, transparent 1.5px);
+    background-size: 4px 4px;
+    background-position: 0 0;
     opacity: 0.5;
+    transition: opacity 80ms;
   }
   .vm-palette-card:hover .vm-palette-card-grip {
     opacity: 1;
-  }
-  .vm-palette-card-grip-dot {
-    width: 4px;
-    height: 4px;
-    border-radius: 50%;
-    background: var(--text-faint);
-  }
-
-  .vm-palette-card-body {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-    flex: 1;
+    background-image: radial-gradient(circle, var(--text-muted) 1px, transparent 1.5px);
   }
   .vm-palette-card-title {
+    flex: 1 1 auto;
+    min-width: 0;
     font-size: var(--font-ui-small);
     font-weight: var(--font-medium);
     color: var(--text-normal);
-    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .vm-palette-card-verb {
+    flex: 0 0 auto;
     font-family: var(--font-monospace);
     font-size: var(--font-smaller);
-    color: var(--text-accent);
-    line-height: 1.2;
+    color: var(--text-faint);
+    white-space: nowrap;
   }
-  .vm-palette-card-desc {
-    font-size: var(--font-ui-smaller);
+  .vm-palette-card:hover .vm-palette-card-verb {
     color: var(--text-muted);
-    line-height: 1.4;
-    /* Wrap to two lines max; ellipsis on overflow. */
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
-  /* Peer-MCP variant: muted background, no description (server name is
-     in the title slot so the verb shows in the subtitle). */
-  .vm-palette-card--peer {
-    border-style: dashed;
   }
 </style>

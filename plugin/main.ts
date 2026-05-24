@@ -37,7 +37,7 @@
  * "Save" / "Apply" actions only.
  */
 
-import { Modal, Notice, Plugin } from "obsidian";
+import { Menu, Modal, Notice, Plugin, TFolder, type MenuItem } from "obsidian";
 import {
   ContractEditorView,
   VIEW_TYPE_CONTRACT,
@@ -141,14 +141,43 @@ export default class VaultMemoryPlugin extends Plugin {
       },
     });
 
+    // (5c) Command — create a new contract. Wired into the folder
+    // context menu (5d) so users can right-click any vault folder →
+    // "New contract".
+    this.addCommand({
+      id: "new-contract",
+      name: "New contract",
+      callback: () => {
+        void this.createContract();
+      },
+    });
+
+    // (5d) File-menu context handler — adds "New contract" to the
+    // right-click menu on folders.
+    this.registerEvent(
+      this.app.workspace.on("file-menu", (menu: Menu, file) => {
+        if (!(file instanceof TFolder)) return;
+        const targetPath = file.path;
+        menu.addItem((item: MenuItem) => {
+          item
+            .setTitle("New contract")
+            .setIcon("git-branch")
+            .onClick(() => {
+              void this.createContract(targetPath);
+            });
+        });
+      }),
+    );
+
     // (6) Settings-tab skeleton (07-08 fills it in).
     this.addSettingTab(new VaultMemorySettingsTab(this.app, this));
 
     // (7) Missing-CLI Notice — 10s, long enough to read.
     if (this.cliMissing) {
       new Notice(
-        "vault-memory CLI not found on PATH — run /vm-install to set up. " +
-          "The contract editor will load but cannot reach the server.",
+        "vault-memory server isn't running. Open the Contracts panel to set it up, " +
+          "or run `vmem install` in a terminal. The contract editor will load, but " +
+          "contracts can't be tested until the server is running.",
         10000,
       );
     }
@@ -233,9 +262,9 @@ export default class VaultMemoryPlugin extends Plugin {
 
     return new Promise<void>((resolve) => {
       const modal = new Modal(this.app);
-      modal.titleEl.setText("External edit detected");
+      modal.titleEl.setText("This contract was edited elsewhere");
       modal.contentEl.createEl("p", {
-        text: `\`${contractPath}\` was modified outside the editor. Reload?`,
+        text: `"${contractPath}" was changed outside the editor — maybe by another app or a sync tool. Reload it to see the latest version? Any unsaved changes here will be lost.`,
       });
       const buttons = modal.contentEl.createDiv({ cls: "vm-modal-buttons" });
       const reloadBtn = buttons.createEl("button", { text: "Reload" });
@@ -245,7 +274,7 @@ export default class VaultMemoryPlugin extends Plugin {
           void view.load?.();
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
-          new Notice(`Reload failed: ${msg}`, 5000);
+          new Notice(`Couldn't reload this contract: ${msg}`, 5000);
         }
         modal.close();
         resolve();
@@ -277,7 +306,7 @@ export default class VaultMemoryPlugin extends Plugin {
       if (!right) {
         // Workspace cannot allocate a right leaf — fall through to a
         // Notice so the user knows the command did something.
-        new Notice("Could not open vault-memory panel (no available pane).", 5000);
+        new Notice("Couldn't open the vault-memory panel — no free pane to use.", 5000);
         return;
       }
       leaf = right;
@@ -300,12 +329,12 @@ export default class VaultMemoryPlugin extends Plugin {
    */
   async openContract(path: string): Promise<void> {
     if (!path || !path.trim()) {
-      new Notice("vault-memory: cannot open contract — empty path.", 5000);
+      new Notice("Couldn't open the contract — no file path was given.", 5000);
       return;
     }
     const file = this.app.vault.getAbstractFileByPath(path);
     if (!file || !("extension" in file)) {
-      new Notice(`vault-memory: contract not found at "${path}".`, 5000);
+      new Notice(`Couldn't find a contract at "${path}".`, 5000);
       return;
     }
     // Use openLinkText so Obsidian's standard "open in existing or new
@@ -320,7 +349,7 @@ export default class VaultMemoryPlugin extends Plugin {
       await this.app.workspace.openLinkText(path, "", false);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      new Notice(`vault-memory: failed to open ${path} — ${msg}`, 5000);
+      new Notice(`Couldn't open "${path}": ${msg}`, 5000);
     }
   }
 
@@ -338,8 +367,8 @@ export default class VaultMemoryPlugin extends Plugin {
    * user wires them when they're ready. vmFormatVersion is the same
    * constant the codec emits on save, so the file round-trips cleanly.
    */
-  async createContract(): Promise<void> {
-    const folder = "_contracts";
+  async createContract(targetFolder?: string): Promise<void> {
+    const folder = targetFolder && targetFolder.length > 0 ? targetFolder : "_contracts";
     try {
       const folderExists = this.app.vault.getAbstractFileByPath(folder);
       if (!folderExists) {
@@ -358,7 +387,7 @@ export default class VaultMemoryPlugin extends Plugin {
       candidate = `${folder}/untitled-${n}.contract`;
       n++;
       if (n > 9999) {
-        new Notice("Could not allocate a free untitled-N.contract path.", 5000);
+        new Notice("Couldn't pick a free filename for the new contract — too many untitled files.", 5000);
         return;
       }
     }
@@ -384,7 +413,7 @@ export default class VaultMemoryPlugin extends Plugin {
         version: 1,
         name: candidate.replace(/^.*\//, "").replace(/\.contract$/, ""),
         description:
-          "New contract — describe what this contract does in one sentence.",
+          "Describe what this contract does in one sentence.",
         assembly: [
           {
             as: stepAlias,
@@ -408,7 +437,7 @@ export default class VaultMemoryPlugin extends Plugin {
       await this.app.workspace.openLinkText(candidate, "", false);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      new Notice(`vault-memory: created ${candidate} but failed to open — ${msg}`, 5000);
+      new Notice(`Created ${candidate}, but couldn't open it: ${msg}`, 5000);
       return;
     }
     new Notice(`Created ${candidate}`, 3000);

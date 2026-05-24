@@ -65,41 +65,67 @@ export interface VerbCategoryMeta {
 export const VERB_CATEGORY_META: Record<VerbCategory, VerbCategoryMeta> = {
   "read-document": {
     id: "read-document",
-    label: "Read a document",
+    label: "Pull from one note",
     icon: "file-text",
     colorVar: "--color-blue",
   },
   "search-vault": {
     id: "search-vault",
-    label: "Search the vault",
+    label: "Find notes",
     icon: "search",
     colorVar: "--color-cyan",
   },
   "navigate-graph": {
     id: "navigate-graph",
-    label: "Navigate the graph",
+    label: "Follow links between notes",
     icon: "network",
     colorVar: "--color-purple",
   },
   reference: {
     id: "reference",
-    label: "Reference earlier work",
+    label: "Look up past results",
     icon: "history",
     colorVar: "--color-orange",
   },
   compose: {
     id: "compose",
-    label: "Compose a new artifact",
+    label: "Write something new",
     icon: "sparkles",
     colorVar: "--color-green",
   },
   escape: {
     id: "escape",
-    label: "Escape-hatch",
+    label: "Advanced",
     icon: "wrench",
     colorVar: "--text-muted",
   },
 };
+
+/**
+ * The output type a step produces — a closed enum so the canvas can
+ * validate connections. Loosely modelled on the verb's actual
+ * outputShape but coarser so a small compatibility matrix is enough.
+ *
+ *   - note         : single DocId + body + frontmatter (read_note, get_brief)
+ *   - note-list    : list of DocIds (search_hybrid, expand, list_backlinks, recall, query_frontmatter)
+ *   - cluster-list : grouped DocIds with cluster metadata (cluster)
+ *   - brief        : compiled brief (body + saved DocId) (compile_brief, get_brief)
+ *   - outline      : heading tree (get_outline)
+ *   - sections     : section search hits (search_sections)
+ *   - any          : escape-hatch — literal step, peer-MCP, etc.
+ *
+ * `none` means the step has no useful output to connect downstream
+ * (none today, reserved for future side-effect-only verbs).
+ */
+export type OutputType =
+  | "note"
+  | "note-list"
+  | "cluster-list"
+  | "brief"
+  | "outline"
+  | "sections"
+  | "any"
+  | "none";
 
 export interface ArgDoc {
   /** Plain-language label for the field shown in the inspector. */
@@ -113,9 +139,102 @@ export interface ArgDoc {
   required?: boolean;
   /**
    * Hint about the expected shape; the inspector uses this to pick the
-   * right input control (text / number / textarea / mustache).
+   * right input control. Extended in the UX redesign:
+   *
+   *   - text      : single-line free-form input
+   *   - textarea  : multi-line free-form input
+   *   - number    : numeric stepper
+   *   - bool      : yes/no toggle
+   *   - enum      : dropdown from `enumOptions`
+   *   - docId     : single note picker
+   *   - docList   : list of note pickers (multi-pick)
+   *   - composite : chip-strip of fixed-string + reference segments
+   *                 (stubbed; renders as advanced raw editor for now)
+   *   - json      : raw JSON value (advanced)
+   *
+   * "mustache" was removed — the inspector's picker handles
+   * upstream-vs-literal disambiguation on top of the typed shapes.
    */
-  shape?: "text" | "number" | "textarea" | "docId" | "mustache" | "json";
+  shape?:
+    | "text"
+    | "number"
+    | "textarea"
+    | "bool"
+    | "enum"
+    | "docId"
+    | "docList"
+    | "composite"
+    | "json";
+  /**
+   * Options for `shape: "enum"`. Each entry's `value` is the literal
+   * string written into the contract's args; `label` is what the user
+   * sees in the dropdown.
+   */
+  enumOptions?: ReadonlyArray<{ value: string; label: string }>;
+  /**
+   * Which upstream OutputTypes can feed this slot. Drives canvas-level
+   * connection compatibility — incompatible source/target pairs hide
+   * their handles during drag. When omitted, derived from `shape`:
+   *
+   *   - docId    → ["note", "brief", "any"]
+   *   - docList  → ["note-list", "cluster-list", "any"]
+   *   - text     → ["note", "brief", "outline", "sections", "any"]
+   *   - textarea → ["note", "brief", "outline", "sections", "any"]
+   *   - number   → ["any"]
+   *   - bool     → ["any"]
+   *   - enum     → ["any"]
+   *   - json     → ["any"]
+   *   - composite→ ["any"]
+   *
+   * Set explicitly when an arg should accept a narrower or wider set
+   * than its shape's default.
+   */
+  acceptedOutputTypes?: ReadonlyArray<OutputType>;
+}
+
+/**
+ * Default `acceptedOutputTypes` derived from an arg's shape. Used when
+ * a verb's ArgDoc doesn't override the value explicitly. Read by
+ * `verbAcceptedInputs()`.
+ */
+const DEFAULT_ACCEPTED_BY_SHAPE: Record<NonNullable<ArgDoc["shape"]>, ReadonlyArray<OutputType>> = {
+  text: ["note", "brief", "outline", "sections", "any"],
+  textarea: ["note", "brief", "outline", "sections", "any"],
+  number: ["any"],
+  bool: ["any"],
+  enum: ["any"],
+  docId: ["note", "brief", "any"],
+  docList: ["note-list", "cluster-list", "any"],
+  composite: ["any"],
+  json: ["any"],
+};
+
+/**
+ * Compute the union of OutputTypes a verb's argDocs can accept. Used by
+ * canvas-pane's isValidConnection to gate drag-targets at the card
+ * level (we don't yet expose per-arg handles).
+ */
+export function verbAcceptedInputs(meta: VerbMeta): ReadonlySet<OutputType> {
+  const out = new Set<OutputType>();
+  for (const doc of Object.values(meta.argDocs)) {
+    if (doc.acceptedOutputTypes) {
+      for (const t of doc.acceptedOutputTypes) out.add(t);
+    } else if (doc.shape) {
+      for (const t of DEFAULT_ACCEPTED_BY_SHAPE[doc.shape]) out.add(t);
+    }
+  }
+  // `any` is the universal accept — a literal upstream always fits.
+  out.add("any");
+  return out;
+}
+
+/**
+ * Whether `source.outputType` can validly feed any arg of `target`.
+ */
+export function isCompatible(source: VerbMeta, target: VerbMeta): boolean {
+  if (source.outputType === "none") return false;
+  if (source.outputType === "any") return true;
+  return verbAcceptedInputs(target).has(source.outputType);
 }
 
 export interface VerbMeta {
@@ -155,6 +274,14 @@ export interface VerbMeta {
    * preview when an arg refers to this step.
    */
   outputShape: string;
+  /**
+   * Closed-enum classification of the output, used for connection
+   * compatibility on the canvas. Coarser than `outputShape` (which is
+   * free text). When the source's outputType is missing from a target's
+   * accepted set, the canvas hides the target's input handle during
+   * drag from the source.
+   */
+  outputType: OutputType;
 }
 
 /**
@@ -169,61 +296,64 @@ export const VERB_CATALOG: readonly VerbMeta[] = [
     verb: "read_note",
     category: "read-document",
     title: "Read a note",
-    description: "Fetch the full text of one note by its document ID.",
+    description: "Pull the full text of one note from your vault.",
     longDescription:
-      "Returns the full text, frontmatter, and metadata of a single note identified by its DocId. Use this when a later step needs the actual contents of a note — for example, when compiling a brief that quotes from a meeting. The DocId usually comes from a contract input or from a previous step's output.",
+      "Returns the full text, properties, and metadata of a single note. Use this when a later step needs the actual contents of a note — for example, when compiling a brief that quotes from a meeting. The note is usually supplied by the agent at run time, or comes from the result of an earlier step.",
     defaultArgs: { doc_id: "?{{inputs.doc_id}}" },
     argDocs: {
       doc_id: {
-        label: "Document to read",
-        help: "The DocId of the note. Usually `{{inputs.<your-input>}}` so the agent supplies it at call time.",
+        label: "Note to read",
+        help: "Which note to read. Usually the agent supplies this when it runs the contract.",
         required: true,
         shape: "docId",
       },
     },
     outputShape: "{ body: string, frontmatter: object, doc_id: string }",
+    outputType: "note",
   },
   {
     verb: "get_outline",
     category: "read-document",
     title: "Get a note's outline",
-    description: "Return just the heading structure of a note (no body text).",
+    description: "Return just the headings of a note — no body text.",
     longDescription:
-      "Returns the hierarchical heading tree of a note — useful when the agent only needs to know what sections exist (for navigation, summarisation, or cross-referencing) rather than the full body text. Cheap; no token cost on downstream LLM steps.",
+      "Returns the heading tree of a note — useful when the agent only needs to know what sections exist (for navigation, summary, or cross-referencing) rather than the full body. Cheap; uses no LLM tokens downstream.",
     defaultArgs: { doc_id: "?{{inputs.doc_id}}" },
     argDocs: {
       doc_id: {
-        label: "Document",
-        help: "The DocId of the note whose outline you want.",
+        label: "Note",
+        help: "Which note's outline to read.",
         required: true,
         shape: "docId",
       },
     },
     outputShape: "{ headings: Array<{level, text, anchor}> }",
+    outputType: "outline",
   },
   {
     verb: "search_sections",
     category: "read-document",
     title: "Find sections in a note",
-    description: "Search within one note for sections matching a query.",
+    description: "Search inside one note for the sections that match a query.",
     longDescription:
-      "Scopes a hybrid search to a single note instead of the whole vault. Useful when you have one long source document and want to find the relevant sections — for example, finding the parts of a meeting transcript that discuss a specific topic.",
+      "Scopes a search to a single note instead of the whole vault. Useful when you have one long source note and want to find the relevant sections — for example, the parts of a meeting transcript that discuss a specific topic.",
     defaultArgs: { doc_id: "?{{inputs.doc_id}}", query: "?" },
     argDocs: {
       doc_id: {
-        label: "Document",
-        help: "The DocId of the note to search inside.",
+        label: "Note",
+        help: "Which note to search inside.",
         required: true,
         shape: "docId",
       },
       query: {
-        label: "Search query",
-        help: "Natural-language query. Hybrid search combines semantic + keyword.",
+        label: "What to search for",
+        help: "A few words about what you're looking for. The agent finds matching sections.",
         required: true,
         shape: "text",
       },
     },
     outputShape: "{ sections: Array<{heading, body, score}> }",
+    outputType: "sections",
   },
 
   // ── Search the vault ──
@@ -231,52 +361,54 @@ export const VERB_CATALOG: readonly VerbMeta[] = [
     verb: "search_hybrid",
     category: "search-vault",
     title: "Search the vault",
-    description: "Hybrid semantic + keyword search across every note.",
+    description: "Search across every note in your vault.",
     longDescription:
-      "Runs a hybrid semantic + BM25 + RRF search across the entire vault and returns the top matching notes. The recommended default search verb when you don't know which note holds the answer. Output IDs can be fed into `expand`, `cluster`, or `compile_brief`.",
+      "Searches every note in the vault and returns the best matches — combining meaning-based and keyword search. The default starting point when you don't yet know which note holds the answer. The matching notes can feed later steps such as 'Follow links between notes' or 'Compile a brief'.",
     defaultArgs: { query: "?", limit: 20 },
     argDocs: {
       query: {
-        label: "Search query",
-        help: "Natural-language question or topic. Often references inputs: `{{inputs.topic}}`.",
+        label: "What to search for",
+        help: "A few words about what you're looking for. The agent finds matching notes.",
         required: true,
         shape: "text",
       },
       limit: {
-        label: "Result limit",
+        label: "How many results",
         help: "How many top results to return. 10–30 is typical; lower is faster.",
         shape: "number",
       },
     },
     outputShape: "{ docs: Array<{doc_id, title, score, snippet}> }",
+    outputType: "note-list",
   },
   {
     verb: "query_frontmatter",
     category: "search-vault",
-    title: "Filter by frontmatter",
-    description: "Find notes whose frontmatter properties match a filter.",
+    title: "Filter by properties",
+    description: "Find notes whose properties match a filter.",
     longDescription:
-      "Structured filter over note frontmatter properties (e.g. `status: open`, `project: atlas-1`). Use this when the agent needs to find all notes of a kind — for example, all notes tagged with a specific project key, or all unresolved tasks.",
+      "Structured filter over note properties (e.g. `status: open`, `project: atlas-1`). Use this when the agent needs to find all notes of a kind — for example, every note tagged with a specific project, or every unresolved task.",
     defaultArgs: { where: { "?key": "?value" } },
     argDocs: {
       where: {
-        label: "Filter expression",
-        help: "Object of `key: value` pairs. All conditions must match (logical AND).",
+        label: "Filter",
+        help: "Pairs of property and value. All conditions must match.",
         required: true,
         shape: "json",
       },
     },
     outputShape: "{ docs: Array<{doc_id, frontmatter}> }",
+    outputType: "note-list",
   },
 
   // ── Navigate the graph ──
   {
     verb: "expand",
     category: "navigate-graph",
-    title: "Expand the link graph",
-    description: "Find notes 1-2 hops away from a seed via wikilinks + mentions.",
+    title: "Follow links between notes",
+    description: "Find notes 1–2 steps away from a starting set via links and mentions.",
     longDescription:
-      "Starting from one or more seed notes, walks the typed-edge graph (wikilinks, mentions, frontmatter-refs, hyperlinks) and returns all reachable notes within `hops` steps. Use this to gather context around a focal note — for example, the notes linked from a meeting are usually the projects discussed.",
+      "Starting from one or more notes, follows wikilinks, mentions, and property references to reach related notes within a given distance. Use this to gather context around a focal note — for example, the notes linked from a meeting are usually the projects discussed.",
     defaultArgs: {
       seed_doc_ids: ["?{{inputs.doc_id}}"],
       hops: 1,
@@ -285,63 +417,71 @@ export const VERB_CATALOG: readonly VerbMeta[] = [
     argDocs: {
       seed_doc_ids: {
         label: "Starting notes",
-        help: "Array of DocIds to start walking from. Often `[{{inputs.doc_id}}]` or `{{search_results.docs}}`.",
+        help: "Which notes to start from. Usually the result of a search, or a note the agent supplies.",
         required: true,
-        shape: "json",
+        shape: "docList",
       },
       hops: {
-        label: "Walk distance",
-        help: "1 = direct neighbours only. 2 = friends-of-friends. v2.0 caps at 2.",
+        label: "How far to follow links",
+        help: "1 = direct neighbours only. 2 = neighbours of neighbours. Capped at 2.",
         shape: "number",
       },
       direction: {
         label: "Direction",
-        help: "`out` follows links from seeds, `in` follows backlinks, `both` does both.",
-        shape: "text",
+        help: "Which way to follow links from the starting notes.",
+        shape: "enum",
+        enumOptions: [
+          { value: "in", label: "Inbound only" },
+          { value: "out", label: "Outbound only" },
+          { value: "both", label: "Both directions" },
+        ],
       },
     },
     outputShape: "{ doc_ids: string[], edges: Array<{source, target, type}> }",
+    outputType: "note-list",
   },
   {
     verb: "cluster",
     category: "navigate-graph",
     title: "Cluster related notes",
-    description: "Group a set of notes into communities by their link density.",
+    description: "Group a set of notes into themes by how densely they link to each other.",
     longDescription:
-      "Runs Louvain community detection on the subgraph induced by the seed notes. Returns groups of notes that link to each other more densely than to the rest. Use after `expand` to break a large neighbourhood into themes.",
+      "Groups the given notes into communities based on how densely they link to each other. Use after 'Follow links between notes' to break a big neighbourhood into themes.",
     defaultArgs: { seed_doc_ids: ["?{{linked.doc_ids}}"], method: "edge-community" },
     argDocs: {
       seed_doc_ids: {
         label: "Notes to cluster",
-        help: "DocIds. Usually `{{<expand-step>.doc_ids}}` from a prior expand step.",
+        help: "The notes to group. Usually the result of a 'Follow links between notes' step.",
         required: true,
-        shape: "json",
+        shape: "docList",
       },
       method: {
         label: "Method",
-        help: "`edge-community` is the only method in v2.0. Reserved for future variants.",
+        help: "Only 'edge-community' is available today. Reserved for future variants.",
         shape: "text",
       },
     },
     outputShape: "{ communities: Array<{cluster_id, member_doc_ids}> }",
+    outputType: "cluster-list",
   },
   {
     verb: "list_backlinks",
     category: "navigate-graph",
     title: "List backlinks",
-    description: "Find every note that links TO a target document.",
+    description: "Find every note that links to a target note.",
     longDescription:
-      "Returns all notes that wikilink, mention, or reference (via frontmatter) the target document. Use to find every meeting where a person was discussed, or every project status that touches a particular initiative.",
+      "Returns all notes that link to, mention, or reference the target note. Use to find every meeting where a person was discussed, or every project status that touches a particular initiative.",
     defaultArgs: { target_doc_id: "?{{inputs.doc_id}}" },
     argDocs: {
       target_doc_id: {
-        label: "Target document",
-        help: "DocId whose backlinks to fetch.",
+        label: "Target note",
+        help: "Which note to find backlinks for.",
         required: true,
         shape: "docId",
       },
     },
     outputShape: "{ backlinks: Array<{source_doc_id, type, anchor?}> }",
+    outputType: "note-list",
   },
 
   // ── Reference earlier work ──
@@ -349,42 +489,44 @@ export const VERB_CATALOG: readonly VerbMeta[] = [
     verb: "recall",
     category: "reference",
     title: "Recall an earlier memory",
-    description: "Look up a document the agent wrote in an earlier run.",
+    description: "Look up something the agent saved in an earlier run.",
     longDescription:
-      "Returns documents the agent previously wrote to the memory namespace, identified by handle and freshness window. Use this to give an agent continuity across runs — for example, recalling last week's meeting prep before this week's.",
+      "Returns notes the agent previously saved to the memory folder, identified by a saved-folder name and a freshness window. Use this to give an agent continuity across runs — for example, recalling last week's meeting prep before this week's.",
     defaultArgs: { handle: "?", since_days: 30 },
     argDocs: {
       handle: {
-        label: "Memory handle",
-        help: "MemorySink handle (e.g. `_memory/_briefs`) or a document handle.",
+        label: "Saved folder",
+        help: "Name of the memory folder to look in (e.g. `_memory/_briefs`).",
         required: true,
         shape: "text",
       },
       since_days: {
-        label: "Freshness window (days)",
-        help: "Only return memories written within the last N days.",
+        label: "Look back (days)",
+        help: "Only return memories saved within the last N days.",
         shape: "number",
       },
     },
     outputShape: "{ memories: Array<{doc_id, body, written_at}> }",
+    outputType: "note-list",
   },
   {
     verb: "get_brief",
     category: "reference",
     title: "Fetch a saved brief",
-    description: "Retrieve a brief compiled in an earlier run by its handle.",
+    description: "Retrieve a brief written in an earlier run by its name.",
     longDescription:
-      "Returns a brief document by handle. Use when a contract should build on a previously-compiled brief — for example, a weekly status that references last week's status. The handle usually comes from a contract input or a `recall` step.",
+      "Returns a brief saved in an earlier run. Use when a contract should build on a previously-written brief — for example, a weekly status that references last week's status. The name usually comes from a contract input or an earlier 'Recall' step.",
     defaultArgs: { handle: "?" },
     argDocs: {
       handle: {
-        label: "Brief handle",
-        help: "DocId of a previously-compiled brief.",
+        label: "Brief name",
+        help: "Which saved brief to fetch.",
         required: true,
         shape: "docId",
       },
     },
     outputShape: "{ body: string, compiled_at: number, sources: string[] }",
+    outputType: "brief",
   },
 
   // ── Compose ──
@@ -392,9 +534,9 @@ export const VERB_CATALOG: readonly VerbMeta[] = [
     verb: "compile_brief",
     category: "compose",
     title: "Compile a brief",
-    description: "Bundle a set of notes into a structured brief using an LLM.",
+    description: "Bundle a set of notes into a structured brief.",
     longDescription:
-      "Bundles a set of source notes into a structured brief using the configured LLM (or a fallback ladder). This is the canonical compose step — most contracts end with a `compile_brief` followed by the `write_back` block. Output is a brief document the contract's write_back writes to a MemorySink.",
+      "Bundles a set of source notes into a structured brief using the configured language model. This is the usual final step — most contracts end with a 'Compile a brief' that saves its result to a memory folder. The output is a brief that the contract saves to your vault.",
     defaultArgs: {
       target: "?{{inputs.doc_id}}--brief",
       source_doc_ids: "?{{linked.doc_ids}}",
@@ -403,50 +545,57 @@ export const VERB_CATALOG: readonly VerbMeta[] = [
     },
     argDocs: {
       target: {
-        label: "Target handle",
-        help: "Stable handle for the resulting brief (used as DocId stem in the sink).",
+        label: "Where to save this brief",
+        help: "A stable name for the resulting brief (used as the saved file's name).",
         required: true,
         shape: "text",
       },
       source_doc_ids: {
         label: "Source notes",
-        help: "Array of DocIds the brief should be built from. Usually `{{<expand>.doc_ids}}`.",
+        help: "The notes the brief is built from. Usually the result of a 'Follow links' or 'Find notes' step.",
         required: true,
-        shape: "json",
+        shape: "docList",
       },
       purpose: {
         label: "Purpose",
-        help: "Free-text description of what the brief is for. Goes into the LLM prompt.",
+        help: "What the brief is for — picks the writing template.",
         required: true,
-        shape: "textarea",
+        shape: "enum",
+        enumOptions: [
+          { value: "summary", label: "Summary" },
+          { value: "decisions", label: "Decisions only" },
+          { value: "action_items", label: "Action items" },
+        ],
       },
       max_tokens: {
-        label: "Max tokens",
-        help: "Cap on the output length. 1000–3000 is typical.",
+        label: "Maximum length",
+        help: "Cap on the brief's length, measured in tokens. 1000–3000 is typical.",
         shape: "number",
       },
     },
     outputShape: "{ body: string, doc_id: string, sources: string[] }",
+    outputType: "brief",
   },
 
   // ── Escape hatch ──
   {
     verb: "literal",
     category: "escape",
-    title: "Literal value",
-    description: "Inject a fixed value (string, number, object) into the pipeline.",
+    title: "Fixed value",
+    description: "Drop a fixed value (text, number, list) into your contract.",
     longDescription:
-      "Hard-codes a value into the assembly graph. Use sparingly — most steps should derive their values from inputs or upstream steps. Common uses: a hard-coded query for a fixed report, a constant section heading, a fixture-pinned DocId for tests.",
+      "Hard-codes a value into the contract. Use sparingly — most steps should take their values from contract inputs or earlier steps. Common uses: a fixed search query for a recurring report, a constant section heading, a pinned note ID for tests.",
     defaultArgs: { value: "?" },
     argDocs: {
       value: {
         label: "Value",
-        help: "Any JSON value: string, number, object, array. Quoted strings literal; bare numbers numeric.",
+        help: "Any value: text, number, list, or object. Used as-is.",
         required: true,
         shape: "json",
       },
     },
     outputShape: "The value, as-is.",
+    outputType: "any",
   },
 ];
 
