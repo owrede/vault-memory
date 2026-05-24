@@ -33,8 +33,28 @@ See also:
 | 005 | [Brief Compile Strategy](005-brief-compile-strategy.md) | Accepted | — | 5 | — | brief, compile, llm-ladder, sampling, ollama |
 | 006 | [Task Contract DSL](006-task-contract-dsl.md) | Accepted | — | 6 | — | task-contracts, dsl, instantiate, describe, verbs, mcp |
 | 007 | [Contract Editor (Obsidian plugin + `.contract` JSON format)](007-contract-editor.md) | Accepted | 2026-05-19 | 7 | — | obsidian-plugin, contract-editor, svelte-flow, palette-canvas-inspector, vm-editor-state |
+| 020 | [Contract as a first-class persisted type](020-contract-as-first-class-type.md) | Proposed | 2026-05-21 | v2.x | — | contracts, registry, persistence, validation, document-vs-contract |
+| 021 | [Authority and staleness as retrieval-ranking inputs](021-authority-staleness-ranking.md) | Proposed | 2026-05-21 | v2.x | — | search, hybrid, ranking, staleness, authority, freshness, bias-stage |
+| 022 | [Typed cross-contract edges](022-typed-cross-contract-edges.md) | Proposed | 2026-05-21 | v2.x | — | graph, typed-refs, contract-fields, multi-hop, schema-introspection |
+| 023 | [Contracts as MCP Resources, not just Tools](023-contracts-as-mcp-resources.md) | Proposed | 2026-05-21 | v2.x | — | mcp, resources, discovery, context-embedding, subscriptions |
+| 024 | [Contracts MUST declare failure modes](024-contract-failure-modes.md) | Proposed | 2026-05-21 | v2.x | — | contracts, hallucination, unresolved, review-required, failure-modes |
 
 **ADR-007 decision summary:** Variant C palette+canvas+inspector Obsidian plugin authoring `.contract` JSON emitted as canonical Phase 6 YAML; renderer Svelte Flow rather than jsoncanvas fork (upstream renderer does not exist — see ADR-007 §Pitfall 1).
+
+**ADR-020–024 series.** Five proposed ADRs derived from
+[`../AGENTIC_KNOWLEDGE_LAYER.md`](../AGENTIC_KNOWLEDGE_LAYER.md) §5 —
+each closes a principle gap in the v2 surface:
+
+- **020** elevates `Contract` to a peer of `Document` with its own table and query verbs.
+- **021** wires `lifecycle.fresh_for` and `provenance.allowed_writers` into `hybridSearch` ranking.
+- **022** introduces typed field-level edges (`ref(Kind)`) alongside the existing untyped wikilinks.
+- **023** exposes contracts as MCP **Resources** so hosts can embed shapes in context without a tool roundtrip.
+- **024** requires every required field to declare a `failure_modes` entry, eliminating hallucination-into-shape.
+
+The 020–024 band intentionally skips the 008–018 placeholder range
+reserved for v3 Phase-10 Open ADRs that may renumber when written.
+Promotion of any of these to Accepted requires the usual ADR-006-style
+discuss + research + plan loop on the v2.x branch.
 
 ## Open ADRs (v3 / Phase 10)
 
