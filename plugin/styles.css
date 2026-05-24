@@ -164,6 +164,57 @@
 
 /* ---- Settings tab chrome (Phase 7 / 07-08 / PLG-01) -------------------- */
 
+/* Topic tabs — adapted from perspecta-slides SettingsTab. */
+.vm-settings-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 16px 0 20px;
+  border-bottom: 1px solid var(--background-modifier-border);
+  padding-bottom: 0;
+}
+
+.vm-settings-tab {
+  padding: 8px 16px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  transition: color 0.15s ease, border-color 0.15s ease;
+  box-shadow: none;
+}
+
+.vm-settings-tab:hover {
+  color: var(--text-normal);
+  background: transparent;
+}
+
+.vm-settings-tab.is-active {
+  color: var(--text-normal);
+  border-bottom-color: var(--interactive-accent);
+}
+
+.vm-settings-content {
+  display: block;
+}
+
+.vm-settings-content > h3 {
+  margin-top: 24px;
+  margin-bottom: 12px;
+  font-size: 1.05em;
+  font-weight: 600;
+  color: var(--text-normal);
+}
+
+.vm-settings-version {
+  margin: 4px 0 16px;
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+}
+
 /* Missing-CLI banner — UI-SPEC §"Color" rule: destructive / error tint. */
 .vm-cli-missing-banner {
   margin: 12px 0;

@@ -44,6 +44,14 @@ export interface VaultMemorySettings {
   ftsTokenizer: string | null;
   serverCommand: string;
   serverArgs: string[];
+  /**
+   * Per-source palette curation. Maps source name (peer-MCP client name)
+   * to the list of tools that should appear in the contract editor
+   * palette. Default-on semantics — a source missing from the map →
+   * all tools enabled; empty array → all disabled; non-empty array →
+   * only listed tools enabled. See .planning/specs/SOURCES-REGISTRY.md §7.
+   */
+  sourceEnabledTools: Record<string, string[]>;
 }
 
 export const DEFAULT_SETTINGS: VaultMemorySettings = {
@@ -55,6 +63,7 @@ export const DEFAULT_SETTINGS: VaultMemorySettings = {
   ftsTokenizer: null,
   serverCommand: "vault-memory",
   serverArgs: ["serve"],
+  sourceEnabledTools: {},
 };
 
 const RESTART_REQUIRED_KEYS: ReadonlySet<keyof VaultMemorySettings> = new Set([

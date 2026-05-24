@@ -45,6 +45,7 @@ import { PluginSettingTab, Setting, Notice, type App } from "obsidian";
 import type VaultMemoryPlugin from "../../main.js";
 import type { VaultMemorySettings } from "../services/settings-store.js";
 import { SecretsPanelMount } from "./secrets-panel-mount.js";
+import { SourcesPanelMount } from "./sources-panel-mount.js";
 import { renderChangelog } from "../changelog.js";
 
 /**
@@ -55,11 +56,31 @@ import { renderChangelog } from "../changelog.js";
  */
 const RESTART_NOTICE_PREFIX = "Restart required to apply.";
 
+type SettingsTabId =
+  | "search"
+  | "indexing"
+  | "sources"
+  | "secrets"
+  | "server"
+  | "about";
+
+const TABS: ReadonlyArray<{ id: SettingsTabId; label: string }> = [
+  { id: "search", label: "Search" },
+  { id: "indexing", label: "Indexing" },
+  { id: "sources", label: "Sources" },
+  { id: "secrets", label: "Secrets" },
+  { id: "server", label: "Server" },
+  { id: "about", label: "About" },
+];
+
 export class VaultMemorySettingsTab extends PluginSettingTab {
   readonly vmPlugin: VaultMemoryPlugin;
   /** Set during display(); cleared on hide() so $state subscriptions
    *  don't leak across settings-tab open/close cycles. */
   private secretsMount: SecretsPanelMount | null = null;
+  private sourcesMount: SourcesPanelMount | null = null;
+  /** Active tab. Preserved across display() calls in this instance. */
+  private currentTab: SettingsTabId = "search";
 
   constructor(app: App, plugin: VaultMemoryPlugin) {
     super(app, plugin);
@@ -72,122 +93,187 @@ export class VaultMemorySettingsTab extends PluginSettingTab {
 
     containerEl.createEl("h2", { text: "vault-memory settings" });
 
-    // Missing-CLI banner from 07-03 — preserved unchanged so users can
-    // diagnose boot failures after the Notice toast has expired.
+    // Missing-CLI banner — preserved at the top so users can diagnose
+    // boot failures regardless of which tab they're on.
     if (this.vmPlugin.cliMissing) {
       const banner = containerEl.createDiv({ cls: "vm-cli-missing-banner" });
       banner.setText(
-        "vault-memory CLI not found. Install via the `/vmem:install` skill " +
-          "or set the Server Command setting to the absolute path of " +
-          "`vault-memory`.",
+        "The vault-memory server isn't running. Run the `/vmem:install` skill " +
+          "to set it up, or point Server command (under the Server tab) to the " +
+          "vault-memory binary on your machine.",
       );
     }
 
-    // ---- Primary settings ---- (one `new Setting(...)` per row so the
-    // structure is explicit; the wireText / wireToggle helpers only own
-    // the value-coercion + onChange-push plumbing.)
-    const ollamaUrlSetting = new Setting(containerEl);
-    this.wireText(ollamaUrlSetting, {
-      key: "ollamaUrl",
-      name: "Ollama URL",
-      desc: "Base URL of the local Ollama server. Default http://localhost:11434.",
-    });
-
-    const embeddingModelSetting = new Setting(containerEl);
-    this.wireText(embeddingModelSetting, {
-      key: "embeddingModel",
-      name: "Embedding model",
-      desc: "Ollama-loaded embedding model. Default bge-m3.",
-    });
-
-    const rerankerSetting = new Setting(containerEl);
-    this.wireToggle(rerankerSetting, {
-      key: "rerankerEnabled",
-      name: "Reranker",
-      desc: "Enable the cross-encoder reranker for search results.",
-    });
-
-    const defaultVaultSetting = new Setting(containerEl);
-    this.wireText(defaultVaultSetting, {
-      key: "defaultVault",
-      name: "Default vault",
-      desc: "Vault to scope hybrid search to by default. Empty = fan out across all vaults.",
-      nullable: true,
-    });
-
-    // ---- Advanced section (collapsed by default) ----
-    // Real <details> element (closed by default — no `open` attr).
-    const advanced = containerEl.createEl("details", {
-      attr: { "data-testid": "advanced-section" },
-    });
-    advanced.createEl("summary", { text: "Advanced" });
-
-    const indexerBatchSetting = new Setting(advanced);
-    this.wireText(indexerBatchSetting, {
-      key: "indexerBatchSize",
-      name: "Indexer batch size",
-      desc: "Number of chunks the indexer embeds per Ollama call. Default 32.",
-      coerce: "number",
-    });
-
-    const ftsTokenizerSetting = new Setting(advanced);
-    this.wireText(ftsTokenizerSetting, {
-      key: "ftsTokenizer",
-      name: "FTS tokenizer override",
-      desc: "SQLite FTS5 tokenizer override (e.g. 'porter unicode61'). Empty = SQLite default.",
-      nullable: true,
-    });
-
-    const serverCommandSetting = new Setting(advanced);
-    this.wireText(serverCommandSetting, {
-      key: "serverCommand",
-      name: "Server command",
-      desc: "Path to the vault-memory binary. Default 'vault-memory' (uses PATH).",
-    });
-
-    const serverArgsSetting = new Setting(advanced);
-    this.wireText(serverArgsSetting, {
-      key: "serverArgs",
-      name: "Server args",
-      desc: "Space-separated CLI args passed to the server. Default 'serve'.",
-      coerce: "args",
-    });
-
-    // ---- Secrets section ----
-    // Mount the secrets-panel Svelte component into a stable host div so
-    // its $state subscriptions and DOM tree are owned by this tab's
-    // lifecycle. The mount is destroyed in hide() below.
-    containerEl.createEl("h3", { text: "Secrets" });
-    const secretsHost = containerEl.createDiv({
-      attr: { "data-testid": "secrets-panel-host" },
-    });
-    // Tear down any prior mount before constructing a new one — display()
-    // can be called multiple times for the same tab instance.
+    // Tear down any prior mounts before the container gets re-rendered;
+    // they'll be reconstructed only if the active tab needs them.
     this.secretsMount?.destroy();
-    this.secretsMount = new SecretsPanelMount(secretsHost, {
-      secretsStore: this.vmPlugin.secretsStore,
-      safeStorage: this.vmPlugin.safeStorage,
+    this.secretsMount = null;
+    this.sourcesMount?.destroy();
+    this.sourcesMount = null;
+
+    // Tab nav — pattern adapted from perspecta-slides SettingsTab.
+    const tabNav = containerEl.createDiv({
+      cls: "vm-settings-tabs",
+      attr: { "data-testid": "settings-tabs" },
+    });
+    for (const tab of TABS) {
+      const btn = tabNav.createEl("button", {
+        cls: `vm-settings-tab ${this.currentTab === tab.id ? "is-active" : ""}`,
+        text: tab.label,
+        attr: { "data-testid": `settings-tab-${tab.id}` },
+      });
+      btn.addEventListener("click", () => {
+        if (this.currentTab === tab.id) return;
+        this.currentTab = tab.id;
+        this.display();
+      });
+    }
+
+    const content = containerEl.createDiv({
+      cls: "vm-settings-content",
+      attr: { "data-testid": `settings-content-${this.currentTab}` },
     });
 
-    // ---- Changelog section ----
-    // Pattern from perspecta-obsidian: a single TypeScript module
-    // (../changelog.ts) holds structured ChangelogEntry[] for the
-    // plugin half and the CLI/MCP server half. renderChangelog()
-    // produces a clean DOM tree (h3 sections, h4 versions, ul/li
-    // changes) — no <pre>, no async file reads, no markdown parsing.
-    // The same data feeds generateChangelogMarkdown() for the bundled
-    // CHANGELOG-plugin.md companion file.
-    containerEl.createEl("h2", { text: "Changelog" });
-    const changelogHost = containerEl.createDiv({
-      cls: "vm-changelog-host",
-      attr: { "data-testid": "changelog-host" },
-    });
-    renderChangelog(changelogHost);
+    switch (this.currentTab) {
+      case "search":
+        this.renderSearchTab(content);
+        break;
+      case "indexing":
+        this.renderIndexingTab(content);
+        break;
+      case "sources":
+        this.renderSourcesTab(content);
+        break;
+      case "secrets":
+        this.renderSecretsTab(content);
+        break;
+      case "server":
+        this.renderServerTab(content);
+        break;
+      case "about":
+        this.renderAboutTab(content);
+        break;
+    }
   }
 
   override hide(): void {
     this.secretsMount?.destroy();
     this.secretsMount = null;
+    this.sourcesMount?.destroy();
+    this.sourcesMount = null;
+  }
+
+  // ─── Tab renderers ────────────────────────────────────────────────────
+
+  private renderSearchTab(host: HTMLElement): void {
+    this.wireText(new Setting(host), {
+      key: "ollamaUrl",
+      name: "Ollama URL",
+      desc: "Where to reach the local Ollama server. Leave the default unless you've moved Ollama to a different port.",
+    });
+
+    this.wireText(new Setting(host), {
+      key: "embeddingModel",
+      name: "Embedding model",
+      desc: "Which Ollama model to use for understanding your notes. Default: bge-m3.",
+    });
+
+    this.wireToggle(new Setting(host), {
+      key: "rerankerEnabled",
+      name: "Smarter ranking",
+      desc: "Re-order search results so the most relevant notes come first. A bit slower, usually much better.",
+    });
+
+    this.wireText(new Setting(host), {
+      key: "defaultVault",
+      name: "Default vault",
+      desc: "Which vault to search by default. Leave empty to search across all your vaults.",
+      nullable: true,
+    });
+  }
+
+  private renderIndexingTab(host: HTMLElement): void {
+    this.wireText(new Setting(host), {
+      key: "indexerBatchSize",
+      name: "Indexer batch size",
+      desc: "How many note chunks to send to Ollama at once. Higher = faster indexing but more memory. Default 32.",
+      coerce: "number",
+    });
+
+    this.wireText(new Setting(host), {
+      key: "ftsTokenizer",
+      name: "Full-text search tokenizer",
+      desc: "Custom SQLite FTS5 tokenizer (e.g. 'porter unicode61'). Leave empty unless you know you need it.",
+      nullable: true,
+    });
+  }
+
+  private renderSourcesTab(host: HTMLElement): void {
+    // Spec: .planning/specs/SOURCES-REGISTRY.md §8.
+    const sourcesHost = host.createDiv({
+      attr: { "data-testid": "sources-panel-host" },
+    });
+    const settingsStore = this.vmPlugin.settingsStore;
+    const vaultName = settingsStore.get("defaultVault") ?? "default";
+    this.sourcesMount = new SourcesPanelMount(sourcesHost, {
+      mcpClient: {
+        callTool: (name, args) => this.vmPlugin.mcpClient.callTool(name, args),
+        readResource: (uri) => this.vmPlugin.mcpClient.readResource(uri),
+      },
+      enabledTools: {
+        get: () => settingsStore.get("sourceEnabledTools"),
+        setForSource: async (source, tools) => {
+          const current = { ...settingsStore.get("sourceEnabledTools") };
+          if (tools === null) {
+            delete current[source];
+          } else {
+            current[source] = [...tools];
+          }
+          await settingsStore.set("sourceEnabledTools", current);
+        },
+      },
+      vaultName,
+    });
+  }
+
+  private renderSecretsTab(host: HTMLElement): void {
+    const secretsHost = host.createDiv({
+      attr: { "data-testid": "secrets-panel-host" },
+    });
+    this.secretsMount = new SecretsPanelMount(secretsHost, {
+      secretsStore: this.vmPlugin.secretsStore,
+      safeStorage: this.vmPlugin.safeStorage,
+    });
+  }
+
+  private renderServerTab(host: HTMLElement): void {
+    this.wireText(new Setting(host), {
+      key: "serverCommand",
+      name: "Server command",
+      desc: "vault-memory's local server. Leave the default ('vault-memory') unless you know what you're changing.",
+    });
+
+    this.wireText(new Setting(host), {
+      key: "serverArgs",
+      name: "Server arguments",
+      desc: "Extra options passed to the server. Leave the default ('serve') unless you know what you're changing.",
+      coerce: "args",
+    });
+  }
+
+  private renderAboutTab(host: HTMLElement): void {
+    const versionLine = host.createDiv({
+      cls: "vm-settings-version",
+      attr: { "data-testid": "settings-version" },
+    });
+    versionLine.setText(`vault-memory plugin v${this.vmPlugin.manifest.version}`);
+
+    host.createEl("h3", { text: "Changelog" });
+    const changelogHost = host.createDiv({
+      cls: "vm-changelog-host",
+      attr: { "data-testid": "changelog-host" },
+    });
+    renderChangelog(changelogHost);
   }
 
   /**
@@ -294,7 +380,7 @@ export class VaultMemorySettingsTab extends PluginSettingTab {
     }
     if (this.vmPlugin.cliMissing) {
       new Notice(
-        `Setting saved locally. The vault-memory server is unreachable — ${fieldName} will apply at next server start.`,
+        `Saved. The vault-memory server isn't running, so ${fieldName} will take effect the next time it starts.`,
       );
       return;
     }
@@ -306,7 +392,7 @@ export class VaultMemorySettingsTab extends PluginSettingTab {
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       new Notice(
-        `Setting saved locally; pushing to server failed: ${msg}`,
+        `Saved locally, but couldn't tell the running server: ${msg}`,
       );
     }
   }

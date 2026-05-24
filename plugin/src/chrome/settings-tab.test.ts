@@ -23,6 +23,35 @@ import { Plugin, App, FakeEl } from "obsidian";
 import { DEFAULT_SETTINGS, SettingsStore } from "../services/settings-store.js";
 import { VaultMemorySettingsTab } from "./settings-tab.js";
 
+/**
+ * Maps each settings key to the tab that renders its row. Keep in sync
+ * with the renderXxxTab() methods in settings-tab.ts. Keys NOT in this
+ * map are panel-managed (e.g. sourceEnabledTools → Sources panel).
+ */
+const KEY_TO_TAB: Record<string, "search" | "indexing" | "server"> = {
+  ollamaUrl: "search",
+  embeddingModel: "search",
+  rerankerEnabled: "search",
+  defaultVault: "search",
+  indexerBatchSize: "indexing",
+  ftsTokenizer: "indexing",
+  serverCommand: "server",
+  serverArgs: "server",
+};
+
+function clickTab(
+  tab: VaultMemorySettingsTab,
+  tabId: "search" | "indexing" | "sources" | "secrets" | "server" | "about",
+): FakeEl {
+  const root = tab.containerEl as unknown as FakeEl;
+  const btn = root.findByTestId(`settings-tab-${tabId}`);
+  expect(btn, `tab button settings-tab-${tabId} missing`).not.toBeNull();
+  btn?.click();
+  // The click handler re-runs display() which re-empties containerEl,
+  // so reuse `tab.containerEl` for fresh queries.
+  return tab.containerEl as unknown as FakeEl;
+}
+
 /** Build a minimal VaultMemoryPlugin-shaped object the tab can read. */
 async function makePlugin(opts?: {
   cliMissing?: boolean;
@@ -49,7 +78,7 @@ async function makePlugin(opts?: {
 }
 
 describe("VaultMemorySettingsTab", () => {
-  it("(a) every settings key from DEFAULT_SETTINGS has a corresponding data-testid row", async () => {
+  it("(a) every settings key from DEFAULT_SETTINGS has a row on its expected tab", async () => {
     const plugin = await makePlugin();
     const tab = new VaultMemorySettingsTab(
       new App(),
@@ -57,10 +86,47 @@ describe("VaultMemorySettingsTab", () => {
     );
     tab.display();
 
-    const root = tab.containerEl as unknown as FakeEl;
+    // Keys managed by panel mounts rather than single `new Setting()` rows.
+    // They have their own panel hosts asserted in test (a.1).
+    const PANEL_MANAGED_KEYS = new Set(["sourceEnabledTools"]);
+
     for (const key of Object.keys(DEFAULT_SETTINGS)) {
+      if (PANEL_MANAGED_KEYS.has(key)) continue;
+      const tabId = KEY_TO_TAB[key];
+      expect(tabId, `key ${key} not mapped to a tab in KEY_TO_TAB`).toBeDefined();
+      const root = clickTab(tab, tabId!);
       const row = root.findByTestId(`setting-${key}`);
-      expect(row, `missing data-testid row for ${key}`).not.toBeNull();
+      expect(row, `missing data-testid row for ${key} on tab ${tabId}`).not.toBeNull();
+    }
+  });
+
+  it("(a.1) Sources panel host is mounted when the Sources tab is active", async () => {
+    const plugin = await makePlugin();
+    const tab = new VaultMemorySettingsTab(
+      new App(),
+      plugin as unknown as Parameters<typeof VaultMemorySettingsTab.prototype.constructor>[1],
+    );
+    tab.display();
+    const root = clickTab(tab, "sources");
+    const host = root.findByTestId("sources-panel-host");
+    expect(host, "sources-panel-host missing on Sources tab").not.toBeNull();
+  });
+
+  it("(a.2) All six topic tabs are rendered in nav", async () => {
+    const plugin = await makePlugin();
+    const tab = new VaultMemorySettingsTab(
+      new App(),
+      plugin as unknown as Parameters<typeof VaultMemorySettingsTab.prototype.constructor>[1],
+    );
+    tab.display();
+    const root = tab.containerEl as unknown as FakeEl;
+    const nav = root.findByTestId("settings-tabs");
+    expect(nav).not.toBeNull();
+    for (const id of ["search", "indexing", "sources", "secrets", "server", "about"] as const) {
+      expect(
+        root.findByTestId(`settings-tab-${id}`),
+        `missing tab button for ${id}`,
+      ).not.toBeNull();
     }
   });
 
@@ -71,9 +137,8 @@ describe("VaultMemorySettingsTab", () => {
       plugin as unknown as Parameters<typeof VaultMemorySettingsTab.prototype.constructor>[1],
     );
     tab.display();
-    const row = (tab.containerEl as unknown as FakeEl).findByTestId(
-      "setting-ollamaUrl",
-    );
+    const root = clickTab(tab, "search");
+    const row = root.findByTestId("setting-ollamaUrl");
     expect(row).not.toBeNull();
     expect(row?.getAttribute("data-setting-desc") ?? "").toContain(
       "Restart required to apply.",
@@ -87,9 +152,9 @@ describe("VaultMemorySettingsTab", () => {
       plugin as unknown as Parameters<typeof VaultMemorySettingsTab.prototype.constructor>[1],
     );
     tab.display();
-    const root = tab.containerEl as unknown as FakeEl;
     const restart = ["ollamaUrl", "embeddingModel", "ftsTokenizer", "serverCommand", "serverArgs"] as const;
     for (const k of restart) {
+      const root = clickTab(tab, KEY_TO_TAB[k]!);
       const row = root.findByTestId(`setting-${k}`);
       expect(row?.getAttribute("data-setting-desc") ?? "").toContain(
         "Restart required to apply.",
@@ -97,6 +162,7 @@ describe("VaultMemorySettingsTab", () => {
     }
     const hotswap = ["rerankerEnabled", "defaultVault", "indexerBatchSize"] as const;
     for (const k of hotswap) {
+      const root = clickTab(tab, KEY_TO_TAB[k]!);
       const row = root.findByTestId(`setting-${k}`);
       expect(row?.getAttribute("data-setting-desc") ?? "").not.toContain(
         "Restart required",
@@ -111,32 +177,12 @@ describe("VaultMemorySettingsTab", () => {
       plugin as unknown as Parameters<typeof VaultMemorySettingsTab.prototype.constructor>[1],
     );
     tab.display();
-    const row = (tab.containerEl as unknown as FakeEl).findByTestId(
-      "setting-rerankerEnabled",
-    );
+    const root = clickTab(tab, "search");
+    const row = root.findByTestId("setting-rerankerEnabled");
     expect(row).not.toBeNull();
     expect(row?.getAttribute("data-setting-desc") ?? "").not.toContain(
       "Restart required",
     );
-  });
-
-  it("(d) the Advanced section exists and is closed by default", async () => {
-    const plugin = await makePlugin();
-    const tab = new VaultMemorySettingsTab(
-      new App(),
-      plugin as unknown as Parameters<typeof VaultMemorySettingsTab.prototype.constructor>[1],
-    );
-    tab.display();
-    const root = tab.containerEl as unknown as FakeEl;
-    const advanced = root.findByTestId("advanced-section");
-    expect(advanced).not.toBeNull();
-    // No `open` attribute set → closed by default per <details> semantics.
-    expect(advanced?.getAttribute("open")).toBeNull();
-    // The summary child should be present.
-    const summaries = advanced?.findAll(
-      (el) => el.tagName === "SUMMARY",
-    );
-    expect(summaries?.length).toBeGreaterThan(0);
   });
 
   it("(e) the missing-CLI banner renders when plugin.cliMissing === true", async () => {
@@ -151,7 +197,8 @@ describe("VaultMemorySettingsTab", () => {
       el.classes.has("vm-cli-missing-banner"),
     );
     expect(banner.length).toBe(1);
-    expect(banner[0]?.textContent).toContain("vault-memory CLI not found");
+    // Banner copy is friendlier than the older "CLI not found" phrasing.
+    expect(banner[0]?.textContent).toContain("vault-memory server isn't running");
   });
 
   it("(e.b) the missing-CLI banner is absent when cliMissing is false", async () => {
