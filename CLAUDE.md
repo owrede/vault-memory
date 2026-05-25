@@ -19,6 +19,33 @@ beats the "agents rediscover 85% of context every run" failure mode, and user-de
 silently into user notes; every agent-authored document carries provenance properties
 and lives in a labeled `MemorySink`.
 
+### Using vault-memory as an agent (task contracts)
+
+> This block guides an agent that *operates* vault-memory as an MCP server for a
+> user — not an agent editing this codebase. It is the discoverability bridge for
+> the contract tools, mirrored by the `use-contracts` skill (`skills/use-contracts/`).
+
+When a user asks for an outcome that a **task contract** already produces —
+a meeting-prep brief, a project status, a code-review brief, or any
+"compile / pull together / summarize X from my notes" request — **prefer
+running the matching contract over assembling the answer ad hoc.** Contracts
+are the user's saved, repeatable recipes; they gather the right notes and
+compile a brief into the memory sink with provenance.
+
+The flow (the `use-contracts` skill spells it out step by step):
+
+1. Read `vault-memory://contracts/{vault}` to see what contracts exist. Do this
+   before claiming none fit — don't guess.
+2. `describe_contract({name})` → read its Inputs.
+3. Collect + **confirm** the required inputs (resolve any DocId by search and
+   verify the match with the user).
+4. `instantiate_contract({name, inputs, vault?})` → reports `write_back.doc_id`
+   in the memory sink.
+
+If no contract matches, fall back to plain `search_hybrid`. Contracts write
+**only** to the labeled `MemorySink` (enforced at the `DeliveryAdapter`
+chokepoint) — never into user notes.
+
 ### Constraints
 
 - **Tech stack — TypeScript 5.7+, Node ≥22, ESM-only, MCP SDK ≥1.0.4.** Locked by
