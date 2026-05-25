@@ -1,0 +1,26 @@
+{
+  "$comment": "Real-vault retrieval eval query set. Ground truth derived from _research/vault-memory-eval-v4-results.md (Session 2026-05-12) in the INIM-VM-TEST vault. expected_path_substrings: a hit counts as relevant if its notePath contains ANY of these substrings (case-insensitive). Multiple substrings = any-of (some queries have several acceptable answer notes). category: A=factual-direct, B=concept-deep(paraphrase), C=exact-designation, D=cross-lingual. See queries.README.md.",
+  "vault": "inim-vm-test",
+  "exclude_paths": ["_research/**", "_contracts/**"],
+  "top_k": 10,
+  "queries": [
+    { "id": "A1", "category": "A", "query": "Wer ist Holger Hoos", "expected_path_substrings": ["Holger Hoos"] },
+    { "id": "A2", "category": "A", "query": "INFORM GmbH Aachen", "expected_path_substrings": ["INFORM GmbH"] },
+    { "id": "A3", "category": "A", "query": "Was ist LAG-EPIX", "expected_path_substrings": ["LAG-EPIX/LAG-EPIX.md", "LAG-EPIX.md"], "known_gap": "No canonical LAG-EPIX MOC note exists in this vault; the topic is spread across many meeting/research notes. Structural vault gap, not a retrieval defect (see eval-v4 §A3/C2)." },
+    { "id": "A4", "category": "A", "query": "CAIRNE europäisches KI-Netzwerk", "expected_path_substrings": ["Holger Hoos"] },
+    { "id": "A5", "category": "A", "query": "Workforce Management WorkforcePlus", "expected_path_substrings": ["INFORM GmbH"] },
+
+    { "id": "B1", "category": "B", "query": "Wer forscht zu automatisierter KI-Algorithmus-Entwicklung", "expected_path_substrings": ["Holger Hoos"] },
+    { "id": "B2", "category": "B", "query": "Welche INIM-Person hat Erfahrung mit Personaleinsatzplanung an Flughäfen", "expected_path_substrings": ["Jörg Herbers"] },
+    { "id": "B3", "category": "B", "query": "Ansprechpartner für EU KI Förderpolitik", "expected_path_substrings": ["Holger Hoos"] },
+    { "id": "B4", "category": "B", "query": "Welche Personen verbinden akademische Forschung mit Industrie-Hintergrund", "expected_path_substrings": ["Wil van der Aalst", "Holger Hoos", "Sarah Maihaus"] },
+    { "id": "B5", "category": "B", "query": "Übergang vom Konzern-Vorstand in Beratungs- und Ökosystem-Rolle", "expected_path_substrings": ["Jörg Herbers"] },
+
+    { "id": "C1", "category": "C", "query": "JHE", "expected_path_substrings": ["Jörg Herbers"] },
+    { "id": "C2", "category": "C", "query": "LAG-EPIX", "expected_path_substrings": ["LAG-EPIX/LAG-EPIX.md", "LAG-EPIX.md"], "known_gap": "Same as A3 — no canonical MOC note exists." },
+    { "id": "C3", "category": "C", "query": "Alexander von Humboldt Professor", "expected_path_substrings": ["Holger Hoos", "Wil van der Aalst"] },
+
+    { "id": "D1", "category": "D", "query": "combinatorial optimization research", "expected_path_substrings": ["Holger Hoos"] },
+    { "id": "D2", "category": "D", "query": "airport ground staff scheduling", "expected_path_substrings": ["Jörg Herbers"] }
+  ]
+}
