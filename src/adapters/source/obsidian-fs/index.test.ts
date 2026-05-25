@@ -8,6 +8,9 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { promises as fs } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { ObsidianFsSource } from "./index.js";
 import { parseDocId, parseSourceHandle } from "../../registry.js";
 import type { VaultConfig, WikilinkRef } from "../../../types.js";
@@ -71,6 +74,31 @@ describe("ObsidianFsSource.listDocuments", () => {
     expect(inProjects).toHaveLength(0);
     // and we still have OTHER content
     expect(refs.length).toBeGreaterThan(0);
+  });
+
+  it("skips an un-addressable filename (embedded newline) without aborting the iteration", async () => {
+    // Regression: a real OWR-Notes file had a newline in its title, so
+    // pathToDocId → formatDocId threw mid-generator and took down the entire
+    // listDocuments() iteration — which aborted the contract registry bootScan
+    // for the whole vault. The bad file must be skipped, good files still yield.
+    const dir = await fs.mkdtemp(path.join(tmpdir(), "vm-newline-"));
+    try {
+      await fs.writeFile(path.join(dir, "good.md"), "# Good note\n\nbody\n");
+      // An embedded LF in the basename — DOC_ID_PATTERN's `.+` does not match \n.
+      await fs.writeFile(path.join(dir, "bad\nname.md"), "# Bad\n\nbody\n");
+
+      const source = new ObsidianFsSource({ name: "tmp-newline", path: dir });
+      const refs = [];
+      for await (const ref of source.listDocuments()) {
+        refs.push(ref);
+      }
+      // The good note is yielded; the newline file is skipped, not thrown.
+      const ids = refs.map((r) => r.id);
+      expect(ids.some((id) => id.endsWith("/good.md"))).toBe(true);
+      expect(ids.some((id) => id.includes("name.md"))).toBe(false);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   });
 });
 

@@ -111,7 +111,22 @@ export class ObsidianFsSource implements SourceConnector {
       // Cheap content hash for the ref — matches refHashKind: "content"
       const body = await fs.readFile(abs, "utf-8");
       const hash = computeBodyHash(body);
-      yield { id: this.pathToDocId(rel), mtime, hash };
+      // A pathological filename (e.g. an embedded newline from a botched
+      // Obsidian title) makes pathToDocId → formatDocId throw. Skipping the
+      // one bad file keeps a single malformed note from aborting the whole
+      // listDocuments() iteration — which previously took down bootScan /
+      // the contract registry for the entire vault.
+      let id: DocId;
+      try {
+        id = this.pathToDocId(rel);
+      } catch (err) {
+        console.error(
+          `[obsidian-fs:${this.vault.name}] skipping un-addressable file ` +
+            `${JSON.stringify(rel)}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        continue;
+      }
+      yield { id, mtime, hash };
       yielded++;
     }
   }
