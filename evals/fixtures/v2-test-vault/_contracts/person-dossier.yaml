@@ -1,27 +1,30 @@
-# Reference contract — meeting-prep (CON-07; RESEARCH Example 1).
-# Compile a meeting-prep brief from a meeting note + 1-2 hop linked context.
-# Anchored to evals/fixtures/v2-test-vault/meetings/2026-04-15-q2-okr-review.md.
+# Reference contract — person-dossier (CON-07; replaces code-review-brief).
+# Compile a dossier for a person from their note + 2-hop linked context
+# (projects they own, meetings they attended, decisions they drove).
+# Anchored to evals/fixtures/v2-test-vault/people/alice-chen.md.
 # See docs/v2/adr/006-task-contract-dsl.md §Decision 12.
 version: 1
-name: meeting-prep
+name: person-dossier
 description: |
-  Compile a meeting prep brief from the meeting note + 1-hop linked context.
-  Output is a brief written into the briefs sink. Useful for Q2-OKR-style
-  review meetings where context across linked projects matters.
+  Compile a dossier for a person from their note plus everything linked
+  to it — projects they own, meetings they attended, decisions they drove.
+  Output is a brief written into the briefs sink. Useful for onboarding,
+  handoff prep, or quickly understanding who someone is and what they touch
+  across the vault.
 inputs:
   vault:
     type: string
     description: Name of the vault to compile the brief in (e.g. "my-vault").
-  meeting_doc_id:
+  person_doc_id:
     $ref: "#/types/DocId"
-    description: DocId of the meeting note (e.g. obsidian-fs://my-vault/meetings/...).
+    description: DocId of the person note (e.g. obsidian-fs://my-vault/people/...).
   context_hops:
     type: integer
     minimum: 1
     maximum: 2
-    default: 1
-    description: How many wikilink hops to expand from the meeting note.
-required: [vault, meeting_doc_id]
+    default: 2
+    description: How many wikilink hops to follow out from the person note.
+required: [vault, person_doc_id]
 sources:
   default_source:
     handle: "obsidian-fs://test-vault"
@@ -31,14 +34,14 @@ sinks:
     handle: "_memory/_briefs"
     required: true
 assembly:
-  - as: meeting
+  - as: person
     verb: read_note
     args:
-      doc_id: "{{inputs.meeting_doc_id}}"
+      doc_id: "{{inputs.person_doc_id}}"
   - as: linked
     verb: expand
     args:
-      seed_doc_ids: ["{{inputs.meeting_doc_id}}"]
+      seed_doc_ids: ["{{inputs.person_doc_id}}"]
       hops: "{{inputs.context_hops}}"
       direction: both
   - as: clustered
@@ -50,10 +53,10 @@ assembly:
     verb: compile_brief
     args:
       vault: "{{inputs.vault}}"
-      target: "{{inputs.meeting_doc_id}}--prep"
+      target: "{{inputs.person_doc_id}}--dossier"
       source_doc_ids: "{{linked.doc_ids}}"
-      purpose: "Meeting prep brief"
-      max_tokens: 2000
+      purpose: "Person dossier"
+      max_tokens: 3000
 output_shape:
   type: object
   properties:
@@ -70,7 +73,7 @@ write_back:
   sink: "{{default_sink}}"
   document_kind: brief
   properties:
-    target: "{{inputs.meeting_doc_id}}--prep"
+    target: "{{inputs.person_doc_id}}--dossier"
     source: agent
-    purpose: "Meeting prep brief"
+    purpose: "Person dossier"
   body_from: "{{compiled.body}}"

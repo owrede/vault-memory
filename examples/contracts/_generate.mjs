@@ -38,7 +38,7 @@ const REPO_ROOT = resolve(HERE, "../..");
 const FIXTURES = resolve(REPO_ROOT, "evals/fixtures/v2-test-vault/_contracts");
 const OUT_DIR = HERE;
 
-const NAMES = ["meeting-prep", "project-status", "code-review-brief"];
+const NAMES = ["meeting-prep", "project-status", "person-dossier"];
 
 const DX = 220;
 const DY = 0;

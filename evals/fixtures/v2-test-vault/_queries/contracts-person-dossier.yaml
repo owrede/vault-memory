@@ -1,12 +1,14 @@
-# CON-08 eval — project-status contract against Atlas Robotics fixture.
-description: project-status contract against Atlas Robotics fixture
+# CON-08 eval — person-dossier contract against Atlas Robotics fixture.
+# Anchored to people/alice-chen.md, which links out to projects, decisions,
+# and other people (2-hop expand surface).
+description: person-dossier contract against Atlas Robotics fixture
 scenarios:
-  - name: atlas-1-status
-    contract: project-status
+  - name: alice-chen-dossier
+    contract: person-dossier
     inputs:
       vault: "test-vault"
-      project_key: "atlas-1"
-      freshness_days: 30
+      person_doc_id: "obsidian-fs://test-vault/people/alice-chen.md"
+      context_hops: 2
     expected_output_shape:
       type: object
       properties:

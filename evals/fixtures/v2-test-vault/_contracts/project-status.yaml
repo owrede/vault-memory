@@ -10,6 +10,9 @@ description: |
   hands the result to compile_brief. Useful for weekly status rollups
   where the universe of relevant docs is tag-defined.
 inputs:
+  vault:
+    type: string
+    description: Name of the vault to compile the brief in (e.g. "my-vault").
   project_key:
     type: string
     description: Frontmatter project key (e.g. "atlas-1").
@@ -19,7 +22,7 @@ inputs:
     maximum: 365
     default: 30
     description: Filter docs to those modified within the last N days.
-required: [project_key]
+required: [vault, project_key]
 sources:
   default_source:
     handle: "obsidian-fs://test-vault"
@@ -42,7 +45,7 @@ assembly:
   - as: compiled
     verb: compile_brief
     args:
-      vault: test-vault
+      vault: "{{inputs.vault}}"
       target: "{{inputs.project_key}}--status"
       source_doc_ids: "{{tagged_docs.doc_ids}}"
       purpose: "Project status brief"

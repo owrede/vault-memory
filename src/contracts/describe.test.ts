@@ -95,9 +95,12 @@ describe("describeContract (CON-05, Q-DESCRIBE)", () => {
     // Each input rendered with name + type + required flag.
     expect(result.summary).toContain("- **meeting_topic** (string, required)");
     expect(result.summary).toContain("- **attendee** (`#/types/DocId`, optional)");
-    // Assembly steps are numbered.
-    expect(result.summary).toContain("1. **related_notes** ← `search_hybrid(query)`");
-    expect(result.summary).toContain("2. **literal_block** ← `literal()`");
+    // Assembly steps are numbered, with a plain-language gloss + the verb
+    // call kept inline.
+    expect(result.summary).toContain(
+      "1. **related_notes** — Search the vault (semantic + keyword) _(`search_hybrid(query)`)_",
+    );
+    expect(result.summary).toContain("2. **literal_block** — Use a fixed inline value _(`literal()`)_");
     // json_schema returned verbatim (the cached inputJsonSchema).
     expect(result.json_schema).toBeDefined();
     expect((result.json_schema as { type?: string }).type).toBe("object");
@@ -123,7 +126,9 @@ describe("describeContract (CON-05, Q-DESCRIBE)", () => {
     const r = describeContract({ registry }, { name: "c3" });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.summary).toContain("1. **step1** ← `search_hybrid(query, vault, top_k)`");
+    expect(r.summary).toContain(
+      "1. **step1** — Search the vault (semantic + keyword) _(`search_hybrid(query, vault, top_k)`)_",
+    );
   });
 
   it("Test 4: write_back section present when configured; absent otherwise", () => {

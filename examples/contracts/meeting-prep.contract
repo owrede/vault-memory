@@ -6,9 +6,13 @@
     "name": "meeting-prep",
     "description": "Compile a meeting prep brief from the meeting note + 1-hop linked context.\nOutput is a brief written into the briefs sink. Useful for Q2-OKR-style\nreview meetings where context across linked projects matters.\n",
     "inputs": {
+      "vault": {
+        "type": "string",
+        "description": "Name of the vault to compile the brief in (e.g. \"my-vault\")."
+      },
       "meeting_doc_id": {
         "$ref": "#/types/DocId",
-        "description": "DocId of the meeting note (e.g. obsidian-fs://test-vault/meetings/...)."
+        "description": "DocId of the meeting note (e.g. obsidian-fs://my-vault/meetings/...)."
       },
       "context_hops": {
         "type": "integer",
@@ -19,6 +23,7 @@
       }
     },
     "required": [
+      "vault",
       "meeting_doc_id"
     ],
     "sources": {
@@ -64,7 +69,7 @@
         "as": "compiled",
         "verb": "compile_brief",
         "args": {
-          "vault": "test-vault",
+          "vault": "{{inputs.vault}}",
           "target": "{{inputs.meeting_doc_id}}--prep",
           "source_doc_ids": "{{linked.doc_ids}}",
           "purpose": "Meeting prep brief",

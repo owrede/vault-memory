@@ -28,6 +28,34 @@
 import type { ContractRegistry } from "./registry.js";
 import type { ParsedContract } from "./types.js";
 
+/**
+ * Plain-language gloss for each baseline assembly verb, so the rendered
+ * `## Assembly` section reads as steps a non-technical user can follow —
+ * not bare function names. Keyed by the 11 baseline verbs (src/contracts/
+ * schema.ts BASELINE_VERBS). `literal` and `mcp://…` peer verbs fall back
+ * to a generic gloss.
+ */
+const VERB_GLOSS: Record<string, string> = {
+  read_note: "Read a note's content",
+  search_hybrid: "Search the vault (semantic + keyword)",
+  search_sections: "Search for matching sections within notes",
+  query_frontmatter: "Find notes by their properties (frontmatter)",
+  expand: "Gather notes linked to the starting note (follow the graph)",
+  cluster: "Group the gathered notes into related communities",
+  recall: "Recall earlier agent observations from memory",
+  compile_brief: "Compile the gathered notes into a brief",
+  get_brief: "Fetch an already-compiled brief",
+  list_backlinks: "List notes that link back to this one",
+  get_outline: "Read a note's heading outline",
+};
+
+function glossFor(verb: string): string {
+  if (VERB_GLOSS[verb]) return VERB_GLOSS[verb]!;
+  if (verb === "literal") return "Use a fixed inline value";
+  if (verb.startsWith("mcp://")) return `Call an external tool (${verb})`;
+  return verb;
+}
+
 export interface DescribeDeps {
   registry: ContractRegistry;
 }
@@ -101,12 +129,16 @@ function renderSummary(parsed: ParsedContract): string {
     lines.push("");
   }
 
-  // ## Assembly
+  // ## Assembly — rendered as plain-language steps so a non-technical user
+  // can follow what the contract does, with the verb + arg keys kept inline
+  // for agents/authors who want the precise call.
   if (parsed.assembly.length > 0) {
     lines.push("## Assembly");
     parsed.assembly.forEach((step, i) => {
       const argsRender = step.args ? `(${Object.keys(step.args).join(", ")})` : "()";
-      lines.push(`${i + 1}. **${step.as}** ← \`${step.verb}${argsRender}\``);
+      lines.push(
+        `${i + 1}. **${step.as}** — ${glossFor(step.verb)} _(\`${step.verb}${argsRender}\`)_`,
+      );
     });
     lines.push("");
   }

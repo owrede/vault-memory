@@ -40,7 +40,7 @@ import type { DocId } from "../types.js";
 const SCENARIO_FILES = [
   "evals/fixtures/v2-test-vault/_queries/contracts-meeting-prep.yaml",
   "evals/fixtures/v2-test-vault/_queries/contracts-project-status.yaml",
-  "evals/fixtures/v2-test-vault/_queries/contracts-code-review-brief.yaml",
+  "evals/fixtures/v2-test-vault/_queries/contracts-person-dossier.yaml",
   "evals/fixtures/v2-test-vault/_queries/contracts-stub-parity.yaml",
 ] as const;
 

@@ -56,9 +56,9 @@ const FIXTURES = [
     canon06: true,
   },
   {
-    name: "code-review-brief",
-    yamlPath: resolve(YAML_FIXTURES_ROOT, "code-review-brief.yaml"),
-    contractPath: resolve(CONTRACT_FIXTURES_ROOT, "code-review-brief.contract"),
+    name: "person-dossier",
+    yamlPath: resolve(YAML_FIXTURES_ROOT, "person-dossier.yaml"),
+    contractPath: resolve(CONTRACT_FIXTURES_ROOT, "person-dossier.contract"),
     canon06: true,
   },
   {

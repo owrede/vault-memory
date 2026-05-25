@@ -6,6 +6,7 @@ scenarios:
   - name: q2-okr-review
     contract: meeting-prep
     inputs:
+      vault: "test-vault"
       meeting_doc_id: "obsidian-fs://test-vault/meetings/2026-04-15-q2-okr-review.md"
       context_hops: 1
     expected_output_shape:

@@ -29,7 +29,7 @@ import { buildInputSchema } from "./input-schema.js";
 const FIXTURES = [
   "evals/fixtures/v2-test-vault/_contracts/meeting-prep.yaml",
   "evals/fixtures/v2-test-vault/_contracts/project-status.yaml",
-  "evals/fixtures/v2-test-vault/_contracts/code-review-brief.yaml",
+  "evals/fixtures/v2-test-vault/_contracts/person-dossier.yaml",
   "evals/fixtures/v2-test-vault/_contracts/smoketest-trivial.yaml",
 ];
 

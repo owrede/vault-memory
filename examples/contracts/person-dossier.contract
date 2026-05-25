@@ -3,28 +3,28 @@
   "vmFormatVersion": 1,
   "contract": {
     "version": 1,
-    "name": "project-status",
-    "description": "Compile a project status brief for a tagged project. Discovers all\ndocs whose frontmatter `project: <key>` matches, clusters them, and\nhands the result to compile_brief. Useful for weekly status rollups\nwhere the universe of relevant docs is tag-defined.\n",
+    "name": "person-dossier",
+    "description": "Compile a dossier for a person from their note plus everything linked\nto it — projects they own, meetings they attended, decisions they drove.\nOutput is a brief written into the briefs sink. Useful for onboarding,\nhandoff prep, or quickly understanding who someone is and what they touch\nacross the vault.\n",
     "inputs": {
       "vault": {
         "type": "string",
         "description": "Name of the vault to compile the brief in (e.g. \"my-vault\")."
       },
-      "project_key": {
-        "type": "string",
-        "description": "Frontmatter project key (e.g. \"atlas-1\")."
+      "person_doc_id": {
+        "$ref": "#/types/DocId",
+        "description": "DocId of the person note (e.g. obsidian-fs://my-vault/people/...)."
       },
-      "freshness_days": {
+      "context_hops": {
         "type": "integer",
         "minimum": 1,
-        "maximum": 365,
-        "default": 30,
-        "description": "Filter docs to those modified within the last N days."
+        "maximum": 2,
+        "default": 2,
+        "description": "How many wikilink hops to follow out from the person note."
       }
     },
     "required": [
       "vault",
-      "project_key"
+      "person_doc_id"
     ],
     "sources": {
       "default_source": {
@@ -40,19 +40,28 @@
     },
     "assembly": [
       {
-        "as": "tagged_docs",
-        "verb": "query_frontmatter",
+        "as": "person",
+        "verb": "read_note",
         "args": {
-          "where": {
-            "project": "{{inputs.project_key}}"
-          }
+          "doc_id": "{{inputs.person_doc_id}}"
+        }
+      },
+      {
+        "as": "linked",
+        "verb": "expand",
+        "args": {
+          "seed_doc_ids": [
+            "{{inputs.person_doc_id}}"
+          ],
+          "hops": "{{inputs.context_hops}}",
+          "direction": "both"
         }
       },
       {
         "as": "clustered",
         "verb": "cluster",
         "args": {
-          "seed_doc_ids": "{{tagged_docs.doc_ids}}",
+          "seed_doc_ids": "{{linked.doc_ids}}",
           "method": "edge-community"
         }
       },
@@ -61,10 +70,10 @@
         "verb": "compile_brief",
         "args": {
           "vault": "{{inputs.vault}}",
-          "target": "{{inputs.project_key}}--status",
-          "source_doc_ids": "{{tagged_docs.doc_ids}}",
-          "purpose": "Project status brief",
-          "max_tokens": 2500
+          "target": "{{inputs.person_doc_id}}--dossier",
+          "source_doc_ids": "{{linked.doc_ids}}",
+          "purpose": "Person dossier",
+          "max_tokens": 3000
         }
       }
     ],
@@ -94,9 +103,9 @@
       "sink": "{{default_sink}}",
       "document_kind": "brief",
       "properties": {
-        "target": "{{inputs.project_key}}--status",
+        "target": "{{inputs.person_doc_id}}--dossier",
         "source": "agent",
-        "purpose": "Project status brief"
+        "purpose": "Person dossier"
       },
       "body_from": "{{compiled.body}}"
     }
@@ -104,18 +113,23 @@
   "editor": {
     "nodes": [
       {
-        "id": "step:tagged_docs",
+        "id": "step:person",
         "x": 0,
         "y": 0
       },
       {
-        "id": "step:clustered",
+        "id": "step:linked",
         "x": 220,
         "y": 0
       },
       {
-        "id": "step:compiled",
+        "id": "step:clustered",
         "x": 440,
+        "y": 0
+      },
+      {
+        "id": "step:compiled",
+        "x": 660,
         "y": 0
       }
     ],
