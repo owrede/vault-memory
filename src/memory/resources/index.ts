@@ -34,6 +34,15 @@ export const RESOURCE_URI_LIST_CONTRACTS = "vault-memory://contracts";
 export const RESOURCE_URI_LIST_CONTRACT_VERBS = "vault-memory://contract-verbs";
 
 /**
+ * SOURCES-REGISTRY.md §5 (Stage 2): first-class peer-MCP source
+ * discovery. Vault-independent (the PeerMcpRegistry is one global
+ * instance across vaults), so `sources` has no `{vault}` segment.
+ * `sources/{name}/tools` and `sources/{name}/tools/{tool}` append their
+ * variables at registration time.
+ */
+export const RESOURCE_URI_SOURCES = "vault-memory://sources";
+
+/**
  * Phase 8 / Plan 08-05 (REL-08): 5 list-style v1 tools promoted to MCP
  * Resources to land the canonical (non-deprecated) tool surface at 32.
  *

@@ -1,6 +1,6 @@
 # Sources Registry — first-class MCP sources in vault-memory
 
-**Status:** Draft (2026-05-22)
+**Status:** Accepted (2026-05-25) — server-side Stage 1+2 ratified by [ADR-025](../../docs/v2/adr/025-sources-registry.md); plugin curation UI is Stage B
 **Owner:** UX & contract editor track
 **Depends on:** Phase 6 peer-MCP (`PeerMcpRegistry`), Phase 7 plugin MCP client + plugin-gated `set_mcp_client` tool, existing Chrome-view Connectors panel
 **Supersedes:** the ad-hoc reliance on `[contracts.mcp_clients.<name>]` for palette population

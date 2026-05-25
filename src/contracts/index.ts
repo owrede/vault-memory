@@ -87,3 +87,20 @@ export {
   type ListContractVerbsEntry,
   type ListContractVerbsResource,
 } from "./resources.js";
+
+export {
+  readListSources,
+  readSourceTools,
+  readSourceTool,
+  type SourceConfigMeta,
+  type ListSourcesEntry,
+  type ListSourcesResource,
+  type SourceToolsResource,
+  type SourceToolResource,
+} from "./sources-resources.js";
+
+export type {
+  PeerMcpTool,
+  PeerMcpStatus,
+  PeerMcpClientInfo,
+} from "./mcp-clients.js";

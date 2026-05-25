@@ -41,6 +41,13 @@ import type {
 } from "./trigger-reindex.js";
 import { suppressContractWriteTool } from "./suppress-contract-write.js";
 import type { SuppressContractWriteInput } from "./suppress-contract-write.js";
+import {
+  refreshSourceTool,
+  unsetMcpClientTool,
+  type RefreshSourceInput,
+  type UnsetMcpClientInput,
+  type SourceRegistryFacade,
+} from "./source-tools.js";
 import type { SuppressionSet } from "../adapters/change-feed/obsidian-fs/suppression.js";
 import type { RuntimeConfigStore } from "./runtime-config.js";
 
@@ -51,6 +58,8 @@ export { setMcpClientTool } from "./set-mcp-client.js";
 export { getRuntimeStatsTool } from "./get-runtime-stats.js";
 export { triggerReindexTool } from "./trigger-reindex.js";
 export { suppressContractWriteTool } from "./suppress-contract-write.js";
+export { refreshSourceTool, unsetMcpClientTool } from "./source-tools.js";
+export type { SourceRegistryFacade } from "./source-tools.js";
 export { RuntimeConfigStore } from "./runtime-config.js";
 
 /**
@@ -69,6 +78,9 @@ export const PLUGIN_TOOL_NAMES = [
   "get_runtime_stats",
   "trigger_reindex",
   "suppress_contract_write",
+  // SOURCES-REGISTRY.md §6 (Stage 2) — live-registry source management.
+  "refresh_source",
+  "unset_mcp_client",
 ] as const;
 
 export type PluginToolName = (typeof PLUGIN_TOOL_NAMES)[number];
@@ -104,6 +116,13 @@ export interface SyncPluginToolsOpts {
    * pathways.
    */
   suppression: SuppressionSet;
+  /**
+   * SOURCES-REGISTRY.md §6 (Stage 2). Live peer-MCP registry facade
+   * consumed by `refresh_source` + `unset_mcp_client`. Required when
+   * `enabled === true` — the server bootstrap owns the singleton
+   * `PeerMcpRegistry` and threads it here.
+   */
+  sourceRegistry: SourceRegistryFacade;
 }
 
 /**
@@ -292,6 +311,56 @@ export function syncPluginTools(
               const result = await suppressContractWriteTool.handler(
                 validated,
                 { suppression: opts.suppression },
+              );
+              return ok(result);
+            } catch (err) {
+              return errorResponse(err instanceof Error ? err.message : String(err));
+            }
+          },
+        ) as RegisteredTool,
+    },
+    {
+      name: "refresh_source",
+      reg: () =>
+        server.registerTool(
+          refreshSourceTool.name,
+          {
+            description: refreshSourceTool.description,
+            inputSchema: refreshSourceTool.inputSchema.shape,
+          },
+          async (args: unknown) => {
+            try {
+              const validated = refreshSourceTool.inputSchema.parse(
+                args,
+              ) as RefreshSourceInput;
+              const result = await refreshSourceTool.handler(
+                validated,
+                opts.sourceRegistry,
+              );
+              return ok(result);
+            } catch (err) {
+              return errorResponse(err instanceof Error ? err.message : String(err));
+            }
+          },
+        ) as RegisteredTool,
+    },
+    {
+      name: "unset_mcp_client",
+      reg: () =>
+        server.registerTool(
+          unsetMcpClientTool.name,
+          {
+            description: unsetMcpClientTool.description,
+            inputSchema: unsetMcpClientTool.inputSchema.shape,
+          },
+          async (args: unknown) => {
+            try {
+              const validated = unsetMcpClientTool.inputSchema.parse(
+                args,
+              ) as UnsetMcpClientInput;
+              const result = await unsetMcpClientTool.handler(
+                validated,
+                opts.sourceRegistry,
               );
               return ok(result);
             } catch (err) {

@@ -55,14 +55,53 @@ export interface PeerMcpClientConfig {
   env?: Record<string, string>;
 }
 
+/**
+ * One tool a peer exposes, as returned by MCP `tools/list`. Mirrors the
+ * subset of the SDK's `ListToolsResult.tools[]` that the Sources
+ * registry surfaces (SOURCES-REGISTRY.md §5.2). `inputSchema` is opaque
+ * here — the inspector consumes it to type step args.
+ */
+export interface PeerMcpTool {
+  name: string;
+  description?: string;
+  inputSchema?: Record<string, unknown>;
+}
+
+/**
+ * Connection state for a source (SOURCES-REGISTRY.md §5.1):
+ *   - "connected"   — connect succeeded AND tools/list succeeded ≥ once.
+ *   - "unavailable" — the (re)connect attempt failed.
+ *   - "unreachable" — connected at some point but a later tools/list failed.
+ */
+export type PeerMcpStatus = "connected" | "unavailable" | "unreachable";
+
+/** Read-only projection of a source's cached state for resource handlers. */
+export interface PeerMcpClientInfo {
+  status: PeerMcpStatus;
+  tools: readonly PeerMcpTool[];
+  /** Epoch-seconds of the last successful tools/list; null if never. */
+  lastRefreshed: number | null;
+  /** Captured error message when status is "unavailable"/"unreachable". */
+  error?: string;
+}
+
 /** A live peer-MCP client managed by the registry. */
 export interface PeerMcpClient {
   /** Forward a `tools/call` to the peer, peeling the MCP envelope. */
   callTool(name: string, args: unknown): Promise<unknown>;
+  /** Fetch the peer's tools/list. Throws when the client is unavailable. */
+  listTools(): Promise<PeerMcpTool[]>;
   /** False when the boot-time connect failed; calling `callTool` throws. */
   available: boolean;
   /** Kills the underlying child process. Idempotent (transport.close is). */
   [Symbol.dispose](): void;
+}
+
+/** Minimal client surface the registry depends on (subset of SDK `Client`). */
+export interface PeerClientLike {
+  callTool: Client["callTool"];
+  /** Present on the real SDK Client; optional so older stubs still satisfy the type. */
+  listTools?: Client["listTools"];
 }
 
 /**
@@ -71,10 +110,23 @@ export interface PeerMcpClient {
  */
 export type ClientFactory = (
   cfg: PeerMcpClientConfig,
-) => Promise<{ client: Pick<Client, "callTool">; transport: { close(): void } }>;
+) => Promise<{ client: PeerClientLike; transport: { close(): void } }>;
+
+/** Internal per-source record: the wrapped client + its cached metadata. */
+interface RegistryEntry {
+  client: PeerMcpClient;
+  status: PeerMcpStatus;
+  tools: PeerMcpTool[];
+  lastRefreshed: number | null;
+  error?: string;
+}
+
+function nowSeconds(): number {
+  return Math.floor(Date.now() / 1000);
+}
 
 export class PeerMcpRegistry {
-  private clients = new Map<string, PeerMcpClient>();
+  private entries = new Map<string, RegistryEntry>();
   private readonly clientFactory: ClientFactory | undefined;
 
   constructor(clientFactory?: ClientFactory) {
@@ -82,46 +134,164 @@ export class PeerMcpRegistry {
   }
 
   get size(): number {
-    return this.clients.size;
+    return this.entries.size;
   }
 
   /**
    * Boot every `[contracts.mcp_clients.<name>]` entry. Failures are
    * non-fatal: the name is recorded as unavailable and a WARN line is
    * written to stderr. Returns when all attempts have settled.
+   *
+   * On a successful connect we prime the tools cache via tools/list. A
+   * tools/list failure does NOT mark the source unavailable — the
+   * connection is live and callTool may still work — but the status
+   * becomes "unreachable" so the UI can prompt a retry.
    */
   async start(configs: Record<string, PeerMcpClientConfig>): Promise<void> {
     for (const [name, cfg] of Object.entries(configs)) {
-      try {
-        const { client, transport } = this.clientFactory
-          ? await this.clientFactory(cfg)
-          : await this.defaultConnect(cfg);
-        this.clients.set(name, wrapAvailable(client, transport));
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        process.stderr.write(
-          `[contracts] peer-MCP client '${name}' failed to start: ${msg}\n`,
-        );
-        this.clients.set(name, wrapUnavailable());
-      }
+      await this.connectAndStore(name, cfg);
     }
   }
 
   get(name: string): PeerMcpClient | undefined {
-    return this.clients.get(name);
+    return this.entries.get(name)?.client;
+  }
+
+  /** All registered source names, in insertion order. */
+  names(): string[] {
+    return Array.from(this.entries.keys());
+  }
+
+  /** Cached metadata projection for one source; undefined if unknown. */
+  getInfo(name: string): PeerMcpClientInfo | undefined {
+    const e = this.entries.get(name);
+    if (e === undefined) return undefined;
+    return {
+      status: e.status,
+      tools: e.tools,
+      lastRefreshed: e.lastRefreshed,
+      ...(e.error !== undefined ? { error: e.error } : {}),
+    };
+  }
+
+  /**
+   * Register a new source at runtime: spawn + connect, then prime the
+   * tools cache. Replaces any existing entry of the same name (the old
+   * client is disposed first). Returns the resulting info projection.
+   */
+  async add(name: string, cfg: PeerMcpClientConfig): Promise<PeerMcpClientInfo> {
+    const existing = this.entries.get(name);
+    if (existing !== undefined) {
+      try {
+        existing.client[Symbol.dispose]();
+      } catch {
+        // Best-effort — replacing the entry regardless.
+      }
+    }
+    await this.connectAndStore(name, cfg);
+    // connectAndStore always sets an entry, so getInfo is non-undefined.
+    return this.getInfo(name)!;
+  }
+
+  /**
+   * Dispose a source and drop it from the registry. Idempotent —
+   * removing an unknown name is a no-op that returns false.
+   */
+  remove(name: string): boolean {
+    const e = this.entries.get(name);
+    if (e === undefined) return false;
+    try {
+      e.client[Symbol.dispose]();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[contracts] peer-MCP dispose error: ${msg}\n`);
+    }
+    this.entries.delete(name);
+    return true;
+  }
+
+  /**
+   * Re-issue tools/list against the live client and refresh the cache.
+   * Returns the updated info, or undefined if the name is unknown.
+   *
+   * If the client is currently unavailable this only updates the error;
+   * re-spawning a failed source requires `add(name, cfg)` with the
+   * config (the registry does not retain configs).
+   */
+  async refresh(name: string): Promise<PeerMcpClientInfo | undefined> {
+    const e = this.entries.get(name);
+    if (e === undefined) return undefined;
+    if (!e.client.available) {
+      e.status = "unavailable";
+      return this.getInfo(name);
+    }
+    await this.primeTools(e);
+    return this.getInfo(name);
   }
 
   /** Dispose every client and clear the internal map. Idempotent. */
   async shutdown(): Promise<void> {
-    for (const c of this.clients.values()) {
+    for (const e of this.entries.values()) {
       try {
-        c[Symbol.dispose]();
+        e.client[Symbol.dispose]();
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         process.stderr.write(`[contracts] peer-MCP dispose error: ${msg}\n`);
       }
     }
-    this.clients.clear();
+    this.entries.clear();
+  }
+
+  // ─── internals ─────────────────────────────────────────────────────────
+
+  /** Connect (factory or default), store the entry, prime tools cache. */
+  private async connectAndStore(
+    name: string,
+    cfg: PeerMcpClientConfig,
+  ): Promise<void> {
+    try {
+      const { client, transport } = this.clientFactory
+        ? await this.clientFactory(cfg)
+        : await this.defaultConnect(cfg);
+      const entry: RegistryEntry = {
+        client: wrapAvailable(client, transport),
+        status: "connected",
+        tools: [],
+        lastRefreshed: null,
+      };
+      this.entries.set(name, entry);
+      await this.primeTools(entry);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(
+        `[contracts] peer-MCP client '${name}' failed to start: ${msg}\n`,
+      );
+      this.entries.set(name, {
+        client: wrapUnavailable(),
+        status: "unavailable",
+        tools: [],
+        lastRefreshed: null,
+        error: msg,
+      });
+    }
+  }
+
+  /**
+   * Call tools/list and update the entry's cache + status. A failure
+   * keeps the connection (status → "unreachable") rather than tearing it
+   * down — the source is reachable for callTool even if discovery failed.
+   */
+  private async primeTools(entry: RegistryEntry): Promise<void> {
+    try {
+      const tools = await entry.client.listTools();
+      entry.tools = tools;
+      entry.lastRefreshed = nowSeconds();
+      entry.status = "connected";
+      delete entry.error;
+    } catch (err) {
+      entry.status = "unreachable";
+      entry.error = err instanceof Error ? err.message : String(err);
+    }
   }
 
   private async defaultConnect(
@@ -139,7 +309,7 @@ export class PeerMcpRegistry {
 }
 
 function wrapAvailable(
-  client: Pick<Client, "callTool">,
+  client: PeerClientLike,
   transport: { close(): void },
 ): PeerMcpClient {
   return {
@@ -164,6 +334,30 @@ function wrapAvailable(
       }
       return res;
     },
+    async listTools(): Promise<PeerMcpTool[]> {
+      // A peer without listTools support (older stub or a server that
+      // doesn't advertise the tools capability) yields an empty set
+      // rather than throwing — an empty palette is fine; a crash is not.
+      if (typeof client.listTools !== "function") return [];
+      const res = await client.listTools();
+      const tools = (res as { tools?: unknown }).tools;
+      if (!Array.isArray(tools)) return [];
+      const out: PeerMcpTool[] = [];
+      for (const t of tools) {
+        if (!t || typeof t !== "object") continue;
+        const name = (t as { name?: unknown }).name;
+        if (typeof name !== "string") continue;
+        const tool: PeerMcpTool = { name };
+        const description = (t as { description?: unknown }).description;
+        if (typeof description === "string") tool.description = description;
+        const inputSchema = (t as { inputSchema?: unknown }).inputSchema;
+        if (inputSchema && typeof inputSchema === "object") {
+          tool.inputSchema = inputSchema as Record<string, unknown>;
+        }
+        out.push(tool);
+      }
+      return out;
+    },
     [Symbol.dispose](): void {
       transport.close();
     },
@@ -174,6 +368,9 @@ function wrapUnavailable(): PeerMcpClient {
   return {
     available: false,
     async callTool(): Promise<unknown> {
+      throw new Error("peer-MCP client unavailable");
+    },
+    async listTools(): Promise<PeerMcpTool[]> {
       throw new Error("peer-MCP client unavailable");
     },
     [Symbol.dispose](): void {

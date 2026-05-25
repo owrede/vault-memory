@@ -4,12 +4,15 @@
  *
  * Mirrors src/tool-registry.ts (TOOLS). Consumed by:
  *   - evals/v1-baseline/dump-resources.mjs (snapshot generation)
- *   - evals/v1-baseline/baseline.test.ts (snapshot equality + length === 10)
+ *   - evals/v1-baseline/baseline.test.ts (snapshot equality + length === 13)
  *   - src/server.ts (registerResource metadata source)
  *
  * Plan 08-05 (REL-08): 10 entries — 5 pre-existing (memory-sinks,
  * memory-stats, briefs, contracts, contract-verbs) + 5 newly promoted
  * from v1 tools (vaults, models, recent, stats, backlinks).
+ *
+ * SOURCES-REGISTRY.md §5 (Stage 2): +3 peer-MCP source discovery
+ * resources (sources, source-tools, source-tool) → 13 entries.
  *
  * Two URI shapes appear here:
  *   - Static URI (e.g. `vault-memory://memory/sinks`, `vault-memory://vaults`):
@@ -78,6 +81,32 @@ export const RESOURCES: readonly ResourceEntry[] = [
       "List baseline assembly verbs + custom (mcp://) verbs in use, with " +
       "invocation_count + last_seen aggregated from contract_audit (D-A2b). " +
       "Baseline verbs are constant per ADR-006 §Decision 3.",
+    mimeType: "application/json",
+  },
+  // ─── SOURCES-REGISTRY.md §5 (Stage 2) — peer-MCP source discovery ───────
+  {
+    name: "sources",
+    uriTemplate: "vault-memory://sources",
+    description:
+      "List peer MCP servers vault-memory connects to, with per-source status " +
+      "(connected/unavailable/unreachable), tool_count, and last_refreshed. " +
+      "vault-memory itself is not included. SOURCES-REGISTRY §5.1.",
+    mimeType: "application/json",
+  },
+  {
+    name: "source-tools",
+    uriTemplate: "vault-memory://sources/{name}/tools",
+    description:
+      "List the cached tools/list for one peer MCP source. Empty when the " +
+      "source is not connected. SOURCES-REGISTRY §5.2.",
+    mimeType: "application/json",
+  },
+  {
+    name: "source-tool",
+    uriTemplate: "vault-memory://sources/{name}/tools/{tool}",
+    description:
+      "Read a single tool's schema from one peer MCP source, inlined from the " +
+      "cached tools/list. SOURCES-REGISTRY §5.3.",
     mimeType: "application/json",
   },
   // ─── Phase 8 (Plan 08-05 / REL-08) — promoted from v1 tools ─────────────

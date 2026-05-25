@@ -63,6 +63,7 @@ import {
   RESOURCE_URI_MEMORY_STATS,
   RESOURCE_URI_LIST_CONTRACTS,
   RESOURCE_URI_LIST_CONTRACT_VERBS,
+  RESOURCE_URI_SOURCES,
   RESOURCE_URI_VAULTS,
   RESOURCE_URI_MODELS,
   RESOURCE_URI_RECENT,
@@ -115,6 +116,10 @@ import {
   describeContract,
   readListContracts,
   readListContractVerbs,
+  readListSources,
+  readSourceTools,
+  readSourceTool,
+  type SourceConfigMeta,
   type StartedContractRegistry,
   type InstantiateDeps,
 } from "./contracts/index.js";
@@ -1977,6 +1982,103 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
     },
   );
 
+  // ─── SOURCES-REGISTRY.md §5 (Stage 2) — peer-MCP source discovery ────────
+  //
+  // Three vault-independent resources over the live PeerMcpRegistry. The
+  // command/args come from `config.contracts.mcp_clients`; runtime-added
+  // sources (set_mcp_client without restart) appear with empty meta until
+  // the next boot, which is acceptable for discovery.
+  const sourceConfigMeta = (): Record<string, SourceConfigMeta> => {
+    const out: Record<string, SourceConfigMeta> = {};
+    for (const [name, cfg] of Object.entries(config.contracts.mcp_clients)) {
+      out[name] = { command: cfg.command, args: cfg.args ?? [] };
+    }
+    return out;
+  };
+
+  server.registerResource(
+    "sources",
+    RESOURCE_URI_SOURCES,
+    {
+      title: "Peer MCP sources",
+      description:
+        "List peer MCP servers vault-memory connects to, with per-source " +
+        "status (connected/unavailable/unreachable), tool_count, and " +
+        "last_refreshed. vault-memory itself is not included. SOURCES-REGISTRY §5.1.",
+      mimeType: "application/json",
+    },
+    async (uri) => ({
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: "application/json",
+          text: JSON.stringify(
+            readListSources(peerMcpRegistry, sourceConfigMeta()),
+            null,
+            2,
+          ),
+        },
+      ],
+    }),
+  );
+
+  server.registerResource(
+    "source-tools",
+    new ResourceTemplate(`${RESOURCE_URI_SOURCES}/{name}/tools`, {
+      list: undefined,
+    }),
+    {
+      title: "Peer MCP source tools",
+      description:
+        "List the cached tools/list for one peer MCP source. Empty when the " +
+        "source is not connected. SOURCES-REGISTRY §5.2.",
+      mimeType: "application/json",
+    },
+    async (uri, variables) => {
+      const name = String(variables.name ?? "");
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify(readSourceTools(peerMcpRegistry, name), null, 2),
+          },
+        ],
+      };
+    },
+  );
+
+  server.registerResource(
+    "source-tool",
+    new ResourceTemplate(`${RESOURCE_URI_SOURCES}/{name}/tools/{tool}`, {
+      list: undefined,
+    }),
+    {
+      title: "Peer MCP source tool",
+      description:
+        "Read a single tool's schema from one peer MCP source, inlined from " +
+        "the cached tools/list (no extra peer call). SOURCES-REGISTRY §5.3.",
+      mimeType: "application/json",
+    },
+    async (uri, variables) => {
+      const name = String(variables.name ?? "");
+      const tool = String(variables.tool ?? "");
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify(
+              readSourceTool(peerMcpRegistry, name, tool),
+              null,
+              2,
+            ),
+          },
+        ],
+      };
+    },
+  );
+
   // ─── Phase 8 (Plan 08-05 / REL-08) — promote 5 list-style v1 tools ───────
   //
   // Each Resource delegates to the existing internal tool handler (GAT-01
@@ -2361,6 +2463,9 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
     // sees, so the plugin's `suppress_contract_write` call and the
     // change-feed handler observe the same entries.
     suppression,
+    // SOURCES-REGISTRY.md §6 (Stage 2) — live registry for refresh_source
+    // + unset_mcp_client. The singleton booted above.
+    sourceRegistry: peerMcpRegistry,
     notifier: (notification) => {
       // Forward to the underlying MCP server transport. The McpServer
       // wraps a low-level Server with `server.server`; the notification

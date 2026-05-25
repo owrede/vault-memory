@@ -35,6 +35,11 @@ const DEFAULT_DEPS = {
   reindexVault: async () => {},
   notifier: () => {},
   suppression: new SuppressionSet({ ttlMs: 2000 }),
+  // SOURCES-REGISTRY.md §6 (Stage 2) — refresh_source + unset_mcp_client.
+  sourceRegistry: {
+    refresh: async () => undefined,
+    remove: () => false,
+  },
 };
 
 async function makeLinkedClientServer() {
@@ -90,7 +95,7 @@ describe("Plan 07-04: plugin-control tool gating", () => {
     }
   });
 
-  it("plugin.enabled = true → all six plugin tools appear in tools/list", async () => {
+  it("plugin.enabled = true → all eight plugin tools appear in tools/list", async () => {
     const { server, client, cleanup } = await makeLinkedClientServer();
     try {
       const registered = new Map<string, RegisteredTool>();
@@ -101,11 +106,12 @@ describe("Plan 07-04: plugin-control tool gating", () => {
       for (const pluginToolName of PLUGIN_TOOL_NAMES) {
         expect(names).toContain(pluginToolName);
       }
-      // Exactly six tools registered — and only the plugin tools (since
+      // Exactly eight tools registered — and only the plugin tools (since
       // this server isolates them from the rest of the 23-tool surface).
-      // Plan 07-07 added the sixth: `suppress_contract_write`.
+      // Plan 07-07 added suppress_contract_write (6th); SOURCES-REGISTRY
+      // Stage 2 added refresh_source + unset_mcp_client (7th + 8th).
       expect(names.filter((n) => (PLUGIN_TOOL_NAMES as readonly string[]).includes(n)))
-        .toHaveLength(6);
+        .toHaveLength(8);
     } finally {
       await cleanup();
     }
@@ -117,7 +123,7 @@ describe("Plan 07-04: plugin-control tool gating", () => {
       const registered = new Map<string, RegisteredTool>();
       syncPluginTools(server, registered, { enabled: true, ...DEFAULT_DEPS });
       let result = await client.listTools();
-      expect(result.tools.length).toBeGreaterThanOrEqual(6);
+      expect(result.tools.length).toBeGreaterThanOrEqual(8);
 
       syncPluginTools(server, registered, { enabled: false, ...DEFAULT_DEPS });
       result = await client.listTools();

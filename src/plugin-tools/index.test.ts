@@ -52,6 +52,10 @@ function makeDeps() {
     reindexVault: async () => {},
     notifier: () => {},
     suppression: new SuppressionSet({ ttlMs: 2000 }),
+    sourceRegistry: {
+      refresh: async () => undefined,
+      remove: () => false,
+    },
   };
 }
 
@@ -68,27 +72,27 @@ describe("syncPluginTools", () => {
     expect(f.sendToolListChanged).not.toHaveBeenCalled();
   });
 
-  it("(b) enabled=true: registers all six with their declared names", () => {
+  it("(b) enabled=true: registers all eight with their declared names", () => {
     const f = makeFakeServer();
     const registered = new Map<string, RegisteredTool>();
     syncPluginTools(f.server as never, registered, {
       enabled: true,
       ...makeDeps(),
     });
-    expect(registered.size).toBe(6);
+    expect(registered.size).toBe(8);
     const names = Array.from(registered.keys()).sort();
     expect(names).toEqual([...PLUGIN_TOOL_NAMES].sort());
     expect(f.sendToolListChanged).toHaveBeenCalledTimes(1);
   });
 
-  it("(c) flipping from enabled=true to enabled=false removes all six (idempotent)", () => {
+  it("(c) flipping from enabled=true to enabled=false removes all eight (idempotent)", () => {
     const f = makeFakeServer();
     const registered = new Map<string, RegisteredTool>();
     syncPluginTools(f.server as never, registered, {
       enabled: true,
       ...makeDeps(),
     });
-    expect(registered.size).toBe(6);
+    expect(registered.size).toBe(8);
 
     syncPluginTools(f.server as never, registered, {
       enabled: false,

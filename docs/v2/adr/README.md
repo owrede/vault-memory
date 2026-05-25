@@ -38,6 +38,7 @@ See also:
 | 022 | [Typed cross-contract edges](022-typed-cross-contract-edges.md) | Proposed | 2026-05-21 | v2.x | — | graph, typed-refs, contract-fields, multi-hop, schema-introspection |
 | 023 | [Contracts as MCP Resources, not just Tools](023-contracts-as-mcp-resources.md) | Proposed | 2026-05-21 | v2.x | — | mcp, resources, discovery, context-embedding, subscriptions |
 | 024 | [Contracts MUST declare failure modes](024-contract-failure-modes.md) | Proposed | 2026-05-21 | v2.x | — | contracts, hallucination, unresolved, review-required, failure-modes |
+| 025 | [Sources Registry — peer-MCP sources as first-class MCP Resources](025-sources-registry.md) | Accepted | 2026-05-25 | 8 | — | sources, peer-mcp, mcp-resources, plugin-gated-tools, palette, curation, PeerMcpRegistry |
 
 **ADR-007 decision summary:** Variant C palette+canvas+inspector Obsidian plugin authoring `.contract` JSON emitted as canonical Phase 6 YAML; renderer Svelte Flow rather than jsoncanvas fork (upstream renderer does not exist — see ADR-007 §Pitfall 1).
 
@@ -50,6 +51,13 @@ each closes a principle gap in the v2 surface:
 - **022** introduces typed field-level edges (`ref(Kind)`) alongside the existing untyped wikilinks.
 - **023** exposes contracts as MCP **Resources** so hosts can embed shapes in context without a tool roundtrip.
 - **024** requires every required field to declare a `failure_modes` entry, eliminating hallucination-into-shape.
+
+**ADR-025 (Accepted, Phase 8).** Ratifies the server-side half of
+`.planning/specs/SOURCES-REGISTRY.md`: peer-MCP sources exposed as three
+`vault-memory://sources*` MCP Resources (discovery) plus two plugin-gated tools
+(`unset_mcp_client`, `refresh_source`) over an extended `PeerMcpRegistry`.
+Strictly additive — default-off tool surface byte-identical; Resources list
+grows 10 → 13. Ships in v2.0.0.
 
 The 020–024 band intentionally skips the 008–018 placeholder range
 reserved for v3 Phase-10 Open ADRs that may renumber when written.

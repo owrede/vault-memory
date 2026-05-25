@@ -19,5 +19,9 @@ docs/dev/
 # Session-local; never committed.
 .claude/
 
+# GSD tooling state (.pi/gsd) — session-local planning cache, not part of
+# the repo or npm tarball.
+.pi/
+
 # Working-issue notes (paper trail, not part of release)
 ISSUE-*.md

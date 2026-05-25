@@ -31,6 +31,24 @@
       "mimeType": "application/json"
     },
     {
+      "name": "sources",
+      "uriTemplate": "vault-memory://sources",
+      "description": "List peer MCP servers vault-memory connects to, with per-source status (connected/unavailable/unreachable), tool_count, and last_refreshed. vault-memory itself is not included. SOURCES-REGISTRY §5.1.",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "source-tools",
+      "uriTemplate": "vault-memory://sources/{name}/tools",
+      "description": "List the cached tools/list for one peer MCP source. Empty when the source is not connected. SOURCES-REGISTRY §5.2.",
+      "mimeType": "application/json"
+    },
+    {
+      "name": "source-tool",
+      "uriTemplate": "vault-memory://sources/{name}/tools/{tool}",
+      "description": "Read a single tool's schema from one peer MCP source, inlined from the cached tools/list. SOURCES-REGISTRY §5.3.",
+      "mimeType": "application/json"
+    },
+    {
       "name": "vaults",
       "uriTemplate": "vault-memory://vaults",
       "description": "List configured vaults with their status (note count, last indexed run). Promoted from the `list_vaults` MCP tool in v2.0.0; the tool remains callable through v2.x.",

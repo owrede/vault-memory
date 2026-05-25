@@ -139,8 +139,8 @@ describe("v2 resources/list surface (REL-08)", () => {
     expect(actual).toEqual(pinned);
   });
 
-  it("has exactly 10 resources after REL-08 promotion", () => {
-    expect(RESOURCES).toHaveLength(10);
+  it("has exactly 13 resources (10 REL-08 + 3 sources, SOURCES-REGISTRY §5)", () => {
+    expect(RESOURCES).toHaveLength(13);
   });
 
   // B2 acceptance: a docId containing path separators (`/`) must round-trip
