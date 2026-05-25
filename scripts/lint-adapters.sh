@@ -80,13 +80,19 @@ check "I-1" \
 #                      (CLI onboarding, NOT vault content)
 #   - src/vault/       mkdir for ~/.vault-memory/vaults/ SQLite DB dir
 #   - src/rerank/      ONNX model dir (~/.vault-memory/models/...)
-# These are infrastructure paths, NOT vault-content reads/writes. The
+#   - src/plugin-tools/set-mcp-client.ts — the ONE plugin-tool that mutates
+#                      ~/.vault-memory/config.toml ([contracts.mcp_clients.*]
+#                      CRUD), justified by ADR-007 §D-CHROME-CONNECTORS. A
+#                      config-file path, NOT vault content — same class as
+#                      src/config/. Narrow single-file allowance; the rest of
+#                      src/plugin-tools/ stays seam-bound.
+# These are infrastructure / config paths, NOT vault-content reads/writes. The
 # seam invariant is "vault content goes through the adapter"; these
 # paths never touch vault content.
 # ----------------------------------------------------------------------
 check "I-2" \
   '^import .* from "(node:)?fs"|^import .* from "(node:)?fs/promises"|^import .* from '\''(node:)?fs'\''|^import .* from '\''(node:)?fs/promises'\''' \
-  'src/(adapters|config|vault|rerank)/' \
+  'src/(adapters|config|vault|rerank)/|src/plugin-tools/set-mcp-client\.ts:' \
   'raw fs imports'
 
 # ----------------------------------------------------------------------
