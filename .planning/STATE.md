@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: release
-status: phase_complete
-stopped_at: Phase 8 context gathered
-last_updated: "2026-05-19T12:17:12.760Z"
-last_activity: 2026-05-19 -- Phase 07 execution started
+status: phase_in_progress
+stopped_at: Phase 8 — 7 of 8 plans complete; 08-08 (v2.0.0 cut) is the remaining work
+last_updated: "2026-05-25T18:50:00.000Z"
+last_activity: 2026-05-25 -- Sources Registry server-side (ADR-025) committed; blocks cleared for 08-08
 progress:
   total_phases: 10
-  completed_phases: 5
-  total_plans: 73
-  completed_plans: 71
-  percent: 50
+  completed_phases: 7
+  total_plans: 81
+  completed_plans: 80
+  percent: 79
 ---
 
 # Project State
@@ -192,4 +192,4 @@ Items acknowledged and carried forward from previous milestone close:
 Last session: 2026-05-19T12:17:12.751Z
 Stopped at: Phase 8 context gathered
 Resume file: .planning/phases/08-polish-eval-suite-v2-0-0-release/08-CONTEXT.md
-Next: `/gsd-execute-phase 3`
+Next: `/gsd-execute-phase 8`
