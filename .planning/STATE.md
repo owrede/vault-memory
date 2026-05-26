@@ -3,11 +3,11 @@ gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: release
 status: phase_in_progress
-stopped_at: Phase 8 — 7 of 8 plans complete; 08-08 (v2.0.0 cut) is the remaining work
-last_updated: "2026-05-25T18:50:00.000Z"
-last_activity: 2026-05-25 -- Sources Registry server-side (ADR-025) committed; blocks cleared for 08-08
+stopped_at: "Phase 8.5 INSERTED (contracts-real-laufen) gates 08-08; concept ADRs 026/027 written, implementation not started"
+last_updated: "2026-05-26T09:00:00.000Z"
+last_activity: 2026-05-26 -- Inserted Phase 8.5 (contracts real-laufen) before v2.0.0 cut; wrote concept ADRs 026-030 + HOW-IT-WORKS; resolved phase-numbering conflict (Phase 9 premise-check keeps its number)
 progress:
-  total_phases: 10
+  total_phases: 11
   completed_phases: 7
   total_plans: 81
   completed_plans: 80
@@ -21,7 +21,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-05-14)
 
 **Core value:** Local-first, source-agnostic-ready, agentic knowledge layer over your Obsidian notes — with the memory namespace as a non-negotiable safety invariant.
-**Current focus:** Phase 8 — Polish, eval suite, v2.0.0 release (carries the Phase 7 screencast + GitHub Release publish)
+**Current focus:** Phase 8.5 (INSERTED) — Contracts real-laufen. A live end-to-end run revealed the reference contracts do not run against the real server (9/11 verbs have mismatched output shapes; mocks hid it). This phase (verb-output normalization + trustworthy editor + real fixtures, per ADR-026/027) GATES the v2.0.0 cut (Plan 08-08). Phase 8 polish is otherwise 7/8 complete.
+
+### Phase numbering (conflict resolved 2026-05-26)
+
+- **Phase 8.5** = the INSERTED contracts-real-laufen work (decimal phase per the ROADMAP "urgent insertions" convention). Gates 08-08.
+- **Phase 9** = unchanged: the Pre-Phase-10 premise-check HARD GATE. Keeps its number — it is referenced across 8 ADRs + ARCHITECTURE.md + AGENT_AGNOSTIC.md + the ADR-README governance text, so renumbering would have been costly and error-prone.
+- Concept ADRs written this session: 026 (Context-Spec), 027 (Verb-Output Normalization) — both Phase 8.5; 028 (Workflows vs Contracts + optimizers/system-fork), 029 (Learning loops), 030 (Precompiled Artifacts) — all v2.x/v3 concepts, out of v2.0.0 scope. Plus docs/v2/HOW-IT-WORKS.md (plain-language guide).
 
 ## Current Position
 

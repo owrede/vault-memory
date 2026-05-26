@@ -20,6 +20,7 @@ Evolve vault-memory from v1.0.0 (a strong Layer 0 retrieval substrate over Obsid
 - [x] **Phase 6: Task contract DSL** - YAML+Zod contracts; list/describe/instantiate via MCP (completed 2026-05-18)
 - [x] **Phase 7: vault-memory Obsidian plugin (contract editor + chrome)** - Obsidian plugin with Variant-C visual editor over a custom `.contract` format (forked jsoncanvas renderer) emitting Phase 6 YAML; ships with settings, key-ring secrets, manual reindex, stats, and connector management — COMPLETE 2026-05-19 (screencast deferred to Phase 8)
 - [ ] **Phase 8: Polish, eval suite, v2.0.0 release** - Release gate; CI eval suite; npm publish
+- [ ] **Phase 8.5: Contracts real-laufen (INSERTED, pre-release)** - Verb-output normalization (`doc_ids` invariant), trustworthy editor (catalog from real impl + live `{{ref}}` validation), reference fixtures that run end-to-end against the REAL server (not mocks). Gates the v2.0.0 cut. See ADR-026, ADR-027.
 - [ ] **Phase 9: Pre-Phase-10 premise check (HARD GATE)** - Verify seams, ADR conformance, capability descriptors before any v3 work
 
 > **Note:** The brief's Phase 4 (authority/staleness) is folded into Phase 3. The brief's Phase 10 (Notion connector) is deferred to v3.0.0 — see [v3.0.0 — Deferred](#v300--deferred) section below.
@@ -273,6 +274,26 @@ Plans:
 
 - [ ] ≤8-minute screencast covering install → first contract authored → first `instantiate_contract` call (CAN-09 carryover from Phase 7 / Plan 07-12 Task 3). Publish as `vault-memory-plugin-walkthrough.mp4` GitHub Release asset on the v2.0.0 tag; update `README.md`, `docs/v2/plugin/INSTALL.md`, and `docs/v2/plugin/CONTRACT-EDITOR.md` deferral notes with the resolved URL.
 - [ ] Publish v2.0.0 GitHub Release with `vault-memory-plugin-v2.0.0.tar.gz` tarball + `manifest.sha256` checksum so the `vm-install` + `vm-update` skills (Phase 7 Plan 07-11) become live. Replace `RELEASE_URL_PLACEHOLDER` in `skills/vm-install/setup.sh` and `skills/vm-update/update.sh` with the resolved release URL. Run the live-vault dry run that satisfies Plan 07-11 Task 3 (deferred human-verify checkpoint).
+
+### Phase 8.5: Contracts real-laufen (INSERTED, pre-release)
+
+**Why inserted:** A live end-to-end run of the `meeting-prep` reference contract against the REAL server (not the mocked eval harness) failed repeatedly. Root cause: 9 of 11 assembly verbs have output shapes that disagree across the JSDoc verb contract, the plugin verb catalog, and the real implementation — mocks hid the gap. The shipped reference contracts therefore do not run in production. Shipping non-runnable contracts in a `.0` release would undermine the v2 core promise, so this phase gates the v2.0.0 cut (Plan 08-08).
+
+**Goal**: Make task contracts run end-to-end against the real server, and make the contract editor trustworthy, so a user-authored contract that passes the editor's guidance actually executes.
+**Mode:** mvp
+**Depends on**: Phase 8 (polish complete); blocks Plan 08-08 (v2.0.0 cut)
+**Decision basis**: ADR-026 (Contract as Context-Spec), ADR-027 (Verb Output Normalization)
+**Success Criteria** (what must be TRUE):
+
+  1. **Verb-output normalization** — every assembly verb output carries a uniform, documented `doc_ids: string[]` field (additive; v1 tools untouched). `expand → cluster → compile_brief` chains via `{{linked.doc_ids}}` because the field now exists (ADR-027).
+  2. **Single source of truth + drift gate** — a canonical server-side verb spec drives both the `contract-verbs` MCP resource and the plugin catalog; a CI test fails the build if declared `output_fields` diverge from the real handler returns.
+  3. **Trustworthy editor** — the contract editor offers correct upstream output fields (from the spec) and live-validates `{{alias.field}}` references against real upstream `output_fields`; a broken reference surfaces a visible warning instead of a silent failure.
+  4. **Reference fixtures run for real** — `meeting-prep`, `person-dossier`, `project-status` reach `ok:true` against the BUILT server over stdio (the Sarah-Maihaus run is the manual template), with no redundant `write_back` where `compile_brief` already writes. Memory-sink onboarding (the `.memory-sink` sentinel) is documented/eased.
+  5. **Real smoke-test gate** — a script drives the built server and runs at least one reference contract end-to-end to `ok:true`; this is a Phase-8.5 sign-off gate AND a release gate. Mocks alone no longer count as proof a contract runs.
+
+**Plans**: TBD (to be planned via GSD). Sketch from `claudedocs/PLAN-contracts-real-laufen.md`: (A) verb normalization + `extractDocIds` + tests; (B) canonical verb spec + drift gate + catalog-from-spec; (C) editor live-ref validation; (D) fixtures real + real smoke-test gate.
+
+**Out of scope (deferred to v2.x, recorded in ADRs):** the context-assembly *engine* (token-budget enforcement — ADR-026 ships the schema surface only), the Workflow/outcome layer (ADR-028), learning loops (ADR-029), precompiled artifacts (ADR-030).
 
 ### Phase 9: Pre-Phase-10 premise check (HARD GATE)
 

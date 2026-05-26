@@ -2,7 +2,7 @@
 
 **Status:** Proposed
 **Date:** 2026-05-26
-**Phase:** 9 (contracts-real-laufen; pre-v2.0.0) — concept; full realization is v2.x
+**Phase:** 8.5 (contracts-real-laufen; INSERTED pre-v2.0.0) — concept; full realization is v2.x
 **Supersedes:** —
 **Superseded by:** —
 **Related:** ADR-006 (Task Contract DSL), ADR-005 (Brief Compile Strategy),
@@ -41,7 +41,7 @@ v2.0.0 scope.
 ## Decision
 
 **Adopt "contract as context-window spec" as the conceptual model, and define the
-context-assembly contract surface. Implement the minimum in Phase 9; defer the
+context-assembly contract surface. Implement the minimum in Phase 8.5; defer the
 budgeting engine to a named follow-up.**
 
 ### 1. The context-assembly model (declarable, not hardcoded)
@@ -90,11 +90,11 @@ matching contract over ad-hoc assembly; this ADR gives that routing a richer tar
 
 ## Scope split (avoid v2.0.0 creep)
 
-**In Phase 9 (pre-v2.0.0):**
+**In Phase 8.5 (pre-v2.0.0):**
 - This ADR (the model + the `context` block schema as *documented, optional, parsed*).
 - The schema parses and round-trips; an absent block = today's behavior.
 - NO budgeting engine yet — declaring `token_budget` is accepted but the enforcing
-  assembler is a follow-up. Phase 9 ships the *spec surface*, proven by the
+  assembler is a follow-up. Phase 8.5 ships the *spec surface*, proven by the
   normalized, real-running contracts (ADR-027).
 
 **Deferred to a named follow-up milestone (v2.x):**

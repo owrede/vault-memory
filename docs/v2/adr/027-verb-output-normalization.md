@@ -2,7 +2,7 @@
 
 **Status:** Proposed
 **Date:** 2026-05-26
-**Phase:** 9 (contracts-real-laufen; pre-v2.0.0)
+**Phase:** 8.5 (contracts-real-laufen; INSERTED pre-v2.0.0)
 **Supersedes:** —
 **Superseded by:** —
 **Related:** ADR-006 (Task Contract DSL), ADR-007 (Contract Editor), ADR-023
@@ -56,7 +56,7 @@ revealed it.
 A second contributing finding: `compile_brief` **writes the brief itself** via the
 DeliveryAdapter and returns `{ok, doc_id}` — no `body`. The fixture's
 `write_back: { body_from: "{{compiled.body}}" }` therefore always fails with
-`unresolved_template`. This ADR scopes the verb-output fix; ADR-026 and the Phase-9
+`unresolved_template`. This ADR scopes the verb-output fix; ADR-026 and the Phase-8.5
 fixture rewrite address the redundant-write_back design issue.
 
 ---
@@ -130,5 +130,5 @@ A canonical, structured verb spec server-side (`src/contracts/verb-spec.ts`):
 
 A smoke test drives the **built** server over stdio and runs at least one
 reference contract end-to-end to `ok:true` (the Sarah-Maihaus run is the manual
-template). This becomes a Phase-9 sign-off gate and a release gate — mocks alone
+template). This becomes a Phase-8.5 sign-off gate and a release gate — mocks alone
 no longer count as proof a contract runs.

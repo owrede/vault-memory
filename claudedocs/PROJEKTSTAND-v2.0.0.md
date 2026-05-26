@@ -99,19 +99,24 @@ Plugin-Katalog und echter Impl. Folgen:
 3. `compile_brief` schreibt selbst → der Fixture-`write_back` scheitert immer.
 
 → Adressiert durch **ADR-026** (Contract als Context-Spec) + **ADR-027**
-(Verb-Output-Normalisierung), beide *Proposed*. Geplant als **Phase 9 VOR v2.0.0**
-(Entscheidung dieser Session). Erst nach Phase-9-Sign-off zurück zum 08-08-Cut.
+(Verb-Output-Normalisierung), beide *Proposed*. Geplant als **Phase 8.5 VOR v2.0.0**
+(eingeschobene INSERTED-Phase, Entscheidung dieser Session). Erst nach
+Phase-8.5-Sign-off zurück zum 08-08-Cut.
 
 ### C. Bekannte, dokumentierte Backlog-Punkte
 - **Alias-/Akronym-Recall-Lücke** (z.B. „JHE") — Aliases fließen nicht in den FTS-Index.
   Dokumentiert, nicht release-blockierend.
 - **Memory-Sink-Onboarding** — `compile_brief`/Contracts scheitern, wenn `_memory/.memory-sink`
-  im Vault fehlt; Auto-Discovery braucht den Sentinel. Erleichterung in Phase 9 geplant.
+  im Vault fehlt; Auto-Discovery braucht den Sentinel. Erleichterung in Phase 8.5 geplant.
 
 ### D. Noch nicht begonnen
-- **Phase 9 (ursprünglich)**: „Pre-Phase-10 premise check" (Hard Gate vor v3). Hinweis:
-  Die Nummer „Phase 9" wird jetzt für die Contracts-Real-Laufen-Arbeit verwendet — der
-  ursprüngliche Premise-Check muss umnummeriert/eingeordnet werden.
+- **Phase 8.5 (INSERTED, vor v2.0.0)**: „Contracts real-laufen" — Verb-Normalisierung,
+  vertrauenswürdiger Editor, reale Fixtures. Gated den v2.0.0-Cut (Plan 08-08). Siehe
+  ROADMAP §Phase 8.5 + ADR-026/027.
+- **Phase 9 (unverändert)**: „Pre-Phase-10 premise check" (Hard Gate vor v3). Behält
+  ihre Nummer — in 8 ADRs + ARCHITECTURE/AGENT_AGNOSTIC verankert. Nummerierungskonflikt
+  gelöst: die neue Contracts-Arbeit wurde als Decimal-Phase 8.5 eingeschoben (ROADMAP-
+  Konvention für INSERTED), Phase 9 bleibt der Premise-Check.
 - **v3.0.0 (deferred)**: Notion-Connector — eigener Milestone, außerhalb v2-Scope.
 
 ### E. Uncommittete Arbeit dieser Session
@@ -125,5 +130,5 @@ Plugin-Katalog und echter Impl. Folgen:
 **v2.0.0 hat sechs der sieben Ziel-Säulen technisch erreicht und durch 1693 Tests
 abgesichert — aber das Signatur-Feature „Task Contracts" läuft end-to-end gegen den
 echten Server nicht zuverlässig (Mocks verdeckten das), weshalb vor dem Release-Cut eine
-Phase 9 (Verb-Normalisierung + vertrauenswürdiger Editor + reale Fixtures) eingezogen
+Phase 8.5 (Verb-Normalisierung + vertrauenswürdiger Editor + reale Fixtures) eingezogen
 wurde.**

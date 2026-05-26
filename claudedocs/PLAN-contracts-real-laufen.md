@@ -88,12 +88,12 @@ Neues ADR `docs/v2/adr/026-contract-as-context-spec.md`. Inhalt:
 - Adapter-Seams: keine neuen `fs`/`yaml`-Imports außerhalb der Adapter; `lint-adapters.sh` muss grün bleiben.
 - Test-Disziplin: kein Regress der bestehenden Tests; neue Verbs/Refs mit Unit-Tests im selben PR.
 - MEM-05: write_back nur über DeliveryAdapter; unangetastet.
-- GSD: Ausführung läuft über einen GSD-Command (vermutlich `/gsd-execute-phase` als neue Phase 9, oder `/gsd-quick` pro Teil).
+- GSD: Ausführung läuft über einen GSD-Command (vermutlich `/gsd-execute-phase` als neue Phase 8.5, oder `/gsd-quick` pro Teil).
 
 ## Release-Einordnung (entschieden)
-- **Neue GSD-Phase 9 VOR v2.0.0.** v2.0.0 verschiebt sich, bis Contracts nachweislich
+- **Neue GSD-Phase 8.5 VOR v2.0.0.** v2.0.0 verschiebt sich, bis Contracts nachweislich
   real laufen. Begründung: nicht-lauffähige Referenz-Contracts in einem .0-Release
-  untergraben das Kernversprechen. Plan 08-08 (v2.0.0-Cut) wartet, bis Phase 9 grün ist.
+  untergraben das Kernversprechen. Plan 08-08 (v2.0.0-Cut) wartet, bis Phase 8.5 grün ist.
 
 ## Startschritt (entschieden)
 1. **ZUERST reine Doku, kein Code:**
@@ -101,9 +101,9 @@ Neues ADR `docs/v2/adr/026-contract-as-context-spec.md`. Inhalt:
    - Normalisierte Verb-Spec als Design-Tabelle (Teil A+B) im ADR oder separatem
      `docs/v2/adr/027-verb-output-normalization.md` festschreiben — die abgesegnete
      Vorlage für die Implementierung.
-2. **Dann GSD-Phase 9 aufsetzen** und A→D gegen die ADRs ausführen.
-3. Erst nach Phase-9-Sign-off (echter Smoke-Test grün) zurück zu Plan 08-08 / v2.0.0-Cut.
+2. **Dann GSD-Phase 8.5 aufsetzen** und A→D gegen die ADRs ausführen.
+3. Erst nach Phase-8.5-Sign-off (echter Smoke-Test grün) zurück zu Plan 08-08 / v2.0.0-Cut.
 
 ## Nächster konkreter Schritt
 ADR-026 (Context-Spec) + ADR-027 (Verb-Normalisierung) schreiben. Danach Freigabe
-einholen, dann Phase 9 via GSD planen/ausführen.
+einholen, dann Phase 8.5 via GSD planen/ausführen.
