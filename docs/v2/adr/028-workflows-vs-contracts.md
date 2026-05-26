@@ -122,6 +122,75 @@ The `questions_to_answer`, `produces`, and `acceptance` blocks are exactly the
 
 ---
 
+## Quality gates: human, learning loop, AND deterministic optimizer
+
+A workflow step that produces an outcome needs a **gate** before the outcome is
+accepted. The maintainer identified that gates are not all the same kind — and crucially
+that **not every gate is an LLM choosing.** Three distinct gate types belong in the
+workflow layer:
+
+| Gate type | What it is | When it fits | Determinism |
+|---|---|---|---|
+| **Human-in-the-loop** | A person approves/edits/rejects | Final judgment, irreversible actions | human |
+| **Learning loop** (ADR-029) | Feedback accumulates → proposes improvements | Tuning a spec over time | LLM-assisted |
+| **Deterministic optimizer** | A mathematical algorithm selects/ranks among many candidates | Choosing among hundreds/thousands of scenarios | **algorithmic, reproducible** |
+
+The third is the one today's design has no place for. In Industrial-AI optimization, a
+process can generate **thousands of valid scenarios** (e.g. 32,311 assignment variants).
+A human gate cannot choose among 32,311 — and an LLM gate is the wrong tool: the choice is
+a well-defined combinatorial optimization (e.g. the **Hungarian method** for assignment),
+which is **deterministic, provably optimal, and cheap**, not a judgment call.
+
+The right composition is therefore a **pipeline of gates**:
+
+```
+many candidate scenarios (10²–10⁴)
+   → deterministic optimizer   reduce to the best 3–12   (algorithmic, reproducible)
+      → human-in-the-loop       pick / approve one        (judgment, on a tractable set)
+         → learning loop        capture the choice as a signal (ADR-029)
+```
+
+The optimizer's job is to make the human gate **tractable**: turn an impossible choice
+(thousands) into a reviewable one (a handful). It consumes structured input — which is
+exactly what a **precompiled Artifact** (ADR-030) provides: a typed, materialized fact base
+is the natural input to an algorithmic optimizer. Artifacts feed optimizers; optimizers
+feed humans; humans feed the learning loop.
+
+**Scope note:** these optimizers are *not* part of the memory core. vault-memory's job is
+to assemble and materialize context (research + artifacts); the optimizer is a
+**workflow-layer quality gate**, a pluggable component the workflow runner invokes. Whether
+it ships as a vault-memory module or as a separate system is the architectural fork below.
+
+## Architectural fork: separate the Workflow concern from the Memory concern
+
+The maintainer raised a structural question worth recording as a decision point, not a
+decision: **should the Workflow layer (including optimizers and actions) be a separate
+system from the Memory core?**
+
+The case **for separation**:
+- The memory core has ONE non-negotiable invariant: agent writes only to a labeled sink,
+  never to user notes. It is small, safe, auditable. Bolting actions + optimizers + external
+  MCP fan-out onto it risks eroding that clarity.
+- Workflows *act* (external side effects); the memory core deliberately does not. Different
+  safety models, different blast radius, different release cadence.
+- Optimizers are a distinct engineering domain (operations research) with their own
+  dependencies and testing needs — a poor fit inside a local-first retrieval server.
+
+The case **against (keep unified)**:
+- Tight integration is simpler for the user (one install, one editor surface).
+- The workflow runner needs deep, low-latency access to contracts/artifacts — a process
+  boundary adds friction.
+
+**Recorded position (not yet decided):** the memory core (retrieval, contracts, artifacts,
+memory-safety) is the stable foundation. The Workflow layer — outcomes, actions, gates,
+**deterministic optimizers** — is a candidate for a **separate system / separate milestone
+(provisionally "vault-memory 4.0" or a sibling project)**, consuming the memory core through
+its MCP surface like any other client. This keeps the safety-critical core minimal and lets
+the action/optimization layer evolve independently. The fork is flagged here so the contract/
+artifact layers are not designed in a way that *presumes* an in-process workflow runner.
+
+---
+
 ## Consequences
 
 **Positive**
@@ -158,3 +227,10 @@ The `questions_to_answer`, `produces`, and `acceptance` blocks are exactly the
 4. **Relationship to Skills** — is a Workflow a *typed, versioned* Skill, or a distinct
    thing a Skill triggers? (Leaning: distinct — Skills are prose triggers, Workflows are
    inspectable specs.)
+5. **Optimizer plug-in contract** — how does the workflow runner invoke a deterministic
+   optimizer (Hungarian method, ILP solver, …) as a gate? What is the input/output shape
+   (candidate set → ranked top-k), and how does it consume an Artifact (ADR-030) as input?
+6. **System boundary** — does the Workflow layer (actions + optimizers + gates) ship inside
+   vault-memory or as a separate system consuming the memory core over MCP? (See
+   "Architectural fork" above — recorded as undecided; leaning separate to keep the
+   safety-critical memory core minimal.)
