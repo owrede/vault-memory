@@ -1,106 +1,106 @@
-# vault-memory — Roadmap & Genese
+# vault-memory — Roadmap & Genesis
 
-*Wie dieses Projekt entstand, in einfacher Sprache. Die Spalte „Ziel" beschreibt den
-Zweck; die Spalte „Implementierung" nennt die technische Umsetzung samt Fachbegriffen —
-wer sie nicht braucht, liest nur links.*
+*How this project came to be, in plain language. The "Goal" column describes the purpose;
+the "Implementation" column names the technical realization including the jargon — if you
+don't need it, just read the left side.*
 
-> Hinweis: Dies ist die **erzählende** Roadmap für Menschen. Die operative
-> Phasen-Planung liegt in [`.planning/ROADMAP.md`](.planning/ROADMAP.md).
+> Note: This is the **narrative** roadmap for humans. The operational phase planning lives
+> in [`.planning/ROADMAP.md`](.planning/ROADMAP.md).
 
 ---
 
-## 1. Was vault-memory 1.0.0 war
+## 1. What vault-memory 1.0.0 was
 
-Eine Brücke zwischen deinen Obsidian-Notizen und einer KI: Die KI konnte deine Notizen
-**durchsuchen, lesen und kontrolliert beschreiben** — schnell und lokal auf deinem
-Rechner, ohne Cloud.
+A bridge between your Obsidian notes and an AI: the AI could **search, read, and write to
+your notes in a controlled way** — fast and locally on your machine, no cloud.
 
-| Ziel | Implementierung |
+| Goal | Implementation |
 |---|---|
-| Findet Notizen nach *Bedeutung*, nicht nur nach Stichwort | Hybride Suche (semantisch + Stichwort + RRF-Fusion) |
-| Optionales Nachschärfen der besten Treffer | Cross-Encoder-Reranking (ONNX) |
-| Merkt Datei-Änderungen sofort | Live-Indexing (File-Watcher) |
-| Mehrere Notizbücher gleichzeitig | Multi-Vault |
-| Sichere, kollisionsfreie Schreibvorgänge | Hash-geschützte atomare Writes |
-| ~23 Werkzeuge für eine KI | MCP-Tools |
+| Find notes by *meaning*, not just by keyword | Hybrid search (semantic + keyword + RRF fusion) |
+| Optional sharpening of the best matches | Cross-encoder reranking (ONNX) |
+| Notice file changes immediately | Live indexing (file watcher) |
+| Multiple notebooks at once | Multi-vault |
+| Safe, collision-free writes | Hash-protected atomic writes |
+| ~23 tools for an AI to use | MCP tools |
 
-**Kurz:** v1.0.0 war eine **starke Such- und Lese-Schicht** — ein schneller Bibliothekar,
-der findet und ausliefert.
+**In short:** v1.0.0 was a **strong search-and-read layer** — a fast librarian that finds
+and delivers.
 
 ---
 
-## 2. Was vault-memory 2.0.0 anders macht
+## 2. What vault-memory 2.0.0 does differently
 
-v1 fand Dinge. v2 macht daraus einen **mitdenkenden Wissens-Assistenten**, der Kontext
-*zusammenstellt und behält*, statt ihn bei jeder Anfrage neu zu suchen. Das adressiert
-ein bekanntes Problem: KI-Agenten entdecken bei jedem Lauf rund 85 % ihres Kontexts neu.
+v1 found things. v2 turns that into a **reasoning knowledge assistant** that *assembles and
+retains* context instead of rediscovering it on every request. This addresses a known
+problem: AI agents rediscover roughly 85% of their context on every run.
 
-| Ziel | Implementierung |
+| Goal | Implementation |
 |---|---|
-| Die KI schreibt **nie heimlich** in deine Notizen — nur in ein getrenntes KI-Gedächtnis, mit Herkunftsstempel | Memory-Namespace + Provenance; un-umgehbar am DeliveryAdapter-Chokepoint |
-| Ergebnisse mit Quellenangabe statt loser Treffer | Citation-Packets; Bundles / Dossiers |
-| Dem Verweis-Netz zwischen Notizen folgen, Themengruppen erkennen | Graph-as-Retrieval; typed edges; Community-Clustering (Louvain) |
-| Mehrere Notizen zu einem fertigen Briefing zusammenfassen | Compiled Briefs (`compile_brief`) |
-| Ein Briefing merkt selbst, wenn seine Quellen veralten | Source-Hash-Staleness-Daemon |
-| Gespeicherte Recherche-Rezepte für wiederkehrende Aufgaben | Task Contracts (YAML-DSL) |
-| Diese Rezepte visuell zusammenklicken | Obsidian-Plugin (Canvas-Editor) |
-| Vorbereitet für andere Quellen/Datenbanken, nicht nur Obsidian | Adapter-Seams (source / delivery / change-feed) |
+| The AI **never silently writes** into your notes — only into a separate AI memory, with a provenance stamp | Memory namespace + provenance; un-bypassable at the DeliveryAdapter chokepoint |
+| Results with source citations, not loose hits | Citation packets; bundles / dossiers |
+| Follow the web of links between notes, detect topic clusters | Graph-as-retrieval; typed edges; community clustering (Louvain) |
+| Combine several notes into one ready-made briefing | Compiled briefs (`compile_brief`) |
+| A briefing knows on its own when its sources go stale | Source-hash staleness daemon |
+| Saved research recipes for recurring tasks | Task contracts (YAML DSL) |
+| Assemble those recipes visually | Obsidian plugin (canvas editor) |
+| Prepared for other sources/databases, not just Obsidian | Adapter seams (source / delivery / change-feed) |
 
-**Kurz:** v2.0.0 ist die **agentic knowledge layer** — sichere, quellenbelegte,
-wiederverwendbare Wissensschicht.
+**In short:** v2.0.0 is the **agentic knowledge layer** — a safe, source-cited, reusable
+knowledge layer.
 
-> **Ehrlicher Stand:** Sechs der sieben Säulen sind gebaut und durch ~1693 Tests
-> abgesichert. Das Aushängeschild „Task Contracts" lief im ersten echten End-to-End-Test
-> aber **nicht zuverlässig durch** — die Bausteine sprachen nicht dieselbe Sprache. Das
-> wird in einer eingeschobenen **Phase 8.5** vor dem Release behoben.
+> **Honest status:** Six of the seven pillars are built and covered by ~1693 tests. The
+> flagship "Task Contracts" feature, however, did **not run reliably** in the first real
+> end-to-end test — the building blocks did not speak the same language. This is fixed in
+> an inserted **Phase 8.5** before release.
 
 ---
 
-## 3. Themen, die während der Entwicklung dazukamen
+## 3. Themes that emerged during development
 
-Im Verlauf der Arbeit (und durch echtes Ausprobieren) sind fünf größere Themen
-entstanden. Sie sind als Architektur-Entscheidungen festgehalten und größtenteils
-**Konzepte für die Zukunft** (v2.x / v3), nicht Teil von v2.0.0.
+Over the course of the work (and through real testing) five larger themes emerged. They
+are recorded as architecture decisions and are mostly **concepts for the future** (v2.x /
+v3), not part of v2.0.0.
 
-| Ziel | Worum es geht | Status | Implementierung |
-|---|---|---|---|
-| **Contracts müssen wirklich laufen** | Die Recherche-Bausteine auf eine gemeinsame Sprache bringen, damit Rezepte beim echten Nutzer funktionieren | vor v2.0.0 | Verb-Output-Normalisierung; ADR-027 |
-| **Rezepte sind Kontext-Spezifikationen** | Ein Rezept liefert dem Agenten ein optimal zusammengesetztes „Sichtfenster" (Umfang, Reihenfolge, Budget) | Konzept | Context-Window-Spec; ADR-026 |
-| **Recherche ≠ Handeln** | Ein Contract *recherchiert* nur (sicher). Was am Ende *entstehen oder geschehen* soll (Dokument, E-Mail), ist eine eigene Schicht | Konzept | Workflow- vs. Research-Pipeline; ADR-028 |
-| **Das System soll lernen** | Nutzer-Feedback („denk künftig an X") automatisch aufgreifen und Rezepte verbessern — braucht zuerst Qualitäts-Signale | Konzept | Learning Loops / Quality Signals; ADR-029 |
-| **Vorberechnete Ergebnisse** | Häufig gestellte strukturierte Fragen vorab beantworten und zwischenspeichern — schneller, weniger Tokens | Konzept (strategische Wette) | Precompiled Artifacts; ADR-030 |
+| Goal | What it is about | Status | Implementation |
+|:--|---|---|---|
+| **Contracts must actually run** | Get the research building blocks to speak one language so recipes work for real users | pre-v2.0.0 | Verb output normalization; ADR-027 |
+| **Recipes are context specifications** | A recipe gives the agent an optimally composed "viewport" (scope, order, budget) | concept | Context-window spec; ADR-026 |
+| **Research ≠ acting** | A contract only *researches* (safely). What should ultimately *be produced or happen* (a document, an email) is a separate layer | concept | Workflow vs. research pipeline; ADR-028 |
+| **The system should learn** | Pick up user feedback ("remember to also do X") automatically and improve recipes — requires quality signals first | concept | Learning loops / quality signals; ADR-029 |
+| **Precomputed results** | Answer frequent structured questions ahead of time and cache them — faster, fewer tokens | concept (strategic bet) | Precompiled artifacts; ADR-030 |
 
-### Zwei Querschnitt-Einsichten
+### Two cross-cutting insights
 
-| Ziel | Implementierung |
+| Goal | Implementation |
 |---|---|
-| „Alt" heißt nicht „unwichtig", sondern „prüfbedürftig" — Alter ist ein Pflege-Signal, keine Abwertung | Staleness als Curation-Signal; ADR-021 (korrigiert) |
-| Nicht jede Auswahl ist „die KI entscheidet" — manche brauchen einen mathematischen Optimierer, der aus tausenden Varianten die besten 3–12 für einen Menschen filtert | Deterministischer Optimierer (z. B. Ungarische Methode) als Quality Gate; ADR-028 |
+| "Old" does not mean "unimportant" but "review-worthy" — age is a curation signal, not a demotion | Staleness as a curation signal; ADR-021 (amended) |
+| Not every choice is "the AI decides" — some need a mathematical optimizer that filters thousands of variants down to the best 3–12 for a human | Deterministic optimizer (e.g. Hungarian method) as a quality gate; ADR-028 |
 
 ---
 
-## 4. Wohin es geht (grobe Linie)
+## 4. Where it's headed (rough line)
 
-| Meilenstein | Ziel | Implementierung |
+| Milestone | Goal | Implementation |
 |---|---|---|
-| **v2.0.0** (kurz bevor) | Sichere, quellenbelegte Wissensschicht + lauffähige Rezepte | agentic knowledge layer |
-| **v2.x** | Rezepte werden klüger: Kontext-Budgets, Lernen aus Feedback, vorberechnete Ergebnisse | Context-Spec, Learning Loops, Artifacts |
-| **v3.0.0** | Weitere Quellen anbinden (z. B. Notion) — nicht mehr nur Obsidian | Notion-Connector; weitere Adapter |
-| **evtl. eigenes System / „4.0"** | Die *Handlungs*-Schicht (Workflows, Aktionen, Optimierer) — getrennt vom sicheren Gedächtnis-Kern | Workflow-Layer; deterministische Optimierer |
+| **v2.0.0** (imminent) | Safe, source-cited knowledge layer + runnable recipes | agentic knowledge layer |
+| **v2.x** | Recipes get smarter: context budgets, learning from feedback, precomputed results | Context-spec, learning loops, artifacts |
+| **v3.0.0** | Connect further sources (e.g. Notion) — no longer only Obsidian | Notion connector; further adapters |
+| **possibly a separate system / "4.0"** | The *action* layer (workflows, actions, optimizers) — separated from the safe memory core | Workflow layer; deterministic optimizers |
 
 ---
 
-## 5. Das Leitprinzip, das nie wackelt
+## 5. The guiding principle that never wavers
 
-> Die KI darf **niemals heimlich in deine Notizen schreiben.** Jede von der KI
-> verfasste Information landet mit Herkunftsstempel in einem **getrennten, gekennzeichneten
-> KI-Gedächtnis** — niemals in deinen eigenen Notizen. Diese eine Regel ist die
-> nicht-verhandelbare Sicherheitsgrundlage des ganzen Systems.
+> The AI must **never silently write into your notes.** Every piece of information the AI
+> authors lands, with a provenance stamp, in a **separate, labeled AI memory** — never in
+> your own notes. This single rule is the non-negotiable safety foundation of the whole
+> system.
 
-*(Technisch: Memory-Namespace-Invariante, zentral erzwungen am `DeliveryAdapter.write()`-Chokepoint.)*
+*(Technically: the memory-namespace invariant, centrally enforced at the
+`DeliveryAdapter.write()` chokepoint.)*
 
 ---
 
-*Eine ausführliche, alltagssprachliche Erklärung der Funktionsweise steht in
-[`docs/v2/HOW-IT-WORKS.md`](docs/v2/HOW-IT-WORKS.md). Alle Architektur-Entscheidungen:
+*A detailed, everyday-language explanation of how it works is in
+[`docs/v2/HOW-IT-WORKS.md`](docs/v2/HOW-IT-WORKS.md). All architecture decisions:
 [`docs/v2/adr/`](docs/v2/adr/README.md).*
