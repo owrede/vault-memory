@@ -43,6 +43,7 @@ See also:
 | 027 | [Verb Output Normalization (`doc_ids` invariant)](027-verb-output-normalization.md) | Proposed | 2026-05-26 | 9 | — | verbs, doc-ids, normalization, single-source-of-truth, drift-gate, real-runnable |
 | 028 | [Workflows vs. Contracts: the research/outcome split](028-workflows-vs-contracts.md) | Proposed | 2026-05-26 | v2.x | — | workflows, contracts, outcomes, actions, research-pipeline, agent-judgment, editor-split |
 | 029 | [Learning loops & the missing quality signals](029-learning-loops-quality-signals.md) | Proposed | 2026-05-26 | v2.x | — | learning, ralph-loops, quality-signals, feedback, acceptance, curation, human-in-the-loop |
+| 030 | [Precompiled Artifacts: structured, materialized contract outputs](030-precompiled-artifacts.md) | Proposed | 2026-05-26 | v2.x | — | artifacts, precompiled, structured-cache, materialization, industrial-ai, token-economy, staleness, strategic-bet |
 
 **ADR-007 decision summary:** Variant C palette+canvas+inspector Obsidian plugin authoring `.contract` JSON emitted as canonical Phase 6 YAML; renderer Svelte Flow rather than jsoncanvas fork (upstream renderer does not exist — see ADR-007 §Pitfall 1).
 
