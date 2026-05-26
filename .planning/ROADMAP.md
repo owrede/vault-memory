@@ -291,7 +291,7 @@ Plans:
   4. **Reference fixtures run for real** — `meeting-prep`, `person-dossier`, `project-status` reach `ok:true` against the BUILT server over stdio (the Sarah-Maihaus run is the manual template), with no redundant `write_back` where `compile_brief` already writes. Memory-sink onboarding (the `.memory-sink` sentinel) is documented/eased.
   5. **Real smoke-test gate** — a script drives the built server and runs at least one reference contract end-to-end to `ok:true`; this is a Phase-8.5 sign-off gate AND a release gate. Mocks alone no longer count as proof a contract runs.
 
-**Plans**: TBD (to be planned via GSD). Sketch from `claudedocs/PLAN-contracts-real-laufen.md`: (A) verb normalization + `extractDocIds` + tests; (B) canonical verb spec + drift gate + catalog-from-spec; (C) editor live-ref validation; (D) fixtures real + real smoke-test gate.
+**Plans**: TBD (to be planned via GSD). Sketch from `claudedocs/PLAN-contracts-real-running.md`: (A) verb normalization + `extractDocIds` + tests; (B) canonical verb spec + drift gate + catalog-from-spec; (C) editor live-ref validation; (D) fixtures real + real smoke-test gate.
 
 **Out of scope (deferred to v2.x, recorded in ADRs):** the context-assembly *engine* (token-budget enforcement — ADR-026 ships the schema surface only), the Workflow/outcome layer (ADR-028), learning loops (ADR-029), precompiled artifacts (ADR-030).
 
