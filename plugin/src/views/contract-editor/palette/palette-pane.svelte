@@ -53,6 +53,17 @@
   const VAULT_MEMORY_ID = "vault-memory";
   let selectedSource = $state<string>(VAULT_MEMORY_ID);
 
+  /**
+   * Feature flag (ADR-028): the MCP-source picker + peer-MCP verbs belong to a
+   * WORKFLOW editor, not the contract (research) editor. A contract is a
+   * read-only research pipeline over vault-memory; cross-system action verbs
+   * (GitHub, Gmail, …) are a workflow concern. Hidden here until the workflow
+   * editor exists (perspecta-workflows). The peer-MCP discovery code below is
+   * intentionally retained — only the UI is gated — so re-enabling for the
+   * workflow editor is a one-line flip. See docs/v2/adr/028-workflows-vs-contracts.md.
+   */
+  const SHOW_MCP_SOURCES = false;
+
   /** Search filter applied across action title, name, and description. */
   let searchQuery = $state<string>("");
 
@@ -190,37 +201,39 @@
 </script>
 
 <aside class="vm-palette-pane" aria-label="Actions palette">
-  <div class="vm-palette-sources" aria-label="MCP source">
-    <label class="vm-palette-sources-label" for="vm-source-select">Source</label>
-    <select
-      id="vm-source-select"
-      class="vm-palette-source-select dropdown"
-      bind:value={selectedSource}
-      aria-label="Select MCP source"
-    >
-      {#each sources as src (src.id)}
-        <option value={src.id}>{src.label} ({src.count})</option>
-      {/each}
-    </select>
-    <button
-      type="button"
-      class="vm-palette-source-refresh clickable-icon"
-      onclick={() => void refresh()}
-      disabled={refreshing}
-      title="Refresh MCP sources"
-      aria-label="Refresh MCP sources"
-    >
-      <span
-        class="vm-palette-refresh-icon"
-        class:is-spinning={refreshing}
-        use:lucideIcon={"refresh-cw"}
-      ></span>
-    </button>
-  </div>
-  {#if !mcpClient}
-    <div class="vm-palette-source-warning" role="status">
-      Connect to vault-memory to see more sources.
+  {#if SHOW_MCP_SOURCES}
+    <div class="vm-palette-sources" aria-label="MCP source">
+      <label class="vm-palette-sources-label" for="vm-source-select">Source</label>
+      <select
+        id="vm-source-select"
+        class="vm-palette-source-select dropdown"
+        bind:value={selectedSource}
+        aria-label="Select MCP source"
+      >
+        {#each sources as src (src.id)}
+          <option value={src.id}>{src.label} ({src.count})</option>
+        {/each}
+      </select>
+      <button
+        type="button"
+        class="vm-palette-source-refresh clickable-icon"
+        onclick={() => void refresh()}
+        disabled={refreshing}
+        title="Refresh MCP sources"
+        aria-label="Refresh MCP sources"
+      >
+        <span
+          class="vm-palette-refresh-icon"
+          class:is-spinning={refreshing}
+          use:lucideIcon={"refresh-cw"}
+        ></span>
+      </button>
     </div>
+    {#if !mcpClient}
+      <div class="vm-palette-source-warning" role="status">
+        Connect to vault-memory to see more sources.
+      </div>
+    {/if}
   {/if}
 
   <div class="vm-palette-search">
@@ -284,7 +297,7 @@
       {/each}
     {/if}
 
-    {#if visiblePeers.length > 0}
+    {#if SHOW_MCP_SOURCES && visiblePeers.length > 0}
       {@const peerCatId = `peer:${selectedSource}`}
       {@const isCollapsed = collapsedSet.has(peerCatId)}
       <section class="vm-palette-section" class:is-collapsed={isCollapsed}>
