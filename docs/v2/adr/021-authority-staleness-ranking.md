@@ -88,6 +88,40 @@ The default flip is deliberate: stale data is the most common production
 failure (cited confidently as fresh). Superseded data is the *most*
 egregious failure and gets a hard filter.
 
+### Amendment (2026-05-26) — staleness is a CURATION signal, not a relevance penalty
+
+> Maintainer feedback corrected a conceptual flaw in the original framing above.
+> The `staleness_factor = 0.5` down-rank treats an old note as *less relevant*.
+> That is wrong in the general case: **an old note is not less important — it may
+> simply be incomplete** (newer information exists elsewhere that should be folded
+> in). Age is therefore primarily a **quality / curation signal** ("this note may
+> need review"), NOT a relevance signal ("rank this lower").
+
+This amendment splits the one overloaded mechanism into two distinct concepts:
+
+| Concept | Question it answers | Effect | Default |
+|---|---|---|---|
+| **Recency bias** (opt-in) | "For *this query*, is a fresher version more relevant right now?" | Temporary rank nudge within one result set | **off** (weight 0) |
+| **Curation staleness** (new) | "Does this note need *maintenance* because newer info likely exists?" | A durable **flag** surfaced to the user, never a relevance penalty | n/a — a signal, not a filter |
+
+Revised rules:
+
+1. **The default `staleness_factor` is `1.0` (no penalty).** Past `fresh_for`, a note
+   is NOT down-ranked by default. The `0.5` down-rank becomes strictly opt-in
+   (`recency_weight > 0` or an explicit staleness-penalty config), for the narrow
+   class of queries where freshness genuinely is relevance ("current status of X").
+2. **Past `fresh_for` raises a `needs_review` curation flag**, surfaced in
+   `scoreBreakdown.curation` and as a queryable signal — feeding a future
+   vault-health / curation surface (and the learning loop in ADR-029). The note stays
+   fully findable and equally weighted in ordinary retrieval.
+3. **`superseded` is unaffected** — it remains a hard filter (it is a correctness
+   signal: the note is explicitly replaced, not merely aged).
+
+Rationale: this aligns with the project principle of *suggesting vault quality control*
+rather than silently degrading old-but-valid knowledge. It also turns staleness into a
+**learning input** (ADR-029): a note repeatedly surfaced-but-flagged is a candidate for
+the curation loop, not a candidate for demotion.
+
 ### Score transparency
 
 The `scoreBreakdown` object on each `SearchHit` gains three fields:

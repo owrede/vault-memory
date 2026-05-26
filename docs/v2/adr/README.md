@@ -39,6 +39,10 @@ See also:
 | 023 | [Contracts as MCP Resources, not just Tools](023-contracts-as-mcp-resources.md) | Proposed | 2026-05-21 | v2.x | — | mcp, resources, discovery, context-embedding, subscriptions |
 | 024 | [Contracts MUST declare failure modes](024-contract-failure-modes.md) | Proposed | 2026-05-21 | v2.x | — | contracts, hallucination, unresolved, review-required, failure-modes |
 | 025 | [Sources Registry — peer-MCP sources as first-class MCP Resources](025-sources-registry.md) | Accepted | 2026-05-25 | 8 | — | sources, peer-mcp, mcp-resources, plugin-gated-tools, palette, curation, PeerMcpRegistry |
+| 026 | [Contract as Context-Window Spec](026-contract-as-context-spec.md) | Proposed | 2026-05-26 | 9 | — | contracts, context-assembly, token-budget, ranking, process-spec, compile-brief |
+| 027 | [Verb Output Normalization (`doc_ids` invariant)](027-verb-output-normalization.md) | Proposed | 2026-05-26 | 9 | — | verbs, doc-ids, normalization, single-source-of-truth, drift-gate, real-runnable |
+| 028 | [Workflows vs. Contracts: the research/outcome split](028-workflows-vs-contracts.md) | Proposed | 2026-05-26 | v2.x | — | workflows, contracts, outcomes, actions, research-pipeline, agent-judgment, editor-split |
+| 029 | [Learning loops & the missing quality signals](029-learning-loops-quality-signals.md) | Proposed | 2026-05-26 | v2.x | — | learning, ralph-loops, quality-signals, feedback, acceptance, curation, human-in-the-loop |
 
 **ADR-007 decision summary:** Variant C palette+canvas+inspector Obsidian plugin authoring `.contract` JSON emitted as canonical Phase 6 YAML; renderer Svelte Flow rather than jsoncanvas fork (upstream renderer does not exist — see ADR-007 §Pitfall 1).
 
