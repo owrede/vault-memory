@@ -1,7 +1,8 @@
 # vault-memory — Roadmap & Genese
 
-*Wie dieses Projekt entstand, in einfacher Sprache. Fachbegriffe stehen jeweils in
-der rechten Spalte — wer sie nicht braucht, liest nur links.*
+*Wie dieses Projekt entstand, in einfacher Sprache. Die Spalte „Ziel" beschreibt den
+Zweck; die Spalte „Implementierung" nennt die technische Umsetzung samt Fachbegriffen —
+wer sie nicht braucht, liest nur links.*
 
 > Hinweis: Dies ist die **erzählende** Roadmap für Menschen. Die operative
 > Phasen-Planung liegt in [`.planning/ROADMAP.md`](.planning/ROADMAP.md).
@@ -14,7 +15,7 @@ Eine Brücke zwischen deinen Obsidian-Notizen und einer KI: Die KI konnte deine 
 **durchsuchen, lesen und kontrolliert beschreiben** — schnell und lokal auf deinem
 Rechner, ohne Cloud.
 
-| In einfacher Sprache | Fachbegriff |
+| Ziel | Implementierung |
 |---|---|
 | Findet Notizen nach *Bedeutung*, nicht nur nach Stichwort | Hybride Suche (semantisch + Stichwort + RRF-Fusion) |
 | Optionales Nachschärfen der besten Treffer | Cross-Encoder-Reranking (ONNX) |
@@ -34,7 +35,7 @@ v1 fand Dinge. v2 macht daraus einen **mitdenkenden Wissens-Assistenten**, der K
 *zusammenstellt und behält*, statt ihn bei jeder Anfrage neu zu suchen. Das adressiert
 ein bekanntes Problem: KI-Agenten entdecken bei jedem Lauf rund 85 % ihres Kontexts neu.
 
-| In einfacher Sprache | Fachbegriff |
+| Ziel | Implementierung |
 |---|---|
 | Die KI schreibt **nie heimlich** in deine Notizen — nur in ein getrenntes KI-Gedächtnis, mit Herkunftsstempel | Memory-Namespace + Provenance; un-umgehbar am DeliveryAdapter-Chokepoint |
 | Ergebnisse mit Quellenangabe statt loser Treffer | Citation-Packets; Bundles / Dossiers |
@@ -61,7 +62,7 @@ Im Verlauf der Arbeit (und durch echtes Ausprobieren) sind fünf größere Theme
 entstanden. Sie sind als Architektur-Entscheidungen festgehalten und größtenteils
 **Konzepte für die Zukunft** (v2.x / v3), nicht Teil von v2.0.0.
 
-| Thema (einfach) | Worum es geht | Status | Fachbegriff / ADR |
+| Ziel | Worum es geht | Status | Implementierung |
 |---|---|---|---|
 | **Contracts müssen wirklich laufen** | Die Recherche-Bausteine auf eine gemeinsame Sprache bringen, damit Rezepte beim echten Nutzer funktionieren | vor v2.0.0 | Verb-Output-Normalisierung; ADR-027 |
 | **Rezepte sind Kontext-Spezifikationen** | Ein Rezept liefert dem Agenten ein optimal zusammengesetztes „Sichtfenster" (Umfang, Reihenfolge, Budget) | Konzept | Context-Window-Spec; ADR-026 |
@@ -71,7 +72,7 @@ entstanden. Sie sind als Architektur-Entscheidungen festgehalten und größtente
 
 ### Zwei Querschnitt-Einsichten
 
-| In einfacher Sprache | Fachbegriff / ADR |
+| Ziel | Implementierung |
 |---|---|
 | „Alt" heißt nicht „unwichtig", sondern „prüfbedürftig" — Alter ist ein Pflege-Signal, keine Abwertung | Staleness als Curation-Signal; ADR-021 (korrigiert) |
 | Nicht jede Auswahl ist „die KI entscheidet" — manche brauchen einen mathematischen Optimierer, der aus tausenden Varianten die besten 3–12 für einen Menschen filtert | Deterministischer Optimierer (z. B. Ungarische Methode) als Quality Gate; ADR-028 |
@@ -80,7 +81,7 @@ entstanden. Sie sind als Architektur-Entscheidungen festgehalten und größtente
 
 ## 4. Wohin es geht (grobe Linie)
 
-| Meilenstein | Inhalt (einfach) | Fachbegriff |
+| Meilenstein | Ziel | Implementierung |
 |---|---|---|
 | **v2.0.0** (kurz bevor) | Sichere, quellenbelegte Wissensschicht + lauffähige Rezepte | agentic knowledge layer |
 | **v2.x** | Rezepte werden klüger: Kontext-Budgets, Lernen aus Feedback, vorberechnete Ergebnisse | Context-Spec, Learning Loops, Artifacts |
