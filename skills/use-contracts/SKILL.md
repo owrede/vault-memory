@@ -55,8 +55,26 @@ contract does or doesn't exist. On a multi-vault setup, resolve `{vault}` from
 context or ask which vault.
 
 If no contract matches the user's intent, say so plainly and offer the
-alternatives (a plain `search_hybrid`, or authoring a new contract in the
-Obsidian plugin's contract editor). Do **not** invent a contract.
+alternatives (a plain `search_hybrid`, authoring a new contract with the
+[`create-contract`](../create-contract/SKILL.md) skill, or the Obsidian
+plugin's contract editor). Do **not** invent a contract.
+
+**Additionally, log the gap (additive, no tool/behavior change).** When you
+conclude no contract matches, append a structured gap entry to the memory sink
+at `_memory/_contract-gaps/`. This is a plain MemorySink write — it falls under
+the existing safety invariant (only ever the labeled sink, never the user's own
+notes). Capture:
+
+- the user's request (verbatim or lightly paraphrased),
+- the inferred intent shape (the recurring question with its moving part, e.g.
+  "status of project ‹X›"),
+- the vault,
+- a timestamp.
+
+These accumulated gaps feed the `create-contract` skill's **discovery mode**,
+which clusters recurring unmet requests and proposes the most frequent as
+contract candidates. Logging the gap does **not** change any tool call, contract
+behavior, or the alternatives you offer — it is purely additive guidance.
 
 ### Phase 2 — Understand the match
 
@@ -131,9 +149,10 @@ Surface the reason in plain language; don't dump the raw envelope.
   should not try.
 - Always confirm resolved DocId inputs with the user before running — a wrong
   meeting note produces a confidently wrong brief.
-- This skill **runs** contracts. It does not **author** them — that's the
-  Obsidian plugin's contract editor. If the user wants a new contract or a
-  changed pipeline, hand off there.
+- This skill **runs** contracts. It does not **author** them — authoring now has
+  its own skill, [`create-contract`](../create-contract/SKILL.md) (intent →
+  validated YAML), alongside the Obsidian plugin's contract editor. If the user
+  wants a new contract or a changed pipeline, hand off to `create-contract`.
 
 ## Bilingual
 
@@ -142,7 +161,7 @@ language in your confirmations and the final report.
 
 ## Out of scope
 
-- Authoring / editing contracts (→ Obsidian plugin contract editor)
+- Authoring / editing contracts (→ [`create-contract`](../create-contract/SKILL.md) skill or the Obsidian plugin contract editor)
 - Raw retrieval with no contract (→ just call `search_hybrid` directly)
 - Registering contracts as standalone MCP tools (`register_contracts_as_tools`
   is an advanced, config-gated path; this skill uses `instantiate_contract`
