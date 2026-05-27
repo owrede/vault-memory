@@ -17,7 +17,7 @@
 set -eu
 
 REPO_RAW="https://raw.githubusercontent.com/owrede/vault-memory/main"
-SKILLS=(install-vault-memory add-vault audit-vault-health find-stale-notes triage-inbox)
+SKILLS=(install-vault-memory add-vault audit-vault-health find-stale-notes triage-inbox create-contract)
 
 # ─── Files per skill (kept in sync with the repo's skills/ tree) ─────────────
 files_for() {
@@ -27,6 +27,7 @@ files_for() {
     audit-vault-health)   echo "SKILL.md" ;;
     find-stale-notes)     echo "SKILL.md" ;;
     triage-inbox)         echo "SKILL.md" ;;
+    create-contract)      echo "SKILL.md" ;;
     *)                    echo "" ;;
   esac
 }
