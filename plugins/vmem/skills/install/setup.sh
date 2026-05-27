@@ -414,16 +414,16 @@ log ""
 
 step "0/8  Choose version"
 
-# Default to 2.0.0-rc.3 (the latest prerelease published to npm under @next).
+# Default to 2.0.0-rc.5 (the latest prerelease published to npm under @next).
 # This constant is bumped whenever a new RC is cut.
-DEFAULT_V2_VERSION="2.0.0-rc.3"
+DEFAULT_V2_VERSION="2.0.0-rc.5"
 
 SELECTED_VERSION=""
 INSTALL_MODE="npm"
 
 resolve_version() {
   case "$1" in
-    1.0.0|2.0.0-rc.1|2.0.0-rc.2|2.0.0-rc.3|2.0.0)
+    1.0.0|2.0.0-rc.1|2.0.0-rc.2|2.0.0-rc.3|2.0.0-rc.4|2.0.0-rc.5|2.0.0)
       SELECTED_VERSION="$1"
       ;;
     *)
@@ -1563,6 +1563,44 @@ EOF
   fi
 }
 
+# ─── Content skills for locally-working agents ───────────────────────────────
+#
+# The vmem marketplace plugin ships the OPERATIONAL skills (/vmem:install,
+# /vmem:health, /vmem:reindex). The CONTENT skills — the ones a local agent
+# (Claude Code / Desktop) uses to work WITH an indexed vault — live in the
+# repo's skills/ tree and are fetched here into the vault's .claude/skills/.
+# This mirrors scripts/install-skills.sh so /vmem:install is a one-stop setup:
+# after it runs, a local agent has both the contract-authoring (create-contract)
+# and contract-running (use-contracts) skills, plus the vault-maintenance set.
+#
+# Idempotent: re-fetches the current main-branch SKILL.md for each skill and
+# overwrites the local copy. User notes are never touched. A failed fetch for
+# one skill warns and continues — the CLI works regardless of skill presence.
+CONTENT_SKILLS="add-vault audit-vault-health find-stale-notes triage-inbox use-contracts create-contract"
+CONTENT_SKILLS_RAW="https://raw.githubusercontent.com/owrede/vault-memory/main/skills"
+
+install_content_skills() {
+  local skills_root="$VAULT_ROOT/.claude/skills"
+  mkdir -p "$skills_root"
+  local total=0 ok_n=0 skill dest
+  for skill in $CONTENT_SKILLS; do
+    total=$((total + 1))
+    mkdir -p "$skills_root/$skill"
+    dest="$skills_root/$skill/SKILL.md"
+    if curl -fsSL "$CONTENT_SKILLS_RAW/$skill/SKILL.md" -o "$dest"; then
+      ok_n=$((ok_n + 1))
+      info "  ✓ $skill"
+    else
+      warn "  ✗ $skill — failed to fetch SKILL.md"
+    fi
+  done
+  if [ "$ok_n" = "$total" ]; then
+    ok "Content skills installed ($ok_n) → $skills_root/"
+  else
+    warn "Content skills: $ok_n of $total installed (see above). CLI works regardless."
+  fi
+}
+
 if [ ! -d "$OBSIDIAN_DIR" ]; then
   info "Not an Obsidian vault (no .obsidian/) — skipping plugin install."
 elif [ "$SELECTED_VERSION" = "1.0.0" ]; then
@@ -1603,6 +1641,27 @@ else
     install_obsidian_plugin || warn "Plugin install failed — continuing. CLI works independently."
   else
     info "Skipped. The CLI works without the plugin; install later via the same skill."
+  fi
+fi
+
+# ─── Checkpoint 6.6: Content skills for local agents ─────────────────────────
+
+step "6.6/8  Content skills"
+
+if [ "$SELECTED_VERSION" = "1.0.0" ]; then
+  info "v1.0.0 predates the content-skill set — skipping."
+elif [ ! -d "$VAULT_ROOT" ]; then
+  info "No vault root — skipping content-skill install."
+else
+  # Non-destructive (overwrites only the fetched SKILL.md files under
+  # .claude/skills/, never user notes), so auto-yes in AUTO mode.
+  if [ "$AUTO" = "1" ] || ! have_tty; then
+    install_content_skills
+  elif confirm "Install vault-memory content skills into .claude/skills/?" \
+    "Gives a local agent the contract (create/use), vault-maintenance, and triage skills."; then
+    install_content_skills
+  else
+    info "Skipped. Install later via scripts/install-skills.sh or re-run /vmem:install."
   fi
 fi
 
