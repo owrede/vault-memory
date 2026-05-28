@@ -66,7 +66,12 @@ import { formatDocId } from "../adapters/registry.js";
 import type { SourceConnector } from "../adapters/source/types.js";
 import { queryFrontmatter } from "../frontmatter/query.js";
 import { listBacklinks } from "../graph/graph.js";
-import { type CitationPacket, displayUrlFor, toCitationPacket } from "../memory/citation-packet.js";
+import {
+  type CitationPacket,
+  displayUrlFor,
+  toCitationPacket,
+  withPropertyExtras,
+} from "../memory/citation-packet.js";
 import type { Document } from "../types.js";
 import type { Vault, VaultManager } from "../vault/index.js";
 
@@ -314,27 +319,6 @@ function findAnchorAcrossVaults(
   return matches[0] ?? null;
 }
 
-// ─── packet building ────────────────────────────────────────────────────────
-
-/**
- * Attach the denormalized `status` / `superseded_by` extras to a base
- * `CitationPacket`. Reads from the packet's REQUIRED `properties` bag
- * (`Record<string, unknown>`, always populated) — no null guards
- * needed for `properties` itself, only for the inner keys.
- *
- * Returns a fresh object; does not mutate the input packet.
- */
-function withDossierExtras<T extends CitationPacket>(
-  packet: T,
-): T & { status?: string; superseded_by?: string } {
-  const out: T & { status?: string; superseded_by?: string } = { ...packet };
-  const status = packet.properties.status;
-  if (typeof status === "string") out.status = status;
-  const supersededBy = packet.properties.superseded_by;
-  if (typeof supersededBy === "string") out.superseded_by = supersededBy;
-  return out;
-}
-
 // ─── public entry point ─────────────────────────────────────────────────────
 
 /**
@@ -387,7 +371,7 @@ export async function assembleDossier(
     // surfaces "no anchor document" honestly without exposing the race.
     return emptyResult(args);
   }
-  const anchorPacket: DossierAnchor = withDossierExtras(
+  const anchorPacket: DossierAnchor = withPropertyExtras(
     toCitationPacket(anchorDoc, displayUrlFor(anchorDocId, anchorSource)),
   );
 
@@ -427,7 +411,7 @@ export async function assembleDossier(
       linkedDoc,
       displayUrlFor(linkedDocId, anchorSource),
     );
-    const withExtras = withDossierExtras(packet);
+    const withExtras = withPropertyExtras(packet);
     // PHASE-4-WIDEN: v2.0.0 reads from the v1 wikilinks table, which
     // stores only `"wikilink"` edges. When GRA-04 introduces typed
     // edges, this hardcoded literal becomes `edge.type` and the

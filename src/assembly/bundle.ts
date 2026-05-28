@@ -77,7 +77,12 @@ import type { SourceConnector } from "../adapters/source/types.js";
 import { getAuditLog } from "../audit/audit.js";
 import { listBacklinks, listForwardLinks } from "../graph/graph.js";
 import type { EdgeType } from "../graph/graph.js";
-import { type CitationPacket, displayUrlFor, toCitationPacket } from "../memory/citation-packet.js";
+import {
+  type CitationPacket,
+  displayUrlFor,
+  toCitationPacket,
+  withPropertyExtras,
+} from "../memory/citation-packet.js";
 import { DocNotFoundError } from "./outline.js";
 import { buildOutlineTree } from "./outline.js";
 import type { OutlineNode } from "./types.js";
@@ -214,24 +219,6 @@ export interface BundleResult {
 // ─── helpers ─────────────────────────────────────────────────────────────────
 
 /**
- * Attach the denormalized `status` / `superseded_by` extras to a base
- * `CitationPacket`. Mirrors the dossier helper (`withDossierExtras`) —
- * same hydration codepath, same result shape on the wire. Reads from
- * the packet's REQUIRED `properties` bag (always populated by
- * `toCitationPacket`).
- *
- * Returns a fresh object; does not mutate the input packet.
- */
-function withBundleAnchorExtras(packet: CitationPacket): BundleAnchor {
-  const out: BundleAnchor = { ...packet };
-  const status = packet.properties.status;
-  if (typeof status === "string") out.status = status;
-  const supersededBy = packet.properties.superseded_by;
-  if (typeof supersededBy === "string") out.superseded_by = supersededBy;
-  return out;
-}
-
-/**
  * Render a `BlockNode[]` to plain text and truncate to
  * `PROPERTY_SNIPPET_MAX` chars. The `Document` block tree already
  * separates `properties` (frontmatter) from `blocks` (body), so no
@@ -339,7 +326,9 @@ export async function getDocumentBundle(
   } catch {
     throw new DocNotFoundError(args.doc_id);
   }
-  const anchorPacket: BundleAnchor = withBundleAnchorExtras(
+  // `withPropertyExtras` returns `CitationPacket & {status?; superseded_by?}`,
+  // structurally identical to `BundleAnchor`; the annotation pins the type.
+  const anchorPacket: BundleAnchor = withPropertyExtras(
     toCitationPacket(anchorDoc, displayUrlFor(docId, source)),
   );
 
