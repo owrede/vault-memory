@@ -147,6 +147,7 @@ import {
   type InstantiateDeps,
 } from "./contracts/index.js";
 import type { RegisteredTool } from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { Handler } from "./server/deps.js";
 
 const VERSION = "1.0.0";
 
@@ -994,8 +995,6 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
   // Each handler receives ALREADY-VALIDATED args (the SDK runs the Zod
   // schema before invoking us). We layer a try/catch to convert thrown
   // errors into MCP error responses, preserving the v1 error shape.
-
-  type Handler = (args: unknown) => Promise<object>;
 
   const handlers: Record<ToolName, Handler> = {
     list_vaults: async () => handleListVaults(manager),
