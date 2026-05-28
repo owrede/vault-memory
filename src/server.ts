@@ -160,6 +160,7 @@ import { makeGraphHandlers } from "./server/handlers/graph.js";
 import { makeMemoryHandlers } from "./server/handlers/memory.js";
 import { makeBriefHandlers } from "./server/handlers/brief.js";
 import { makeAssemblyHandlers } from "./server/handlers/assembly.js";
+import { makeContractsHandlers } from "./server/handlers/contracts.js";
 
 const VERSION = "1.0.0";
 
@@ -1039,109 +1040,11 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
     ...makeBriefHandlers(deps),
 
     ...makeAssemblyHandlers(deps),
-
-    // ── Phase 6 task-contract DSL (Plan 06-02 / D-A1 escape valve) ─────────
-    //
-    // Scans the per-vault contract registries and forces a sync of the
-    // dynamic MCP tool list — regardless of [contracts.auto_register_tools]
-    // (which is what makes this the explicit-control escape valve).
-    // Returns per-vault diffs so the caller can confirm what landed.
-    register_contracts_as_tools: async (a) => {
-      const p = a as { vault?: string };
-      const targetVaults = p.vault !== undefined ? [p.vault] : manager.list().map((v) => v.config.name);
-      if (p.vault !== undefined) {
-        const v = manager.list().find((vault) => vault.config.name === p.vault);
-        if (v === undefined) {
-          return { ok: false, reason: "unknown_vault", vault: p.vault };
-        }
-      }
-      const results: {
-        vault: string;
-        registered: string[];
-        unregistered: string[];
-      }[] = [];
-      const prefix = config.contracts.tool_prefix;
-      for (const vname of targetVaults) {
-        const state = contractRegistries.get(vname);
-        if (state === undefined) continue;
-        const v = manager.list().find((vault) => vault.config.name === vname);
-        if (v === undefined) continue;
-        const before = new Set(state.registered.keys());
-        // FORCED enabled:true — explicit-control escape valve (D-A1).
-        syncAutoRegistered(
-          server,
-          state.started.registry,
-          prefix,
-          state.registered,
-          { enabled: true, instantiateHandler },
-        );
-        const after = new Set(state.registered.keys());
-        results.push({
-          vault: vname,
-          registered: Array.from(after).filter((n) => !before.has(n)),
-          unregistered: Array.from(before).filter((n) => !after.has(n)),
-        });
-      }
-      if (p.vault !== undefined) {
-        const single = results[0] ?? {
-          vault: p.vault,
-          registered: [],
-          unregistered: [],
-        };
-        return { ok: true, ...single };
-      }
-      return { ok: true, vaults: results };
-    },
-
-    // ── Phase 6 task-contract DSL (Plan 06-03 / CON-05, Q-DESCRIBE) ────────
-    //
-    // Pure function over the per-vault ContractRegistry. Returns
-    // {ok:true, json_schema, summary} or one of the sealed
-    // InstantiateError reasons (`unknown_contract`, `ambiguous_vault`,
-    // `unknown_vault`). NO LLM, NO side effects.
-    describe_contract: async (a) => {
-      const p = a as { name: string; vault?: string };
-      const resolved = resolveContractVault(p.vault);
-      if (!resolved.ok) return resolved;
-      const state = contractRegistries.get(resolved.vault.config.name);
-      if (state === undefined) {
-        // Defense-in-depth: a vault without a contract registry happens
-        // only if `start_contract_registries` skipped it (no change-feed)
-        // — surface as unknown_contract for the caller.
-        return { ok: false, reason: "unknown_contract", name: p.name };
-      }
-      return describeContract(
-        { registry: state.started.registry },
-        { name: p.name },
-      );
-    },
-
-    // ── Phase 6 task-contract DSL (Plan 06-03 / CON-06) ────────────────────
-    //
-    // Replaces the Plan 06-02 stub. Routes through the per-vault deps
-    // built by `buildInstantiateDeps`. On multi-vault setups, the caller
-    // MUST pass `vault` — otherwise we return the WARNING-6
-    // `ambiguous_vault` envelope (12th reason in the closed
-    // InstantiateError union).
-    instantiate_contract: async (a) => {
-      const p = a as {
-        name: string;
-        inputs: Record<string, unknown>;
-        source_overrides?: Record<string, string>;
-        sink_overrides?: Record<string, string>;
-        vault?: string;
-      };
-      const resolved = resolveContractVault(p.vault);
-      if (!resolved.ok) return resolved;
-      return instantiateContract(buildInstantiateDeps(resolved.vault), {
-        name: p.name,
-        inputs: p.inputs,
-        ...(p.source_overrides !== undefined
-          ? { source_overrides: p.source_overrides }
-          : {}),
-        ...(p.sink_overrides !== undefined ? { sink_overrides: p.sink_overrides } : {}),
-      });
-    },
+    ...makeContractsHandlers(deps, {
+      resolveContractVault,
+      instantiateHandler,
+      buildInstantiateDeps,
+    }),
   };
 
   // Completeness gate: every ToolName must have a handler. The per-domain
