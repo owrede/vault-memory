@@ -76,5 +76,15 @@ CF_VERSION=$("$CONTEXTFIT_BIN" --version 2>/dev/null || echo 'unknown')
 ok "contextfit available: $CONTEXTFIT_BIN ($CF_VERSION)"
 echo "CONTEXTFIT_BIN=$CONTEXTFIT_BIN" >> "${SPIKE_DIR:-.}/results/.env"
 
+# 7. tiktoken encoding reachable? contextfit tokenizes with cl100k_base, which
+# tiktoken lazily downloads from openaipublic.blob.core.windows.net on first
+# use. Behind a restrictive proxy/firewall this 403s and ingest fails. Warm
+# it here so the failure (if any) surfaces in preflight, not mid-ingest.
+if python3 -c "import tiktoken; tiktoken.get_encoding('cl100k_base')" >/dev/null 2>&1; then
+  ok "tiktoken cl100k_base encoding available"
+else
+  fail "tiktoken cannot fetch cl100k_base encoding (blocked network?). Fix: pre-seed \$TIKTOKEN_CACHE_DIR with cl100k_base.tiktoken, or run on an unrestricted network."
+fi
+
 echo
 echo "── Preflight complete ──"

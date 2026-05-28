@@ -30,9 +30,16 @@ node -e '
   const fs = require("node:fs");
   const p = process.env.SPIKE_DIR + "/results/setup-metrics.json";
   const existing = fs.existsSync(p) ? JSON.parse(fs.readFileSync(p,"utf8")) : {};
+  // chunk count comes from the ingest manifest (no tokenizer load needed).
+  let chunks = null;
+  try {
+    const m = JSON.parse(fs.readFileSync(process.env.KB + "/ingest_manifest.json", "utf8"));
+    chunks = m?.counts?.chunks ?? null;
+  } catch {}
   existing.contextfit = {
     wallclock_ms: parseInt(process.env.WALLCLOCK_MS, 10),
     kb_bytes: parseInt(process.env.KB_BYTES, 10),
+    chunks_indexed: chunks,
     kb_path: process.env.KB,
     completed_at: new Date().toISOString(),
   };

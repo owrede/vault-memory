@@ -181,14 +181,19 @@ function runContextfit(kb, text) {
 }
 
 function parseContextfit(json) {
-  // contextfit query --json envelope: { chunks: [...], scores: [...], ... }
+  // Verified against contextfit 0.1.0 cli.py `_query_to_json` / `_chunk_to_json`:
+  //   { query, method, query_tokens, retrieved_chunks, input_token_count,
+  //     input_ids, sid_predictions, chunks: [ { rank, chunk_id, score, level,
+  //     parent_id, token_count, semantic_id, metadata, preview, tokens } ] }
+  // NOTE: score lives PER CHUNK (`chunk.score`) — there is NO top-level
+  // `scores` array. `metadata` defaults to `{ source: <file path> }`
+  // (cli.py:522 `metadata=result.get("file_meta", {"source": str(path)})`).
   const chunks = json?.chunks ?? [];
-  const scores = json?.scores ?? [];
   return chunks.map((c, idx) => ({
-    rank: idx + 1,
+    rank: c.rank ?? idx + 1,
     path: c.metadata?.source ?? c.metadata?.path ?? c.metadata?.file ?? null,
     doc_id: c.chunk_id != null ? `contextfit://${c.chunk_id}` : null,
-    score: scores[idx] ?? null,
+    score: c.score ?? null,
     score_breakdown: null,
     heading_path: c.metadata?.heading_path ?? c.metadata?.section ?? null,
     snippet: (c.preview ?? c.text ?? "").slice(0, 280),
