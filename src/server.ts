@@ -157,6 +157,7 @@ import {
 import { makeNotesHandlers, handleReadNote } from "./server/handlers/notes.js";
 import { makeSearchHandlers, handleSearchHybrid } from "./server/handlers/search.js";
 import { makeGraphHandlers } from "./server/handlers/graph.js";
+import { makeMemoryHandlers } from "./server/handlers/memory.js";
 
 const VERSION = "1.0.0";
 
@@ -1031,109 +1032,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
     ...makeNotesHandlers(deps),
     ...makeSearchHandlers(deps),
     ...makeGraphHandlers(deps),
-    // ── Phase 2 memory tools (Plan 02-04) ──────────────────────────────────
-    record_observation: async (a) => {
-      const p = a as {
-        vault: string;
-        claim: string;
-        evidence: string[];
-        confidence: "direct" | "inferred" | "uncertain";
-        type: string;
-        sink?: string;
-        properties?: Record<string, unknown>;
-      };
-      // Suppress the watcher event for the soon-to-be-written file.
-      // We don't know the exact filename yet (controller mints it), so
-      // suppress the observations/ folder path prefix; the watcher's
-      // suppression set tolerates fuzzy matches via the TTL.
-      const result = await handleRecordObservation(
-        {
-          memorySinkRegistry,
-          manager,
-          deliveryAdapterFor: (vaultName) =>
-            adapterRegistry.resolveDelivery(
-              parseSourceHandle(`obsidian-fs://${vaultName}`),
-            ),
-          sourceConnectorFor: (vaultName) =>
-            adapterRegistry.resolveSource(
-              parseSourceHandle(`obsidian-fs://${vaultName}`),
-            ),
-        },
-        p,
-      );
-      // After the write, suppress the watcher event using the minted
-      // DocId so live-indexing doesn't re-fire on our own write.
-      if (result.ok) {
-        const resource = result.doc_id.replace(
-          `obsidian-fs://${p.vault}/`,
-          "",
-        );
-        suppression.add(resource);
-      }
-      return result;
-    },
-    supersede: async (a) => {
-      const p = a as {
-        doc_id: string;
-        replacement_doc_id: string;
-        reason: string;
-      };
-      const result = await handleSupersede(
-        {
-          memorySinkRegistry,
-          manager,
-          deliveryAdapterFor: (vaultName) =>
-            adapterRegistry.resolveDelivery(
-              parseSourceHandle(`obsidian-fs://${vaultName}`),
-            ),
-          sourceConnectorFor: (vaultName) =>
-            adapterRegistry.resolveSource(
-              parseSourceHandle(`obsidian-fs://${vaultName}`),
-            ),
-        },
-        p,
-      );
-      if (result.ok) {
-        const resource = result.doc_id.replace(/^obsidian-fs:\/\/[^/]+\//, "");
-        suppression.add(resource);
-      }
-      return result;
-    },
-
-    // ── Phase 2 memory tools (Plan 02-05) ──────────────────────────────────
-    recall: async (a) => {
-      const p = a as {
-        query: string;
-        min_confidence?: "direct" | "inferred" | "uncertain";
-        types?: string[];
-        max_age_days?: number;
-        sink?: string;
-        limit?: number;
-        vaults?: string[];
-      };
-      const packets = await handleRecall(
-        {
-          memorySinkRegistry,
-          manager,
-          sourceConnectorFor: (vaultName) =>
-            adapterRegistry.resolveSource(
-              parseSourceHandle(`obsidian-fs://${vaultName}`),
-            ),
-          searchHybrid: async (input) =>
-            hybridSearch({
-              query: input.query,
-              embeddingModel: defaultModel,
-              ollama,
-              vaults: input.vaults,
-              topK: input.topK,
-              rrfK: 60,
-              includeBreakdown: false,
-            }),
-        },
-        p,
-      );
-      return { packets, count: packets.length };
-    },
+    ...makeMemoryHandlers(deps),
 
     // ── Phase 5 brief tools (Plan 05-02 / BRF-03, BRF-04) ──────────────────
     compile_brief: async (a) => {
