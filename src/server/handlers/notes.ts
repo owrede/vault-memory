@@ -20,7 +20,12 @@ import { formatDocId, parseSourceHandle } from "../../adapters/registry.js";
 import type { Document, WikilinkRef } from "../../types.js";
 import { queryFrontmatter, updateFrontmatter } from "../../frontmatter/index.js";
 import { suggestFrontmatter } from "../../schema/index.js";
-import { countWords, safeParseFrontmatter, defaultBasename, normalizeFolderHint } from "../utils.js";
+import {
+  countWords,
+  safeParseFrontmatter,
+  defaultBasename,
+  normalizeFolderHint,
+} from "../utils.js";
 import type { ToolName } from "../../tool-registry.js";
 import type { Handler, HandlerDeps } from "../deps.js";
 

@@ -17,7 +17,6 @@ import {
   ResourceTemplate,
 } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import type BetterSqlite3 from "better-sqlite3";
 import { loadConfig, configPath } from "./config/index.js";
 import {
   syncPluginTools,
@@ -27,25 +26,12 @@ import type { TriggerReindexProgress } from "./plugin-tools/trigger-reindex.js";
 import { VaultManager } from "./vault/index.js";
 import type { Vault } from "./vault/index.js";
 import { OllamaClient } from "./ollama/index.js";
-import { FtsQueries } from "./db/index.js";
-import { hybridSearch, matchesAnyGlob } from "./search/index.js";
+import { hybridSearch } from "./search/index.js";
 import { OllamaReranker, OnnxReranker } from "./rerank/index.js";
 import type { Reranker } from "./rerank/index.js";
 import { errorMessage } from "./errors/format.js";
 import { ok, errorResponse, errorResponseJson } from "./server/responses.js";
-import {
-  countWords,
-  resolveVaultTargets,
-  encodeNoteId,
-  decodeNoteId,
-  displayUrl,
-  truncateSnippet,
-  aggregateTopTags,
-  aggregateTopFrontmatterKeys,
-  safeParseFrontmatter,
-  defaultBasename,
-  normalizeFolderHint,
-} from "./server/utils.js";
+import { displayUrl } from "./server/utils.js";
 // Re-export the five utils that `src/server.test.ts` imports from "./server.js".
 export {
   encodeNoteId,
@@ -56,22 +42,10 @@ export {
 } from "./server/utils.js";
 import { homedir } from "node:os";
 import { join as joinPath } from "node:path";
-import {
-  cluster,
-  expand,
-  listBacklinks,
-  listForwardLinks,
-  findBrokenLinks,
-} from "./graph/index.js";
-import type {
-  ClusterOptions,
-  ExpandDeps,
-  ExpandDirection,
-  ExpandOptions,
-} from "./graph/index.js";
+import { cluster, expand, listBacklinks } from "./graph/index.js";
+import type { ClusterOptions, ExpandDirection, ExpandOptions } from "./graph/index.js";
 import type { EdgeType } from "./db/queries/edges.js";
-import { queryFrontmatter, updateFrontmatter } from "./frontmatter/index.js";
-import { suggestFrontmatter } from "./schema/index.js";
+import { queryFrontmatter } from "./frontmatter/index.js";
 import { ObsidianFsDelivery } from "./adapters/delivery/obsidian-fs/index.js";
 import {
   provisionSink,
@@ -95,11 +69,7 @@ import {
   type MemorySinkConfig,
 } from "./memory/index.js";
 import { RESOURCES } from "./resource-registry.js";
-import {
-  handleRecall,
-  handleRecordObservation,
-  handleSupersede,
-} from "./memory/tools/index.js";
+import { handleRecall } from "./memory/tools/index.js";
 import {
   BriefStalenessDaemon,
   handleCompileBrief,
@@ -108,21 +78,12 @@ import {
 } from "./brief/index.js";
 import { searchSections } from "./assembly/search-sections.js";
 import { DocNotFoundError, getOutline } from "./assembly/outline.js";
-import { assembleDossier, getDocumentBundle } from "./assembly/index.js";
-import { getAuditLog, getIndexRuns } from "./audit/index.js";
 import {
   ObsidianFsChangeFeed,
   SuppressionSet,
   VaultWatcher,
 } from "./adapters/change-feed/obsidian-fs/index.js";
-import {
-  catchupVault,
-  listModels,
-  startShadowIndex,
-  switchActiveModel,
-  vacuumEmbeddings,
-} from "./indexer/index.js";
-import type { Document, SearchHit, WikilinkRef } from "./types.js";
+import { catchupVault, listModels } from "./indexer/index.js";
 import { TOOL_SCHEMAS, TOOLS, buildToolSchema, type ToolName } from "./tool-registry.js";
 import {
   AdapterRegistry,
@@ -136,7 +97,6 @@ import {
   syncAutoRegistered,
   PeerMcpRegistry,
   instantiateContract,
-  describeContract,
   readListContracts,
   readListContractVerbs,
   readListSources,

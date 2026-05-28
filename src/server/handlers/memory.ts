@@ -16,7 +16,11 @@
  */
 
 import { parseSourceHandle } from "../../adapters/registry.js";
-import { handleRecall, handleRecordObservation, handleSupersede } from "../../memory/tools/index.js";
+import {
+  handleRecall,
+  handleRecordObservation,
+  handleSupersede,
+} from "../../memory/tools/index.js";
 import { hybridSearch } from "../../search/index.js";
 import type { ToolName } from "../../tool-registry.js";
 import type { Handler, HandlerDeps } from "../deps.js";

@@ -72,9 +72,7 @@ export function makeGraphHandlers(deps: HandlerDeps): Partial<Record<ToolName, H
           hops: p.hops,
           direction: p.direction,
           ...(p.edge_types !== undefined ? { edge_types: p.edge_types } : {}),
-          ...(p.filter_properties !== undefined
-            ? { filter_properties: p.filter_properties }
-            : {}),
+          ...(p.filter_properties !== undefined ? { filter_properties: p.filter_properties } : {}),
           include_superseded: p.include_superseded,
         } satisfies ExpandOptions,
       );

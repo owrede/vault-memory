@@ -87,11 +87,7 @@ export function decodeNoteId(id: string): { vault: string; path: string } {
  * The internal helper `displayUrl(registry, vault, path)` below is the
  * routing shim; it resolves the source and delegates.
  */
-export function displayUrl(
-  registry: AdapterRegistry,
-  vaultName: string,
-  notePath: string,
-): string {
+export function displayUrl(registry: AdapterRegistry, vaultName: string, notePath: string): string {
   const source = registry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`));
   const docId = formatDocId("obsidian-fs", vaultName, notePath);
   // `formatDisplayUrl` is optional on the SourceConnector interface; for

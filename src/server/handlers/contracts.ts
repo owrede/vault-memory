@@ -15,7 +15,11 @@
  * No node:path / node:fs / chokidar / gray-matter imports.
  */
 
-import { describeContract, instantiateContract, syncAutoRegistered } from "../../contracts/index.js";
+import {
+  describeContract,
+  instantiateContract,
+  syncAutoRegistered,
+} from "../../contracts/index.js";
 import type { InstantiateDeps } from "../../contracts/index.js";
 import type { Vault } from "../../vault/index.js";
 import type { ToolName } from "../../tool-registry.js";

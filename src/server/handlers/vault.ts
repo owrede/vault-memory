@@ -17,7 +17,12 @@
 
 import type { VaultManager } from "../../vault/index.js";
 import { aggregateTopTags, aggregateTopFrontmatterKeys } from "../utils.js";
-import { listModels, startShadowIndex, switchActiveModel, vacuumEmbeddings } from "../../indexer/index.js";
+import {
+  listModels,
+  startShadowIndex,
+  switchActiveModel,
+  vacuumEmbeddings,
+} from "../../indexer/index.js";
 import { getAuditLog, getIndexRuns } from "../../audit/index.js";
 import type { ToolName } from "../../tool-registry.js";
 import type { Handler, HandlerDeps } from "../deps.js";

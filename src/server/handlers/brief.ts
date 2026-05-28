@@ -20,7 +20,8 @@ import type { ToolName } from "../../tool-registry.js";
 import type { Handler, HandlerDeps } from "../deps.js";
 
 export function makeBriefHandlers(deps: HandlerDeps): Partial<Record<ToolName, Handler>> {
-  const { manager, ollama, adapterRegistry, suppression, memorySinkRegistry, server, config } = deps;
+  const { manager, ollama, adapterRegistry, suppression, memorySinkRegistry, server, config } =
+    deps;
   return {
     // ── Phase 5 brief tools (Plan 05-02 / BRF-03, BRF-04) ──────────────────
     compile_brief: async (a) => {
