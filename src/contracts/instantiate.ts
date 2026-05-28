@@ -74,6 +74,7 @@ import type { MemorySinkRegistry } from "../memory/registry.js";
 import type { DeliveryAdapter } from "../adapters/delivery/types.js";
 import type { Vault } from "../vault/index.js";
 import type { Document, DocId } from "../types.js";
+import { errorMessage } from "../errors/format.js";
 
 // ─────────────────────────────────────────────────────────────────────────
 // Public surface
@@ -306,7 +307,7 @@ export async function instantiateContract(
         sink: sinkHandle,
       };
     } catch (err) {
-      const cause = err instanceof Error ? err.message : String(err);
+      const cause = errorMessage(err);
       return { ok: false, reason: "write_back_failed", cause };
     }
   }
@@ -333,7 +334,7 @@ export async function instantiateContract(
       // The contract YAML's output_shape is not a Zod-parseable JSON
       // Schema. Log + skip (graceful degradation) — the contract
       // author can iterate without breaking the slice.
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       process.stderr.write(`[contracts] output_shape validation skipped: ${msg}\n`);
     }
   }
@@ -403,7 +404,7 @@ async function runStep(
     );
   } catch (err) {
     writeAuditRow(deps, contractName, step);
-    const cause = err instanceof Error ? err.message : String(err);
+    const cause = errorMessage(err);
     return {
       error: {
         ok: false,

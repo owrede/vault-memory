@@ -31,6 +31,7 @@ import { FtsQueries } from "./db/index.js";
 import { hybridSearch, matchesAnyGlob } from "./search/index.js";
 import { OllamaReranker, OnnxReranker } from "./rerank/index.js";
 import type { Reranker } from "./rerank/index.js";
+import { errorMessage } from "./errors/format.js";
 import { homedir } from "node:os";
 import { join as joinPath } from "node:path";
 import {
@@ -363,7 +364,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
           );
         }
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = errorMessage(err);
         process.stderr.write(
           `[catchup:${vault.config.name}] failed: ${message} (watcher will still start)\n`,
         );
@@ -406,7 +407,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
           });
           briefDaemons.set(vault.config.name, daemon);
         } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
+          const message = errorMessage(err);
           process.stderr.write(
             `[brief-daemon:${vault.config.name}] start failed: ${message}\n`,
           );
@@ -424,7 +425,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
       try {
         state.started.dispose();
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = errorMessage(err);
         process.stderr.write(`[contract-registry] dispose error: ${message}\n`);
       }
     }
@@ -436,7 +437,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
     try {
       await peerMcpRegistry.shutdown();
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       process.stderr.write(`[peer-mcp-registry] shutdown error: ${message}\n`);
     }
     // Phase 5 (Plan 05-03): dispose brief staleness daemons FIRST so
@@ -449,7 +450,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
       try {
         await d.shutdown();
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = errorMessage(err);
         process.stderr.write(`[brief-daemon] shutdown error: ${message}\n`);
       }
     }
@@ -1783,7 +1784,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
           if (err instanceof DocNotFoundError) {
             return errorResponseJson({ error: "doc_not_found", doc_id: err.doc_id });
           }
-          const message = err instanceof Error ? err.message : String(err);
+          const message = errorMessage(err);
           return errorResponse(message);
         }
       },
@@ -2149,7 +2150,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
           ],
         };
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = errorMessage(err);
         return {
           contents: [
             {
@@ -2191,7 +2192,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
           ],
         };
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = errorMessage(err);
         return {
           contents: [
             {
@@ -2228,7 +2229,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
           ],
         };
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = errorMessage(err);
         return {
           contents: [
             {
@@ -2274,7 +2275,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
           ],
         };
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = errorMessage(err);
         return {
           contents: [
             {
@@ -2310,7 +2311,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
   try {
     await peerMcpRegistry.start(config.contracts.mcp_clients);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     process.stderr.write(`[peer-mcp-registry] start failed: ${message}\n`);
   }
   for (const vault of manager.list()) {
@@ -2353,7 +2354,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
                   },
                 });
               } catch (err) {
-                const msg = err instanceof Error ? err.message : String(err);
+                const msg = errorMessage(err);
                 process.stderr.write(
                   `[contracts-reloaded-notify] ${vault.config.name}: ${msg}\n`,
                 );
@@ -2373,7 +2374,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
         },
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       process.stderr.write(
         `[contract-registry:${vault.config.name}] start failed: ${message}\n`,
       );
@@ -2489,7 +2490,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
   // can observe the invariant `register_memory_sinks` < `start_catchup`.
   onPhase("start_catchup");
   startCatchupAndWatchers().catch((err) => {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     process.stderr.write(`[catchup] unexpected failure: ${message}\n`);
   });
 }

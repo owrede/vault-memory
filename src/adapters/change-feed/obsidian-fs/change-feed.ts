@@ -76,6 +76,7 @@ import type { ChangeFeed, ChangeFeedCapabilities, Disposable } from "../types.js
 import { formatDocId, parseSourceHandle } from "../../registry.js";
 import { SuppressionSet } from "./suppression.js";
 import { buildChokidarOptions } from "./chokidar-config.js";
+import { errorMessage } from "../../../errors/format.js";
 
 const SCHEME = "obsidian-fs";
 
@@ -176,7 +177,7 @@ export class ObsidianFsChangeFeed implements ChangeFeed {
     watcher.on("change", (absolutePath) => this.onFsEvent(absolutePath, "update"));
     watcher.on("unlink", (absolutePath) => this.onFsEvent(absolutePath, "delete"));
     watcher.on("error", (err) => {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       this.log(`fs watcher error: ${message}`);
     });
 
@@ -221,12 +222,12 @@ export class ObsidianFsChangeFeed implements ChangeFeed {
         const result = handler(event);
         if (result && typeof (result as Promise<void>).then === "function") {
           (result as Promise<void>).catch((err: unknown) => {
-            const message = err instanceof Error ? err.message : String(err);
+            const message = errorMessage(err);
             this.log(`handler error: ${message}`);
           });
         }
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = errorMessage(err);
         this.log(`handler error: ${message}`);
       }
     }

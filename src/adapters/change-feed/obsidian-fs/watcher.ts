@@ -21,6 +21,7 @@ import { indexNote, removeNote } from "../../../indexer/index.js";
 import { DebouncedQueue, type QueueEvent } from "./queue.js";
 import type { SuppressionSet } from "./suppression.js";
 import { buildChokidarOptions } from "./chokidar-config.js";
+import { errorMessage } from "../../../errors/format.js";
 
 export interface VaultWatcherOptions {
   vault: Vault;
@@ -65,7 +66,7 @@ export class VaultWatcher {
       maxLatencyMs: 5000,
       onFlush: (event) => this.handleFlush(event),
       onError: (event, err) => {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = errorMessage(err);
         this.opts.log(`error processing ${event.path}: ${message}`);
       },
     });
@@ -82,7 +83,7 @@ export class VaultWatcher {
     this.fsWatcher.on("change", (path) => this.onFsEvent(path, "change"));
     this.fsWatcher.on("unlink", (path) => this.onFsEvent(path, "delete"));
     this.fsWatcher.on("error", (err) => {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       this.opts.log(`fs watcher error: ${message}`);
     });
 

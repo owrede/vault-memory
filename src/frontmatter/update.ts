@@ -32,6 +32,7 @@ import type { Document, DocId, SourceHandle, WikilinkRef } from "../types.js";
 import type { AdapterRegistry } from "../adapters/registry.js";
 import { formatDocId, parseSourceHandle } from "../adapters/registry.js";
 import type { MemorySinkRegistry } from "../memory/registry.js";
+import { errorMessage } from "../errors/format.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public API
@@ -302,7 +303,7 @@ export async function updateFrontmatter(input: UpdateFrontmatterInput): Promise<
   try {
     doc = await source.readDocument(docId);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     return {
       ok: false,
       reason: "note_not_found",

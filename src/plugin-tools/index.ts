@@ -50,6 +50,7 @@ import {
 } from "./source-tools.js";
 import type { SuppressionSet } from "../adapters/change-feed/obsidian-fs/suppression.js";
 import type { RuntimeConfigStore } from "./runtime-config.js";
+import { errorMessage } from "../errors/format.js";
 
 // Re-exports — consumed by server.ts wiring + tests.
 export { setRuntimeConfigTool } from "./set-runtime-config.js";
@@ -190,7 +191,7 @@ export function syncPluginTools(
               });
               return ok(result);
             } catch (err) {
-              return errorResponse(err instanceof Error ? err.message : String(err));
+              return errorResponse(errorMessage(err));
             }
           },
         ) as RegisteredTool,
@@ -213,7 +214,7 @@ export function syncPluginTools(
               const result = await resolveSecretTool.handler(validated);
               return ok(result);
             } catch (err) {
-              return errorResponse(err instanceof Error ? err.message : String(err));
+              return errorResponse(errorMessage(err));
             }
           },
         ) as RegisteredTool,
@@ -237,7 +238,7 @@ export function syncPluginTools(
               });
               return ok(result);
             } catch (err) {
-              return errorResponse(err instanceof Error ? err.message : String(err));
+              return errorResponse(errorMessage(err));
             }
           },
         ) as RegisteredTool,
@@ -263,7 +264,7 @@ export function syncPluginTools(
               });
               return ok(result);
             } catch (err) {
-              return errorResponse(err instanceof Error ? err.message : String(err));
+              return errorResponse(errorMessage(err));
             }
           },
         ) as RegisteredTool,
@@ -289,7 +290,7 @@ export function syncPluginTools(
               });
               return ok(result);
             } catch (err) {
-              return errorResponse(err instanceof Error ? err.message : String(err));
+              return errorResponse(errorMessage(err));
             }
           },
         ) as RegisteredTool,
@@ -314,7 +315,7 @@ export function syncPluginTools(
               );
               return ok(result);
             } catch (err) {
-              return errorResponse(err instanceof Error ? err.message : String(err));
+              return errorResponse(errorMessage(err));
             }
           },
         ) as RegisteredTool,
@@ -339,7 +340,7 @@ export function syncPluginTools(
               );
               return ok(result);
             } catch (err) {
-              return errorResponse(err instanceof Error ? err.message : String(err));
+              return errorResponse(errorMessage(err));
             }
           },
         ) as RegisteredTool,
@@ -364,7 +365,7 @@ export function syncPluginTools(
               );
               return ok(result);
             } catch (err) {
-              return errorResponse(err instanceof Error ? err.message : String(err));
+              return errorResponse(errorMessage(err));
             }
           },
         ) as RegisteredTool,

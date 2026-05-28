@@ -18,6 +18,7 @@
 import { randomUUID } from "node:crypto";
 import type { Vault } from "../vault/index.js";
 import type { OllamaClient } from "../ollama/index.js";
+import { errorMessage } from "../errors/format.js";
 
 export interface ShadowIndexOptions {
   vault: Vault;
@@ -143,7 +144,7 @@ export async function startShadowIndex(options: ShadowIndexOptions): Promise<Sha
       notesDeleted: 0,
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     vault.db.audit.finishRun(runId, {
       notesIndexed: 0,
       chunksCreated: chunksEmbedded,

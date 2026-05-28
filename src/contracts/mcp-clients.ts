@@ -47,6 +47,7 @@
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { errorMessage } from "../errors/format.js";
 
 /** Single `[contracts.mcp_clients.<name>]` config entry. */
 export interface PeerMcpClientConfig {
@@ -203,7 +204,7 @@ export class PeerMcpRegistry {
     try {
       e.client[Symbol.dispose]();
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       process.stderr.write(`[contracts] peer-MCP dispose error: ${msg}\n`);
     }
     this.entries.delete(name);
@@ -235,7 +236,7 @@ export class PeerMcpRegistry {
       try {
         e.client[Symbol.dispose]();
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
+        const msg = errorMessage(err);
         process.stderr.write(`[contracts] peer-MCP dispose error: ${msg}\n`);
       }
     }
@@ -262,7 +263,7 @@ export class PeerMcpRegistry {
       this.entries.set(name, entry);
       await this.primeTools(entry);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       process.stderr.write(
         `[contracts] peer-MCP client '${name}' failed to start: ${msg}\n`,
       );
@@ -290,7 +291,7 @@ export class PeerMcpRegistry {
       delete entry.error;
     } catch (err) {
       entry.status = "unreachable";
-      entry.error = err instanceof Error ? err.message : String(err);
+      entry.error = errorMessage(err);
     }
   }
 

@@ -60,6 +60,7 @@ import type { Vault } from "../vault/index.js";
 import type { DocId, Document } from "../types.js";
 import { recomputeCurrentHash } from "./source-hashes.js";
 import { releaseLock, tryAcquireLock } from "./lock.js";
+import { errorMessage } from "../errors/format.js";
 
 /** Default sink name for briefs. Mirrors compile.ts / get.ts. */
 const DEFAULT_BRIEF_SINK_NAME = "_memory/_briefs";
@@ -170,7 +171,7 @@ export class BriefStalenessDaemon {
         await this.handleEvent(event);
         vault.db.daemonState.setCursor(vault.config.name, this.now());
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = errorMessage(err);
         const payload = JSON.stringify({
           kind: "brief_staleness_error",
           vault: vault.config.name,
@@ -229,7 +230,7 @@ export class BriefStalenessDaemon {
       try {
         await this.evaluateBrief(briefId as DocId);
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = errorMessage(err);
         const payload = JSON.stringify({
           kind: "brief_staleness_error",
           vault: vault.config.name,
@@ -337,7 +338,7 @@ export class BriefStalenessDaemon {
     try {
       briefDoc = await source.readDocument(briefId);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       const payload = JSON.stringify({
         kind: "brief_staleness_error",
         vault: vault.config.name,
@@ -482,7 +483,7 @@ export class BriefStalenessDaemon {
         try {
           await this.evaluateChangedDocId(id);
         } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
+          const message = errorMessage(err);
           const vault = this.vault;
           const payload = JSON.stringify({
             kind: "brief_staleness_error",
