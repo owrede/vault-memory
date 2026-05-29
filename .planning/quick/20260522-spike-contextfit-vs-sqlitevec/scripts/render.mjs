@@ -14,11 +14,12 @@ if (!SPIKE_DIR) {
   process.exit(2);
 }
 
-const [sqlite, cf, latency, setup, queriesYaml] = await Promise.all([
+const [sqlite, cf, latency, setup, resource, queriesYaml] = await Promise.all([
   readFile(join(SPIKE_DIR, "results/sqlite-vec-raw.json"), "utf8").then(JSON.parse),
   readFile(join(SPIKE_DIR, "results/contextfit-raw.json"), "utf8").then(JSON.parse),
   readFile(join(SPIKE_DIR, "results/query-metrics.json"), "utf8").then(JSON.parse),
   readFile(join(SPIKE_DIR, "results/setup-metrics.json"), "utf8").then(JSON.parse).catch(() => ({})),
+  readFile(join(SPIKE_DIR, "results/resource-metrics.json"), "utf8").then(JSON.parse).catch(() => null),
   readFile(join(SPIKE_DIR, "queries.yaml"), "utf8"),
 ]);
 
@@ -44,16 +45,26 @@ push("- `[ ]` = irrelevant (Default — keine Markierung nötig)");
 push("");
 push("Wenn du fertig bist: `./run.sh aggregate` parst die Checkboxen und berechnet Recall@5 / MRR / P@5.");
 push("");
-push("## Setup-Metriken");
+push("## Ressourcen- & Indexing-Metriken");
 push("");
-push("| Metrik | sqlite-vec | contextfit |");
-push("|---|---|---|");
-const sqSetup = setup.sqlite_vec ?? {};
-const cfSetup = setup.contextfit ?? {};
-push(`| Ingest Wallclock (s) | ${fmt(sqSetup.wallclock_ms, "ms_to_s")} | ${fmt(cfSetup.wallclock_ms, "ms_to_s")} |`);
-push(`| Index-Storage | ${fmt(sqSetup.db_bytes, "bytes")} | ${fmt(cfSetup.kb_bytes, "bytes")} |`);
-push(`| Anzahl indexierter Notizen | ${sqSetup.notes_indexed ?? "?"} | ${cfSetup.chunks_indexed ?? "?"} |`);
-push("");
+if (resource) {
+  const r = resource;
+  push(`Hardware: ${r.hardware?.machine ?? "—"} · Embedding-Modell: ${r.hardware?.embedding_model ?? "—"}`);
+  push(`Vault: ${r.vault?.notes ?? "?"} Notizen, ${fmt(r.vault?.markdown_bytes, "bytes")} Markdown`);
+  push("");
+  push("| Metrik | sqlite-vec (BGE-M3) | contextfit (token-nativ) |");
+  push("|---|---|---|");
+  push(`| Ingest Wallclock (s) | ${fmt(r.sqlite_vec?.ingest_wallclock_ms, "ms_to_s")} | ${fmt(r.contextfit?.ingest_wallclock_ms, "ms_to_s")} |`);
+  push(`| Index-Größe | ${fmt(r.sqlite_vec?.index_bytes, "bytes")} | ${fmt(r.contextfit?.index_bytes, "bytes")} |`);
+  push(`| Peak-RSS (Prozess) | ${fmt(r.sqlite_vec?.peak_rss_bytes, "bytes")} | ${fmt(r.contextfit?.peak_rss_bytes, "bytes")} |`);
+  push(`| GPU/Modell | ${parseOllamaFootprint(r.hardware?.ollama_footprint)} | keine (CPU only) |`);
+  push(`| Chunks | ${r.sqlite_vec?.chunks ?? "?"} | ${r.contextfit?.chunks ?? "?"} |`);
+  push(`| Hardware-Pfad | ${r.sqlite_vec?.hardware_path ?? "—"} | ${r.contextfit?.hardware_path ?? "—"} |`);
+  push("");
+} else {
+  push("_(results/resource-metrics.json fehlt — `bash scripts/benchmark-resources.sh` laufen lassen)_");
+  push("");
+}
 push("## Query-Latenz");
 push("");
 push("| Metrik | sqlite-vec | contextfit |");
@@ -143,4 +154,11 @@ function truncatePath(p) {
 }
 function escape(s) {
   return s.replace(/[\n\r]+/g, " ").replace(/\s+/g, " ").trim();
+}
+function parseOllamaFootprint(s) {
+  // `ollama ps` row: NAME  ID  SIZE(e.g. "1.3 GB")  PROCESSOR(e.g. "100% GPU") ...
+  if (!s) return "Modell auf GPU";
+  const size = s.match(/(\d+(?:\.\d+)?\s*[KMG]B)/)?.[1];
+  const proc = s.match(/(\d+%\s*(?:GPU|CPU)|GPU|CPU)/)?.[1];
+  return [size, proc].filter(Boolean).join(" · ") || "Modell auf GPU";
 }

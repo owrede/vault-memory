@@ -76,6 +76,16 @@ CF_VERSION=$("$CONTEXTFIT_BIN" --version 2>/dev/null || echo 'unknown')
 ok "contextfit available: $CONTEXTFIT_BIN ($CF_VERSION)"
 echo "CONTEXTFIT_BIN=$CONTEXTFIT_BIN" >> "${SPIKE_DIR:-.}/results/.env"
 
+# The persistent query server (scripts/contextfit-server.py) must run under
+# the SAME interpreter that has contextfit installed — i.e. the venv python
+# next to the contextfit entrypoint, not the bare system python3.
+CONTEXTFIT_PY="$(dirname "$CONTEXTFIT_BIN")/python3"
+if [ ! -x "$CONTEXTFIT_PY" ]; then
+  CONTEXTFIT_PY="$(command -v python3)"
+fi
+ok "contextfit interpreter: $CONTEXTFIT_PY"
+echo "CONTEXTFIT_PY=$CONTEXTFIT_PY" >> "${SPIKE_DIR:-.}/results/.env"
+
 # 7. tiktoken encoding reachable? contextfit tokenizes with cl100k_base, which
 # tiktoken lazily downloads from openaipublic.blob.core.windows.net on first
 # use. Behind a restrictive proxy/firewall this 403s and ingest fails. Warm

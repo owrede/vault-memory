@@ -124,60 +124,150 @@ function parseEnvelope(mcpResp) {
   };
 }
 
-// ─── Backend B: contextfit CLI ───────────────────────────────────────
-async function queryContextfit(queryTexts) {
-  const KB = join(SANDBOX, "contextfit_kb");
-  console.error("  warming contextfit backend ...");
-  await runContextfit(KB, "warmup");
-
-  const out = [];
-  for (const q of queryTexts) {
-    const latencies = [];
-    let lastResult = null;
-    for (let rep = 0; rep < REPS; rep++) {
-      const t0 = performance.now();
-      const json = await runContextfit(KB, q.text);
-      const t1 = performance.now();
-      latencies.push(t1 - t0);
-      lastResult = json;
-    }
-    out.push({
-      id: q.id,
-      lang: q.lang,
-      text: q.text,
-      hits: parseContextfit(lastResult),
-      latencies_ms: latencies,
-      backend: "contextfit",
-    });
-    process.stderr.write(".");
+// ─── Backend B: contextfit via PERSISTENT query server ───────────────
+// Earlier this drove the `contextfit` CLI once per query. That made every
+// measured latency include ~0.7s of Python-interpreter startup +
+// `import contextfit` + RetrievalEngine.load() — a harness artifact, not a
+// property of token-native retrieval. We now load the engine ONCE in a
+// long-lived python server (scripts/contextfit-server.py) and stream
+// queries over stdin/stdout JSONL, exactly mirroring how vault-memory's MCP
+// server stays warm. Measured query latency now reflects the retrieval
+// algorithm, not cold-start. CONTEXTFIT_PY (the venv python) runs the
+// server; it falls back to deriving the interpreter from CONTEXTFIT_BIN's
+// directory, then to `python3`.
+function resolveContextfitPython() {
+  if (process.env.CONTEXTFIT_PY) return process.env.CONTEXTFIT_PY;
+  if (CONTEXTFIT_BIN) {
+    // venv layout: <venv>/bin/contextfit -> <venv>/bin/python3
+    const py = join(CONTEXTFIT_BIN, "..", "python3");
+    return py;
   }
-  process.stderr.write("\n");
-  return out;
+  return "python3";
 }
 
-function runContextfit(kb, text) {
-  return new Promise((resolve, reject) => {
-    const args = [
-      "--kb", kb,
-      "query", text,
-      "--top-k", String(TOP_K),
-      "--method", "hybrid",
-      "--json",
-    ];
-    const proc = spawn(CONTEXTFIT_BIN, args, { stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = "";
-    let stderr = "";
-    proc.stdout.on("data", (b) => (stdout += b));
-    proc.stderr.on("data", (b) => (stderr += b));
-    proc.on("close", (code) => {
-      if (code !== 0) return reject(new Error(`contextfit exit ${code}: ${stderr.slice(0, 400)}`));
-      try {
-        resolve(JSON.parse(stdout));
-      } catch (e) {
-        reject(new Error(`contextfit JSON parse: ${e.message} / stdout: ${stdout.slice(0,200)}`));
-      }
+class ContextfitServer {
+  constructor(kb) {
+    this.kb = kb;
+    this.proc = null;
+    this.buf = "";
+    this.queue = []; // pending {resolve, reject}
+    this.ready = null;
+  }
+
+  start() {
+    const py = resolveContextfitPython();
+    const server = join(SPIKE_DIR, "scripts/contextfit-server.py");
+    this.proc = spawn(py, [server, "--kb", this.kb], {
+      stdio: ["pipe", "pipe", "pipe"],
     });
-  });
+    this.proc.stdout.setEncoding("utf8");
+    this.proc.stderr.setEncoding("utf8");
+
+    this.proc.stdout.on("data", (chunk) => this._onStdout(chunk));
+
+    let stderrBuf = "";
+    this.ready = new Promise((resolve, reject) => {
+      this.proc.stderr.on("data", (d) => {
+        stderrBuf += d;
+        if (stderrBuf.includes("READY")) resolve();
+      });
+      this.proc.on("exit", (code) => {
+        const err = new Error(
+          `contextfit-server exited (code ${code}): ${stderrBuf.slice(-400)}`,
+        );
+        reject(err);
+        // fail any in-flight requests
+        for (const { reject: rj } of this.queue.splice(0)) rj(err);
+      });
+    });
+    return this.ready;
+  }
+
+  _onStdout(chunk) {
+    this.buf += chunk;
+    let nl;
+    while ((nl = this.buf.indexOf("\n")) >= 0) {
+      const line = this.buf.slice(0, nl).trim();
+      this.buf = this.buf.slice(nl + 1);
+      if (!line) continue;
+      const pending = this.queue.shift();
+      if (!pending) continue;
+      let parsed;
+      try {
+        parsed = JSON.parse(line);
+      } catch (e) {
+        pending.reject(new Error(`server JSON parse: ${e.message} / ${line.slice(0, 200)}`));
+        continue;
+      }
+      if (parsed.ok) pending.resolve(parsed.result);
+      else pending.reject(new Error(`contextfit query error: ${parsed.error}`));
+    }
+  }
+
+  query(text) {
+    return new Promise((resolve, reject) => {
+      this.queue.push({ resolve, reject });
+      this.proc.stdin.write(
+        JSON.stringify({ query: text, top_k: TOP_K, method: "hybrid" }) + "\n",
+      );
+    });
+  }
+
+  async stop() {
+    if (!this.proc) return;
+    try {
+      this.proc.stdin.write(JSON.stringify({ cmd: "quit" }) + "\n");
+    } catch {
+      // ignore — process may already be gone
+    }
+    await new Promise((r) => {
+      this.proc.on("exit", r);
+      setTimeout(() => {
+        try {
+          this.proc.kill();
+        } catch {
+          // ignore
+        }
+        r();
+      }, 2000);
+    });
+  }
+}
+
+async function queryContextfit(queryTexts) {
+  const KB = join(SANDBOX, "contextfit_kb");
+  const server = new ContextfitServer(KB);
+  console.error("  warming contextfit backend (loading engine once) ...");
+  await server.start();
+  await server.query("warmup"); // first real query — primes lazy postings/sid caches
+
+  const out = [];
+  try {
+    for (const q of queryTexts) {
+      const latencies = [];
+      let lastResult = null;
+      for (let rep = 0; rep < REPS; rep++) {
+        const t0 = performance.now();
+        const json = await server.query(q.text);
+        const t1 = performance.now();
+        latencies.push(t1 - t0);
+        lastResult = json;
+      }
+      out.push({
+        id: q.id,
+        lang: q.lang,
+        text: q.text,
+        hits: parseContextfit(lastResult),
+        latencies_ms: latencies,
+        backend: "contextfit",
+      });
+      process.stderr.write(".");
+    }
+    process.stderr.write("\n");
+  } finally {
+    await server.stop();
+  }
+  return out;
 }
 
 function parseContextfit(json) {

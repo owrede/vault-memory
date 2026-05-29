@@ -1,181 +1,352 @@
-# Spike Queries — contextfit vs. sqlite-vec
+# Spike Queries — contextfit vs. sqlite-vec  (v2 — DE-zentriert, erweitert)
+#
+# Der Vault (INIM-VM-TEST) ist überwiegend deutschsprachig. Daher ist das
+# Hauptset Deutsch. Eine kleine EN-Kontrollgruppe und eine DE/EN-Misch-
+# gruppe (Code-Switching: deutscher Satz mit englischem Fachterm) prüfen
+# die Sprach-Robustheit von contextfit (token-nativ, kein Embedding).
 #
 # Struktur pro Query:
 #   id:              stabile Kurz-ID (q01..qNN)
-#   lang:            en | de
+#   lang:            de | en | mixed
 #   text:            der Anfragetext
-#   intent:          Kategorisierung (decision_lookup, open_loop, person_context,
-#                    topic_summary, current_state, reference_lookup,
-#                    cross_doc, vague_advice)
-#   adversarial_for: optional — verweist auf eine Schwester-Query in anderer Sprache
-#   vault_specific:  optional, true wenn du sie selbst geschrieben hast
-#   expected_paths:  optional — Liste bekannter relevanter Notiz-Pfade,
-#                    relativ zum Vault-Root. Wenn gesetzt, wird Recall
-#                    automatisch berechnet UND zusätzlich die manuelle
-#                    Bewertung als Konsistenz-Check angeboten.
+#   intent:          decision_lookup | open_loop | person_context |
+#                    topic_summary | current_state | reference_lookup |
+#                    cross_doc | vague_advice | project_status |
+#                    meeting_recap | entity_lookup | temporal_lookup
+#   adversarial_for: optional — verweist auf eine Schwester-Query
+#   vault_specific:  optional — true wenn vault-spezifisch (mit Ground Truth)
+#   expected_paths:  optional — Liste bekannter relevanter Notiz-Pfade
+#                    (relativ zum Vault-Root). Wenn gesetzt, berechnet
+#                    aggregate.mjs OBJEKTIVEN Recall@K automatisch aus den
+#                    Treffer-Pfaden (zusätzlich zur manuellen Bewertung).
+#
+# ⚠️  expected_paths unten sind VORSCHLÄGE (von der Agent-Session aus dem
+#     Vault-Inhalt abgeleitet). Bitte prüfen/korrigieren bevor aggregate läuft.
+#     Falsche Anker → falscher Recall. Lieber leer lassen als raten.
 
 queries:
-  # ─── EN: themenagnostische Agent-Memory-Probes ─────────────────────────
-
+  # ═══ DECISION LOOKUP ═══════════════════════════════════════════════
   - id: q01
-    lang: en
-    text: "What decisions have I documented recently?"
+    lang: de
+    text: "Welche Entscheidungen habe ich in letzter Zeit dokumentiert?"
     intent: decision_lookup
-    notes: "Broad — finds all decision-type notes"
 
   - id: q02
-    lang: en
-    text: "What tasks are still open and need follow-up?"
-    intent: open_loop
-    notes: "Status filter — pending/todo/open notes"
+    lang: de
+    text: "Was wurde zur INIM Rate Card und den Tagessätzen beschlossen?"
+    intent: decision_lookup
+    vault_specific: true
+    expected_paths:
+      - "Intelligence Impact/INIM-SALES/INIM-SALES Work/Rate Card/2026-05-03 INIM Rate Card (Entwurf).md"
+      - "Intelligence Impact/INIM-SALES/INIM-SALES Work/Rate Card/2026-05-03 INIM Rate Card — Konkurrenz-Sanity-Check.md"
 
   - id: q03
-    lang: en
-    text: "Summarize what I know about my main current project"
-    intent: topic_summary
-    notes: "Vague advice — embedding-favored typically"
+    lang: de
+    text: "Welche strategischen Festlegungen gab es zur KI-Adoption bei Landmarken?"
+    intent: decision_lookup
+    vault_specific: true
+    expected_paths:
+      - "Projekte/LAG-EPIX/LAG-EPIX Outbox/2026-05-08 Rebriefing Strategische KI-Adoption für Landmarken AG.md"
 
   - id: q04
     lang: en
-    text: "Who are the key people I'm working with right now?"
-    intent: person_context
-    notes: "Cross-doc — needs to surface multiple person-pages"
-
-  - id: q05
-    lang: en
-    text: "What's the current state of my consulting engagements?"
-    intent: current_state
-    notes: "Temporal — recent over old"
-
-  - id: q06
-    lang: en
-    text: "How does retrieval-augmented generation work?"
-    intent: reference_lookup
-    notes: "Reference / technical — should hit reference-type notes"
-
-  - id: q07
-    lang: en
-    text: "What ideas have I been exploring on AI agents?"
-    intent: topic_summary
-    notes: "Mid-specificity topic — embedding/BM25 should both work"
-
-  - id: q08
-    lang: en
-    text: "What did I learn from my last client meeting?"
-    intent: person_context
-    adversarial_for: null
-    notes: "Episodic — recent meeting note"
-
-  - id: q09
-    lang: en
-    text: "What should I focus on this week?"
-    intent: vague_advice
-    notes: "Maximally vague — episode_relevance_score territory"
-
-  - id: q10
-    lang: en
-    text: "Connection between consulting work and personal research"
-    intent: cross_doc
-    notes: "Cross-doc reasoning — should surface notes from both clusters"
-
-  - id: q11
-    lang: en
-    text: "Notes mentioning pricing or rate cards"
-    intent: reference_lookup
-    notes: "Lexical-heavy — BM25 should be strong here"
-
-  - id: q12
-    lang: en
-    text: "Recent decisions about tooling or stack choices"
-    intent: decision_lookup
-    notes: "Temporal + decision — combined filter"
-
-  # ─── DE: Adversarials — selbe Intentionen, andere Vokabular ──────────
-
-  - id: q21
-    lang: de
-    text: "Welche Entscheidungen habe ich kürzlich dokumentiert?"
+    text: "What decisions have I documented recently?"
     intent: decision_lookup
     adversarial_for: q01
 
-  - id: q22
+  # ═══ OPEN LOOPS / FOLLOW-UP ════════════════════════════════════════
+  - id: q05
     lang: de
-    text: "Welche Aufgaben sind noch offen und brauchen Follow-up?"
+    text: "Welche Aufgaben sind noch offen und brauchen ein Follow-up?"
     intent: open_loop
-    adversarial_for: q02
 
-  - id: q23
+  - id: q06
+    lang: de
+    text: "Welche Aktionspunkte aus den letzten Meetings sind noch nicht erledigt?"
+    intent: open_loop
+
+  - id: q07
+    lang: mixed
+    text: "Welche Action Items sind aus dem letzten Client-Call noch offen?"
+    intent: open_loop
+    adversarial_for: q06
+    notes: "Code-Switching: 'Action Items', 'Client-Call' — typisches Vault-Vokabular"
+
+  # ═══ PERSON CONTEXT ════════════════════════════════════════════════
+  - id: q08
+    lang: de
+    text: "Mit welchen wichtigen Personen arbeite ich gerade zusammen?"
+    intent: person_context
+
+  - id: q09
+    lang: de
+    text: "Wer ist Lukas Woltery und in welchem Projekt arbeiten wir zusammen?"
+    intent: person_context
+    vault_specific: true
+    expected_paths:
+      - "Netzwerk/Personen/Lukas Woltery.md"
+
+  - id: q10
+    lang: de
+    text: "Welche Ansprechpartner habe ich bei der Landmarken AG?"
+    intent: person_context
+    vault_specific: true
+    expected_paths:
+      - "Netzwerk/Personen/Lukas Woltery.md"
+      - "Netzwerk/Clienten/Landmarken AG.md"
+
+  - id: q11
+    lang: de
+    text: "Wer war im ersten LAG-CRM-Meeting dabei?"
+    intent: person_context
+    vault_specific: true
+    expected_paths:
+      - "Projekte/LAG-CRM/LAG-CRM Meetings/2026-04-24 LAG-CRM First Meeting/Individual Notes/2026-04-24 LAG-CRM Meeting Notes - von OWR.md"
+
+  # ═══ TOPIC SUMMARY ═════════════════════════════════════════════════
+  - id: q12
     lang: de
     text: "Fasse zusammen, was ich über mein aktuelles Hauptprojekt weiß"
     intent: topic_summary
-    adversarial_for: q03
 
-  - id: q24
+  - id: q13
     lang: de
-    text: "Mit welchen wichtigen Personen arbeite ich gerade?"
-    intent: person_context
-    adversarial_for: q04
+    text: "Welche Ideen verfolge ich gerade rund um KI-Agenten?"
+    intent: topic_summary
 
-  - id: q25
+  - id: q14
+    lang: de
+    text: "Worum geht es in meinem Buchprojekt zu Agentic AI?"
+    intent: topic_summary
+    vault_specific: true
+    expected_paths:
+      - "Intelligence Impact/INIM-BOOK/INIM-BOOK.md"
+      - "Intelligence Impact/INIM-BOOK/INIM-BOOK Inbox/2026-05-09 Agentic AI – Individual vs Organisationslösung.md"
+
+  - id: q15
+    lang: mixed
+    text: "Was sind meine Kern-Insights zum Thema Agentic Orchestration?"
+    intent: topic_summary
+    vault_specific: true
+    expected_paths:
+      - "Intelligence Impact/INIM-RESEARCH/INIM-RESEARCH Inbox/Agentic Orchestration Platforms/Agentic Orchestration Platforms — Übersicht.md"
+
+  # ═══ CURRENT STATE / PROJECT STATUS ════════════════════════════════
+  - id: q16
     lang: de
     text: "Wie ist der aktuelle Stand meiner Beratungsmandate?"
     intent: current_state
-    adversarial_for: q05
 
-  - id: q26
+  - id: q17
+    lang: de
+    text: "Was ist der aktuelle Status des LAG-EPIX Projekts?"
+    intent: project_status
+    vault_specific: true
+    expected_paths:
+      - "Projekte/LAG-EPIX/LAG-EPIX.md"
+
+  - id: q18
+    lang: de
+    text: "Welche aktiven Projekte habe ich gerade?"
+    intent: project_status
+    vault_specific: true
+    expected_paths:
+      - "Projekte/Projekte.md"
+      - "Projekte/LAG-EPIX/LAG-EPIX.md"
+      - "Projekte/LAG-CRM/LAG-CRM.md"
+
+  - id: q19
+    lang: mixed
+    text: "Was ist der Status meiner Consulting Engagements bei Landmarken?"
+    intent: current_state
+    adversarial_for: q16
+    notes: "Code-Switching: 'Consulting Engagements'"
+
+  # ═══ REFERENCE / LEXICAL LOOKUP ════════════════════════════════════
+  - id: q20
+    lang: de
+    text: "Notizen zu Preisen, Tagessätzen oder Honoraren"
+    intent: reference_lookup
+    notes: "Lexikalisch — BM25 sollte hier stark sein"
+
+  - id: q21
+    lang: de
+    text: "Was habe ich zur Abwehr von Prompt Injection notiert?"
+    intent: reference_lookup
+    vault_specific: true
+    expected_paths:
+      - "Intelligence Impact/INIM-RESEARCH/INIM-RESEARCH Inbox/2026-05-17 Prompt Injection Abwehr.md"
+
+  - id: q22
     lang: de
     text: "Wie funktioniert Retrieval-Augmented Generation?"
     intent: reference_lookup
-    adversarial_for: q06
     notes: "Eigenname RAG bleibt englisch — sollte beide Backends gleich treffen"
 
+  - id: q23
+    lang: en
+    text: "Notes mentioning pricing or rate cards"
+    intent: reference_lookup
+    adversarial_for: q20
+
+  # ═══ CROSS-DOC REASONING ═══════════════════════════════════════════
+  - id: q24
+    lang: de
+    text: "Welcher Zusammenhang besteht zwischen meiner Beratungsarbeit und meiner Forschung?"
+    intent: cross_doc
+
+  - id: q25
+    lang: de
+    text: "Welche Erkenntnisse aus der Forschung fließen in meine Kundenprojekte ein?"
+    intent: cross_doc
+
+  - id: q26
+    lang: de
+    text: "Wo überschneiden sich das Buchprojekt und meine Beratungsmandate thematisch?"
+    intent: cross_doc
+
+  # ═══ MEETING RECAP / EPISODIC ══════════════════════════════════════
   - id: q27
     lang: de
-    text: "Welche Ideen erkunde ich gerade rund um KI-Agenten?"
-    intent: topic_summary
-    adversarial_for: q07
-    notes: "KI vs AI — Vokabular-Mismatch zu erwartendem englischen Original"
+    text: "Was habe ich aus dem letzten Kundentermin mitgenommen?"
+    intent: meeting_recap
 
   - id: q28
     lang: de
-    text: "Was habe ich aus dem letzten Kundentermin mitgenommen?"
-    intent: person_context
-    adversarial_for: q08
+    text: "Was waren die Ergebnisse des Epix Sports KI-Demo Termins?"
+    intent: meeting_recap
+    vault_specific: true
+    expected_paths:
+      - "Projekte/LAG-EPIX/LAG-EPIX Meetings/2026-05-04 Epix Sports KI-Demo/2026-05-04 Epix Sports KI-Demo Meeting Notes.md"
 
   - id: q29
     lang: de
-    text: "Worauf sollte ich diese Woche meinen Fokus legen?"
-    intent: vague_advice
-    adversarial_for: q09
+    text: "Worüber wurde im Rebriefing-Call mit Lukas Woltery gesprochen?"
+    intent: meeting_recap
+    vault_specific: true
+    expected_paths:
+      - "Projekte/LAG-EPIX/LAG-EPIX Meetings/2026-05-18-LAG-EPIX Call mit LWO zum Rebriefing.md"
 
+  # ═══ ENTITY LOOKUP (Organisationen) ════════════════════════════════
   - id: q30
     lang: de
-    text: "Notizen zu Preisen oder Tagessätzen"
-    intent: reference_lookup
-    adversarial_for: q11
-    notes: "Tagessätze ist Vault-Vokabular — kein direktes EN-Pendant"
+    text: "Was weiß ich über die Landmarken AG als Organisation?"
+    intent: entity_lookup
+    vault_specific: true
+    expected_paths:
+      - "Netzwerk/Clienten/Landmarken AG.md"
 
-  # ─── Vault-spezifische Slots — bitte selbst ausfüllen ────────────────
-  #
-  # Mindestens 3, gerne 5. Jeweils mit `expected_paths`-Liste (relative
-  # Pfade zu Notizen, die du als korrekten Treffer kennst). Dann rechnet
-  # die Auswertung automatisch Recall@K für diese Queries.
-  #
-  # Beispiel (auskommentieren und anpassen):
-  #
-  # - id: q41
-  #   lang: de
-  #   text: "Was ist der aktuelle Status des Mandats bei <Kunde>?"
-  #   intent: current_state
-  #   vault_specific: true
-  #   expected_paths:
-  #     - "Clients/Kunde-XY/Status 2026-Q2.md"
-  #     - "Meetings/2026-05-15 Kunde-XY Steuerung.md"
-  #
-  # - id: q42
-  #   lang: en
-  #   text: "When did I start the <project-name> initiative?"
-  #   intent: temporal_lookup
-  #   vault_specific: true
-  #   expected_paths:
-  #     - "Projects/<project-name>/README.md"
+  - id: q31
+    lang: de
+    text: "Welche Förderlinien oder Förderprogramme habe ich recherchiert?"
+    intent: entity_lookup
+    vault_specific: true
+    expected_paths:
+      - "Intelligence Impact/INIM-BDEV/INIM-BDEV Work/Förderlinien/IPCEI-AI.md"
+
+  - id: q32
+    lang: de
+    text: "Welche Organisationen aus dem Aachener KI-Ökosystem sind in meinem Netzwerk?"
+    intent: entity_lookup
+    vault_specific: true
+    expected_paths:
+      - "Netzwerk/Organisationen/AI Alliance Aachen.md"
+      - "Netzwerk/Organisationen/digitalHUB Aachen.md"
+      - "Netzwerk/Organisationen/KI.NRW.md"
+
+  # ═══ VAGUE ADVICE (embedding-favored Hypothese) ════════════════════
+  - id: q33
+    lang: de
+    text: "Worauf sollte ich diese Woche meinen Fokus legen?"
+    intent: vague_advice
+
+  - id: q34
+    lang: de
+    text: "Was sind die wichtigsten offenen Baustellen in meiner Arbeit?"
+    intent: vague_advice
+
+  - id: q35
+    lang: de
+    text: "Was sollte ich als Nächstes angehen, um voranzukommen?"
+    intent: vague_advice
+
+  # ═══ TEMPORAL LOOKUP ═══════════════════════════════════════════════
+  - id: q36
+    lang: de
+    text: "Was habe ich Anfang Mai 2026 zum Buchprojekt notiert?"
+    intent: temporal_lookup
+    vault_specific: true
+    expected_paths:
+      - "Intelligence Impact/INIM-BOOK/INIM-BOOK Inbox/2026-05-09 Buchprojekt – Erkenntnisse als Rohmaterial taggen.md"
+      - "Intelligence Impact/INIM-BOOK/INIM-BOOK Inbox/2026-05-09 Agentic AI – Individual vs Organisationslösung.md"
+
+  - id: q37
+    lang: de
+    text: "Welche Meetings hatte ich Ende April 2026 mit Landmarken?"
+    intent: temporal_lookup
+    vault_specific: true
+    expected_paths:
+      - "Projekte/LAG-EPIX/LAG-EPIX Meetings/2026-04-24 LAG-EPIX First Meeting/2026-04-24 LAG-EPIX Meeting Notes.md"
+      - "Projekte/LAG-CRM/LAG-CRM Meetings/2026-04-24 LAG-CRM First Meeting/Individual Notes/2026-04-24 LAG-CRM Meeting Notes - von OWR.md"
+
+  # ═══ NATE B. JONES PRINZIPIEN (Framework-Wissen) ═══════════════════
+  - id: q38
+    lang: de
+    text: "Welche Mindset-Axiome habe ich von Nate B. Jones übernommen?"
+    intent: reference_lookup
+    vault_specific: true
+    expected_paths:
+      - "Intelligence Impact/INIM-RESEARCH/INIM-RESEARCH Work/NateBJones Prinzipien/01 Mindset-Axiome.md"
+
+  - id: q39
+    lang: de
+    text: "Welche Produktmanagement-Prinzipien habe ich dokumentiert?"
+    intent: reference_lookup
+    vault_specific: true
+    expected_paths:
+      - "Intelligence Impact/INIM-RESEARCH/INIM-RESEARCH Work/NateBJones Prinzipien/02 Produktmanagement-Prinzipien.md"
+
+  - id: q40
+    lang: mixed
+    text: "Was sind die Five Leadership Chairs nach Tibo?"
+    intent: reference_lookup
+    vault_specific: true
+    expected_paths:
+      - "Intelligence Impact/INIM-RESEARCH/INIM-RESEARCH Work/NateBJones Prinzipien/_inbox/2026-05-16 Codex Five Leadership Chairs Tibo.md"
+
+  # ═══ WEITERE DE/EN-MISCH (Code-Switching-Robustheit) ═══════════════
+  - id: q41
+    lang: mixed
+    text: "Welche Tools und Frameworks für Agent Memory habe ich evaluiert?"
+    intent: topic_summary
+    vault_specific: true
+    expected_paths:
+      - "Intelligence Impact/INIM-RESEARCH/INIM-RESEARCH Inbox/Interessante Produkte und Tools/ContextFit — Token-Native Agent Memory.md"
+
+  - id: q42
+    lang: mixed
+    text: "Was habe ich zum Thema Vector Database recherchiert?"
+    intent: reference_lookup
+    vault_specific: true
+    expected_paths:
+      - "Intelligence Impact/INIM-RESEARCH/INIM-RESEARCH Inbox/Interessante Produkte und Tools/Pinecone - The vector database to build knowledgeable AI.md"
+
+  - id: q43
+    lang: en
+    text: "Which AI agent tools and platforms have I been researching?"
+    intent: topic_summary
+    adversarial_for: q41
+    notes: "EN-Kontrolle: gleiche Intention wie q41, andere Sprache"
+
+  # ═══ NEGATIVE / ABSENZ-PROBE (sollte WENIG/NICHTS finden) ══════════
+  - id: q44
+    lang: de
+    text: "Welche Notizen habe ich zu Quantencomputing und Kryptografie?"
+    intent: reference_lookup
+    notes: "Absenz-Probe: Thema kommt im Vault kaum/nicht vor. Gutes Backend sollte hier WENIG/nichts mit hohem Score liefern (Precision-Test gegen Halluzination)."
+
+  - id: q45
+    lang: en
+    text: "What's the current state of my consulting engagements?"
+    intent: current_state
+    adversarial_for: q16
