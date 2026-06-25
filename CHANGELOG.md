@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [2.0.0] — 2026-06-25
+
 ### Fixed
 
 - **Live indexer no longer crashes on duplicate-anchor sibling sections** (`ISSUE-indexer-duplicate-anchor.md`). A note containing two sibling sections with identical heading + body produces the same content-hash anchor and collided on `UNIQUE(note_id, anchor)`, aborting the entire `vault-memory index` / `index --full` run with `SQLITE_CONSTRAINT_UNIQUE`. `SectionsQueries` now uses `INSERT OR IGNORE` and a new `insertOneResolving()` that returns the surviving row's id on collision (so `parent_id` linkage still resolves); `buildSectionsForNote` uses it inside a per-note try/catch so one pathological note can never abort the whole vault's index. Mirrors the migration-010 backfill fix already shipped. Verified end-to-end: a full index of a vault with a colliding note exits 0.
