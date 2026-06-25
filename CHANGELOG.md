@@ -20,6 +20,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Obsidian plugin self-heals when the `vault-memory` CLI isn't on the GUI PATH** (`ISSUE-install-vault-memory-skill-improvements.md` §23). When Obsidian is launched from Finder/Dock its stripped PATH can make even an absolute path to the CLI fail (the `#!/usr/bin/env node` shebang can't find `node`). On `ENOENT` the plugin now probes common dev-machine locations (homebrew, npm-global, `~/.local`, volta, asdf, nvm versioned dirs) for both the `vault-memory` script and `node`, and retries as `node <script> serve`. The not-found banner now lists every path it tried.
 
+### Changed
+
+- **Internal: `server.ts` split into per-domain handler modules.** The 3329-line request dispatcher is now `src/server/handlers/{vault,notes,search,graph,memory,brief,assembly,contracts}.ts` over a shared `HandlerDeps` bundle, with a boot-time completeness gate (every registered tool must have a handler). Pure structural refactor — no behavior or API change. Also extracted `errorMessage()` (`src/errors/format.ts`), replacing ~43 inline error-narrowing ternaries.
+
 ### Docs
 
 - **ADR-032** — duplicate section anchors are collapsed (`INSERT OR IGNORE`), not positionally suffixed; documents why suffixing would violate ADR-003 H-7 (content-hash anchors / D-05 source hashes). Closes the deferred "better fix" from the two duplicate-anchor issues.
