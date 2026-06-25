@@ -18,17 +18,8 @@
  */
 
 export { computeChunkHash, computeChunkIdFragment } from "./source-hashes.js";
-export {
-  buildSourceHashes,
-  recomputeCurrentHash,
-  type ChunkSource,
-} from "./source-hashes.js";
-export {
-  parseChunkId,
-  formatChunkId,
-  decomposeChunkId,
-  type ChunkId,
-} from "./chunk-id.js";
+export { buildSourceHashes, recomputeCurrentHash, type ChunkSource } from "./source-hashes.js";
+export { parseChunkId, formatChunkId, decomposeChunkId, type ChunkId } from "./chunk-id.js";
 
 // ── Slice 2 (Plan 05-02) — LLM ladder + body validator ──────────────
 export {
@@ -61,11 +52,7 @@ export {
   type LockAcquired,
   type LockContended,
 } from "./lock.js";
-export {
-  BriefStalenessDaemon,
-  type DaemonDeps,
-  type DaemonStartResult,
-} from "./daemon.js";
+export { BriefStalenessDaemon, type DaemonDeps, type DaemonStartResult } from "./daemon.js";
 
 // ── Slice 4 (Plan 05-04) — list_briefs MCP Resource (BRF-09) ────────
 export { readListBriefs } from "./resources.js";

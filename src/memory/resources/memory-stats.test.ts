@@ -18,11 +18,7 @@ import type { NoteRow } from "../../types.js";
 const VAULT_NAME = "atlas";
 const VAULT_PATH = "/abs/vault/atlas";
 
-function seedNote(
-  db: Database,
-  path: string,
-  frontmatter: Record<string, unknown> | null,
-): number {
+function seedNote(db: Database, path: string, frontmatter: Record<string, unknown> | null): number {
   return db.notes.upsertByPath({
     path,
     content: "x",
@@ -242,9 +238,7 @@ describe("readMemoryStats (MEM-09 / Plan 02-06)", () => {
 
     // Force `countByPathPrefix` to report MORE docs than the cap so the
     // entry shows doc_count > by_type aggregate sum.
-    vi.spyOn(db.notes, "countByPathPrefix").mockReturnValue(
-      LIST_BY_PATH_PREFIX_DEFAULT_LIMIT + 42,
-    );
+    vi.spyOn(db.notes, "countByPathPrefix").mockReturnValue(LIST_BY_PATH_PREFIX_DEFAULT_LIMIT + 42);
     // Force `listByPathPrefix` to return exactly cap rows (synthesize a
     // minimal NoteRow shape — only `frontmatter` is consumed downstream).
     const synthFm = JSON.stringify({ type: "fact", status: "active" });

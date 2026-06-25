@@ -227,8 +227,7 @@ describe("FtsQueries", () => {
       // Direct introspection of the prepared statement is awkward — we
       // run EXPLAIN QUERY PLAN against the same SQL shape and assert
       // that the planner JOINs `notes` (i.e. the filter is in SQL).
-      const sql =
-        `SELECT chunks_fts.rowid AS chunkId, bm25(chunks_fts) AS score
+      const sql = `SELECT chunks_fts.rowid AS chunkId, bm25(chunks_fts) AS score
          FROM chunks_fts
          JOIN chunks ON chunks.id = chunks_fts.rowid
          JOIN notes  ON notes.id  = chunks.note_id
@@ -236,8 +235,9 @@ describe("FtsQueries", () => {
            AND (notes.status IS NULL OR notes.status != 'superseded')
          ORDER BY bm25(chunks_fts) ASC
          LIMIT ?`;
-      const plan = db.handle.prepare(`EXPLAIN QUERY PLAN ${sql}`)
-        .all("Bildung", 10) as Array<{ detail: string }>;
+      const plan = db.handle.prepare(`EXPLAIN QUERY PLAN ${sql}`).all("Bildung", 10) as Array<{
+        detail: string;
+      }>;
       const detail = plan.map((p) => p.detail).join(" | ");
       // The plan MUST mention `notes` somewhere (proof the filter
       // ran in SQL, not in JS). It may also use the partial index by

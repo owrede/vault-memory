@@ -7,10 +7,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import {
-  ContractDocumentSchema,
-  type ContractDocumentShape,
-} from "./contract-file-schema.js";
+import { ContractDocumentSchema, type ContractDocumentShape } from "./contract-file-schema.js";
 
 const VALID_CONTRACT_BLOCK = {
   version: 1 as const,
@@ -42,9 +39,7 @@ describe("ContractDocumentSchema (D-FORMAT-SCHEMA)", () => {
   it("accepts a valid minimal `.contract` document", () => {
     const result = ContractDocumentSchema.safeParse(validDoc());
     if (!result.success) {
-      throw new Error(
-        `validDoc rejected: ${JSON.stringify(result.error.issues, null, 2)}`,
-      );
+      throw new Error(`validDoc rejected: ${JSON.stringify(result.error.issues, null, 2)}`);
     }
     expect(result.success).toBe(true);
     expect(result.data.vmFormatVersion).toBe(1);
@@ -78,10 +73,7 @@ describe("ContractDocumentSchema (D-FORMAT-SCHEMA)", () => {
   });
 
   it("rejects documents missing `editor.viewport`", () => {
-    const doc = validDoc() as { editor: Record<string, unknown> } & Record<
-      string,
-      unknown
-    >;
+    const doc = validDoc() as { editor: Record<string, unknown> } & Record<string, unknown>;
     delete doc.editor.viewport;
     const result = ContractDocumentSchema.safeParse(doc);
     expect(result.success).toBe(false);
@@ -93,10 +85,7 @@ describe("ContractDocumentSchema (D-FORMAT-SCHEMA)", () => {
 
   it("propagates Phase 6 ContractFileSchema errors for an invalid inner contract", () => {
     // `name` must be kebab-case per ContractFileSchema. "Not Kebab" is not.
-    const doc = validDoc() as { contract: Record<string, unknown> } & Record<
-      string,
-      unknown
-    >;
+    const doc = validDoc() as { contract: Record<string, unknown> } & Record<string, unknown>;
     doc.contract.name = "Not Kebab";
     const result = ContractDocumentSchema.safeParse(doc);
     expect(result.success).toBe(false);
@@ -114,10 +103,7 @@ describe("ContractDocumentSchema (D-FORMAT-SCHEMA)", () => {
   });
 
   it("accepts unknown `editor.*` keys (forward-compat C-7-6)", () => {
-    const doc = validDoc() as { editor: Record<string, unknown> } & Record<
-      string,
-      unknown
-    >;
+    const doc = validDoc() as { editor: Record<string, unknown> } & Record<string, unknown>;
     doc.editor.futureField = { some: "extension" };
     const result = ContractDocumentSchema.safeParse(doc);
     expect(result.success).toBe(true);

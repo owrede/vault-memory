@@ -47,11 +47,7 @@
 import { decomposeDocId, formatDocId, parseDocId } from "../adapters/registry.js";
 import type { SourceConnector } from "../adapters/source/types.js";
 import type { EdgeType } from "../db/queries/edges.js";
-import {
-  type CitationPacket,
-  displayUrlFor,
-  toCitationPacket,
-} from "../memory/citation-packet.js";
+import { type CitationPacket, displayUrlFor, toCitationPacket } from "../memory/citation-packet.js";
 import type { DocId, Document } from "../types.js";
 import type { Vault, VaultManager } from "../vault/index.js";
 
@@ -225,10 +221,7 @@ interface VisitedEntry {
  * provenance. Empty `seed_doc_ids` returns
  * `{documents: [], warnings: []}`.
  */
-export async function expand(
-  deps: ExpandDeps,
-  opts: ExpandOptions,
-): Promise<ExpansionResult> {
+export async function expand(deps: ExpandDeps, opts: ExpandOptions): Promise<ExpansionResult> {
   const warnings: ExpansionResult["warnings"] = [];
 
   // Empty seeds → trivial empty result. Matches Phase 3 dossier's
@@ -320,9 +313,7 @@ export async function expand(
     const directionsToWalk: Array<"forward" | "backward"> =
       direction === "both" ? ["forward", "backward"] : [direction];
     for (const dir of directionsToWalk) {
-      let frontier: Array<{ noteId: number; depth: number }> = [
-        { noteId: seed.noteId, depth: 0 },
-      ];
+      let frontier: Array<{ noteId: number; depth: number }> = [{ noteId: seed.noteId, depth: 0 }];
       while (frontier.length > 0) {
         const next: Array<{ noteId: number; depth: number }> = [];
         for (const node of frontier) {
@@ -440,8 +431,7 @@ export async function expand(
       // the seedNoteIdsInVault guard above.
       if (memoryVisited.has(noteId)) {
         const inboundSourceRow = state.vault.db.notes.getById(entry.inboundSourceNoteId);
-        const inboundIsMemory =
-          inboundSourceRow != null && isMemoryPath(inboundSourceRow.path);
+        const inboundIsMemory = inboundSourceRow != null && isMemoryPath(inboundSourceRow.path);
         if (inboundIsMemory) continue;
       }
 
@@ -494,4 +484,3 @@ export async function expand(
 
   return { documents, warnings };
 }
-

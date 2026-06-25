@@ -29,7 +29,8 @@ export interface MemoryStatsResource {
   sinks: MemoryStatsEntry[]; // vault-memory:no-telemetry-ok
 }
 
-export interface MemoryStatsEntry { // vault-memory:no-telemetry-ok
+export interface MemoryStatsEntry {
+  // vault-memory:no-telemetry-ok
   name: string;
   vault: string;
   handle: string;

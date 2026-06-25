@@ -79,9 +79,7 @@ const SuppressContractWriteArgs = z.object({
     ),
 });
 
-export type SuppressContractWriteInput = z.infer<
-  typeof SuppressContractWriteArgs
->;
+export type SuppressContractWriteInput = z.infer<typeof SuppressContractWriteArgs>;
 
 export interface SuppressContractWriteDeps {
   suppression: SuppressionSet;

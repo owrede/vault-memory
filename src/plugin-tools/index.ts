@@ -20,10 +20,7 @@
  * Zero `fs` / `path` / `yaml` / `chokidar`.
  */
 
-import type {
-  McpServer,
-  RegisteredTool,
-} from "@modelcontextprotocol/sdk/server/mcp.js";
+import type { McpServer, RegisteredTool } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import { setRuntimeConfigTool } from "./set-runtime-config.js";
 import type { SetRuntimeConfigInput } from "./set-runtime-config.js";
@@ -184,7 +181,9 @@ export function syncPluginTools(
           },
           async (args: unknown) => {
             try {
-              const validated = setRuntimeConfigTool.inputSchema.parse(args) as SetRuntimeConfigInput;
+              const validated = setRuntimeConfigTool.inputSchema.parse(
+                args,
+              ) as SetRuntimeConfigInput;
               const result = await setRuntimeConfigTool.handler(validated, {
                 store: opts.runtimeConfig,
               });
@@ -253,9 +252,7 @@ export function syncPluginTools(
           },
           async (args: unknown) => {
             try {
-              const validated = getRuntimeStatsTool.inputSchema.parse(
-                args,
-              ) as GetRuntimeStatsInput;
+              const validated = getRuntimeStatsTool.inputSchema.parse(args) as GetRuntimeStatsInput;
               const result = await getRuntimeStatsTool.handler(validated, {
                 listVaults: opts.listVaults,
                 peerMcpStatus: opts.peerMcpStatus,
@@ -279,9 +276,7 @@ export function syncPluginTools(
           },
           async (args: unknown) => {
             try {
-              const validated = triggerReindexTool.inputSchema.parse(
-                args,
-              ) as TriggerReindexInput;
+              const validated = triggerReindexTool.inputSchema.parse(args) as TriggerReindexInput;
               const result = await triggerReindexTool.handler(validated, {
                 listVaults: opts.listVaults,
                 reindexVault: opts.reindexVault,
@@ -308,10 +303,9 @@ export function syncPluginTools(
               const validated = suppressContractWriteTool.inputSchema.parse(
                 args,
               ) as SuppressContractWriteInput;
-              const result = await suppressContractWriteTool.handler(
-                validated,
-                { suppression: opts.suppression },
-              );
+              const result = await suppressContractWriteTool.handler(validated, {
+                suppression: opts.suppression,
+              });
               return ok(result);
             } catch (err) {
               return errorResponse(err instanceof Error ? err.message : String(err));
@@ -330,13 +324,8 @@ export function syncPluginTools(
           },
           async (args: unknown) => {
             try {
-              const validated = refreshSourceTool.inputSchema.parse(
-                args,
-              ) as RefreshSourceInput;
-              const result = await refreshSourceTool.handler(
-                validated,
-                opts.sourceRegistry,
-              );
+              const validated = refreshSourceTool.inputSchema.parse(args) as RefreshSourceInput;
+              const result = await refreshSourceTool.handler(validated, opts.sourceRegistry);
               return ok(result);
             } catch (err) {
               return errorResponse(err instanceof Error ? err.message : String(err));
@@ -355,13 +344,8 @@ export function syncPluginTools(
           },
           async (args: unknown) => {
             try {
-              const validated = unsetMcpClientTool.inputSchema.parse(
-                args,
-              ) as UnsetMcpClientInput;
-              const result = await unsetMcpClientTool.handler(
-                validated,
-                opts.sourceRegistry,
-              );
+              const validated = unsetMcpClientTool.inputSchema.parse(args) as UnsetMcpClientInput;
+              const result = await unsetMcpClientTool.handler(validated, opts.sourceRegistry);
               return ok(result);
             } catch (err) {
               return errorResponse(err instanceof Error ? err.message : String(err));

@@ -26,10 +26,7 @@ import type { Vault } from "../../vault/index.js";
 import { ObsidianFsDelivery } from "../../adapters/delivery/obsidian-fs/index.js";
 import { ObsidianFsSource } from "../../adapters/source/obsidian-fs/index.js";
 import { provisionSink } from "../../adapters/delivery/obsidian-fs/sentinel.js";
-import {
-  MemorySinkRegistry,
-  parseMemorySinkHandle,
-} from "../../memory/index.js";
+import { MemorySinkRegistry, parseMemorySinkHandle } from "../../memory/index.js";
 import type { MemorySink } from "../../types.js";
 import { handleRecordObservation } from "./record-observation.js";
 
@@ -55,15 +52,10 @@ async function buildFixture(): Promise<{
   };
 
   const manager = new VaultManager();
-  (manager as unknown as { vaults: Map<string, Vault> }).vaults.set(
-    VAULT_NAME,
-    vault,
-  );
+  (manager as unknown as { vaults: Map<string, Vault> }).vaults.set(VAULT_NAME, vault);
 
   const registry = new MemorySinkRegistry();
-  const sinkHandle = parseMemorySinkHandle(
-    `obsidian-fs://${VAULT_NAME}/${SINK_REL_PATH}`,
-  );
+  const sinkHandle = parseMemorySinkHandle(`obsidian-fs://${VAULT_NAME}/${SINK_REL_PATH}`);
   await registry.registerMemorySinks(
     [{ name: "default", handle: sinkHandle, contract: "default-memory-v1" }],
     {
@@ -127,7 +119,9 @@ describe("handleRecordObservation — MEM-02 controller", () => {
     // The WriteSuccess shape uses `newHash`, NOT `hash`.
     expect((res as Record<string, unknown>).hash).toBeUndefined();
     expect(res.created).toBe(true);
-    expect(res.doc_id).toMatch(/^obsidian-fs:\/\/test-vault\/_memory\/observations\/\d{4}-\d{2}-\d{2}-acme-is-migrating-to-postgres-[a-f0-9]{6}\.md$/);
+    expect(res.doc_id).toMatch(
+      /^obsidian-fs:\/\/test-vault\/_memory\/observations\/\d{4}-\d{2}-\d{2}-acme-is-migrating-to-postgres-[a-f0-9]{6}\.md$/,
+    );
 
     // File exists on disk; frontmatter carries the seven required keys.
     const resource = res.doc_id.replace(`obsidian-fs://${VAULT_NAME}/`, "");
@@ -206,9 +200,8 @@ describe("handleRecordObservation — MEM-02 controller", () => {
       expect(res.ok).toBe(true);
       if (!res.ok) return;
       const resource = res.doc_id.replace(`obsidian-fs://${VAULT_NAME}/`, "");
-      const fm = matter(
-        await fs.readFile(join(fixture.vaultDir, resource), "utf-8"),
-      ).data as Record<string, unknown>;
+      const fm = matter(await fs.readFile(join(fixture.vaultDir, resource), "utf-8"))
+        .data as Record<string, unknown>;
       // The expected sugar value for each protected key:
       const expectedSugar: Record<string, unknown> = {
         source: "agent",
@@ -250,9 +243,10 @@ describe("handleRecordObservation — MEM-02 controller", () => {
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     const resource = res.doc_id.replace(`obsidian-fs://${VAULT_NAME}/`, "");
-    const fm = matter(
-      await fs.readFile(join(fixture.vaultDir, resource), "utf-8"),
-    ).data as Record<string, unknown>;
+    const fm = matter(await fs.readFile(join(fixture.vaultDir, resource), "utf-8")).data as Record<
+      string,
+      unknown
+    >;
     expect(fm.tags).toEqual(["a", "b"]);
     expect(fm.expires_at).toBe("2030-01-01T00:00:00Z");
     expect(fm.priority).toBe(5);
@@ -305,10 +299,7 @@ describe("handleRecordObservation — MEM-02 controller", () => {
     });
     expect(first.ok).toBe(true);
     if (!first.ok) return;
-    const firstResource = first.doc_id.replace(
-      `obsidian-fs://${VAULT_NAME}/`,
-      "",
-    );
+    const firstResource = first.doc_id.replace(`obsidian-fs://${VAULT_NAME}/`, "");
     // first file is still on disk → next call with identical args MUST
     // retry to a different DocId (fresh randomBytes salt).
     const second = await handleRecordObservation(deps(), {
@@ -321,10 +312,7 @@ describe("handleRecordObservation — MEM-02 controller", () => {
     });
     expect(second.ok).toBe(true);
     if (!second.ok) return;
-    const secondResource = second.doc_id.replace(
-      `obsidian-fs://${VAULT_NAME}/`,
-      "",
-    );
+    const secondResource = second.doc_id.replace(`obsidian-fs://${VAULT_NAME}/`, "");
     expect(secondResource).not.toBe(firstResource);
     // Both files exist on disk.
     await fs.access(join(fixture.vaultDir, firstResource));
@@ -343,11 +331,11 @@ describe("handleRecordObservation — MEM-02 controller", () => {
         ({
           exists: async () => true,
           fetch: async () => null,
-        } as unknown as ReturnType<typeof deps>["sourceConnectorFor"] extends (
+        }) as unknown as ReturnType<typeof deps>["sourceConnectorFor"] extends (
           ...args: unknown[]
         ) => infer R
           ? R
-          : never),
+          : never,
     };
     const res = await handleRecordObservation(stubbedDeps, {
       vault: VAULT_NAME,
@@ -385,11 +373,11 @@ describe("handleRecordObservation — MEM-02 controller", () => {
             return callCount <= 2; // true, true, then false → 3 attempts
           },
           fetch: async () => null,
-        } as unknown as ReturnType<typeof deps>["sourceConnectorFor"] extends (
+        }) as unknown as ReturnType<typeof deps>["sourceConnectorFor"] extends (
           ...args: unknown[]
         ) => infer R
           ? R
-          : never),
+          : never,
     };
     const res = await handleRecordObservation(stubbedDeps, {
       vault: VAULT_NAME,

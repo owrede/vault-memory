@@ -112,9 +112,7 @@ const adapters: Array<[name: string, factory: () => Promise<Fixture>]> = [
 
 const SINK_REL_PATH = "_memory/";
 
-function fullyValidProps(
-  overrides: Record<string, unknown> = {},
-): Record<string, unknown> {
+function fullyValidProps(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
     source: "agent",
     confidence: "direct",
@@ -136,9 +134,7 @@ async function makeObsidianFsSinkFixture(): Promise<SinkFixture> {
     dbPath: ":memory:",
   };
   const registry = new MemorySinkRegistry();
-  const sinkHandle = parseMemorySinkHandle(
-    `obsidian-fs://conf-vault/${SINK_REL_PATH}`,
-  );
+  const sinkHandle = parseMemorySinkHandle(`obsidian-fs://conf-vault/${SINK_REL_PATH}`);
   await registry.registerMemorySinks(
     [{ name: "test", handle: sinkHandle, contract: "default-memory-v1" }],
     {
@@ -156,8 +152,7 @@ async function makeObsidianFsSinkFixture(): Promise<SinkFixture> {
     mintId: (r) => formatDocId("obsidian-fs", "conf-vault", r),
     mintSinkId: (filename) =>
       formatDocId("obsidian-fs", "conf-vault", `${SINK_REL_PATH}${filename}`),
-    mintOutsideId: (filename) =>
-      formatDocId("obsidian-fs", "conf-vault", `notes/${filename}`),
+    mintOutsideId: (filename) => formatDocId("obsidian-fs", "conf-vault", `notes/${filename}`),
     cleanup: async () => {
       db.close();
       await rm(vaultDir, { recursive: true, force: true });
@@ -172,9 +167,7 @@ async function makeStubSinkFixture(): Promise<SinkFixture> {
   // `findSinkContaining` (which is hard-coded to scheme === "obsidian-fs")
   // can perform path-based enclosure checks for the stub adapter too.
   // The stub doesn't validate DocId schemes — it just stores in a Map.
-  const sinkHandle = parseMemorySinkHandle(
-    `obsidian-fs://stub-vault/${SINK_REL_PATH}`,
-  );
+  const sinkHandle = parseMemorySinkHandle(`obsidian-fs://stub-vault/${SINK_REL_PATH}`);
   await registry.registerMemorySinks(
     [{ name: "test", handle: sinkHandle, contract: "default-memory-v1" }],
     {
@@ -192,19 +185,17 @@ async function makeStubSinkFixture(): Promise<SinkFixture> {
     mintId: (r) => formatDocId("obsidian-fs", "stub-vault", r),
     mintSinkId: (filename) =>
       formatDocId("obsidian-fs", "stub-vault", `${SINK_REL_PATH}${filename}`),
-    mintOutsideId: (filename) =>
-      formatDocId("obsidian-fs", "stub-vault", `notes/${filename}`),
+    mintOutsideId: (filename) => formatDocId("obsidian-fs", "stub-vault", `notes/${filename}`),
     cleanup: async () => {
       // Map garbage-collected with fixture.
     },
   };
 }
 
-const sinkAdapters: Array<[name: string, factory: () => Promise<SinkFixture>]> =
-  [
-    ["obsidian-fs", makeObsidianFsSinkFixture],
-    ["stub", makeStubSinkFixture],
-  ];
+const sinkAdapters: Array<[name: string, factory: () => Promise<SinkFixture>]> = [
+  ["obsidian-fs", makeObsidianFsSinkFixture],
+  ["stub", makeStubSinkFixture],
+];
 
 describe.each(adapters)("DeliveryAdapter conformance (%s)", (_name, factory) => {
   it("1. publishes honest DeliveryCapabilities (all 4 keys present)", async () => {
@@ -409,185 +400,178 @@ describe.each(adapters)("DeliveryAdapter conformance (%s)", (_name, factory) => 
 // the `default-memory-v1` contract, then drives the adapter and asserts
 // the exact `WriteConflict` shape.
 
-describe.each(sinkAdapters)(
-  "DeliveryAdapter Phase 2 guards (%s)",
-  (_name, factory) => {
-    it("11. Guard B: source:'agent' write outside any sink → agent_write_outside_sink", async () => {
-      const f = await factory();
-      try {
-        const id = f.mintOutsideId("c11.md");
-        const res = await f.adapter.write(id, {
-          properties: fullyValidProps(),
-        });
-        expect(res.ok).toBe(false);
-        if (res.ok) return;
-        expect(res.reason).toBe("agent_write_outside_sink");
-        expect(res.suggestion).toContain("record_observation");
-      } finally {
-        await f.cleanup();
-      }
-    });
+describe.each(sinkAdapters)("DeliveryAdapter Phase 2 guards (%s)", (_name, factory) => {
+  it("11. Guard B: source:'agent' write outside any sink → agent_write_outside_sink", async () => {
+    const f = await factory();
+    try {
+      const id = f.mintOutsideId("c11.md");
+      const res = await f.adapter.write(id, {
+        properties: fullyValidProps(),
+      });
+      expect(res.ok).toBe(false);
+      if (res.ok) return;
+      expect(res.reason).toBe("agent_write_outside_sink");
+      expect(res.suggestion).toContain("record_observation");
+    } finally {
+      await f.cleanup();
+    }
+  });
 
-    it("12. Guard B: source:'user' write INSIDE a sink → non_agent_write_inside_sink", async () => {
-      const f = await factory();
-      try {
-        const id = f.mintSinkId("c12.md");
-        const res = await f.adapter.write(
-          id,
-          { properties: fullyValidProps({ source: "user" }) },
-          { sink: f.sinkHandle },
-        );
-        expect(res.ok).toBe(false);
-        if (res.ok) return;
-        expect(res.reason).toBe("non_agent_write_inside_sink");
-        expect(res.sinkName).toBe("test");
-      } finally {
-        await f.cleanup();
-      }
-    });
+  it("12. Guard B: source:'user' write INSIDE a sink → non_agent_write_inside_sink", async () => {
+    const f = await factory();
+    try {
+      const id = f.mintSinkId("c12.md");
+      const res = await f.adapter.write(
+        id,
+        { properties: fullyValidProps({ source: "user" }) },
+        { sink: f.sinkHandle },
+      );
+      expect(res.ok).toBe(false);
+      if (res.ok) return;
+      expect(res.reason).toBe("non_agent_write_inside_sink");
+      expect(res.sinkName).toBe("test");
+    } finally {
+      await f.cleanup();
+    }
+  });
 
-    it("13. Guard A: missing observed_at into a sink → missing_provenance", async () => {
-      const f = await factory();
-      try {
-        const id = f.mintSinkId("c13.md");
-        const props = fullyValidProps();
-        delete props.observed_at;
-        const res = await f.adapter.write(
-          id,
-          { properties: props },
-          { sink: f.sinkHandle },
-        );
-        expect(res.ok).toBe(false);
-        if (res.ok) return;
-        expect(res.reason).toBe("missing_provenance");
-        expect(res.key).toBe("observed_at");
-        expect(res.sinkName).toBe("test");
-      } finally {
-        await f.cleanup();
-      }
-    });
+  it("13. Guard A: missing observed_at into a sink → missing_provenance", async () => {
+    const f = await factory();
+    try {
+      const id = f.mintSinkId("c13.md");
+      const props = fullyValidProps();
+      delete props.observed_at;
+      const res = await f.adapter.write(id, { properties: props }, { sink: f.sinkHandle });
+      expect(res.ok).toBe(false);
+      if (res.ok) return;
+      expect(res.reason).toBe("missing_provenance");
+      expect(res.key).toBe("observed_at");
+      expect(res.sinkName).toBe("test");
+    } finally {
+      await f.cleanup();
+    }
+  });
 
-    it("14. Guard A: confidence:'unknown' into a sink → invalid_provenance", async () => {
-      const f = await factory();
-      try {
-        const id = f.mintSinkId("c14.md");
-        const res = await f.adapter.write(
-          id,
-          { properties: fullyValidProps({ confidence: "unknown" }) },
-          { sink: f.sinkHandle },
-        );
-        expect(res.ok).toBe(false);
-        if (res.ok) return;
-        expect(res.reason).toBe("invalid_provenance");
-        expect(res.key).toBe("confidence");
-        expect(res.observedValue).toBe("unknown");
-        expect(res.sinkName).toBe("test");
-      } finally {
-        await f.cleanup();
-      }
-    });
+  it("14. Guard A: confidence:'unknown' into a sink → invalid_provenance", async () => {
+    const f = await factory();
+    try {
+      const id = f.mintSinkId("c14.md");
+      const res = await f.adapter.write(
+        id,
+        { properties: fullyValidProps({ confidence: "unknown" }) },
+        { sink: f.sinkHandle },
+      );
+      expect(res.ok).toBe(false);
+      if (res.ok) return;
+      expect(res.reason).toBe("invalid_provenance");
+      expect(res.key).toBe("confidence");
+      expect(res.observedValue).toBe("unknown");
+      expect(res.sinkName).toBe("test");
+    } finally {
+      await f.cleanup();
+    }
+  });
 
-    it("15. Guard A: status:'superseded' + empty superseded_reason → supersede_mismatch", async () => {
-      const f = await factory();
-      try {
-        const id = f.mintSinkId("c15.md");
-        const res = await f.adapter.write(
-          id,
-          {
-            properties: fullyValidProps({
-              status: "superseded",
-              superseded_by: `obsidian-fs://${f.vaultName}/${SINK_REL_PATH}prior.md`,
-              superseded_reason: "",
-            }),
-          },
-          { sink: f.sinkHandle },
-        );
-        expect(res.ok).toBe(false);
-        if (res.ok) return;
-        expect(res.reason).toBe("supersede_mismatch");
-        expect(res.key).toBe("superseded_reason");
-      } finally {
-        await f.cleanup();
-      }
-    });
+  it("15. Guard A: status:'superseded' + empty superseded_reason → supersede_mismatch", async () => {
+    const f = await factory();
+    try {
+      const id = f.mintSinkId("c15.md");
+      const res = await f.adapter.write(
+        id,
+        {
+          properties: fullyValidProps({
+            status: "superseded",
+            superseded_by: `obsidian-fs://${f.vaultName}/${SINK_REL_PATH}prior.md`,
+            superseded_reason: "",
+          }),
+        },
+        { sink: f.sinkHandle },
+      );
+      expect(res.ok).toBe(false);
+      if (res.ok) return;
+      expect(res.reason).toBe("supersede_mismatch");
+      expect(res.key).toBe("superseded_reason");
+    } finally {
+      await f.cleanup();
+    }
+  });
 
-    it("16. Guard A: fully-valid sink write succeeds (positive control)", async () => {
-      const f = await factory();
-      try {
-        const id = f.mintSinkId("c16.md");
-        const res = await f.adapter.write(
-          id,
-          { properties: fullyValidProps(), blocks: [{ kind: "paragraph", text: "ok" }] },
-          { sink: f.sinkHandle },
-        );
-        expect(res.ok).toBe(true);
-        if (!res.ok) return;
-        expect(res.doc_id).toBe(id);
-        expect(res.created).toBe(true);
-        expect(typeof res.newHash).toBe("string");
-      } finally {
-        await f.cleanup();
-      }
-    });
+  it("16. Guard A: fully-valid sink write succeeds (positive control)", async () => {
+    const f = await factory();
+    try {
+      const id = f.mintSinkId("c16.md");
+      const res = await f.adapter.write(
+        id,
+        { properties: fullyValidProps(), blocks: [{ kind: "paragraph", text: "ok" }] },
+        { sink: f.sinkHandle },
+      );
+      expect(res.ok).toBe(true);
+      if (!res.ok) return;
+      expect(res.doc_id).toBe(id);
+      expect(res.created).toBe(true);
+      expect(typeof res.newHash).toBe("string");
+    } finally {
+      await f.cleanup();
+    }
+  });
 
-    it("17. update() routes through the SAME validator (missing observed_at refused)", async () => {
-      const f = await factory();
-      try {
-        // First, a clean write to seed the document.
-        const id = f.mintSinkId("c17.md");
-        const seed = await f.adapter.write(
-          id,
-          { properties: fullyValidProps(), blocks: [{ kind: "paragraph", text: "seed" }] },
-          { sink: f.sinkHandle },
-        );
-        expect(seed.ok).toBe(true);
+  it("17. update() routes through the SAME validator (missing observed_at refused)", async () => {
+    const f = await factory();
+    try {
+      // First, a clean write to seed the document.
+      const id = f.mintSinkId("c17.md");
+      const seed = await f.adapter.write(
+        id,
+        { properties: fullyValidProps(), blocks: [{ kind: "paragraph", text: "seed" }] },
+        { sink: f.sinkHandle },
+      );
+      expect(seed.ok).toBe(true);
 
-        // Now patch with properties that omit observed_at.
-        const patchProps = fullyValidProps();
-        delete patchProps.observed_at;
-        const opts =
-          f.adapter.capabilities.hashProtected === "strong" && seed.ok
-            ? { sink: f.sinkHandle, expectedHash: seed.newHash }
-            : { sink: f.sinkHandle };
-        const res = await f.adapter.update(id, { properties: patchProps }, opts);
-        expect(res.ok).toBe(false);
-        if (res.ok) return;
-        expect(res.reason).toBe("missing_provenance");
-        expect(res.key).toBe("observed_at");
-      } finally {
-        await f.cleanup();
-      }
-    });
+      // Now patch with properties that omit observed_at.
+      const patchProps = fullyValidProps();
+      delete patchProps.observed_at;
+      const opts =
+        f.adapter.capabilities.hashProtected === "strong" && seed.ok
+          ? { sink: f.sinkHandle, expectedHash: seed.newHash }
+          : { sink: f.sinkHandle };
+      const res = await f.adapter.update(id, { properties: patchProps }, opts);
+      expect(res.ok).toBe(false);
+      if (res.ok) return;
+      expect(res.reason).toBe("missing_provenance");
+      expect(res.key).toBe("observed_at");
+    } finally {
+      await f.cleanup();
+    }
+  });
 
-    it("18. delete(sink-resolved id) → sink_write_blocked (regardless of opts.sink)", async () => {
-      const f = await factory();
-      try {
-        const id = f.mintSinkId("c18.md");
-        // Seed so the document exists; delete should refuse anyway.
-        const seed = await f.adapter.write(
-          id,
-          { properties: fullyValidProps(), blocks: [{ kind: "paragraph", text: "seed" }] },
-          { sink: f.sinkHandle },
-        );
-        expect(seed.ok).toBe(true);
+  it("18. delete(sink-resolved id) → sink_write_blocked (regardless of opts.sink)", async () => {
+    const f = await factory();
+    try {
+      const id = f.mintSinkId("c18.md");
+      // Seed so the document exists; delete should refuse anyway.
+      const seed = await f.adapter.write(
+        id,
+        { properties: fullyValidProps(), blocks: [{ kind: "paragraph", text: "seed" }] },
+        { sink: f.sinkHandle },
+      );
+      expect(seed.ok).toBe(true);
 
-        // No opts.sink — the registry's path-based enclosure check fires.
-        const opts =
-          f.adapter.capabilities.hashProtected === "strong" && seed.ok
-            ? { expectedHash: seed.newHash }
-            : undefined;
-        const res = await f.adapter.delete(id, opts);
-        expect(res.ok).toBe(false);
-        if (res.ok) return;
-        expect(res.reason).toBe("sink_write_blocked");
-        expect(res.sinkName).toBe("test");
-        expect(res.suggestion).toContain("supersede");
-      } finally {
-        await f.cleanup();
-      }
-    });
-  },
-);
+      // No opts.sink — the registry's path-based enclosure check fires.
+      const opts =
+        f.adapter.capabilities.hashProtected === "strong" && seed.ok
+          ? { expectedHash: seed.newHash }
+          : undefined;
+      const res = await f.adapter.delete(id, opts);
+      expect(res.ok).toBe(false);
+      if (res.ok) return;
+      expect(res.reason).toBe("sink_write_blocked");
+      expect(res.sinkName).toBe("test");
+      expect(res.suggestion).toContain("supersede");
+    } finally {
+      await f.cleanup();
+    }
+  });
+});
 
 // ── obsidian-fs-only: filesystem-level invariant ──────────────────────────
 //

@@ -26,10 +26,7 @@ import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { mkdtemp } from "node:fs/promises";
-import {
-  formatDocId,
-  parseSourceHandle,
-} from "../../adapters/registry.js";
+import { formatDocId, parseSourceHandle } from "../../adapters/registry.js";
 import type { DocId, Document, MemorySink, SearchHit, SourceHandle } from "../../types.js";
 import type { SourceConnector } from "../../adapters/source/types.js";
 import type { Vault } from "../../vault/index.js";
@@ -92,16 +89,10 @@ async function buildFixture(
   (manager as unknown as { vaults: Map<string, Vault> }).vaults.set(VAULT_NAME, vault);
 
   const registry = new MemorySinkRegistry();
-  const sinkHandle = parseMemorySinkHandle(
-    `obsidian-fs://${VAULT_NAME}/${SINK_REL_PATH}`,
-  );
-  const sinkConfigs = [
-    { name: "default", handle: sinkHandle, contract: "default-memory-v1" },
-  ];
+  const sinkHandle = parseMemorySinkHandle(`obsidian-fs://${VAULT_NAME}/${SINK_REL_PATH}`);
+  const sinkConfigs = [{ name: "default", handle: sinkHandle, contract: "default-memory-v1" }];
   if (opts.multipleSinks) {
-    const archiveHandle = parseMemorySinkHandle(
-      `obsidian-fs://${VAULT_NAME}/_archive/`,
-    );
+    const archiveHandle = parseMemorySinkHandle(`obsidian-fs://${VAULT_NAME}/_archive/`);
     sinkConfigs.push({
       name: "archive",
       handle: archiveHandle,
@@ -380,11 +371,7 @@ describe("handleRecall — provenance filter + recency sort pipeline", () => {
       );
       // direct-recent, hypothesis-fresh, inferred-mid — 3 docs
       expect(packets).toHaveLength(3);
-      expect(packets.map((p) => p.properties.confidence)).toEqual([
-        "direct",
-        "direct",
-        "inferred",
-      ]);
+      expect(packets.map((p) => p.properties.confidence)).toEqual(["direct", "direct", "inferred"]);
     });
   });
 
@@ -604,10 +591,7 @@ describe("handleRecall — sink scoping", () => {
         superseded_by: null,
       },
     };
-    const fx = await buildFixture(
-      [...fiveDocFixtureSpecs(), archiveSpec],
-      { multipleSinks: true },
-    );
+    const fx = await buildFixture([...fiveDocFixtureSpecs(), archiveSpec], { multipleSinks: true });
     try {
       // With sink: "default", archive doc is excluded.
       const packets = await handleRecall(

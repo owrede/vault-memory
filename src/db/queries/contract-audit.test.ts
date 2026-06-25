@@ -23,16 +23,7 @@ describe("ContractAuditQueries (Phase 6 / Q-AUD)", () => {
     }>;
     const names = cols.map((c) => c.name).sort();
     expect(names).toEqual(
-      [
-        "id",
-        "kind",
-        "contract",
-        "verb",
-        "step_alias",
-        "vault",
-        "ts",
-        "error_message",
-      ].sort(),
+      ["id", "kind", "contract", "verb", "step_alias", "vault", "ts", "error_message"].sort(),
     );
     // kind + ts are NOT NULL
     const kind = cols.find((c) => c.name === "kind");

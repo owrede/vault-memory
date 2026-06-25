@@ -99,13 +99,7 @@ describe("compileWithLlm dispatch", () => {
       throw new Error("should not be called");
     });
 
-    const res = await compileWithLlm(
-      { kind: "sampling" },
-      server,
-      ollama,
-      prompt,
-      2000,
-    );
+    const res = await compileWithLlm({ kind: "sampling" }, server, ollama, prompt, 2000);
     expect(res).toEqual({ body: "LLM body", model: "claude-test" });
     expect(createMessage).toHaveBeenCalledTimes(1);
     const params = createMessage.mock.calls[0]?.[0] as {
@@ -127,9 +121,9 @@ describe("compileWithLlm dispatch", () => {
     const server = makeServer({ sampling: true, createMessage });
     const ollama = makeOllama(async () => ({}));
 
-    await expect(
-      compileWithLlm({ kind: "sampling" }, server, ollama, prompt, 100),
-    ).rejects.toThrow(/non-text content/);
+    await expect(compileWithLlm({ kind: "sampling" }, server, ollama, prompt, 100)).rejects.toThrow(
+      /non-text content/,
+    );
   });
 
   it("tier 1: wraps createMessage throws into BriefLlmSamplingRefusedError", async () => {

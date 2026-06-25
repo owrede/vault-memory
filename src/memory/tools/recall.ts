@@ -129,10 +129,7 @@ function observedAtIso(value: unknown): string | null {
  * Retrieve memory docs as citation packets. See the file header for
  * the full pipeline; this function is the public entry point.
  */
-export async function handleRecall(
-  deps: RecallDeps,
-  args: RecallArgs,
-): Promise<CitationPacket[]> {
+export async function handleRecall(deps: RecallDeps, args: RecallArgs): Promise<CitationPacket[]> {
   // 1) Resolve sinks. Throws on unknown name — the server wraps the
   //    exception in errorResponse() at the dispatch boundary.
   const sinks = args.sink
@@ -168,9 +165,7 @@ export async function handleRecall(
     .filter((s) => allowedVaultNames.has(s.vault))
     .map((s) => ({ vault: s.vault, prefix: s.resolveToRelativePath }));
   const inSink = candidates.filter((hit) =>
-    sinkMatchers.some(
-      (m) => hit.vault === m.vault && hit.notePath.startsWith(m.prefix),
-    ),
+    sinkMatchers.some((m) => hit.vault === m.vault && hit.notePath.startsWith(m.prefix)),
   );
 
   // 5) De-duplicate by (vault, notePath) — a doc can produce multiple
@@ -205,8 +200,7 @@ export async function handleRecall(
   const now = Date.now();
   const minRank = args.min_confidence ? confidenceRank(args.min_confidence) : 0;
   const typeSet = args.types && args.types.length > 0 ? new Set(args.types) : null;
-  const maxAgeMs =
-    args.max_age_days !== undefined ? args.max_age_days * 86_400_000 : null;
+  const maxAgeMs = args.max_age_days !== undefined ? args.max_age_days * 86_400_000 : null;
 
   const filtered = docs.filter((doc) => {
     const props = (doc.properties ?? {}) as Record<string, unknown>;
@@ -256,4 +250,3 @@ export async function handleRecall(
     return toCitationPacket(doc, displayUrlFor(doc.id, source));
   });
 }
-

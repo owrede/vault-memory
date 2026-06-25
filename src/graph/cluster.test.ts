@@ -250,10 +250,22 @@ describe("cluster() — Plan 04-05 / GRA-02", () => {
     if (!r1.ok || !r2.ok) return;
     // Byte-identical cluster_id assignment.
     const sig1 = r1.clusters
-      .map((c) => `${c.cluster_id}=${c.members.map((m) => m.doc_id).sort().join(",")}`)
+      .map(
+        (c) =>
+          `${c.cluster_id}=${c.members
+            .map((m) => m.doc_id)
+            .sort()
+            .join(",")}`,
+      )
       .join("|");
     const sig2 = r2.clusters
-      .map((c) => `${c.cluster_id}=${c.members.map((m) => m.doc_id).sort().join(",")}`)
+      .map(
+        (c) =>
+          `${c.cluster_id}=${c.members
+            .map((m) => m.doc_id)
+            .sort()
+            .join(",")}`,
+      )
       .join("|");
     expect(sig1).toBe(sig2);
     // And node_count matches the input set size.
@@ -456,9 +468,7 @@ describe("cluster() — Plan 04-05 / GRA-02", () => {
         if (res.reason !== "vault_required") return;
         // Hint mentions the configured vault names so the caller can
         // pick one.
-        expect(res.configured_vaults.sort()).toEqual(
-          [VAULT_NAME, "other-vault"].sort(),
-        );
+        expect(res.configured_vaults.sort()).toEqual([VAULT_NAME, "other-vault"].sort());
         expect(res.hint).toMatch(/vault/i);
         // hybridSearch was NEVER called — the guard fires before search.
         expect(fx.hybridSearchCalls).toHaveLength(0);

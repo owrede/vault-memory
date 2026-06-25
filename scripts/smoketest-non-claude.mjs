@@ -167,21 +167,28 @@ const DEPRECATED_TOOLS = [
   "list_backlinks",
 ];
 
-// Phase 8 (plan 08-05 / REL-08): full Resources surface = 10 entries.
-// Five pre-existing (memory-sinks, memory-stats, briefs, contracts,
-// contract-verbs) + five newly promoted (vaults, models, recent, stats,
-// backlinks). The contracts/contract-verbs Resources are templated with
-// `{vault}`; the smoketest registers one vault named `test-vault`, so the
-// SDK reports them with that vault substituted on the listResources()
-// response. We assert presence of the BASE URI for templated entries via
-// startsWith()-style matching rather than equality. For non-templated
-// Resources we still want exact equality.
+// Full Resources surface = 13 entries.
+// Plan 08-05 / REL-08 brought this to 10: five pre-existing (memory-sinks,
+// memory-stats, briefs, contracts, contract-verbs) + five newly promoted
+// (vaults, models, recent, stats, backlinks). ADR-025 (commit 9277205,
+// "peer-MCP sources as first-class MCP Resources") then added three more
+// (sources, sources/{name}/tools, sources/{name}/tools/{tool}) → 13.
+// The contracts/contract-verbs Resources are templated with `{vault}`; the
+// smoketest registers one vault named `test-vault`, so the SDK reports them
+// with that vault substituted on the listResources() response. We assert
+// presence of the BASE URI for templated entries via startsWith()-style
+// matching rather than equality. For non-templated Resources we still want
+// exact equality.
 const EXPECTED_RESOURCE_URIS = [
   // Static URIs (exact match)
   "vault-memory://memory/sinks",
   "vault-memory://memory/stats",
   "vault-memory://briefs",
   "vault-memory://vaults",
+  // ADR-025 — peer-MCP sources discovery (static + templated)
+  "vault-memory://sources",
+  "vault-memory://sources/{name}/tools",
+  "vault-memory://sources/{name}/tools/{tool}",
   // Templated URIs — the SDK lists them with the template literal in
   // `uriTemplate` when no concrete instances are enumerated (list:undefined).
   "vault-memory://contracts/{vault}",
@@ -369,7 +376,7 @@ try {
       );
     } else if (missingRel08.length === 0 && extraRel08.length === 0) {
       pass(
-        `REL-08 — resources/list returned all 10 Resource URIs (5 existing + 5 promoted, plan 08-05)`,
+        `REL-08 — resources/list returned all 13 Resource URIs (5 existing + 5 promoted plan 08-05 + 3 sources ADR-025)`,
       );
     }
 
@@ -533,7 +540,11 @@ try {
         );
       } else {
         const names = (payload.contracts ?? []).map((c) => c.name);
-        const required = ["meeting-prep", "project-status", "code-review-brief"];
+        // Reference contracts in the fixture vault. `code-review-brief` was
+        // replaced by `person-dossier` in commit 0f12263 (vault-agnostic
+        // reference contracts); the server-side reference-contracts.test.ts
+        // tracks the same set.
+        const required = ["meeting-prep", "project-status", "person-dossier"];
         const missingNames = required.filter((n) => !names.includes(n));
         if (missingNames.length > 0) {
           fail(`list_contracts missing reference contracts: ${missingNames.join(", ")}`);

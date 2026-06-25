@@ -266,9 +266,7 @@ describe("Plan 02-03b: discoverMemorySinks", () => {
         contract: "default-memory-v1",
       },
     ];
-    const sinks = await discoverMemorySinks(configured, [
-      { name: "v", path: "/tmp/no-such" },
-    ]);
+    const sinks = await discoverMemorySinks(configured, [{ name: "v", path: "/tmp/no-such" }]);
     expect(sinks).toEqual(configured);
   });
 
@@ -310,13 +308,11 @@ describe("MEM-11: v1 write tools refuse memory-sink targets", () => {
     const { Database } = await import("./db/database.js");
     const { VaultManager } = await import("./vault/index.js");
     const { ObsidianFsDelivery } = await import("./adapters/delivery/obsidian-fs/index.js");
-    const { AdapterRegistry, formatDocId, parseSourceHandle } = await import(
-      "./adapters/registry.js"
-    );
+    const { AdapterRegistry, formatDocId, parseSourceHandle } =
+      await import("./adapters/registry.js");
     const { updateFrontmatter } = await import("./frontmatter/index.js");
-    const { writeNote: writeNoteInternal } = await import(
-      "./adapters/delivery/obsidian-fs/write.js"
-    );
+    const { writeNote: writeNoteInternal } =
+      await import("./adapters/delivery/obsidian-fs/write.js");
     const { promises: fs } = await import("node:fs");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
@@ -325,11 +321,7 @@ describe("MEM-11: v1 write tools refuse memory-sink targets", () => {
     try {
       // Build the v2 fixture-shape on disk: `_memory/` + sentinel.
       await fs.mkdir(join(vaultDir, "_memory"), { recursive: true });
-      await fs.writeFile(
-        join(vaultDir, "_memory", ".memory-sink"),
-        "fixture",
-        "utf-8",
-      );
+      await fs.writeFile(join(vaultDir, "_memory", ".memory-sink"), "fixture", "utf-8");
 
       const manager = new VaultManager();
       // Manually plug in a vault — VaultManager.loadAll requires an Ollama
@@ -362,25 +354,15 @@ describe("MEM-11: v1 write tools refuse memory-sink targets", () => {
         { memory_sinks: [] },
         manager as unknown as InstanceType<typeof VaultManager>,
       );
-      expect(memorySinkRegistry.listMemorySinks().map((s) => s.name)).toEqual([
-        "default",
-      ]);
+      expect(memorySinkRegistry.listMemorySinks().map((s) => s.name)).toEqual(["default"]);
 
       // Wire the adapter just like serve() does.
       const adapterRegistry = new AdapterRegistry();
-      const delivery = new ObsidianFsDelivery(
-        vault,
-        () => "test-client",
-        memorySinkRegistry,
-      );
+      const delivery = new ObsidianFsDelivery(vault, () => "test-client", memorySinkRegistry);
       adapterRegistry.registerDelivery(delivery.handle, delivery);
 
       // ── write_note ──────────────────────────────────────────────────────
-      const docId = formatDocId(
-        "obsidian-fs",
-        "v2-test-vault",
-        "_memory/observations/mem11.md",
-      );
+      const docId = formatDocId("obsidian-fs", "v2-test-vault", "_memory/observations/mem11.md");
       const writeRes = await delivery.write(docId, {
         blocks: [{ kind: "paragraph", text: "x" }],
         properties: {},
@@ -440,9 +422,8 @@ describe("MEM-11: v1 write tools refuse memory-sink targets", () => {
       expect(fmRes.suggestion).toMatch(/record_observation/);
 
       // ── delete_note ────────────────────────────────────────────────────
-      const { deleteNote: deleteNoteInternal } = await import(
-        "./adapters/delivery/obsidian-fs/write.js"
-      );
+      const { deleteNote: deleteNoteInternal } =
+        await import("./adapters/delivery/obsidian-fs/write.js");
       const delRes = await deleteNoteInternal({
         vault,
         relativePath: "_memory/observations/mem11.md",
@@ -495,10 +476,7 @@ describe("Plan 02-03b: bootstrap phase ordering", () => {
         db,
         dbPath: ":memory:",
       };
-      (manager as unknown as { vaults: Map<string, typeof vault> }).vaults.set(
-        "boot-vault",
-        vault,
-      );
+      (manager as unknown as { vaults: Map<string, typeof vault> }).vaults.set("boot-vault", vault);
 
       await setupMemorySinks(
         {
@@ -591,11 +569,7 @@ describe("Plan 02-04: MEM-02 (record_observation) + MEM-04 (supersede) end-to-en
     const vaultDir = await fs.mkdtemp(join(tmpdir(), "vm-mem02-"));
     try {
       await fs.mkdir(join(vaultDir, "_memory"), { recursive: true });
-      await fs.writeFile(
-        join(vaultDir, "_memory", ".memory-sink"),
-        "fixture",
-        "utf-8",
-      );
+      await fs.writeFile(join(vaultDir, "_memory", ".memory-sink"), "fixture", "utf-8");
 
       const manager = new VaultManager();
       const db = new Database(":memory:", "v2-test-vault");
@@ -616,11 +590,7 @@ describe("Plan 02-04: MEM-02 (record_observation) + MEM-04 (supersede) end-to-en
       );
 
       const adapterRegistry = new AdapterRegistry();
-      const delivery = new ObsidianFsDelivery(
-        vault,
-        () => "test-client",
-        memorySinkRegistry,
-      );
+      const delivery = new ObsidianFsDelivery(vault, () => "test-client", memorySinkRegistry);
       const source = new ObsidianFsSource(vault.config);
       adapterRegistry.registerDelivery(delivery.handle, delivery);
       adapterRegistry.registerSource(source.handle, source);
@@ -629,13 +599,9 @@ describe("Plan 02-04: MEM-02 (record_observation) + MEM-04 (supersede) end-to-en
         memorySinkRegistry,
         manager: manager as unknown as InstanceType<typeof VaultManager>,
         deliveryAdapterFor: (vaultName: string) =>
-          adapterRegistry.resolveDelivery(
-            parseSourceHandle(`obsidian-fs://${vaultName}`),
-          ),
+          adapterRegistry.resolveDelivery(parseSourceHandle(`obsidian-fs://${vaultName}`)),
         sourceConnectorFor: (vaultName: string) =>
-          adapterRegistry.resolveSource(
-            parseSourceHandle(`obsidian-fs://${vaultName}`),
-          ),
+          adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)),
       };
 
       // ── happy path ─────────────────────────────────────────────────────
@@ -678,7 +644,10 @@ describe("Plan 02-04: MEM-02 (record_observation) + MEM-04 (supersede) end-to-en
       expect(res2.ok).toBe(true);
       if (!res2.ok) return;
       const fm2Path = res2.doc_id.replace("obsidian-fs://v2-test-vault/", "");
-      const fm2 = matter(await fs.readFile(join(vaultDir, fm2Path), "utf-8")).data as Record<string, unknown>;
+      const fm2 = matter(await fs.readFile(join(vaultDir, fm2Path), "utf-8")).data as Record<
+        string,
+        unknown
+      >;
       expect(fm2.expires_at).toBe("2026-12-31T00:00:00Z");
 
       // ── WR-07: caller-supplied source:'user' is STRIPPED before merge ──
@@ -697,9 +666,10 @@ describe("Plan 02-04: MEM-02 (record_observation) + MEM-04 (supersede) end-to-en
       expect(res3.ok).toBe(true);
       if (!res3.ok) return;
       const fm3Path = res3.doc_id.replace("obsidian-fs://v2-test-vault/", "");
-      const fm3 = matter(
-        await fs.readFile(join(vaultDir, fm3Path), "utf-8"),
-      ).data as Record<string, unknown>;
+      const fm3 = matter(await fs.readFile(join(vaultDir, fm3Path), "utf-8")).data as Record<
+        string,
+        unknown
+      >;
       // Sugar wins for the protected `source` key.
       expect(fm3.source).toBe("agent");
 
@@ -716,10 +686,7 @@ describe("Plan 02-04: MEM-02 (record_observation) + MEM-04 (supersede) end-to-en
     const { ObsidianFsDelivery } = await import("./adapters/delivery/obsidian-fs/index.js");
     const { ObsidianFsSource } = await import("./adapters/source/obsidian-fs/index.js");
     const { AdapterRegistry, parseSourceHandle } = await import("./adapters/registry.js");
-    const {
-      handleRecordObservation,
-      handleSupersede,
-    } = await import("./memory/tools/index.js");
+    const { handleRecordObservation, handleSupersede } = await import("./memory/tools/index.js");
     const matter = (await import("gray-matter")).default;
     const { promises: fs } = await import("node:fs");
     const { tmpdir } = await import("node:os");
@@ -728,11 +695,7 @@ describe("Plan 02-04: MEM-02 (record_observation) + MEM-04 (supersede) end-to-en
     const vaultDir = await fs.mkdtemp(join(tmpdir(), "vm-mem04-"));
     try {
       await fs.mkdir(join(vaultDir, "_memory"), { recursive: true });
-      await fs.writeFile(
-        join(vaultDir, "_memory", ".memory-sink"),
-        "fixture",
-        "utf-8",
-      );
+      await fs.writeFile(join(vaultDir, "_memory", ".memory-sink"), "fixture", "utf-8");
 
       const manager = new VaultManager();
       const db = new Database(":memory:", "v2-test-vault");
@@ -753,11 +716,7 @@ describe("Plan 02-04: MEM-02 (record_observation) + MEM-04 (supersede) end-to-en
       );
 
       const adapterRegistry = new AdapterRegistry();
-      const delivery = new ObsidianFsDelivery(
-        vault,
-        () => "test-client",
-        memorySinkRegistry,
-      );
+      const delivery = new ObsidianFsDelivery(vault, () => "test-client", memorySinkRegistry);
       const source = new ObsidianFsSource(vault.config);
       adapterRegistry.registerDelivery(delivery.handle, delivery);
       adapterRegistry.registerSource(source.handle, source);
@@ -766,13 +725,9 @@ describe("Plan 02-04: MEM-02 (record_observation) + MEM-04 (supersede) end-to-en
         memorySinkRegistry,
         manager: manager as unknown as InstanceType<typeof VaultManager>,
         deliveryAdapterFor: (vaultName: string) =>
-          adapterRegistry.resolveDelivery(
-            parseSourceHandle(`obsidian-fs://${vaultName}`),
-          ),
+          adapterRegistry.resolveDelivery(parseSourceHandle(`obsidian-fs://${vaultName}`)),
         sourceConnectorFor: (vaultName: string) =>
-          adapterRegistry.resolveSource(
-            parseSourceHandle(`obsidian-fs://${vaultName}`),
-          ),
+          adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)),
       };
 
       // Record two observations.
@@ -797,17 +752,9 @@ describe("Plan 02-04: MEM-02 (record_observation) + MEM-04 (supersede) end-to-en
       expect(replRes.ok).toBe(true);
       if (!replRes.ok) return;
 
-      const replResource = replRes.doc_id.replace(
-        "obsidian-fs://v2-test-vault/",
-        "",
-      );
-      const replMtimeBefore = (
-        await fs.stat(join(vaultDir, replResource))
-      ).mtimeMs;
-      const replContentBefore = await fs.readFile(
-        join(vaultDir, replResource),
-        "utf-8",
-      );
+      const replResource = replRes.doc_id.replace("obsidian-fs://v2-test-vault/", "");
+      const replMtimeBefore = (await fs.stat(join(vaultDir, replResource))).mtimeMs;
+      const replContentBefore = await fs.readFile(join(vaultDir, replResource), "utf-8");
 
       // Supersede the OLD by the REPLACEMENT.
       const sup = await handleSupersede(deps, {
@@ -821,30 +768,23 @@ describe("Plan 02-04: MEM-02 (record_observation) + MEM-04 (supersede) end-to-en
       expect((sup as Record<string, unknown>).hash).toBeUndefined();
 
       // OLD doc reflects the supersede triple.
-      const oldResource = oldRes.doc_id.replace(
-        "obsidian-fs://v2-test-vault/",
-        "",
-      );
-      const oldFm = matter(
-        await fs.readFile(join(vaultDir, oldResource), "utf-8"),
-      ).data as Record<string, unknown>;
+      const oldResource = oldRes.doc_id.replace("obsidian-fs://v2-test-vault/", "");
+      const oldFm = matter(await fs.readFile(join(vaultDir, oldResource), "utf-8")).data as Record<
+        string,
+        unknown
+      >;
       expect(oldFm.status).toBe("superseded");
       expect(oldFm.superseded_by).toBe(replRes.doc_id);
       expect(oldFm.superseded_reason).toBe("new evidence supersedes");
 
       // REPLACEMENT doc is byte-identical to before.
-      const replContentAfter = await fs.readFile(
-        join(vaultDir, replResource),
-        "utf-8",
-      );
+      const replContentAfter = await fs.readFile(join(vaultDir, replResource), "utf-8");
       expect(replContentAfter).toBe(replContentBefore);
       const replFmAfter = matter(replContentAfter).data as Record<string, unknown>;
       expect(replFmAfter.status).toBe("active");
       expect(replFmAfter.superseded_by).toBeNull();
       expect(replFmAfter.superseded_reason).toBeUndefined();
-      const replMtimeAfter = (
-        await fs.stat(join(vaultDir, replResource))
-      ).mtimeMs;
+      const replMtimeAfter = (await fs.stat(join(vaultDir, replResource))).mtimeMs;
       expect(replMtimeAfter).toBe(replMtimeBefore);
 
       // Audit log records the writes + the update on this vault.
@@ -992,9 +932,7 @@ describe("Plan 02-05: MEM-03 recall end-to-end", () => {
         memorySinkRegistry,
         manager: manager as unknown as InstanceType<typeof VaultManager>,
         sourceConnectorFor: (vaultName: string) =>
-          adapterRegistry.resolveSource(
-            parseSourceHandle(`obsidian-fs://${vaultName}`),
-          ),
+          adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)),
         searchHybrid: stubSearch,
       };
 
@@ -1087,9 +1025,7 @@ describe("Plan 02-05: MEM-03 recall end-to-end", () => {
         memorySinkRegistry,
         manager: manager as unknown as InstanceType<typeof VaultManager>,
         sourceConnectorFor: (vaultName: string) =>
-          adapterRegistry.resolveSource(
-            parseSourceHandle(`obsidian-fs://${vaultName}`),
-          ),
+          adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)),
         searchHybrid: stubSearch,
       };
 
@@ -1173,9 +1109,7 @@ describe("Plan 02-05: MEM-03 recall end-to-end", () => {
         memorySinkRegistry,
         manager: manager as unknown as InstanceType<typeof VaultManager>,
         sourceConnectorFor: (vaultName: string) =>
-          adapterRegistry.resolveSource(
-            parseSourceHandle(`obsidian-fs://${vaultName}`),
-          ),
+          adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)),
         searchHybrid: stubSearch,
       };
 
@@ -1189,8 +1123,7 @@ describe("Plan 02-05: MEM-03 recall end-to-end", () => {
       // YAML may surface ISO timestamps as Date objects OR strings; the
       // controller normalizes both for sort. We coerce here for the
       // assertion the same way the controller does internally.
-      const toIso = (v: unknown): string =>
-        v instanceof Date ? v.toISOString() : String(v);
+      const toIso = (v: unknown): string => (v instanceof Date ? v.toISOString() : String(v));
       const observedAts = packets.map((p) => toIso(p.properties.observed_at));
       expect(observedAts[0]).toMatch(/^2026-04-22/);
       expect(observedAts[1]).toMatch(/^2026-04-21/);
@@ -1240,14 +1173,12 @@ describe("Plan 02-05: MEM-03 recall end-to-end", () => {
         memorySinkRegistry,
         manager: manager as unknown as InstanceType<typeof VaultManager>,
         sourceConnectorFor: (vaultName: string) =>
-          adapterRegistry.resolveSource(
-            parseSourceHandle(`obsidian-fs://${vaultName}`),
-          ),
+          adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)),
         searchHybrid: async () => [],
       };
-      await expect(
-        handleRecall(deps, { query: "anything", sink: "nonexistent" }),
-      ).rejects.toThrow(/Unknown memory sink/);
+      await expect(handleRecall(deps, { query: "anything", sink: "nonexistent" })).rejects.toThrow(
+        /Unknown memory sink/,
+      );
     } finally {
       db.close();
     }
@@ -1270,16 +1201,10 @@ describe("Plan 02-06: MCP Resources (MEM-09)", () => {
   async function makeServerWithResources() {
     const { McpServer } = await import("@modelcontextprotocol/sdk/server/mcp.js");
     const { Client } = await import("@modelcontextprotocol/sdk/client/index.js");
-    const { InMemoryTransport } = await import(
-      "@modelcontextprotocol/sdk/inMemory.js"
-    );
+    const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
     const { MemorySinkRegistry } = await import("./memory/registry.js");
-    const {
-      readListSinks,
-      readMemoryStats,
-      RESOURCE_URI_LIST_SINKS,
-      RESOURCE_URI_MEMORY_STATS,
-    } = await import("./memory/resources/index.js");
+    const { readListSinks, readMemoryStats, RESOURCE_URI_LIST_SINKS, RESOURCE_URI_MEMORY_STATS } =
+      await import("./memory/resources/index.js");
     const { Database } = await import("./db/database.js");
     const { promises: fs } = await import("node:fs");
     const { tmpdir } = await import("node:os");
@@ -1367,12 +1292,8 @@ describe("Plan 02-06: MCP Resources (MEM-09)", () => {
       { name: "test-client", version: "test" },
       { capabilities: { resources: {} } },
     );
-    const [clientTransport, serverTransport] =
-      InMemoryTransport.createLinkedPair();
-    await Promise.all([
-      server.connect(serverTransport),
-      client.connect(clientTransport),
-    ]);
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
 
     const cleanup = async () => {
       await client.close();
@@ -1388,10 +1309,7 @@ describe("Plan 02-06: MCP Resources (MEM-09)", () => {
     try {
       const list = await client.listResources();
       const uris = list.resources.map((r) => r.uri).sort();
-      expect(uris).toEqual([
-        "vault-memory://memory/sinks",
-        "vault-memory://memory/stats",
-      ]);
+      expect(uris).toEqual(["vault-memory://memory/sinks", "vault-memory://memory/stats"]);
       for (const r of list.resources) {
         expect(r.mimeType).toBe("application/json");
       }
@@ -1831,18 +1749,12 @@ describe("Plan 05-03: BriefStalenessDaemon bootstrap wiring", () => {
     const { mkdtemp, rm } = await import("node:fs/promises");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
-    const { BriefStalenessDaemon, tryAcquireLock } = await import(
-      "./brief/index.js"
-    );
+    const { BriefStalenessDaemon, tryAcquireLock } = await import("./brief/index.js");
     const { StubChangeFeed } = await import("./adapters/stub/change-feed.js");
     const { StubDelivery } = await import("./adapters/stub/delivery.js");
     const { StubSource } = await import("./adapters/stub/source.js");
-    const { MemorySinkRegistry, parseMemorySinkHandle } = await import(
-      "./memory/index.js"
-    );
-    const { provisionSink } = await import(
-      "./adapters/delivery/obsidian-fs/sentinel.js"
-    );
+    const { MemorySinkRegistry, parseMemorySinkHandle } = await import("./memory/index.js");
+    const { provisionSink } = await import("./adapters/delivery/obsidian-fs/sentinel.js");
 
     const VAULT_NAME = "test-vault-bootstrap";
     const vaultDir = await mkdtemp(join(tmpdir(), "vm-bootstrap-vault-"));
@@ -1861,9 +1773,7 @@ describe("Plan 05-03: BriefStalenessDaemon bootstrap wiring", () => {
       };
 
       const registry = new MemorySinkRegistry();
-      const handle = parseMemorySinkHandle(
-        `obsidian-fs://${VAULT_NAME}/_memory/_briefs/`,
-      );
+      const handle = parseMemorySinkHandle(`obsidian-fs://${VAULT_NAME}/_memory/_briefs/`);
       await registry.registerMemorySinks(
         [
           {
@@ -1909,9 +1819,7 @@ describe("Plan 05-03: BriefStalenessDaemon bootstrap wiring", () => {
       });
       expect(resB.acquired).toBe(false);
       expect(daemonB.isOwner).toBe(false);
-      expect(
-        warns.some((m) => m.includes("daemon_already_owned")),
-      ).toBe(true);
+      expect(warns.some((m) => m.includes("daemon_already_owned"))).toBe(true);
 
       // Sanity: server B (no daemon subscription) can still re-acquire
       // the lock after server A shuts down — that's the multi-MCP-client
@@ -1931,18 +1839,12 @@ describe("Plan 05-03: BriefStalenessDaemon bootstrap wiring", () => {
     const { mkdtemp, rm } = await import("node:fs/promises");
     const { tmpdir } = await import("node:os");
     const { join } = await import("node:path");
-    const { BriefStalenessDaemon, tryAcquireLock } = await import(
-      "./brief/index.js"
-    );
+    const { BriefStalenessDaemon, tryAcquireLock } = await import("./brief/index.js");
     const { StubChangeFeed } = await import("./adapters/stub/change-feed.js");
     const { StubDelivery } = await import("./adapters/stub/delivery.js");
     const { StubSource } = await import("./adapters/stub/source.js");
-    const { MemorySinkRegistry, parseMemorySinkHandle } = await import(
-      "./memory/index.js"
-    );
-    const { provisionSink } = await import(
-      "./adapters/delivery/obsidian-fs/sentinel.js"
-    );
+    const { MemorySinkRegistry, parseMemorySinkHandle } = await import("./memory/index.js");
+    const { provisionSink } = await import("./adapters/delivery/obsidian-fs/sentinel.js");
 
     const VAULT_NAME = "test-vault-shutdown";
     const vaultDir = await mkdtemp(join(tmpdir(), "vm-shutdown-vault-"));
@@ -1960,9 +1862,7 @@ describe("Plan 05-03: BriefStalenessDaemon bootstrap wiring", () => {
         dbPath: ":memory:",
       };
       const registry = new MemorySinkRegistry();
-      const handle = parseMemorySinkHandle(
-        `obsidian-fs://${VAULT_NAME}/_memory/_briefs/`,
-      );
+      const handle = parseMemorySinkHandle(`obsidian-fs://${VAULT_NAME}/_memory/_briefs/`);
       await registry.registerMemorySinks(
         [
           {

@@ -68,10 +68,7 @@ interface Fixture {
   cleanup: () => void;
 }
 
-function buildFixture(
-  notes: FixtureNoteSpec[],
-  links: FixtureLinkSpec[] = [],
-): Fixture {
+function buildFixture(notes: FixtureNoteSpec[], links: FixtureLinkSpec[] = []): Fixture {
   const db = new Database(":memory:", VAULT_NAME);
   db.migrate();
   const vault: Vault = {
@@ -353,9 +350,7 @@ describe("assembleDossier — type/key resolution + rollups", () => {
     expect(result.error).toBeNull();
     // doc_id "obsidian-fs://test-vault/projects/atlas-alpha.md"
     // sorts BEFORE "obsidian-fs://test-vault/projects/atlas-zeta.md".
-    expect(result.anchor?.doc_id).toBe(
-      "obsidian-fs://test-vault/projects/atlas-alpha.md" as DocId,
-    );
+    expect(result.anchor?.doc_id).toBe("obsidian-fs://test-vault/projects/atlas-alpha.md" as DocId);
   });
 
   // (e) linked_count === linked_documents.length.

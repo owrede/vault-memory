@@ -48,10 +48,7 @@ interface ExpandYaml {
   queries: ExpandYamlQuery[];
 }
 
-const YAML_PATH = resolve(
-  process.cwd(),
-  "evals/fixtures/v2-test-vault/_queries/expand.yaml",
-);
+const YAML_PATH = resolve(process.cwd(), "evals/fixtures/v2-test-vault/_queries/expand.yaml");
 
 function loadExpandYaml(): ExpandYaml {
   const raw = readFileSync(YAML_PATH, "utf8");
@@ -195,8 +192,7 @@ describe("expand() — eval integration against Atlas Robotics fixture", () => {
           opts,
         );
         const matched = result.warnings.some(
-          (w) =>
-            w.seed_doc_id === q.expects_warning_for && w.reason === "unknown_doc",
+          (w) => w.seed_doc_id === q.expects_warning_for && w.reason === "unknown_doc",
         );
         expect(
           matched,

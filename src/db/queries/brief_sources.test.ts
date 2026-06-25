@@ -46,9 +46,7 @@ describe("BriefSourcesQueries (Phase 5 / D-06)", () => {
         recordedHash: "sha256:def",
       },
     ]);
-    const sources = db.briefSources.sourcesForBrief(
-      "obsidian-fs://v/_memory/_briefs/atlas.md",
-    );
+    const sources = db.briefSources.sourcesForBrief("obsidian-fs://v/_memory/_briefs/atlas.md");
     expect(sources).toHaveLength(2);
     expect(sources.map((s) => s.chunkIdFragment).sort()).toEqual(["a3f5b2c", "deadbee"]);
     expect(sources.every((s) => s.briefDocId === "obsidian-fs://v/_memory/_briefs/atlas.md")).toBe(

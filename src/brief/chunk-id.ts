@@ -47,8 +47,7 @@ const { parseChunkId, formatChunkId, decomposeChunkId } = (() => {
   function parse(s: string): ChunkId {
     if (!CHUNK_ID_REGEX.test(s)) {
       throw new Error(
-        `Invalid ChunkId: ${JSON.stringify(s)}. ` +
-          "Expected <DocId>#chunk-<7-hex-fragment>.",
+        `Invalid ChunkId: ${JSON.stringify(s)}. ` + "Expected <DocId>#chunk-<7-hex-fragment>.",
       );
     }
     return mint(s);

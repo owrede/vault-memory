@@ -30,18 +30,9 @@ import { ObsidianFsSource } from "../adapters/source/obsidian-fs/index.js";
 import { StubDelivery } from "../adapters/stub/delivery.js";
 import { StubSource } from "../adapters/stub/source.js";
 import { provisionSink } from "../adapters/delivery/obsidian-fs/sentinel.js";
-import {
-  MemorySinkRegistry,
-  parseMemorySinkHandle,
-} from "../memory/index.js";
+import { MemorySinkRegistry, parseMemorySinkHandle } from "../memory/index.js";
 import { computeChunkIdFragment } from "../chunker/chunk-id.js";
-import type {
-  BriefConfig,
-  ChunkId,
-  Document,
-  DocId,
-  MemorySink,
-} from "../types.js";
+import type { BriefConfig, ChunkId, Document, DocId, MemorySink } from "../types.js";
 import { parseDocId } from "../adapters/registry.js";
 import { handleCompileBrief, type CompileBriefDeps } from "./compile.js";
 
@@ -50,14 +41,15 @@ const BRIEF_SINK_REL_PATH = "_memory/_briefs/";
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
-function stubServer(opts: {
-  sampling?: boolean;
-  createMessage?: (params: unknown) => Promise<unknown>;
-} = {}): McpServer {
+function stubServer(
+  opts: {
+    sampling?: boolean;
+    createMessage?: (params: unknown) => Promise<unknown>;
+  } = {},
+): McpServer {
   return {
     server: {
-      getClientCapabilities: () =>
-        opts.sampling ? { sampling: {} } : undefined,
+      getClientCapabilities: () => (opts.sampling ? { sampling: {} } : undefined),
       createMessage:
         opts.createMessage ??
         (async () => ({
@@ -89,10 +81,7 @@ async function buildStubFixture() {
   };
 
   const manager = new VaultManager();
-  (manager as unknown as { vaults: Map<string, Vault> }).vaults.set(
-    VAULT_NAME,
-    vault,
-  );
+  (manager as unknown as { vaults: Map<string, Vault> }).vaults.set(VAULT_NAME, vault);
 
   const registry = new MemorySinkRegistry();
   const briefSinkHandle = parseMemorySinkHandle(
@@ -146,10 +135,7 @@ async function buildObsidianFixture() {
   };
 
   const manager = new VaultManager();
-  (manager as unknown as { vaults: Map<string, Vault> }).vaults.set(
-    VAULT_NAME,
-    vault,
-  );
+  (manager as unknown as { vaults: Map<string, Vault> }).vaults.set(VAULT_NAME, vault);
 
   const registry = new MemorySinkRegistry();
   const briefSinkHandle = parseMemorySinkHandle(
@@ -240,12 +226,14 @@ describe("handleCompileBrief — BRF-03 controller (stub adapters)", () => {
     await fixture.cleanup();
   });
 
-  function deps(opts: {
-    sampling?: boolean;
-    createMessage?: (p: unknown) => Promise<unknown>;
-    ollamaReply?: string;
-    briefConfig?: BriefConfig;
-  } = {}): CompileBriefDeps {
+  function deps(
+    opts: {
+      sampling?: boolean;
+      createMessage?: (p: unknown) => Promise<unknown>;
+      ollamaReply?: string;
+      briefConfig?: BriefConfig;
+    } = {},
+  ): CompileBriefDeps {
     return {
       memorySinkRegistry: fixture.registry,
       manager: fixture.manager,
@@ -262,16 +250,13 @@ describe("handleCompileBrief — BRF-03 controller (stub adapters)", () => {
       { path: "projects/atlas-1.md", title: "Atlas-1", text: "Atlas-1 is the flagship." },
       { path: "projects/atlas-2.md", title: "Atlas-2", text: "Atlas-2 follows Atlas-1." },
     ]);
-    const res = await handleCompileBrief(
-      deps({ briefConfig: { ollama: { model: "llama3.2" } } }),
-      {
-        vault: VAULT_NAME,
-        target: "atlas-q3",
-        source_doc_ids: [d1!, d2!],
-        purpose: "Q3 Atlas snapshot",
-        max_tokens: 500,
-      },
-    );
+    const res = await handleCompileBrief(deps({ briefConfig: { ollama: { model: "llama3.2" } } }), {
+      vault: VAULT_NAME,
+      target: "atlas-q3",
+      source_doc_ids: [d1!, d2!],
+      purpose: "Q3 Atlas snapshot",
+      max_tokens: 500,
+    });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
     expect(res.doc_id).toMatch(
@@ -328,9 +313,7 @@ describe("handleCompileBrief — BRF-03 controller (stub adapters)", () => {
     });
     expect(res.ok).toBe(true);
     if (!res.ok) return;
-    expect(res.doc_id).toBe(
-      "obsidian-fs://test-vault/_memory/_briefs/my-target--20260518T1430.md",
-    );
+    expect(res.doc_id).toBe("obsidian-fs://test-vault/_memory/_briefs/my-target--20260518T1430.md");
   });
 
   it("Test 4: dedupes source_doc_ids (D-03 planner-lean)", async () => {
@@ -351,10 +334,7 @@ describe("handleCompileBrief — BRF-03 controller (stub adapters)", () => {
   });
 
   it("Test 5: returns too_many_sources when source_doc_ids exceeds 50", async () => {
-    const ids = Array.from(
-      { length: 51 },
-      (_, i) => `obsidian-fs://${VAULT_NAME}/notes/x${i}.md`,
-    );
+    const ids = Array.from({ length: 51 }, (_, i) => `obsidian-fs://${VAULT_NAME}/notes/x${i}.md`);
     const res = await handleCompileBrief(deps({ briefConfig: { ollama: { model: "x" } } }), {
       vault: VAULT_NAME,
       target: "huge",
@@ -368,9 +348,7 @@ describe("handleCompileBrief — BRF-03 controller (stub adapters)", () => {
   });
 
   it("Test 6: cross-vault gate rejects source_doc_ids from a different vault", async () => {
-    const [d1] = seedSourceDocs(fixture.vault, [
-      { path: "projects/p.md", title: "P", text: "P" },
-    ]);
+    const [d1] = seedSourceDocs(fixture.vault, [{ path: "projects/p.md", title: "P", text: "P" }]);
     const foreign = "obsidian-fs://other-vault/p.md";
     const res = await handleCompileBrief(deps({ briefConfig: { ollama: { model: "x" } } }), {
       vault: VAULT_NAME,
@@ -387,9 +365,7 @@ describe("handleCompileBrief — BRF-03 controller (stub adapters)", () => {
   });
 
   it("Test 7: no_llm_strategy_available when sampling + ollama + prepared_text all absent", async () => {
-    const [d1] = seedSourceDocs(fixture.vault, [
-      { path: "projects/p.md", title: "P", text: "P" },
-    ]);
+    const [d1] = seedSourceDocs(fixture.vault, [{ path: "projects/p.md", title: "P", text: "P" }]);
     const res = await handleCompileBrief(deps({}), {
       vault: VAULT_NAME,
       target: "no-llm",
@@ -452,9 +428,7 @@ describe("handleCompileBrief — BRF-03 controller (stub adapters)", () => {
   });
 
   it("Test 10: property bag carries the default-brief-v1 contract keys", async () => {
-    const [d1] = seedSourceDocs(fixture.vault, [
-      { path: "projects/p.md", title: "P", text: "P" },
-    ]);
+    const [d1] = seedSourceDocs(fixture.vault, [{ path: "projects/p.md", title: "P", text: "P" }]);
     const res = await handleCompileBrief(deps({ briefConfig: { ollama: { model: "x" } } }), {
       vault: VAULT_NAME,
       target: "bag",
@@ -481,9 +455,7 @@ describe("handleCompileBrief — BRF-03 controller (stub adapters)", () => {
   });
 
   it("Test 12: sampling_refused when MCP createMessage throws", async () => {
-    const [d1] = seedSourceDocs(fixture.vault, [
-      { path: "projects/p.md", title: "P", text: "P" },
-    ]);
+    const [d1] = seedSourceDocs(fixture.vault, [{ path: "projects/p.md", title: "P", text: "P" }]);
     const res = await handleCompileBrief(
       deps({
         sampling: true,
@@ -565,10 +537,7 @@ describe("handleCompileBrief — YAML round-trip (Pitfall 4 / RESEARCH A3)", () 
 
     // 1. Read the file via SourceConnector — the canonical path.
     const reread = await fixture.source.readDocument(parseDocId(res.doc_id));
-    const rereadSourceHashes = reread.properties.source_hashes as Record<
-      string,
-      string
-    >;
+    const rereadSourceHashes = reread.properties.source_hashes as Record<string, string>;
     expect(rereadSourceHashes).toBeDefined();
     const keys = Object.keys(rereadSourceHashes).sort();
     expect(keys.length).toBe(2);
@@ -592,11 +561,10 @@ describe("handleCompileBrief — YAML round-trip (Pitfall 4 / RESEARCH A3)", () 
 
   it("Test 13b: ChunkId fragments survive — keys' 7-hex suffix is intact post-roundtrip", async () => {
     const text = "## Heading\n\nContent body.\n";
-    const [d1] = seedSourceDocs(fixture.vault, [
-      { path: "notes/x.md", title: "X", text },
-    ]);
+    const [d1] = seedSourceDocs(fixture.vault, [{ path: "notes/x.md", title: "X", text }]);
     const expectedFragment = computeChunkIdFragment(text);
-    const expectedKey = `obsidian-fs://${VAULT_NAME}/notes/x.md#chunk-${expectedFragment}` as ChunkId;
+    const expectedKey =
+      `obsidian-fs://${VAULT_NAME}/notes/x.md#chunk-${expectedFragment}` as ChunkId;
 
     const res = await handleCompileBrief(obsidianDeps(), {
       vault: VAULT_NAME,

@@ -46,10 +46,7 @@ export interface VerbUsageRow {
  * Write one `contract_audit kind: 'contract_step'` row. NEVER accepts an
  * output / payload field (C-5).
  */
-export function recordContractStep(
-  deps: ContractAuditDeps,
-  args: RecordContractStepArgs,
-): void {
+export function recordContractStep(deps: ContractAuditDeps, args: RecordContractStepArgs): void {
   deps.contractAudit.insert({
     kind: "contract_step",
     contract: args.contract,
@@ -82,9 +79,6 @@ export function recordContractLoadError(
  * rows in this vault. Plan 06-04's resource handler pipes this through
  * `vault-memory://contract-verbs/{vault}`.
  */
-export function aggregateVerbUsage(
-  deps: ContractAuditDeps,
-  vault: string,
-): VerbUsageRow[] {
+export function aggregateVerbUsage(deps: ContractAuditDeps, vault: string): VerbUsageRow[] {
   return deps.contractAudit.aggregateVerbUsage(vault);
 }

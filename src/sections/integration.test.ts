@@ -181,11 +181,17 @@ describe("sections integration smoke (03-01 Task 9)", () => {
   it("(d) re-indexing the same note produces identical anchors (idempotency under no-op re-index)", () => {
     const ids = seedAndIndex();
     const noteId = ids.get("alpha.md")!;
-    const before = db.sections.getByNote(noteId).map((r) => r.anchor).sort();
+    const before = db.sections
+      .getByNote(noteId)
+      .map((r) => r.anchor)
+      .sort();
     // Simulate re-index: clear sections + rebuild from the SAME content.
     db.sections.deleteByNote(noteId);
     buildSectionsForNote(vault, noteId, FIXTURES[0].content, []);
-    const after = db.sections.getByNote(noteId).map((r) => r.anchor).sort();
+    const after = db.sections
+      .getByNote(noteId)
+      .map((r) => r.anchor)
+      .sort();
     expect(after).toEqual(before);
   });
 
@@ -203,7 +209,10 @@ describe("sections integration smoke (03-01 Task 9)", () => {
     for (const noteId of ids.values()) {
       expectedPerNote.set(
         noteId,
-        db.sections.getByNote(noteId).map((r) => r.anchor).sort(),
+        db.sections
+          .getByNote(noteId)
+          .map((r) => r.anchor)
+          .sort(),
       );
     }
     // Drop all sections (simulating a pre-v10 v1 DB).
@@ -216,7 +225,10 @@ describe("sections integration smoke (03-01 Task 9)", () => {
     expect(backfilled).toBe(FIXTURES.length);
     // Anchors must match the indexer-derived snapshot exactly.
     for (const [noteId, expected] of expectedPerNote.entries()) {
-      const actual = db.sections.getByNote(noteId).map((r) => r.anchor).sort();
+      const actual = db.sections
+        .getByNote(noteId)
+        .map((r) => r.anchor)
+        .sort();
       expect(actual).toEqual(expected);
     }
   });

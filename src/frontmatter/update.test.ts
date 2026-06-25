@@ -332,20 +332,12 @@ describe("updateFrontmatter — MEM-07 entry-point Guard (Plan 02-03b)", () => {
     // register a sink under a name that differs from `vault.config.name`.
     ctx.vault.config.name = "guard-vault";
 
-    const { MemorySinkRegistry, parseMemorySinkHandle } = await import(
-      "../memory/index.js"
-    );
-    const { provisionSink } = await import(
-      "../adapters/delivery/obsidian-fs/sentinel.js"
-    );
+    const { MemorySinkRegistry, parseMemorySinkHandle } = await import("../memory/index.js");
+    const { provisionSink } = await import("../adapters/delivery/obsidian-fs/sentinel.js");
     const registry = new MemorySinkRegistry();
-    const sinkHandle = parseMemorySinkHandle(
-      "obsidian-fs://guard-vault/_memory/",
-    );
+    const sinkHandle = parseMemorySinkHandle("obsidian-fs://guard-vault/_memory/");
     await registry.registerMemorySinks(
-      [
-        { name: "default", handle: sinkHandle, contract: "default-memory-v1" },
-      ],
+      [{ name: "default", handle: sinkHandle, contract: "default-memory-v1" }],
       {
         resolveVaultAbsolutePath: () => ctx.vaultRoot,
         provisioner: async (sink, vaultAbs) => {
@@ -376,20 +368,12 @@ describe("updateFrontmatter — MEM-07 entry-point Guard (Plan 02-03b)", () => {
   it("guard does NOT fire on non-sink paths (Phase 1 back-compat)", async () => {
     ctx = await makeCtx();
     ctx.vault.config.name = "guard-vault";
-    const { MemorySinkRegistry, parseMemorySinkHandle } = await import(
-      "../memory/index.js"
-    );
-    const { provisionSink } = await import(
-      "../adapters/delivery/obsidian-fs/sentinel.js"
-    );
+    const { MemorySinkRegistry, parseMemorySinkHandle } = await import("../memory/index.js");
+    const { provisionSink } = await import("../adapters/delivery/obsidian-fs/sentinel.js");
     const registry = new MemorySinkRegistry();
-    const sinkHandle = parseMemorySinkHandle(
-      "obsidian-fs://guard-vault/_memory/",
-    );
+    const sinkHandle = parseMemorySinkHandle("obsidian-fs://guard-vault/_memory/");
     await registry.registerMemorySinks(
-      [
-        { name: "default", handle: sinkHandle, contract: "default-memory-v1" },
-      ],
+      [{ name: "default", handle: sinkHandle, contract: "default-memory-v1" }],
       {
         resolveVaultAbsolutePath: () => ctx.vaultRoot,
         provisioner: async (sink, vaultAbs) => {

@@ -20,18 +20,9 @@ import { StubDelivery } from "../adapters/stub/delivery.js";
 import { StubSource } from "../adapters/stub/source.js";
 import { StubChangeFeed } from "../adapters/stub/change-feed.js";
 import { provisionSink } from "../adapters/delivery/obsidian-fs/sentinel.js";
-import {
-  MemorySinkRegistry,
-  parseMemorySinkHandle,
-} from "../memory/index.js";
+import { MemorySinkRegistry, parseMemorySinkHandle } from "../memory/index.js";
 import { computeChunkIdFragment } from "../chunker/chunk-id.js";
-import type {
-  ChangeEvent,
-  ChunkId,
-  Document,
-  DocId,
-  MemorySink,
-} from "../types.js";
+import type { ChangeEvent, ChunkId, Document, DocId, MemorySink } from "../types.js";
 import { parseDocId } from "../adapters/registry.js";
 import { BriefStalenessDaemon, type DaemonDeps } from "./daemon.js";
 import { handleCompileBrief } from "./compile.js";
@@ -74,10 +65,7 @@ async function buildFixture() {
   };
 
   const manager = new VaultManager();
-  (manager as unknown as { vaults: Map<string, Vault> }).vaults.set(
-    VAULT_NAME,
-    vault,
-  );
+  (manager as unknown as { vaults: Map<string, Vault> }).vaults.set(VAULT_NAME, vault);
 
   const registry = new MemorySinkRegistry();
   const briefSinkHandle = parseMemorySinkHandle(
@@ -301,9 +289,7 @@ describe("BriefStalenessDaemon (BRF-05/06/07/08, D-07, D-09)", () => {
     // Verify the doc is now stale.
     const after = fixture.docs.get(briefId)!;
     expect(after.properties.status).toBe("stale");
-    expect(after.properties.changed_sources).toEqual(
-      expect.arrayContaining([d1]),
-    );
+    expect(after.properties.changed_sources).toEqual(expect.arrayContaining([d1]));
     await daemon.shutdown();
   });
 
@@ -357,9 +343,7 @@ describe("BriefStalenessDaemon (BRF-05/06/07/08, D-07, D-09)", () => {
     expect(updateSpy).toHaveBeenCalledTimes(1);
     const after = fixture.docs.get(briefId)!;
     expect(after.properties.status).toBe("stale");
-    expect(after.properties.changed_sources).toEqual(
-      expect.arrayContaining([d1]),
-    );
+    expect(after.properties.changed_sources).toEqual(expect.arrayContaining([d1]));
     await daemon.shutdown();
   });
 
@@ -375,11 +359,7 @@ describe("BriefStalenessDaemon (BRF-05/06/07/08, D-07, D-09)", () => {
     });
 
     const daemon = new BriefStalenessDaemon();
-    await daemon.start(
-      fixture.vault,
-      fixture.feed,
-      depsFor({ now: () => clock }),
-    );
+    await daemon.start(fixture.vault, fixture.feed, depsFor({ now: () => clock }));
 
     // Delete the chunk so the daemon's recompute sees a "vanished" source.
     fixture.feed.emit({ kind: "delete", id: d1!, at: clock });
@@ -413,9 +393,7 @@ describe("BriefStalenessDaemon (BRF-05/06/07/08, D-07, D-09)", () => {
     const NEW_PATH = "projects/atlas-a-renamed.md";
     const TEXT = "Atlas-A canonical content";
 
-    const [d1] = seedSourceDocs(fixture.vault, [
-      { path: ORIG_PATH, title: "A", text: TEXT },
-    ]);
+    const [d1] = seedSourceDocs(fixture.vault, [{ path: ORIG_PATH, title: "A", text: TEXT }]);
     const briefId = await compileBrief({
       ...fixture,
       target: "atlas-a",
@@ -428,11 +406,7 @@ describe("BriefStalenessDaemon (BRF-05/06/07/08, D-07, D-09)", () => {
 
     let clock = 2_000_000;
     const daemon = new BriefStalenessDaemon();
-    await daemon.start(
-      fixture.vault,
-      fixture.feed,
-      depsFor({ now: () => clock }),
-    );
+    await daemon.start(fixture.vault, fixture.feed, depsFor({ now: () => clock }));
 
     // Simulate a rename: delete event for old, then create event for new
     // (the FS state already has the chunk moved under the new path).
@@ -480,11 +454,9 @@ describe("BriefStalenessDaemon (BRF-05/06/07/08, D-07, D-09)", () => {
 
     // Brief NOT marked stale: rename heuristic rewrote chunk_doc_id.
     expect(fixture.docs.get(briefId)!.properties.status).toBe("active");
-    const afterRowsForOld =
-      fixture.vault.db.briefSources.briefsForChunkDoc(d1!);
+    const afterRowsForOld = fixture.vault.db.briefSources.briefsForChunkDoc(d1!);
     expect(afterRowsForOld.length).toBe(0);
-    const afterRowsForNew =
-      fixture.vault.db.briefSources.briefsForChunkDoc(newId);
+    const afterRowsForNew = fixture.vault.db.briefSources.briefsForChunkDoc(newId);
     expect(afterRowsForNew.length).toBe(1);
 
     await daemon.shutdown();
@@ -508,17 +480,13 @@ describe("BriefStalenessDaemon (BRF-05/06/07/08, D-07, D-09)", () => {
 
     const logs: string[] = [];
     const daemon = new BriefStalenessDaemon();
-    await daemon.start(
-      fixture.vault,
-      fixture.feed,
-      depsFor({ log: (m) => logs.push(m) }),
-    );
+    await daemon.start(fixture.vault, fixture.feed, depsFor({ log: (m) => logs.push(m) }));
 
     expect(updateSpy).toHaveBeenCalled();
     // The startup-scan path wraps evaluateBrief in try/catch.
-    expect(
-      logs.some((m) => m.includes("brief_staleness_error") && m.includes("kaboom")),
-    ).toBe(true);
+    expect(logs.some((m) => m.includes("brief_staleness_error") && m.includes("kaboom"))).toBe(
+      true,
+    );
 
     // Fire an update event — daemon is still alive and processing.
     fixture.feed.emit({ kind: "update", id: d1!, at: Date.now() });
@@ -561,11 +529,7 @@ describe("BriefStalenessDaemon (BRF-05/06/07/08, D-07, D-09)", () => {
   it("Test 11: cursor updated on each handler invocation", async () => {
     let clock = 5_000_000;
     const daemon = new BriefStalenessDaemon();
-    await daemon.start(
-      fixture.vault,
-      fixture.feed,
-      depsFor({ now: () => clock }),
-    );
+    await daemon.start(fixture.vault, fixture.feed, depsFor({ now: () => clock }));
     const initial = fixture.vault.db.daemonState.getCursor(VAULT_NAME)!;
     expect(initial).toBe(5_000_000);
 

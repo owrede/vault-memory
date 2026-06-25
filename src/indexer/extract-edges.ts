@@ -125,10 +125,7 @@ export function extractAllEdges(
  * `indexer.ts`. This function only adds the `edges` side; the
  * indexer write path stays a dual-write until v3 retires `wikilinks`.
  */
-export function extractWikilinkEdges(
-  parsed: ParsedNote,
-  resolver: WikilinkResolver,
-): EdgeInput[] {
+export function extractWikilinkEdges(parsed: ParsedNote, resolver: WikilinkResolver): EdgeInput[] {
   const out: EdgeInput[] = [];
   for (const wl of parsed.wikilinks) {
     const hit = resolver.resolve(wl.normalizedTarget);
@@ -409,12 +406,7 @@ export function extractHyperlinkEdges(parsed: ParsedNote): EdgeInput[] {
   return out;
 }
 
-function pushHyperlinkEdge(
-  out: EdgeInput[],
-  seen: Set<string>,
-  url: string,
-  line: number,
-): void {
+function pushHyperlinkEdge(out: EdgeInput[], seen: Set<string>, url: string, line: number): void {
   const key = `${url}:${line}`;
   if (seen.has(key)) return;
   seen.add(key);
@@ -460,11 +452,7 @@ function maskForMentionScope(content: string): string {
       }
     } else {
       const fenceClose = /^(`{3,}|~{3,})\s*$/.exec(trimmed);
-      if (
-        fenceClose !== null &&
-        fenceClose[1] !== undefined &&
-        fenceClose[1][0] === fenceMarker
-      ) {
+      if (fenceClose !== null && fenceClose[1] !== undefined && fenceClose[1][0] === fenceMarker) {
         inFence = false;
         out.push(blankLine(line));
         continue;

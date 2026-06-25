@@ -271,6 +271,107 @@ describe("hybridSearch (integration)", () => {
     ).toEqual([]);
   });
 
+  // ── Alias-aware query expansion (ISSUE-aliases-not-in-fulltext-retrieval) ──
+  // Note `c` ("c.md", body "epsilon") has NO chunk whose text contains its
+  // alias — exactly the issue scenario: a person note whose body never
+  // mentions the alias token. Searching the alias must still surface it.
+  it("surfaces the alias target note even when its body lacks the alias token", async () => {
+    db.aliases.setForNote(db.notes.getByPath("c.md")!.id, ["JHE"]);
+    const ollama = {
+      embed: vi.fn().mockResolvedValue({ vectors: [queryVec], dim: DIM, model: "test-model" }),
+    } as unknown as OllamaClient;
+
+    const hits = await hybridSearch({
+      query: "JHE",
+      embeddingModel: "test-model",
+      ollama,
+      vaults: [vault],
+      topK: 10,
+    });
+    // The alias target is the top hit and records the triggering alias.
+    expect(hits[0]?.notePath).toBe("c.md");
+    expect(hits[0]?.scoreBreakdown?.alias).toBe("JHE");
+  });
+
+  it("alias match is case-insensitive (normalize)", async () => {
+    db.aliases.setForNote(db.notes.getByPath("c.md")!.id, ["JHE"]);
+    const ollama = {
+      embed: vi.fn().mockResolvedValue({ vectors: [queryVec], dim: DIM, model: "test-model" }),
+    } as unknown as OllamaClient;
+    const hits = await hybridSearch({
+      query: "jhe",
+      embeddingModel: "test-model",
+      ollama,
+      vaults: [vault],
+      topK: 10,
+    });
+    expect(hits[0]?.notePath).toBe("c.md");
+  });
+
+  it("aliasExpansion:false restores pre-fix behavior (alias not injected)", async () => {
+    db.aliases.setForNote(db.notes.getByPath("c.md")!.id, ["JHE"]);
+    const ollama = {
+      embed: vi.fn().mockResolvedValue({ vectors: [queryVec], dim: DIM, model: "test-model" }),
+    } as unknown as OllamaClient;
+    const hits = await hybridSearch({
+      query: "JHE",
+      embeddingModel: "test-model",
+      ollama,
+      vaults: [vault],
+      topK: 10,
+      aliasExpansion: false,
+    });
+    // c.md has no body token "JHE" and no chunk → it must NOT appear.
+    expect(hits.find((h) => h.notePath === "c.md")).toBeUndefined();
+  });
+
+  it("promotes an organically-retrieved alias target to the top (no extra injection)", async () => {
+    // Give note `a` (which IS retrievable for "alpha") an alias, then search
+    // the alias. Its hit should be promoted to rank 0. Promotion reorders the
+    // existing hit rather than injecting a synthetic duplicate, so the total
+    // a.md hit count is unchanged from a no-alias baseline.
+    const ollama = {
+      embed: vi.fn().mockResolvedValue({ vectors: [queryVec], dim: DIM, model: "test-model" }),
+    } as unknown as OllamaClient;
+    const baseline = await hybridSearch({
+      query: "alpha",
+      embeddingModel: "test-model",
+      ollama,
+      vaults: [vault],
+      topK: 10,
+      aliasExpansion: false,
+    });
+    const baselineCount = baseline.filter((h) => h.notePath === "a.md").length;
+
+    db.aliases.setForNote(db.notes.getByPath("a.md")!.id, ["alpha"]);
+    const hits = await hybridSearch({
+      query: "alpha",
+      embeddingModel: "test-model",
+      ollama,
+      vaults: [vault],
+      topK: 10,
+    });
+    expect(hits[0]?.notePath).toBe("a.md");
+    // Promotion reordered an existing hit, did not add a synthetic one.
+    expect(hits.filter((h) => h.notePath === "a.md")).toHaveLength(baselineCount);
+  });
+
+  it("non-alias query does no alias injection (unchanged behavior)", async () => {
+    db.aliases.setForNote(db.notes.getByPath("c.md")!.id, ["JHE"]);
+    const ollama = {
+      embed: vi.fn().mockResolvedValue({ vectors: [queryVec], dim: DIM, model: "test-model" }),
+    } as unknown as OllamaClient;
+    const hits = await hybridSearch({
+      query: "alpha",
+      embeddingModel: "test-model",
+      ollama,
+      vaults: [vault],
+      topK: 10,
+    });
+    // "alpha" is not an alias → c.md (the JHE note) must not be injected.
+    expect(hits.find((h) => h.notePath === "c.md")).toBeUndefined();
+  });
+
   it("reranker reorders results and surfaces rerank score in breakdown", async () => {
     const ollama = {
       embed: vi.fn().mockResolvedValue({

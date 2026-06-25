@@ -165,9 +165,7 @@ describe("shipped _contracts/memory/default-memory-v1.yaml", () => {
     // `<vaultPath>/_contracts/memory/default-memory-v1.yaml`.
     const loaded = await loadContractFromDisk("default-memory-v1", process.cwd());
     expect(loaded.name).toBe("default-memory-v1");
-    expect(loaded.requiredKeys).toEqual(
-      expect.arrayContaining(DEFAULT_MEMORY_V1.requiredKeys),
-    );
+    expect(loaded.requiredKeys).toEqual(expect.arrayContaining(DEFAULT_MEMORY_V1.requiredKeys));
     const observation = {
       source: "agent",
       confidence: "direct",
@@ -329,7 +327,7 @@ describe("WR-01 / WR-02 / WR-03 — loader fail-closed semantics", () => {
         "  strategy: caller-provided",
         "cross_field_rules:",
         "  - when: \"status == 'superseded'\"",
-        "    require: \"superseded_by\"",
+        '    require: "superseded_by"',
       ].join("\n"),
     );
     await expect(loadContractFromDisk("wr03-good", tmpVault)).resolves.toBeDefined();
@@ -346,15 +344,13 @@ describe("WR-01 / WR-02 / WR-03 — loader fail-closed semantics", () => {
         "  strategy: caller-provided",
         "cross_field_rules:",
         "  - when: \"status = 'superseded'\"",
-        "    require: \"status\"",
+        '    require: "status"',
       ].join("\n"),
     );
     await expect(loadContractFromDisk("wr03-single-eq", tmpVault)).rejects.toBeInstanceOf(
       MemoryContractInvalidError,
     );
-    await expect(loadContractFromDisk("wr03-single-eq", tmpVault)).rejects.toThrow(
-      /when/,
-    );
+    await expect(loadContractFromDisk("wr03-single-eq", tmpVault)).rejects.toThrow(/when/);
   });
 
   it("WR-03: when with '!=' operator is rejected at load", async () => {
@@ -368,7 +364,7 @@ describe("WR-01 / WR-02 / WR-03 — loader fail-closed semantics", () => {
         "  strategy: caller-provided",
         "cross_field_rules:",
         "  - when: \"status != 'active'\"",
-        "    require: \"status\"",
+        '    require: "status"',
       ].join("\n"),
     );
     await expect(loadContractFromDisk("wr03-neq", tmpVault)).rejects.toBeInstanceOf(
@@ -387,7 +383,7 @@ describe("WR-01 / WR-02 / WR-03 — loader fail-closed semantics", () => {
         "  strategy: caller-provided",
         "cross_field_rules:",
         '  - when: "status == \\"superseded\\""',
-        "    require: \"status\"",
+        '    require: "status"',
       ].join("\n"),
     );
     await expect(loadContractFromDisk("wr03-dq", tmpVault)).rejects.toBeInstanceOf(

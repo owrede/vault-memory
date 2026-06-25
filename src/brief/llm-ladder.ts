@@ -162,17 +162,9 @@ export async function compileWithLlm(
       // the brief compile path only handles text. (The tool-enabled
       // overload returns an array, but we never pass `tools`.)
       const content = (result as CreateMessageResult).content;
-      if (
-        content === undefined ||
-        Array.isArray(content) ||
-        content.type !== "text"
-      ) {
+      if (content === undefined || Array.isArray(content) || content.type !== "text") {
         const got =
-          content === undefined
-            ? "undefined"
-            : Array.isArray(content)
-              ? "array"
-              : content.type;
+          content === undefined ? "undefined" : Array.isArray(content) ? "array" : content.type;
         throw new Error(
           `MCP Sampling returned non-text content (type=${got}); brief compile expects text.`,
         );
