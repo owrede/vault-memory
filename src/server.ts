@@ -12,16 +12,10 @@
  * Phase 3 will add: write_note, update_frontmatter, audit_log
  */
 
-import {
-  McpServer,
-  ResourceTemplate,
-} from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { loadConfig, configPath } from "./config/index.js";
-import {
-  syncPluginTools,
-  RuntimeConfigStore,
-} from "./plugin-tools/index.js";
+import { syncPluginTools, RuntimeConfigStore } from "./plugin-tools/index.js";
 import type { TriggerReindexProgress } from "./plugin-tools/trigger-reindex.js";
 import { VaultManager } from "./vault/index.js";
 import type { Vault } from "./vault/index.js";
@@ -47,10 +41,7 @@ import type { ClusterOptions, ExpandDirection, ExpandOptions } from "./graph/ind
 import type { EdgeType } from "./db/queries/edges.js";
 import { queryFrontmatter } from "./frontmatter/index.js";
 import { ObsidianFsDelivery } from "./adapters/delivery/obsidian-fs/index.js";
-import {
-  provisionSink,
-  sentinelExistsAt,
-} from "./adapters/delivery/obsidian-fs/sentinel.js";
+import { provisionSink, sentinelExistsAt } from "./adapters/delivery/obsidian-fs/sentinel.js";
 import {
   MemorySinkRegistry,
   readListSinks,
@@ -211,8 +202,7 @@ export async function setupMemorySinks(
     ...(config.memory?.default_sink !== undefined
       ? { defaultSinkName: config.memory.default_sink }
       : {}),
-    provisioner: async (sink, vaultAbs) =>
-      provisionSink(sink, vaultAbs, { version: VERSION }),
+    provisioner: async (sink, vaultAbs) => provisionSink(sink, vaultAbs, { version: VERSION }),
   });
   return registry;
 }
@@ -389,24 +379,15 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
           await daemon.start(vault, feed, {
             memorySinkRegistry,
             deliveryAdapterFor: (vaultName) =>
-              adapterRegistry.resolveDelivery(
-                parseSourceHandle(`obsidian-fs://${vaultName}`),
-              ),
+              adapterRegistry.resolveDelivery(parseSourceHandle(`obsidian-fs://${vaultName}`)),
             sourceConnectorFor: (vaultName) =>
-              adapterRegistry.resolveSource(
-                parseSourceHandle(`obsidian-fs://${vaultName}`),
-              ),
-            log: (m) =>
-              process.stderr.write(
-                `[brief-daemon:${vault.config.name}] ${m}\n`,
-              ),
+              adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)),
+            log: (m) => process.stderr.write(`[brief-daemon:${vault.config.name}] ${m}\n`),
           });
           briefDaemons.set(vault.config.name, daemon);
         } catch (err) {
           const message = errorMessage(err);
-          process.stderr.write(
-            `[brief-daemon:${vault.config.name}] start failed: ${message}\n`,
-          );
+          process.stderr.write(`[brief-daemon:${vault.config.name}] start failed: ${message}\n`);
         }
       }
     }
@@ -488,9 +469,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
     stdinClosing = true;
     // eslint-disable-next-line no-console -- direct stderr is intentional;
     // logger may already be draining as part of shutdown.
-    process.stderr.write(
-      `[vault-memory] stdin ${reason} — parent process gone; shutting down.\n`,
-    );
+    process.stderr.write(`[vault-memory] stdin ${reason} — parent process gone; shutting down.\n`);
     setTimeout(() => {
       void shutdown().finally(() => process.exit(0));
     }, 500);
@@ -561,9 +540,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
   const buildInstantiateDeps = (vault: Vault): InstantiateDeps => {
     const state = contractRegistries.get(vault.config.name);
     if (state === undefined) {
-      throw new Error(
-        `ContractRegistry not initialized for vault "${vault.config.name}"`,
-      );
+      throw new Error(`ContractRegistry not initialized for vault "${vault.config.name}"`);
     }
     return {
       vault,
@@ -625,9 +602,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
           {
             manager,
             sourceConnectorFor: (vaultName) =>
-              adapterRegistry.resolveSource(
-                parseSourceHandle(`obsidian-fs://${vaultName}`),
-              ),
+              adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)),
           },
           {
             seed_doc_ids: seeds,
@@ -672,9 +647,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
           {
             manager,
             sourceConnectorFor: (vaultName) =>
-              adapterRegistry.resolveSource(
-                parseSourceHandle(`obsidian-fs://${vaultName}`),
-              ),
+              adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)),
             hybridSearch: async (v, query, limit) =>
               hybridSearch({
                 query,
@@ -707,9 +680,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
             memorySinkRegistry,
             manager,
             sourceConnectorFor: (vaultName) =>
-              adapterRegistry.resolveSource(
-                parseSourceHandle(`obsidian-fs://${vaultName}`),
-              ),
+              adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)),
             searchHybrid: async (input) =>
               hybridSearch({
                 query: input.query,
@@ -741,13 +712,9 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
             memorySinkRegistry,
             manager,
             deliveryAdapterFor: (vaultName) =>
-              adapterRegistry.resolveDelivery(
-                parseSourceHandle(`obsidian-fs://${vaultName}`),
-              ),
+              adapterRegistry.resolveDelivery(parseSourceHandle(`obsidian-fs://${vaultName}`)),
             sourceConnectorFor: (vaultName) =>
-              adapterRegistry.resolveSource(
-                parseSourceHandle(`obsidian-fs://${vaultName}`),
-              ),
+              adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)),
             server,
             ollama,
             briefConfig: config.brief,
@@ -768,9 +735,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
             memorySinkRegistry,
             manager,
             sourceConnectorFor: (vaultName) =>
-              adapterRegistry.resolveSource(
-                parseSourceHandle(`obsidian-fs://${vaultName}`),
-              ),
+              adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)),
           },
           { ...p, vault: p.vault ?? vault.config.name },
         );
@@ -801,9 +766,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
           {
             manager,
             sourceConnectorFor: (vaultName) =>
-              adapterRegistry.resolveSource(
-                parseSourceHandle(`obsidian-fs://${vaultName}`),
-              ),
+              adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)),
           },
           p,
         );
@@ -882,9 +845,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
             limit: p.limit ?? 10,
             ...(p.vaults !== undefined ? { vaults: p.vaults } : {}),
             ...(p.recency_weight !== undefined ? { recency_weight: p.recency_weight } : {}),
-            ...(p.authority_weight !== undefined
-              ? { authority_weight: p.authority_weight }
-              : {}),
+            ...(p.authority_weight !== undefined ? { authority_weight: p.authority_weight } : {}),
             ...(p.include_superseded !== undefined
               ? { include_superseded: p.include_superseded }
               : {}),
@@ -895,11 +856,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       handleReadNote: async (args: any) => {
         const p = args as { vault?: string; path: string };
-        return handleReadNote(
-          adapterRegistry,
-          p.vault ?? vault.config.name,
-          p.path,
-        );
+        return handleReadNote(adapterRegistry, p.vault ?? vault.config.name, p.path);
       },
     };
   };
@@ -947,10 +904,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
    * vault setups will surface `ambiguous_vault` until per-vault
    * tool-prefixing lands in a future slice.
    */
-  const instantiateHandler = async (
-    name: string,
-    args: unknown,
-  ): Promise<unknown> => {
+  const instantiateHandler = async (name: string, args: unknown): Promise<unknown> => {
     const resolved = resolveContractVault(undefined);
     if (!resolved.ok) return resolved;
     const inputs = ((args as { inputs?: Record<string, unknown> })?.inputs ?? {}) as Record<
@@ -1135,9 +1089,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
           registry: memorySinkRegistry,
           manager,
           sourceConnectorFor: (vaultName) =>
-            adapterRegistry.resolveSource(
-              parseSourceHandle(`obsidian-fs://${vaultName}`),
-            ),
+            adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)),
         },
         target !== undefined ? { target } : {},
       );
@@ -1284,11 +1236,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
         {
           uri: uri.href,
           mimeType: "application/json",
-          text: JSON.stringify(
-            readListSources(peerMcpRegistry, sourceConfigMeta()),
-            null,
-            2,
-          ),
+          text: JSON.stringify(readListSources(peerMcpRegistry, sourceConfigMeta()), null, 2),
         },
       ],
     }),
@@ -1340,11 +1288,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
           {
             uri: uri.href,
             mimeType: "application/json",
-            text: JSON.stringify(
-              readSourceTool(peerMcpRegistry, name, tool),
-              null,
-              2,
-            ),
+            text: JSON.stringify(readSourceTool(peerMcpRegistry, name, tool), null, 2),
           },
         ],
       };
@@ -1530,9 +1474,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
       // RFC 6570 reserved expansion: when the URI contains percent-encoded
       // characters (e.g. spaces or unicode in path segments), the SDK
       // already decodes them. The variable arrives as the raw path string.
-      const docId = Array.isArray(rawDocId)
-        ? rawDocId.join("/")
-        : String(rawDocId ?? "");
+      const docId = Array.isArray(rawDocId) ? rawDocId.join("/") : String(rawDocId ?? "");
       try {
         const vault = manager.require(vaultName);
         const backlinks = listBacklinks(vault, docId);
@@ -1626,9 +1568,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
                 });
               } catch (err) {
                 const msg = errorMessage(err);
-                process.stderr.write(
-                  `[contracts-reloaded-notify] ${vault.config.name}: ${msg}\n`,
-                );
+                process.stderr.write(`[contracts-reloaded-notify] ${vault.config.name}: ${msg}\n`);
               }
             }
           : undefined,
@@ -1646,9 +1586,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
       });
     } catch (err) {
       const message = errorMessage(err);
-      process.stderr.write(
-        `[contract-registry:${vault.config.name}] start failed: ${message}\n`,
-      );
+      process.stderr.write(`[contract-registry:${vault.config.name}] start failed: ${message}\n`);
       continue;
     }
     if (config.contracts.auto_register_tools) {
@@ -1686,7 +1624,8 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
   ): Promise<void> => {
     const v = manager.list().find((vt) => vt.config.name === vaultName);
     if (v === undefined) throw new Error(`unknown vault: ${vaultName}`);
-    const embeddingModel = v.config.embedding_model ?? config.server.default_embedding_model ?? "qwen3-embedding";
+    const embeddingModel =
+      v.config.embedding_model ?? config.server.default_embedding_model ?? "qwen3-embedding";
     // Use a dynamic import to keep the indexer module out of the startup
     // critical path when the plugin gate is OFF.
     const { indexVault } = await import("./indexer/index.js");
@@ -1767,7 +1706,3 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
 }
 
 // ─── Tool handlers ───────────────────────────────────────────────────────────
-
-
-
-
