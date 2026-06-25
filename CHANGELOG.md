@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [2.1.0] — 2026-06-25
+
 ### Added
 
 - **Alias-aware query expansion** (`ISSUE-aliases-not-in-fulltext-retrieval.md`). A note's frontmatter `aliases` live in `note_aliases`, not in the BM25 source (`chunks_fts`), so searching an exact alias (e.g. `JHE`) never surfaced its target person note. `search_hybrid` now resolves an exact-alias query and injects/promotes the target note to the top of the results. Additive and guarded — non-alias queries are byte-identical (no BM25/semantic scoring change). Set `aliasExpansion: false` to restore prior behavior. `SearchHit.scoreBreakdown` gains an optional `alias` provenance field.

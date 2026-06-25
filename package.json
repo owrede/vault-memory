@@ -1,6 +1,6 @@
 {
   "name": "@owrede/vault-memory",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Local-first semantic memory MCP server for Obsidian vaults",
   "type": "module",
   "license": "MIT",
