@@ -122,12 +122,8 @@ var init_loader = __esm({
       env: z.record(z.string(), z.string()).optional()
     });
     ContractsConfigSchema = z.object({
-      auto_register_tools: z.boolean().default(false).describe(
-        "D-A1b \u2014 per-vault gate for auto-registering contracts as MCP Tools"
-      ),
-      tool_prefix: z.string().min(1).regex(/^[a-z_][a-z0-9_]*$/).default("vm_").describe(
-        "D-A1c \u2014 slug prefix for auto-registered tool names; A7 enforces non-empty"
-      ),
+      auto_register_tools: z.boolean().default(false).describe("D-A1b \u2014 per-vault gate for auto-registering contracts as MCP Tools"),
+      tool_prefix: z.string().min(1).regex(/^[a-z_][a-z0-9_]*$/).default("vm_").describe("D-A1c \u2014 slug prefix for auto-registered tool names; A7 enforces non-empty"),
       step_timeout_seconds: z.number().int().positive().default(30).describe(
         "Q-TIMEOUT \u2014 applied only to peer-MCP verbs (baseline verbs use their own discipline)"
       ),
@@ -368,11 +364,7 @@ var init_runtime_config = __esm({
       "default_vault",
       "indexer_batch_size"
     ];
-    RESTART_REQUIRED_KEYS = [
-      "ollama_url",
-      "embedding_model",
-      "fts_tokenizer"
-    ];
+    RESTART_REQUIRED_KEYS = ["ollama_url", "embedding_model", "fts_tokenizer"];
     RuntimeConfigStore = class {
       values;
       constructor(initial) {
@@ -514,15 +506,13 @@ async function handler3(args2, deps) {
   if ("list" in args2) {
     const root2 = await readConfig(deps.configPath);
     const map = root2.contracts?.mcp_clients ?? {};
-    const clients2 = Object.entries(map).map(
-      ([name, entry2]) => ({
-        name,
-        command: entry2.command ?? "",
-        args: entry2.args ?? [],
-        // SECURITY: emit key-list only — values stay in plugin storage.
-        env_secrets: Object.keys(entry2.env_secrets ?? {})
-      })
-    );
+    const clients2 = Object.entries(map).map(([name, entry2]) => ({
+      name,
+      command: entry2.command ?? "",
+      args: entry2.args ?? [],
+      // SECURITY: emit key-list only — values stay in plugin storage.
+      env_secrets: Object.keys(entry2.env_secrets ?? {})
+    }));
     return { ok: true, clients: clients2 };
   }
   const root = await readConfig(deps.configPath);
@@ -838,7 +828,9 @@ function syncPluginTools(server, registered, opts) {
         },
         async (args2) => {
           try {
-            const validated = setRuntimeConfigTool.inputSchema.parse(args2);
+            const validated = setRuntimeConfigTool.inputSchema.parse(
+              args2
+            );
             const result = await setRuntimeConfigTool.handler(validated, {
               store: opts.runtimeConfig
             });
@@ -904,9 +896,7 @@ function syncPluginTools(server, registered, opts) {
         },
         async (args2) => {
           try {
-            const validated = getRuntimeStatsTool.inputSchema.parse(
-              args2
-            );
+            const validated = getRuntimeStatsTool.inputSchema.parse(args2);
             const result = await getRuntimeStatsTool.handler(validated, {
               listVaults: opts.listVaults,
               peerMcpStatus: opts.peerMcpStatus,
@@ -929,9 +919,7 @@ function syncPluginTools(server, registered, opts) {
         },
         async (args2) => {
           try {
-            const validated = triggerReindexTool.inputSchema.parse(
-              args2
-            );
+            const validated = triggerReindexTool.inputSchema.parse(args2);
             const result = await triggerReindexTool.handler(validated, {
               listVaults: opts.listVaults,
               reindexVault: opts.reindexVault,
@@ -957,10 +945,9 @@ function syncPluginTools(server, registered, opts) {
             const validated = suppressContractWriteTool.inputSchema.parse(
               args2
             );
-            const result = await suppressContractWriteTool.handler(
-              validated,
-              { suppression: opts.suppression }
-            );
+            const result = await suppressContractWriteTool.handler(validated, {
+              suppression: opts.suppression
+            });
             return ok(result);
           } catch (err) {
             return errorResponse(err instanceof Error ? err.message : String(err));
@@ -978,13 +965,8 @@ function syncPluginTools(server, registered, opts) {
         },
         async (args2) => {
           try {
-            const validated = refreshSourceTool.inputSchema.parse(
-              args2
-            );
-            const result = await refreshSourceTool.handler(
-              validated,
-              opts.sourceRegistry
-            );
+            const validated = refreshSourceTool.inputSchema.parse(args2);
+            const result = await refreshSourceTool.handler(validated, opts.sourceRegistry);
             return ok(result);
           } catch (err) {
             return errorResponse(err instanceof Error ? err.message : String(err));
@@ -1002,13 +984,8 @@ function syncPluginTools(server, registered, opts) {
         },
         async (args2) => {
           try {
-            const validated = unsetMcpClientTool.inputSchema.parse(
-              args2
-            );
-            const result = await unsetMcpClientTool.handler(
-              validated,
-              opts.sourceRegistry
-            );
+            const validated = unsetMcpClientTool.inputSchema.parse(args2);
+            const result = await unsetMcpClientTool.handler(validated, opts.sourceRegistry);
             return ok(result);
           } catch (err) {
             return errorResponse(err instanceof Error ? err.message : String(err));
@@ -1328,11 +1305,7 @@ function backfillSectionsFromChunks(db) {
     const sectionInfos = extractSections(blocks);
     if (sectionInfos.length === 0) continue;
     const chunks = getChunks.all(note.id);
-    const chunkRanges = computeChunkRangesForSections(
-      note.content,
-      sectionInfos,
-      chunks
-    );
+    const chunkRanges = computeChunkRangesForSections(note.content, sectionInfos, chunks);
     const insertedIds = [];
     for (let i = 0; i < sectionInfos.length; i++) {
       const s = sectionInfos[i];
@@ -1364,9 +1337,10 @@ function backfillSectionsFromChunks(db) {
 }
 function computeChunkRangesForSections(content, sections, chunks) {
   const ranges = computeSectionOffsetRanges(content, sections);
-  const out = sections.map(
-    () => ({ first: null, last: null })
-  );
+  const out = sections.map(() => ({
+    first: null,
+    last: null
+  }));
   for (const chunk of chunks) {
     const offset = chunk.start_offset;
     let chosenIdx = null;
@@ -1492,9 +1466,7 @@ function runMigration009(db, _ctx) {
   const cols = db.prepare("PRAGMA table_info(write_audit)").all();
   const hasColumn = cols.some((c) => c.name === "is_memory_sink_write");
   if (!hasColumn) {
-    db.exec(
-      "ALTER TABLE write_audit ADD COLUMN is_memory_sink_write INTEGER NOT NULL DEFAULT 0"
-    );
+    db.exec("ALTER TABLE write_audit ADD COLUMN is_memory_sink_write INTEGER NOT NULL DEFAULT 0");
   }
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_write_audit_memory
@@ -1572,7 +1544,9 @@ function runMigration011(db, _ctx) {
      ORDER BY id ASC
      LIMIT @chunk
   `);
-  const nextLast = db.prepare("SELECT id FROM wikilinks WHERE id > ? ORDER BY id ASC LIMIT 1 OFFSET ?");
+  const nextLast = db.prepare(
+    "SELECT id FROM wikilinks WHERE id > ? ORDER BY id ASC LIMIT 1 OFFSET ?"
+  );
   let lastId = 0;
   while (true) {
     copy.run({ after_id: lastId, chunk: CHUNK });
@@ -1607,7 +1581,9 @@ function runMigration012(db, _ctx) {
      ORDER BY id ASC
      LIMIT @chunk
   `);
-  const nextLast = db.prepare("SELECT id FROM wikilinks WHERE id > ? ORDER BY id ASC LIMIT 1 OFFSET ?");
+  const nextLast = db.prepare(
+    "SELECT id FROM wikilinks WHERE id > ? ORDER BY id ASC LIMIT 1 OFFSET ?"
+  );
   let lastId = 0;
   while (true) {
     copy.run({ after_id: lastId, chunk: CHUNK });
@@ -1620,18 +1596,12 @@ function runMigration013(db, _ctx) {
   const cols = db.prepare("PRAGMA table_info(chunks)").all();
   const hasColumn = cols.some((c) => c.name === "chunk_id_fragment");
   if (!hasColumn) {
-    db.exec(
-      "ALTER TABLE chunks ADD COLUMN chunk_id_fragment TEXT NOT NULL DEFAULT ''"
-    );
+    db.exec("ALTER TABLE chunks ADD COLUMN chunk_id_fragment TEXT NOT NULL DEFAULT ''");
   }
-  const pending = db.prepare(
-    "SELECT COUNT(*) AS c FROM chunks WHERE chunk_id_fragment = ''"
-  ).get();
+  const pending = db.prepare("SELECT COUNT(*) AS c FROM chunks WHERE chunk_id_fragment = ''").get();
   if (pending && pending.c > 0) {
     const CHUNK = 1e4;
-    const update = db.prepare(
-      "UPDATE chunks SET chunk_id_fragment = ? WHERE id = ?"
-    );
+    const update = db.prepare("UPDATE chunks SET chunk_id_fragment = ? WHERE id = ?");
     const select = db.prepare(
       "SELECT id, text FROM chunks WHERE id > ? AND chunk_id_fragment = '' ORDER BY id ASC LIMIT 10000"
     );
@@ -2085,9 +2055,7 @@ var init_notes = __esm({
        * `prefix` value MUST end with `/` to keep the match well-defined.
        */
       countByPathPrefix(prefix) {
-        const row = this.db.prepare(
-          "SELECT COUNT(*) AS c FROM notes WHERE path LIKE ? ESCAPE '\\'"
-        ).get(escapeLikePrefix(prefix) + "%");
+        const row = this.db.prepare("SELECT COUNT(*) AS c FROM notes WHERE path LIKE ? ESCAPE '\\'").get(escapeLikePrefix(prefix) + "%");
         return row?.c ?? 0;
       }
       /**
@@ -2101,9 +2069,7 @@ var init_notes = __esm({
        * marker, IN-03) compare `rows.length === LIST_BY_PATH_PREFIX_DEFAULT_LIMIT`.
        */
       listByPathPrefix(prefix, limit = LIST_BY_PATH_PREFIX_DEFAULT_LIMIT) {
-        return this.db.prepare(
-          "SELECT * FROM notes WHERE path LIKE ? ESCAPE '\\' ORDER BY path LIMIT ?"
-        ).all(escapeLikePrefix(prefix) + "%", limit);
+        return this.db.prepare("SELECT * FROM notes WHERE path LIKE ? ESCAPE '\\' ORDER BY path LIMIT ?").all(escapeLikePrefix(prefix) + "%", limit);
       }
       /**
        * Phase 3 / 03-01 (M4): read the denormalized `notes.status` column.
@@ -3195,12 +3161,8 @@ var init_brief_sources = __esm({
         (brief_doc_id, chunk_id_fragment, chunk_doc_id, recorded_hash)
       VALUES (@brief_doc_id, @chunk_id_fragment, @chunk_doc_id, @recorded_hash)
     `);
-        this._deleteByBrief = db.prepare(
-          "DELETE FROM brief_sources WHERE brief_doc_id = ?"
-        );
-        this._listBriefDocIds = db.prepare(
-          "SELECT DISTINCT brief_doc_id FROM brief_sources"
-        );
+        this._deleteByBrief = db.prepare("DELETE FROM brief_sources WHERE brief_doc_id = ?");
+        this._listBriefDocIds = db.prepare("SELECT DISTINCT brief_doc_id FROM brief_sources");
         this._briefsForChunkDoc = db.prepare(
           `SELECT brief_doc_id, chunk_id_fragment, chunk_doc_id, recorded_hash
          FROM brief_sources
@@ -4157,9 +4119,7 @@ async function expand(deps, opts) {
     if (!state) continue;
     const directionsToWalk = direction === "both" ? ["forward", "backward"] : [direction];
     for (const dir of directionsToWalk) {
-      let frontier = [
-        { noteId: seed.noteId, depth: 0 }
-      ];
+      let frontier = [{ noteId: seed.noteId, depth: 0 }];
       while (frontier.length > 0) {
         const next = [];
         for (const node of frontier) {
@@ -9269,9 +9229,7 @@ var init_registry2 = __esm({
           }
         }
         const known = this.order.map((h) => this.sinks.get(h)?.name).filter(Boolean).join(", ") || "(none)";
-        throw new Error(
-          `Unknown memory sink: "${nameOrHandle}". Registered sinks: ${known}`
-        );
+        throw new Error(`Unknown memory sink: "${nameOrHandle}". Registered sinks: ${known}`);
       }
       /** Return the default sink. Throws if no sinks are registered. */
       getDefaultMemorySink() {
@@ -9321,14 +9279,16 @@ function readListSinks(registry) {
   const sinks = registry.listMemorySinks();
   return {
     total: sinks.length,
-    sinks: sinks.map((s) => ({
-      name: s.name,
-      handle: s.handle,
-      vault: s.vault,
-      contract: s.contractName,
-      default: s.isDefault,
-      resolves_to: s.resolveToRelativePath
-    }))
+    sinks: sinks.map(
+      (s) => ({
+        name: s.name,
+        handle: s.handle,
+        vault: s.vault,
+        contract: s.contractName,
+        default: s.isDefault,
+        resolves_to: s.resolveToRelativePath
+      })
+    )
   };
 }
 var init_list_sinks = __esm({
@@ -9564,9 +9524,7 @@ async function handleRecordObservation(deps, args2) {
   const registry = deps.memorySinkRegistry;
   const sink = args2.sink !== void 0 ? registry.resolveMemorySink(args2.sink) : registry.getDefaultMemorySink();
   if (sink.vault !== args2.vault) {
-    throw new Error(
-      `Sink "${sink.name}" belongs to vault "${sink.vault}", not "${args2.vault}"`
-    );
+    throw new Error(`Sink "${sink.name}" belongs to vault "${sink.vault}", not "${args2.vault}"`);
   }
   const observedAtDefault = (/* @__PURE__ */ new Date()).toISOString();
   const sugarProps = {
@@ -9596,11 +9554,7 @@ async function handleRecordObservation(deps, args2) {
   const source = deps.sourceConnectorFor(args2.vault);
   let attempt = 0;
   while (attempt < MAX_COLLISION_RETRIES) {
-    const suffix = hashSuffix(
-      args2.claim,
-      observedAtForNaming,
-      randomBytes2(3).toString("hex")
-    );
+    const suffix = hashSuffix(args2.claim, observedAtForNaming, randomBytes2(3).toString("hex"));
     const filename = `${dateSlug(observedAtForNaming)}-${slug}-${suffix}.md`;
     const relativeResource = sink.resolveToRelativePath + OBSERVATIONS_SUBFOLDER + filename;
     const docId = formatDocId("obsidian-fs", args2.vault, relativeResource);
@@ -9657,10 +9611,7 @@ async function handleSupersede(deps, args2) {
   }
   const source = deps.sourceConnectorFor(vaultName);
   const oldDoc = await source.readDocument(oldId);
-  const {
-    wikilinks: _w,
-    ...existingProps
-  } = oldDoc.properties;
+  const { wikilinks: _w, ...existingProps } = oldDoc.properties;
   const patch = {
     properties: {
       ...existingProps,
@@ -9722,9 +9673,7 @@ async function handleRecall(deps, args2) {
   });
   const sinkMatchers = sinks.filter((s) => allowedVaultNames.has(s.vault)).map((s) => ({ vault: s.vault, prefix: s.resolveToRelativePath }));
   const inSink = candidates.filter(
-    (hit) => sinkMatchers.some(
-      (m) => hit.vault === m.vault && hit.notePath.startsWith(m.prefix)
-    )
+    (hit) => sinkMatchers.some((m) => hit.vault === m.vault && hit.notePath.startsWith(m.prefix))
   );
   const uniqueByPath = /* @__PURE__ */ new Map();
   for (const hit of inSink) {
@@ -10091,11 +10040,7 @@ async function handleCompileBrief(deps, args2) {
   }
   const chunkSources = resolveSourcesToChunks(vault, parsedSourceDocIds);
   const sourceHashes = buildSourceHashes(chunkSources);
-  const strategy = resolveLlmStrategy(
-    deps.server,
-    deps.briefConfig,
-    args2.prepared_text
-  );
+  const strategy = resolveLlmStrategy(deps.server, deps.briefConfig, args2.prepared_text);
   if (strategy.kind === "unavailable") {
     return {
       ok: false,
@@ -10306,20 +10251,14 @@ function changedSourcesFor(brief) {
 async function handleGetBrief(deps, args2) {
   const vault = deps.manager.require(args2.vault);
   const vaultName = vault.config.name;
-  const briefSink = deps.memorySinkRegistry.resolveMemorySink(
-    args2.sink ?? DEFAULT_BRIEF_SINK_NAME2
-  );
+  const briefSink = deps.memorySinkRegistry.resolveMemorySink(args2.sink ?? DEFAULT_BRIEF_SINK_NAME2);
   if (briefSink.vault !== vaultName) {
     throw new Error(
       `Brief sink "${briefSink.name}" belongs to vault "${briefSink.vault}", not "${vaultName}"`
     );
   }
   const source = deps.sourceConnectorFor(vaultName);
-  const found = await findBriefByTarget2(
-    source,
-    briefSink.resolveToRelativePath,
-    args2.target
-  );
+  const found = await findBriefByTarget2(source, briefSink.resolveToRelativePath, args2.target);
   if (found === null) {
     return { brief: null, reason: "not_found" };
   }
@@ -10444,9 +10383,7 @@ async function tryAcquireLock(vaultName, options = {}) {
   return attempt(1);
 }
 async function releaseLock(vaultName, options = {}) {
-  await unlink(lockPath(vaultName, options.rootOverride)).catch(
-    () => void 0
-  );
+  await unlink(lockPath(vaultName, options.rootOverride)).catch(() => void 0);
 }
 var init_lock = __esm({
   "src/brief/lock.ts"() {
@@ -10513,9 +10450,7 @@ var init_daemon = __esm({
         }
         this.acquired = true;
         const startCursor = vault.db.daemonState.getCursor(vault.config.name);
-        this.log(
-          `start vault=${vault.config.name} startCursor=${startCursor ?? "null"}`
-        );
+        this.log(`start vault=${vault.config.name} startCursor=${startCursor ?? "null"}`);
         await this.runStartupScan();
         this.disposable = feed.subscribe(async (event) => {
           try {
@@ -10634,9 +10569,7 @@ var init_daemon = __esm({
               continue;
             }
             const chunks = vault.db.chunks.getByNote(note.id);
-            const found = chunks.find(
-              (c) => c.chunk_id_fragment === row.chunkIdFragment
-            );
+            const found = chunks.find((c) => c.chunk_id_fragment === row.chunkIdFragment);
             if (!found) {
               currentHashes.set(key, null);
               continue;
@@ -10797,9 +10730,7 @@ var init_daemon = __esm({
         const name = deps.briefSinkName ?? DEFAULT_BRIEF_SINK_NAME3;
         const sink = deps.memorySinkRegistry.resolveMemorySink(name);
         if (sink.vault !== vaultName) {
-          throw new Error(
-            `Brief sink "${name}" belongs to vault "${sink.vault}", not "${vaultName}"`
-          );
+          throw new Error(`Brief sink "${name}" belongs to vault "${sink.vault}", not "${vaultName}"`);
         }
         return sink;
       }
@@ -11218,11 +11149,7 @@ async function assembleDossier(deps, args2) {
   }
   const linkedDocuments = [];
   for (const bl of backlinkRows) {
-    const linkedDocId = formatDocId(
-      anchorScheme,
-      anchorCandidate.vaultName,
-      bl.sourcePath
-    );
+    const linkedDocId = formatDocId(anchorScheme, anchorCandidate.vaultName, bl.sourcePath);
     let linkedDoc;
     try {
       linkedDoc = await anchorSource.readDocument(linkedDocId);
@@ -13121,20 +13048,14 @@ var init_tool_registry = __esm({
       },
       // ── Phase 4 graph tools (Plan 04-03 / GRA-01) ───────────────────────────
       expand: {
-        seed_doc_ids: z14.array(z14.string().regex(DOC_ID_PATTERN2)).min(1).describe(
-          "1+ opaque DocIds (e.g. obsidian-fs://<vault>/<path>) \u2014 seeds of the BFS."
-        ),
+        seed_doc_ids: z14.array(z14.string().regex(DOC_ID_PATTERN2)).min(1).describe("1+ opaque DocIds (e.g. obsidian-fs://<vault>/<path>) \u2014 seeds of the BFS."),
         // Hops hard-capped at 2 (D-05) via Zod literal union — `hops: 3`
         // is rejected at the boundary; the controller does not clamp.
         hops: z14.union([z14.literal(1), z14.literal(2)]).describe("Hop cap (1 or 2). v2.0.0 hard-caps at 2."),
         direction: z14.enum(["forward", "backward", "both"]).optional().default("both").describe("Edge traversal direction; default 'both'."),
         edge_types: z14.array(z14.enum(["wikilink", "mention", "frontmatter-ref", "hyperlink"])).optional().describe("Optional filter on edge types; default = all four types."),
-        filter_properties: z14.record(z14.string(), z14.unknown()).optional().describe(
-          "Strict-equality predicate on document properties (e.g. {type: 'Project'})."
-        ),
-        include_superseded: z14.boolean().optional().default(false).describe(
-          "When false (default), docs whose properties.status === 'superseded' are dropped."
-        )
+        filter_properties: z14.record(z14.string(), z14.unknown()).optional().describe("Strict-equality predicate on document properties (e.g. {type: 'Project'})."),
+        include_superseded: z14.boolean().optional().default(false).describe("When false (default), docs whose properties.status === 'superseded' are dropped.")
       },
       // ── Phase 4 graph tools (Plan 04-05 / GRA-02) ───────────────────────────
       //
@@ -13258,9 +13179,7 @@ function resolveRefs(schema) {
       const ref = obj["$ref"];
       const match = ref.match(TYPES_REF_RE);
       if (!match) {
-        throw new Error(
-          `Unsupported $ref form (only '#/types/<name>' accepted): ${ref}`
-        );
+        throw new Error(`Unsupported $ref form (only '#/types/<name>' accepted): ${ref}`);
       }
       const typeName = match[1];
       const catalogEntry = TYPES_CATALOG[typeName];
@@ -13408,15 +13327,10 @@ var init_schema4 = __esm({
       "read_note"
     ];
     MCP_VERB_RE = /^mcp:\/\/[a-z][a-z0-9_-]*\/[a-z][a-z0-9_-]*$/;
-    VerbSchema = z16.union([
-      z16.enum([...BASELINE_VERBS, "literal"]),
-      z16.string().regex(MCP_VERB_RE)
-    ]);
+    VerbSchema = z16.union([z16.enum([...BASELINE_VERBS, "literal"]), z16.string().regex(MCP_VERB_RE)]);
     StepSchema = z16.object({
       as: z16.string().min(1).regex(/^[a-z_][a-z0-9_]*$/, "alias must be snake_case").describe("D-A2c \u2014 unique snake_case alias for this step's output"),
-      verb: VerbSchema.describe(
-        "Closed enum + literal + mcp:// extension (D-A2a / C-1)"
-      ),
+      verb: VerbSchema.describe("Closed enum + literal + mcp:// extension (D-A2a / C-1)"),
       args: z16.record(z16.string(), z16.unknown()).optional(),
       value: z16.unknown().optional()
     }).describe("One step in an assembly: array");
@@ -13429,9 +13343,7 @@ var init_schema4 = __esm({
       document_kind: z16.enum(["brief", "observation", "custom"]),
       properties: z16.record(z16.string(), z16.unknown()).default({}),
       body_from: z16.string().min(1).describe("Template expression that resolves to the body string")
-    }).describe(
-      "DeliveryAdapter.write chokepoint \u2014 only ground-truth DocId source (C-3)"
-    );
+    }).describe("DeliveryAdapter.write chokepoint \u2014 only ground-truth DocId source (C-3)");
     ContractFileSchema = z16.object({
       version: z16.literal(1).describe("v2.0.0 supports version 1 only; v2.x may extend additively"),
       name: z16.string().min(1).regex(/^[a-z][a-z0-9-]*$/, "name must be kebab-case").describe("Contract name \u2014 used by instantiate_contract and slugify"),
@@ -13982,10 +13894,8 @@ var init_mcp_clients = __esm({
           await this.primeTools(entry);
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
-          process.stderr.write(
-            `[contracts] peer-MCP client '${name}' failed to start: ${msg}
-`
-          );
+          process.stderr.write(`[contracts] peer-MCP client '${name}' failed to start: ${msg}
+`);
           this.entries.set(name, {
             client: wrapUnavailable(),
             status: "unavailable",
@@ -14458,9 +14368,7 @@ function readListContracts(deps, opts = {}) {
   const out = [];
   for (const [name, parsed] of deps.registry.entries()) {
     if (opts.source !== void 0) {
-      const anyMatch = Object.values(parsed.sources).some(
-        (s) => s.handle.startsWith(opts.source)
-      );
+      const anyMatch = Object.values(parsed.sources).some((s) => s.handle.startsWith(opts.source));
       if (!anyMatch) continue;
     }
     out.push({
@@ -14486,13 +14394,15 @@ function readListContractVerbs(deps) {
     if (!verbToContracts.has(r.verb)) verbToContracts.set(r.verb, /* @__PURE__ */ new Set());
     verbToContracts.get(r.verb).add(r.contract);
   }
-  const custom = usage.filter((u) => u.verb.startsWith("mcp://")).map((u) => ({
-    verb: u.verb,
-    declared_in: extractDeclaredIn(u.verb),
-    used_by_contracts: Array.from(verbToContracts.get(u.verb) ?? []).sort(),
-    invocation_count: u.invocation_count,
-    last_seen: u.last_seen
-  }));
+  const custom = usage.filter((u) => u.verb.startsWith("mcp://")).map(
+    (u) => ({
+      verb: u.verb,
+      declared_in: extractDeclaredIn(u.verb),
+      used_by_contracts: Array.from(verbToContracts.get(u.verb) ?? []).sort(),
+      invocation_count: u.invocation_count,
+      last_seen: u.last_seen
+    })
+  );
   return { baseline: BASELINE_VERBS2, custom };
 }
 function extractDeclaredIn(verb) {
@@ -14612,10 +14522,7 @@ __export(server_exports, {
   setupMemorySinks: () => setupMemorySinks,
   truncateSnippet: () => truncateSnippet
 });
-import {
-  McpServer,
-  ResourceTemplate
-} from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { homedir as homedir5 } from "os";
 import { join as joinPath } from "path";
@@ -14728,24 +14635,16 @@ async function serve(options = {}) {
         try {
           await daemon.start(vault, feed, {
             memorySinkRegistry,
-            deliveryAdapterFor: (vaultName) => adapterRegistry.resolveDelivery(
-              parseSourceHandle(`obsidian-fs://${vaultName}`)
-            ),
-            sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
-              parseSourceHandle(`obsidian-fs://${vaultName}`)
-            ),
-            log: (m) => process.stderr.write(
-              `[brief-daemon:${vault.config.name}] ${m}
-`
-            )
+            deliveryAdapterFor: (vaultName) => adapterRegistry.resolveDelivery(parseSourceHandle(`obsidian-fs://${vaultName}`)),
+            sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)),
+            log: (m) => process.stderr.write(`[brief-daemon:${vault.config.name}] ${m}
+`)
           });
           briefDaemons.set(vault.config.name, daemon);
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
-          process.stderr.write(
-            `[brief-daemon:${vault.config.name}] start failed: ${message}
-`
-          );
+          process.stderr.write(`[brief-daemon:${vault.config.name}] start failed: ${message}
+`);
         }
       }
     }
@@ -14794,10 +14693,8 @@ async function serve(options = {}) {
   const onStdinClose = (reason) => {
     if (stdinClosing) return;
     stdinClosing = true;
-    process.stderr.write(
-      `[vault-memory] stdin ${reason} \u2014 parent process gone; shutting down.
-`
-    );
+    process.stderr.write(`[vault-memory] stdin ${reason} \u2014 parent process gone; shutting down.
+`);
     setTimeout(() => {
       void shutdown().finally(() => process.exit(0));
     }, 500);
@@ -14817,9 +14714,7 @@ async function serve(options = {}) {
   const buildInstantiateDeps = (vault) => {
     const state = contractRegistries.get(vault.config.name);
     if (state === void 0) {
-      throw new Error(
-        `ContractRegistry not initialized for vault "${vault.config.name}"`
-      );
+      throw new Error(`ContractRegistry not initialized for vault "${vault.config.name}"`);
     }
     return {
       vault,
@@ -14863,9 +14758,7 @@ async function serve(options = {}) {
         return expand(
           {
             manager,
-            sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
-              parseSourceHandle(`obsidian-fs://${vaultName}`)
-            )
+            sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`))
           },
           {
             seed_doc_ids: seeds,
@@ -14900,9 +14793,7 @@ async function serve(options = {}) {
         return cluster(
           {
             manager,
-            sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
-              parseSourceHandle(`obsidian-fs://${vaultName}`)
-            ),
+            sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)),
             hybridSearch: async (v, query, limit) => hybridSearch({
               query,
               embeddingModel: defaultModel,
@@ -14924,9 +14815,7 @@ async function serve(options = {}) {
           {
             memorySinkRegistry,
             manager,
-            sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
-              parseSourceHandle(`obsidian-fs://${vaultName}`)
-            ),
+            sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)),
             searchHybrid: async (input) => hybridSearch({
               query: input.query,
               embeddingModel: defaultModel,
@@ -14948,12 +14837,8 @@ async function serve(options = {}) {
           {
             memorySinkRegistry,
             manager,
-            deliveryAdapterFor: (vaultName) => adapterRegistry.resolveDelivery(
-              parseSourceHandle(`obsidian-fs://${vaultName}`)
-            ),
-            sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
-              parseSourceHandle(`obsidian-fs://${vaultName}`)
-            ),
+            deliveryAdapterFor: (vaultName) => adapterRegistry.resolveDelivery(parseSourceHandle(`obsidian-fs://${vaultName}`)),
+            sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)),
             server,
             ollama,
             briefConfig: config.brief
@@ -14968,9 +14853,7 @@ async function serve(options = {}) {
           {
             memorySinkRegistry,
             manager,
-            sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
-              parseSourceHandle(`obsidian-fs://${vaultName}`)
-            )
+            sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`))
           },
           { ...p, vault: p.vault ?? vault.config.name }
         );
@@ -14996,9 +14879,7 @@ async function serve(options = {}) {
         return getOutline(
           {
             manager,
-            sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
-              parseSourceHandle(`obsidian-fs://${vaultName}`)
-            )
+            sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`))
           },
           p
         );
@@ -15071,11 +14952,7 @@ async function serve(options = {}) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       handleReadNote: async (args2) => {
         const p = args2;
-        return handleReadNote(
-          adapterRegistry,
-          p.vault ?? vault.config.name,
-          p.path
-        );
+        return handleReadNote(adapterRegistry, p.vault ?? vault.config.name, p.path);
       }
     };
   };
@@ -15160,9 +15037,7 @@ async function serve(options = {}) {
         p.expand,
         {
           manager,
-          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
-            parseSourceHandle(`obsidian-fs://${vaultName}`)
-          )
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`))
         }
       );
     },
@@ -15307,20 +15182,13 @@ async function serve(options = {}) {
         {
           memorySinkRegistry,
           manager,
-          deliveryAdapterFor: (vaultName) => adapterRegistry.resolveDelivery(
-            parseSourceHandle(`obsidian-fs://${vaultName}`)
-          ),
-          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
-            parseSourceHandle(`obsidian-fs://${vaultName}`)
-          )
+          deliveryAdapterFor: (vaultName) => adapterRegistry.resolveDelivery(parseSourceHandle(`obsidian-fs://${vaultName}`)),
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`))
         },
         p
       );
       if (result.ok) {
-        const resource = result.doc_id.replace(
-          `obsidian-fs://${p.vault}/`,
-          ""
-        );
+        const resource = result.doc_id.replace(`obsidian-fs://${p.vault}/`, "");
         suppression.add(resource);
       }
       return result;
@@ -15331,12 +15199,8 @@ async function serve(options = {}) {
         {
           memorySinkRegistry,
           manager,
-          deliveryAdapterFor: (vaultName) => adapterRegistry.resolveDelivery(
-            parseSourceHandle(`obsidian-fs://${vaultName}`)
-          ),
-          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
-            parseSourceHandle(`obsidian-fs://${vaultName}`)
-          )
+          deliveryAdapterFor: (vaultName) => adapterRegistry.resolveDelivery(parseSourceHandle(`obsidian-fs://${vaultName}`)),
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`))
         },
         p
       );
@@ -15353,9 +15217,7 @@ async function serve(options = {}) {
         {
           memorySinkRegistry,
           manager,
-          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
-            parseSourceHandle(`obsidian-fs://${vaultName}`)
-          ),
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)),
           searchHybrid: async (input) => hybridSearch({
             query: input.query,
             embeddingModel: defaultModel,
@@ -15377,12 +15239,8 @@ async function serve(options = {}) {
         {
           memorySinkRegistry,
           manager,
-          deliveryAdapterFor: (vaultName) => adapterRegistry.resolveDelivery(
-            parseSourceHandle(`obsidian-fs://${vaultName}`)
-          ),
-          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
-            parseSourceHandle(`obsidian-fs://${vaultName}`)
-          ),
+          deliveryAdapterFor: (vaultName) => adapterRegistry.resolveDelivery(parseSourceHandle(`obsidian-fs://${vaultName}`)),
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)),
           server,
           ollama,
           briefConfig: config.brief
@@ -15390,16 +15248,10 @@ async function serve(options = {}) {
         p
       );
       if (result.ok) {
-        const resource = result.doc_id.replace(
-          `obsidian-fs://${p.vault}/`,
-          ""
-        );
+        const resource = result.doc_id.replace(`obsidian-fs://${p.vault}/`, "");
         suppression.add(resource);
         if (result.supersededPrior) {
-          const oldResource = result.supersededPrior.replace(
-            /^obsidian-fs:\/\/[^/]+\//,
-            ""
-          );
+          const oldResource = result.supersededPrior.replace(/^obsidian-fs:\/\/[^/]+\//, "");
           suppression.add(oldResource);
         }
       }
@@ -15411,9 +15263,7 @@ async function serve(options = {}) {
         {
           memorySinkRegistry,
           manager,
-          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
-            parseSourceHandle(`obsidian-fs://${vaultName}`)
-          )
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`))
         },
         p
       );
@@ -15424,9 +15274,7 @@ async function serve(options = {}) {
       return getOutline(
         {
           manager,
-          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
-            parseSourceHandle(`obsidian-fs://${vaultName}`)
-          )
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`))
         },
         p
       );
@@ -15507,9 +15355,7 @@ async function serve(options = {}) {
       return assembleDossier(
         {
           manager,
-          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
-            parseSourceHandle(`obsidian-fs://${vaultName}`)
-          )
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`))
         },
         p
       );
@@ -15521,9 +15367,7 @@ async function serve(options = {}) {
       return expand(
         {
           manager,
-          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
-            parseSourceHandle(`obsidian-fs://${vaultName}`)
-          )
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`))
         },
         {
           seed_doc_ids: seeds,
@@ -15558,9 +15402,7 @@ async function serve(options = {}) {
       return cluster(
         {
           manager,
-          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
-            parseSourceHandle(`obsidian-fs://${vaultName}`)
-          ),
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)),
           // Bind hybridSearch at call time — avoids the
           // src/graph/cluster.ts → src/search/hybrid.ts circular
           // import. The injected callback returns SearchHit[]; the
@@ -15585,9 +15427,7 @@ async function serve(options = {}) {
       return getDocumentBundle(
         {
           manager,
-          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
-            parseSourceHandle(`obsidian-fs://${vaultName}`)
-          )
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`))
         },
         p
       );
@@ -15615,13 +15455,10 @@ async function serve(options = {}) {
         const v = manager.list().find((vault) => vault.config.name === vname);
         if (v === void 0) continue;
         const before = new Set(state.registered.keys());
-        syncAutoRegistered(
-          server,
-          state.started.registry,
-          prefix,
-          state.registered,
-          { enabled: true, instantiateHandler }
-        );
+        syncAutoRegistered(server, state.started.registry, prefix, state.registered, {
+          enabled: true,
+          instantiateHandler
+        });
         const after = new Set(state.registered.keys());
         results.push({
           vault: vname,
@@ -15653,10 +15490,7 @@ async function serve(options = {}) {
       if (state === void 0) {
         return { ok: false, reason: "unknown_contract", name: p.name };
       }
-      return describeContract(
-        { registry: state.started.registry },
-        { name: p.name }
-      );
+      return describeContract({ registry: state.started.registry }, { name: p.name });
     },
     // ── Phase 6 task-contract DSL (Plan 06-03 / CON-06) ────────────────────
     //
@@ -15753,9 +15587,7 @@ async function serve(options = {}) {
         {
           registry: memorySinkRegistry,
           manager,
-          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(
-            parseSourceHandle(`obsidian-fs://${vaultName}`)
-          )
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`))
         },
         target !== void 0 ? { target } : {}
       );
@@ -15869,11 +15701,7 @@ async function serve(options = {}) {
         {
           uri: uri.href,
           mimeType: "application/json",
-          text: JSON.stringify(
-            readListSources(peerMcpRegistry, sourceConfigMeta()),
-            null,
-            2
-          )
+          text: JSON.stringify(readListSources(peerMcpRegistry, sourceConfigMeta()), null, 2)
         }
       ]
     })
@@ -15919,11 +15747,7 @@ async function serve(options = {}) {
           {
             uri: uri.href,
             mimeType: "application/json",
-            text: JSON.stringify(
-              readSourceTool(peerMcpRegistry, name, tool),
-              null,
-              2
-            )
+            text: JSON.stringify(readSourceTool(peerMcpRegistry, name, tool), null, 2)
           }
         ]
       };
@@ -16156,10 +15980,8 @@ async function serve(options = {}) {
             });
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
-            process.stderr.write(
-              `[contracts-reloaded-notify] ${vault.config.name}: ${msg}
-`
-            );
+            process.stderr.write(`[contracts-reloaded-notify] ${vault.config.name}: ${msg}
+`);
           }
         } : void 0,
         onRegistryChange: () => {
@@ -16176,10 +15998,8 @@ async function serve(options = {}) {
       });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      process.stderr.write(
-        `[contract-registry:${vault.config.name}] start failed: ${message}
-`
-      );
+      process.stderr.write(`[contract-registry:${vault.config.name}] start failed: ${message}
+`);
       continue;
     }
     if (config.contracts.auto_register_tools) {
