@@ -4767,6 +4767,7 @@ async function hybridSearch(opts) {
     }
     hits.push(hit);
   }
+  injectAliasHits(hits, opts, query, includeBreakdown);
   if (opts.expand && opts.expandDeps && hits.length > 0) {
     const seedDocIds = [];
     for (const hit of hits) {
@@ -4800,6 +4801,65 @@ async function hybridSearch(opts) {
     }
   }
   return hits;
+}
+function injectAliasHits(hits, opts, query, includeBreakdown) {
+  if ((opts.aliasExpansion ?? true) !== true) return;
+  for (const vault of opts.vaults) {
+    let resolved;
+    try {
+      resolved = vault.db.aliases.resolve(query);
+    } catch {
+      continue;
+    }
+    if (!resolved) continue;
+    const note = vault.db.notes.getById(resolved.note_id);
+    if (!note) continue;
+    const existingIdx = hits.findIndex(
+      (h) => h.vault === vault.config.name && h.notePath === note.path
+    );
+    if (existingIdx >= 0) {
+      const [existing] = hits.splice(existingIdx, 1);
+      if (existing) hits.unshift(existing);
+      return;
+    }
+    const firstChunk = vault.db.chunks.getByNote(note.id)[0];
+    const aliasHit = {
+      vault: vault.config.name,
+      notePath: note.path,
+      noteTitle: note.title,
+      chunkText: firstChunk?.text ?? note.title,
+      chunkIdx: firstChunk?.idx ?? 0,
+      headingPath: firstChunk?.heading_path ?? null,
+      // Alias matches are exact metadata hits — rank above fuzzy results.
+      score: 1
+    };
+    if (includeBreakdown) {
+      aliasHit.scoreBreakdown = { rrf: 1, alias: resolved.alias };
+    }
+    try {
+      aliasHit.doc_id = formatDocId("obsidian-fs", vault.config.name, note.path);
+      aliasHit.source_handle = parseSourceHandle(`obsidian-fs://${vault.config.name}`);
+    } catch {
+    }
+    aliasHit.mtime = note.mtime;
+    aliasHit.hash = note.hash;
+    if (opts.displayUrlFor !== void 0) {
+      try {
+        aliasHit.display_url = opts.displayUrlFor(vault.config.name, note.path);
+      } catch {
+      }
+    }
+    if (note.frontmatter) {
+      try {
+        aliasHit.properties = JSON.parse(note.frontmatter);
+      } catch {
+      }
+    }
+    const status = vault.db.notes.getStatus(note.id);
+    if (typeof status === "string") aliasHit.status = status;
+    hits.unshift(aliasHit);
+    return;
+  }
 }
 async function searchOneVault(vault, query, embeddingModelName, rrfK, topK, getQueryVector, excludeSuperseded = false) {
   const fanK = Math.max(topK * 3, topK);
