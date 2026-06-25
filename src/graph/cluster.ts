@@ -66,11 +66,7 @@ import seedrandom from "seedrandom";
 import { decomposeDocId, formatDocId, parseDocId } from "../adapters/registry.js";
 import type { SourceConnector } from "../adapters/source/types.js";
 import type { EdgeType } from "../db/queries/edges.js";
-import {
-  type CitationPacket,
-  displayUrlFor,
-  toCitationPacket,
-} from "../memory/citation-packet.js";
+import { type CitationPacket, displayUrlFor, toCitationPacket } from "../memory/citation-packet.js";
 import type { DocId, Document, SearchHit } from "../types.js";
 import type { Vault, VaultManager } from "../vault/index.js";
 import { expand } from "./expand.js";
@@ -185,10 +181,7 @@ const LOUVAIN_SEED = "vault-memory-cluster-v1";
  * Cluster the union of seeds + their 1-hop neighborhood via Louvain
  * community detection. See file header for the full contract.
  */
-export async function cluster(
-  deps: ClusterDeps,
-  opts: ClusterOptions,
-): Promise<ClusterResult> {
+export async function cluster(deps: ClusterDeps, opts: ClusterOptions): Promise<ClusterResult> {
   // ── D-15a mutual exclusion ────────────────────────────────────────────
   if (opts.query !== undefined && opts.seed_doc_ids !== undefined) {
     return {
@@ -258,8 +251,7 @@ export async function cluster(
       return {
         ok: false,
         reason: "vault_required",
-        hint:
-          "cluster() with `query` requires an explicit `vault:` parameter when multiple vaults are configured.",
+        hint: "cluster() with `query` requires an explicit `vault:` parameter when multiple vaults are configured.",
         configured_vaults: allVaults.map((v) => v.config.name),
       };
     }
@@ -556,9 +548,7 @@ function computeSummary(
     if (a.degree !== b.degree) return b.degree - a.degree;
     return a.doc_id < b.doc_id ? -1 : a.doc_id > b.doc_id ? 1 : 0;
   });
-  const topTitles = titleEntries
-    .slice(0, 3)
-    .map(({ title, degree }) => ({ title, degree }));
+  const topTitles = titleEntries.slice(0, 3).map(({ title, degree }) => ({ title, degree }));
 
   // edge_density.
   let edgeDensity = 0;

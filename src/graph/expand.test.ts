@@ -23,12 +23,7 @@ import type { SourceConnector } from "../adapters/source/types.js";
 import { Database } from "../db/index.js";
 import type { DocId, Document, SourceHandle } from "../types.js";
 import { VaultManager, type Vault } from "../vault/index.js";
-import {
-  expand,
-  isShorterPath,
-  type ExpandDeps,
-  type ViaTrace,
-} from "./expand.js";
+import { expand, isShorterPath, type ExpandDeps, type ViaTrace } from "./expand.js";
 
 const VAULT_NAME = "test-vault";
 
@@ -549,9 +544,7 @@ describe("expand() BFS", () => {
       hops: 1,
       direction: "forward",
     });
-    expect(oneHop.documents.map((d) => d.doc_id)).toEqual([
-      docIdFor("_memory/observations/x.md"),
-    ]);
+    expect(oneHop.documents.map((d) => d.doc_id)).toEqual([docIdFor("_memory/observations/x.md")]);
     // 2-hop: _memory/x still surfaces; _memory/y is silently dropped
     // because its only inbound edge is from another _memory doc.
     const twoHop = await expand(fx.deps, {

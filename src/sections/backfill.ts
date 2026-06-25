@@ -18,12 +18,7 @@
  */
 
 import type BetterSqlite3 from "better-sqlite3";
-import type {
-  BlockNode,
-  ChunkRow,
-  InsertSectionRow,
-  SectionInfo,
-} from "../types.js";
+import type { BlockNode, ChunkRow, InsertSectionRow, SectionInfo } from "../types.js";
 import { extractSections, markdownToSectionBlocks } from "./extract.js";
 
 /**
@@ -94,11 +89,7 @@ export function backfillSectionsFromChunks(db: BetterSqlite3.Database): number {
     // range; we compute it by mapping each chunk's start offset to its
     // owning heading region.
     const chunks = getChunks.all(note.id);
-    const chunkRanges = computeChunkRangesForSections(
-      note.content,
-      sectionInfos,
-      chunks,
-    );
+    const chunkRanges = computeChunkRangesForSections(note.content, sectionInfos, chunks);
 
     // Insert in two passes so parent_id can reference the newly-minted
     // section IDs. Per-index → ID map populated as we go. Slots for
@@ -107,8 +98,7 @@ export function backfillSectionsFromChunks(db: BetterSqlite3.Database): number {
     const insertedIds: Array<number | null> = [];
     for (let i = 0; i < sectionInfos.length; i++) {
       const s = sectionInfos[i]!;
-      const parentId =
-        s.parent_index === null ? null : insertedIds[s.parent_index] ?? null;
+      const parentId = s.parent_index === null ? null : (insertedIds[s.parent_index] ?? null);
       const range = chunkRanges[i] ?? { first: null, last: null };
       const row: InsertSectionRow & { created_at: number } = {
         note_id: note.id,
@@ -171,9 +161,10 @@ function computeChunkRangesForSections(
   // To avoid a circular import we lazy-require here via the named
   // export.
   const ranges = computeSectionOffsetRanges(content, sections);
-  const out: Array<{ first: number | null; last: number | null }> = sections.map(
-    () => ({ first: null, last: null }),
-  );
+  const out: Array<{ first: number | null; last: number | null }> = sections.map(() => ({
+    first: null,
+    last: null,
+  }));
 
   for (const chunk of chunks) {
     const offset = chunk.start_offset;

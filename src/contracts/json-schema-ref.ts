@@ -28,9 +28,7 @@ export function resolveRefs(schema: unknown): unknown {
       const ref = obj["$ref"];
       const match = ref.match(TYPES_REF_RE);
       if (!match) {
-        throw new Error(
-          `Unsupported $ref form (only '#/types/<name>' accepted): ${ref}`,
-        );
+        throw new Error(`Unsupported $ref form (only '#/types/<name>' accepted): ${ref}`);
       }
       const typeName = match[1]!;
       const catalogEntry = (TYPES_CATALOG as Record<string, unknown>)[typeName];

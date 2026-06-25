@@ -106,16 +106,18 @@ async function handler(
   // indexer runs silently (matching the existing CLI behavior).
   const token = args.progressToken;
   for (const vname of targets) {
-    const onProgress = token !== undefined
-      ? (p: TriggerReindexProgress) => {
-          deps.notifier({
-            method: "notifications/progress",
-            params: token !== undefined && p.total !== undefined
-              ? { progressToken: token, progress: p.progress, total: p.total }
-              : { progressToken: token!, progress: p.progress },
-          });
-        }
-      : undefined;
+    const onProgress =
+      token !== undefined
+        ? (p: TriggerReindexProgress) => {
+            deps.notifier({
+              method: "notifications/progress",
+              params:
+                token !== undefined && p.total !== undefined
+                  ? { progressToken: token, progress: p.progress, total: p.total }
+                  : { progressToken: token!, progress: p.progress },
+            });
+          }
+        : undefined;
     await deps.reindexVault(vname, onProgress);
   }
 

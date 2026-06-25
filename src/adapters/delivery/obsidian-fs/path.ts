@@ -141,10 +141,7 @@ export function joinVaultPathPosix(...segments: string[]): string {
  * Comparison-bound — DO NOT pass the return value to `fs.*` calls; use
  * `pathInSink` for FS callers.
  */
-export function vaultRelativeInSink(
-  sink: SinkLike,
-  relativeSubpath = "",
-): string {
+export function vaultRelativeInSink(sink: SinkLike, relativeSubpath = ""): string {
   if (relativeSubpath === "") return normalizeToForwardSlash(sink.resolveToRelativePath);
   return joinVaultPathPosix(sink.resolveToRelativePath, relativeSubpath);
 }

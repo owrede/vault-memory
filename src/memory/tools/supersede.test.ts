@@ -23,10 +23,7 @@ import type { Vault } from "../../vault/index.js";
 import { ObsidianFsDelivery } from "../../adapters/delivery/obsidian-fs/index.js";
 import { ObsidianFsSource } from "../../adapters/source/obsidian-fs/index.js";
 import { provisionSink } from "../../adapters/delivery/obsidian-fs/sentinel.js";
-import {
-  MemorySinkRegistry,
-  parseMemorySinkHandle,
-} from "../../memory/index.js";
+import { MemorySinkRegistry, parseMemorySinkHandle } from "../../memory/index.js";
 import { formatDocId } from "../../adapters/registry.js";
 import type { MemorySink } from "../../types.js";
 import { handleRecordObservation } from "./record-observation.js";
@@ -53,15 +50,10 @@ async function buildFixture(): Promise<{
     dbPath: ":memory:",
   };
   const manager = new VaultManager();
-  (manager as unknown as { vaults: Map<string, Vault> }).vaults.set(
-    VAULT_NAME,
-    vault,
-  );
+  (manager as unknown as { vaults: Map<string, Vault> }).vaults.set(VAULT_NAME, vault);
 
   const registry = new MemorySinkRegistry();
-  const sinkHandle = parseMemorySinkHandle(
-    `obsidian-fs://${VAULT_NAME}/${SINK_REL_PATH}`,
-  );
+  const sinkHandle = parseMemorySinkHandle(`obsidian-fs://${VAULT_NAME}/${SINK_REL_PATH}`);
   await registry.registerMemorySinks(
     [{ name: "default", handle: sinkHandle, contract: "default-memory-v1" }],
     {
@@ -142,16 +134,9 @@ describe("handleSupersede — MEM-04 controller", () => {
   it("happy path: OLD doc gets status=superseded + back-reference; REPLACEMENT untouched", async () => {
     const { oldId, replacementId } = await seedTwoObservations();
     const oldResource = oldId.replace(`obsidian-fs://${VAULT_NAME}/`, "");
-    const replResource = replacementId.replace(
-      `obsidian-fs://${VAULT_NAME}/`,
-      "",
-    );
-    const replMtimeBefore = (await fs.stat(join(fixture.vaultDir, replResource)))
-      .mtimeMs;
-    const replContentBefore = await fs.readFile(
-      join(fixture.vaultDir, replResource),
-      "utf-8",
-    );
+    const replResource = replacementId.replace(`obsidian-fs://${VAULT_NAME}/`, "");
+    const replMtimeBefore = (await fs.stat(join(fixture.vaultDir, replResource))).mtimeMs;
+    const replContentBefore = await fs.readFile(join(fixture.vaultDir, replResource), "utf-8");
 
     const res = await handleSupersede(deps(), {
       doc_id: oldId,
@@ -167,21 +152,16 @@ describe("handleSupersede — MEM-04 controller", () => {
     expect(res.doc_id).toBe(oldId);
 
     // OLD doc frontmatter reflects the supersede.
-    const oldFm = matter(
-      await fs.readFile(join(fixture.vaultDir, oldResource), "utf-8"),
-    ).data as Record<string, unknown>;
+    const oldFm = matter(await fs.readFile(join(fixture.vaultDir, oldResource), "utf-8"))
+      .data as Record<string, unknown>;
     expect(oldFm.status).toBe("superseded");
     expect(oldFm.superseded_by).toBe(replacementId);
     expect(oldFm.superseded_reason).toBe("new evidence supersedes");
 
     // REPLACEMENT doc: file content and mtime are unchanged.
-    const replContentAfter = await fs.readFile(
-      join(fixture.vaultDir, replResource),
-      "utf-8",
-    );
+    const replContentAfter = await fs.readFile(join(fixture.vaultDir, replResource), "utf-8");
     expect(replContentAfter).toBe(replContentBefore);
-    const replMtimeAfter = (await fs.stat(join(fixture.vaultDir, replResource)))
-      .mtimeMs;
+    const replMtimeAfter = (await fs.stat(join(fixture.vaultDir, replResource))).mtimeMs;
     expect(replMtimeAfter).toBe(replMtimeBefore);
   });
 
@@ -238,16 +218,8 @@ describe("handleSupersede — MEM-04 controller", () => {
   });
 
   it("throws when target DocId is not inside any registered memory sink", async () => {
-    const outsideId = formatDocId(
-      "obsidian-fs",
-      VAULT_NAME,
-      "ordinary/note.md",
-    );
-    const replacementId = formatDocId(
-      "obsidian-fs",
-      VAULT_NAME,
-      "_memory/observations/r.md",
-    );
+    const outsideId = formatDocId("obsidian-fs", VAULT_NAME, "ordinary/note.md");
+    const replacementId = formatDocId("obsidian-fs", VAULT_NAME, "_memory/observations/r.md");
     await expect(
       handleSupersede(deps(), {
         doc_id: outsideId,
@@ -274,9 +246,8 @@ describe("handleSupersede — MEM-04 controller", () => {
     expect(second.ok).toBe(true);
 
     const oldResource = oldId.replace(`obsidian-fs://${VAULT_NAME}/`, "");
-    const fm = matter(
-      await fs.readFile(join(fixture.vaultDir, oldResource), "utf-8"),
-    ).data as Record<string, unknown>;
+    const fm = matter(await fs.readFile(join(fixture.vaultDir, oldResource), "utf-8"))
+      .data as Record<string, unknown>;
     expect(fm.superseded_reason).toBe("second reason");
   });
 

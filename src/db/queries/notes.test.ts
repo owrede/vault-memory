@@ -152,7 +152,6 @@ describe("NotesQueries.getStatus / setStatus (plan 03-01 / M4)", () => {
   });
 });
 
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase 3 / 03-05 (M4): getSupersededChunkIds — SQL-level batch filter
 // ─────────────────────────────────────────────────────────────────────────────
@@ -234,7 +233,10 @@ describe("NotesQueries.getSupersededChunkIds (03-05 M4)", () => {
           WHERE chunks.id IN (?) AND notes.status = 'superseded'`,
       )
       .all(chunkSupId) as Array<{ detail: string }>;
-    const detail = plan.map((p) => p.detail).join(" | ").toLowerCase();
+    const detail = plan
+      .map((p) => p.detail)
+      .join(" | ")
+      .toLowerCase();
     // Plan must reference notes — proof we filter at SQL level.
     expect(detail).toContain("notes");
   });

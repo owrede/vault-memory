@@ -63,10 +63,7 @@ interface ContractAuditDbRow {
 
 export class ContractAuditQueries {
   private readonly _insert: BetterSqlite3.Statement;
-  private readonly _listByKindAll: BetterSqlite3.Statement<
-    [string, number],
-    ContractAuditDbRow
-  >;
+  private readonly _listByKindAll: BetterSqlite3.Statement<[string, number], ContractAuditDbRow>;
   private readonly _listByKindAndVault: BetterSqlite3.Statement<
     [string, string, number],
     ContractAuditDbRow
@@ -88,10 +85,7 @@ export class ContractAuditQueries {
     this._listByKindAll = db.prepare<[string, number], ContractAuditDbRow>(
       "SELECT * FROM contract_audit WHERE kind = ? ORDER BY ts DESC LIMIT ?",
     );
-    this._listByKindAndVault = db.prepare<
-      [string, string, number],
-      ContractAuditDbRow
-    >(
+    this._listByKindAndVault = db.prepare<[string, string, number], ContractAuditDbRow>(
       "SELECT * FROM contract_audit WHERE kind = ? AND vault = ? ORDER BY ts DESC LIMIT ?",
     );
     this._aggregate = db.prepare<

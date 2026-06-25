@@ -250,10 +250,7 @@ describe("startContractRegistry (D-LOAD, CON-01 round-trip)", () => {
 
   it("Test 3 (graceful degradation on parse failure): malformed YAML logs contract_load_error; other contracts still load", async () => {
     source.put("_contracts/meeting-prep.yaml", MEETING_PREP_YAML);
-    source.put(
-      "_contracts/bad.yaml",
-      "this is not: : valid yaml ::: }}}\n  - [\n",
-    );
+    source.put("_contracts/bad.yaml", "this is not: : valid yaml ::: }}}\n  - [\n");
 
     const started = await startContractRegistry({ vault, feed, source, auditDeps });
     expect(started.registry.get("meeting-prep")).toBeDefined();
@@ -265,10 +262,7 @@ describe("startContractRegistry (D-LOAD, CON-01 round-trip)", () => {
 
   it("Test 4 (Zod validation failure): missing required fields produces contract_load_error; registry unchanged", async () => {
     // Missing `assembly` — Zod rejects.
-    source.put(
-      "_contracts/no-assembly.yaml",
-      "version: 1\nname: no-assembly\ndescription: x\n",
-    );
+    source.put("_contracts/no-assembly.yaml", "version: 1\nname: no-assembly\ndescription: x\n");
     const started = await startContractRegistry({ vault, feed, source, auditDeps });
     expect(started.registry.get("no-assembly")).toBeUndefined();
     const errs = db.contractAudit.listByKind("contract_load_error");
@@ -579,9 +573,7 @@ describe("startContractRegistry (D-LOAD, CON-01 round-trip)", () => {
       at: Date.now(),
     });
 
-    expect(started.registry.get("foo")!.description).toBe(
-      "EXTERNAL_DIFFERENT_FROM_PLUGIN",
-    );
+    expect(started.registry.get("foo")!.description).toBe("EXTERNAL_DIFFERENT_FROM_PLUGIN");
     expect(externalReloads).toEqual(["_contracts/foo.yaml"]);
     // The mismatched suppression entry is preserved for a later
     // legitimate match (RESEARCH §6 Pitfall 1 mitigation).

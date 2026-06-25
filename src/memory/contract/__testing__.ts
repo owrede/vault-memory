@@ -18,10 +18,7 @@
  */
 
 import { DEFAULT_MEMORY_V1 } from "./default-v1.js";
-import {
-  __cacheContract,
-  __clearContractCache as __clearLoaderCache,
-} from "./loader.js";
+import { __cacheContract, __clearContractCache as __clearLoaderCache } from "./loader.js";
 
 /**
  * Test-only: drop the cache and re-seed the baseline. Use the deep

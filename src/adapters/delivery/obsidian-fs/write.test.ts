@@ -9,10 +9,7 @@ import { writeNote, deleteNote } from "./write.js";
 import { OutsideVaultError } from "./fs.js";
 import { ObsidianFsDelivery } from "./index.js";
 import { provisionSink, SENTINEL_FILENAME } from "./sentinel.js";
-import {
-  MemorySinkRegistry,
-  parseMemorySinkHandle,
-} from "../../../memory/index.js";
+import { MemorySinkRegistry, parseMemorySinkHandle } from "../../../memory/index.js";
 import { formatDocId } from "../../registry.js";
 import type { MemorySink } from "../../../types.js";
 
@@ -262,9 +259,7 @@ describe("deleteNote", () => {
 describe("ObsidianFsDelivery — sentinel guard (cases 19–21)", () => {
   const SINK_REL_PATH = "_memory/";
 
-  function fullyValidProps(
-    overrides: Record<string, unknown> = {},
-  ): Record<string, unknown> {
+  function fullyValidProps(overrides: Record<string, unknown> = {}): Record<string, unknown> {
     return {
       source: "agent",
       confidence: "direct",
@@ -278,10 +273,7 @@ describe("ObsidianFsDelivery — sentinel guard (cases 19–21)", () => {
   }
 
   /** Build an adapter + registry with a single "test" sink. */
-  async function makeFixture(opts: {
-    provisionSentinel: boolean;
-    createFolder: boolean;
-  }) {
+  async function makeFixture(opts: { provisionSentinel: boolean; createFolder: boolean }) {
     const vaultDir = await mkdtemp(join(tmpdir(), "vm-sentinel-"));
     const db = new Database(":memory:", "sentinel-vault");
     const vault: Vault = {
@@ -290,13 +282,9 @@ describe("ObsidianFsDelivery — sentinel guard (cases 19–21)", () => {
       dbPath: ":memory:",
     };
     const registry = new MemorySinkRegistry();
-    const sinkHandle = parseMemorySinkHandle(
-      `obsidian-fs://sentinel-vault/${SINK_REL_PATH}`,
-    );
+    const sinkHandle = parseMemorySinkHandle(`obsidian-fs://sentinel-vault/${SINK_REL_PATH}`);
     await registry.registerMemorySinks(
-      [
-        { name: "test", handle: sinkHandle, contract: "default-memory-v1" },
-      ],
+      [{ name: "test", handle: sinkHandle, contract: "default-memory-v1" }],
       {
         resolveVaultAbsolutePath: () => vaultDir,
         provisioner: async (sink: MemorySink, vaultAbs: string) => {
@@ -328,11 +316,7 @@ describe("ObsidianFsDelivery — sentinel guard (cases 19–21)", () => {
   it("19. sink with valid sentinel allows write to proceed (positive)", async () => {
     const f = await makeFixture({ provisionSentinel: true, createFolder: true });
     try {
-      const id = formatDocId(
-        "obsidian-fs",
-        "sentinel-vault",
-        `${SINK_REL_PATH}c19.md`,
-      );
+      const id = formatDocId("obsidian-fs", "sentinel-vault", `${SINK_REL_PATH}c19.md`);
       const res = await f.adapter.write(
         id,
         {
@@ -346,10 +330,7 @@ describe("ObsidianFsDelivery — sentinel guard (cases 19–21)", () => {
       expect(res.created).toBe(true);
 
       // File actually exists on disk.
-      const onDisk = await fs.readFile(
-        join(f.vaultDir, SINK_REL_PATH, "c19.md"),
-        "utf-8",
-      );
+      const onDisk = await fs.readFile(join(f.vaultDir, SINK_REL_PATH, "c19.md"), "utf-8");
       expect(onDisk).toContain("ok");
       // Sentinel still there.
       await fs.access(join(f.vaultDir, SINK_REL_PATH, SENTINEL_FILENAME));
@@ -361,11 +342,7 @@ describe("ObsidianFsDelivery — sentinel guard (cases 19–21)", () => {
   it("20. sink folder lacking .memory-sink returns sentinel_missing", async () => {
     const f = await makeFixture({ provisionSentinel: false, createFolder: true });
     try {
-      const id = formatDocId(
-        "obsidian-fs",
-        "sentinel-vault",
-        `${SINK_REL_PATH}c20.md`,
-      );
+      const id = formatDocId("obsidian-fs", "sentinel-vault", `${SINK_REL_PATH}c20.md`);
       const res = await f.adapter.write(
         id,
         {
@@ -387,11 +364,7 @@ describe("ObsidianFsDelivery — sentinel guard (cases 19–21)", () => {
   it("21. sink folder absent entirely returns sentinel_missing", async () => {
     const f = await makeFixture({ provisionSentinel: false, createFolder: false });
     try {
-      const id = formatDocId(
-        "obsidian-fs",
-        "sentinel-vault",
-        `${SINK_REL_PATH}c21.md`,
-      );
+      const id = formatDocId("obsidian-fs", "sentinel-vault", `${SINK_REL_PATH}c21.md`);
       const res = await f.adapter.write(
         id,
         {
@@ -426,13 +399,9 @@ describe("writeNote — MEM-07 entry-point Guard (Plan 02-03b)", () => {
     vault = makeVault(vaultDir);
     vault.config.name = "guard-vault";
     registry = new MemorySinkRegistry();
-    const sinkHandle = parseMemorySinkHandle(
-      "obsidian-fs://guard-vault/_memory/",
-    );
+    const sinkHandle = parseMemorySinkHandle("obsidian-fs://guard-vault/_memory/");
     await registry.registerMemorySinks(
-      [
-        { name: "default", handle: sinkHandle, contract: "default-memory-v1" },
-      ],
+      [{ name: "default", handle: sinkHandle, contract: "default-memory-v1" }],
       {
         resolveVaultAbsolutePath: () => vaultDir,
         provisioner: async (sink: MemorySink, vaultAbs: string) => {
@@ -460,9 +429,7 @@ describe("writeNote — MEM-07 entry-point Guard (Plan 02-03b)", () => {
     expect(res.suggestion).toMatch(/record_observation/);
     expect(res.message).toMatch(/MemorySink "default"/);
     // No file should have been created.
-    await expect(
-      fs.access(join(vaultDir, "_memory", "observations", "foo.md")),
-    ).rejects.toThrow();
+    await expect(fs.access(join(vaultDir, "_memory", "observations", "foo.md"))).rejects.toThrow();
   });
 
   it("guard does NOT fire on non-sink paths", async () => {
@@ -566,9 +533,7 @@ describe("ObsidianFsDelivery facade — MEM-08 audit discriminator (Plan 02-06)"
       dbPath: ":memory:",
     };
     const registry = new MemorySinkRegistry();
-    const sinkHandle = parseMemorySinkHandle(
-      `obsidian-fs://mem08-vault/${SINK_REL_PATH}`,
-    );
+    const sinkHandle = parseMemorySinkHandle(`obsidian-fs://mem08-vault/${SINK_REL_PATH}`);
     await registry.registerMemorySinks(
       [{ name: "default", handle: sinkHandle, contract: "default-memory-v1" }],
       {
@@ -623,11 +588,7 @@ describe("ObsidianFsDelivery facade — MEM-08 audit discriminator (Plan 02-06)"
   it("write() WITH opts.sink → audit row is_memory_sink_write=1", async () => {
     const f = await makeSinkFixture();
     try {
-      const id = formatDocId(
-        "obsidian-fs",
-        "mem08-vault",
-        `${SINK_REL_PATH}obs.md`,
-      );
+      const id = formatDocId("obsidian-fs", "mem08-vault", `${SINK_REL_PATH}obs.md`);
       const res = await f.adapter.write(
         id,
         {
@@ -641,12 +602,8 @@ describe("ObsidianFsDelivery facade — MEM-08 audit discriminator (Plan 02-06)"
       expect(rows).toHaveLength(1);
       expect(rows[0]!.is_memory_sink_write).toBe(1);
       // Filter pin: memory-only listWrites returns this row; non-memory excludes it.
-      expect(
-        f.vault.db.audit.listWrites({ isMemorySinkWrite: true }),
-      ).toHaveLength(1);
-      expect(
-        f.vault.db.audit.listWrites({ isMemorySinkWrite: false }),
-      ).toHaveLength(0);
+      expect(f.vault.db.audit.listWrites({ isMemorySinkWrite: true })).toHaveLength(1);
+      expect(f.vault.db.audit.listWrites({ isMemorySinkWrite: false })).toHaveLength(0);
     } finally {
       await f.cleanup();
     }
@@ -655,11 +612,7 @@ describe("ObsidianFsDelivery facade — MEM-08 audit discriminator (Plan 02-06)"
   it("update() WITH opts.sink → audit row is_memory_sink_write=1", async () => {
     const f = await makeSinkFixture();
     try {
-      const id = formatDocId(
-        "obsidian-fs",
-        "mem08-vault",
-        `${SINK_REL_PATH}obs.md`,
-      );
+      const id = formatDocId("obsidian-fs", "mem08-vault", `${SINK_REL_PATH}obs.md`);
       // Seed initial memory write via the facade.
       const writeRes = await f.adapter.write(
         id,
@@ -701,13 +654,9 @@ describe("deleteNote — MEM-07 entry-point Guard (Plan 02-03b)", () => {
     vault = makeVault(vaultDir);
     vault.config.name = "guard-vault";
     registry = new MemorySinkRegistry();
-    const sinkHandle = parseMemorySinkHandle(
-      "obsidian-fs://guard-vault/_memory/",
-    );
+    const sinkHandle = parseMemorySinkHandle("obsidian-fs://guard-vault/_memory/");
     await registry.registerMemorySinks(
-      [
-        { name: "default", handle: sinkHandle, contract: "default-memory-v1" },
-      ],
+      [{ name: "default", handle: sinkHandle, contract: "default-memory-v1" }],
       {
         resolveVaultAbsolutePath: () => vaultDir,
         provisioner: async (sink: MemorySink, vaultAbs: string) => {

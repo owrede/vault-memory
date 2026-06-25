@@ -36,16 +36,15 @@ interface StubOpts {
 }
 
 /** Build a stub Client + transport pair via the injection seam. */
-function makeStubFactory(
-  opts: StubOpts = {},
-): {
+function makeStubFactory(opts: StubOpts = {}): {
   factory: ClientFactory;
   closeSpy: ReturnType<typeof vi.fn>;
   callToolSpy: ReturnType<typeof vi.fn>;
   listToolsSpy: ReturnType<typeof vi.fn>;
 } {
-  const toolResult =
-    opts.toolResult ?? { content: [{ type: "text", text: JSON.stringify({ hello: "world" }) }] };
+  const toolResult = opts.toolResult ?? {
+    content: [{ type: "text", text: JSON.stringify({ hello: "world" }) }],
+  };
   const closeSpy = vi.fn();
   const callToolSpy = vi.fn(async () => toolResult);
   const listToolsSpy = vi.fn(async () => {

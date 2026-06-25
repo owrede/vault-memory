@@ -247,10 +247,7 @@ interface AnchorCandidate {
  * Returns `null` when no candidate matches. The candidate set is
  * already type-filtered by SQL; this loop is just the key match.
  */
-function findAnchorCandidate(
-  vault: Vault,
-  args: AssembleDossierArgs,
-): AnchorCandidate | null {
+function findAnchorCandidate(vault: Vault, args: AssembleDossierArgs): AnchorCandidate | null {
   // SQL-level type filter via the existing query_frontmatter path.
   // This reads `notes.frontmatter` (JSON column) with JSON1 extract.
   const rows = queryFrontmatter(vault, {
@@ -410,11 +407,7 @@ export async function assembleDossier(
   //    `relation: "wikilink"` plus the denormalized extras.
   const linkedDocuments: LinkedDocument[] = [];
   for (const bl of backlinkRows) {
-    const linkedDocId = formatDocId(
-      anchorScheme,
-      anchorCandidate.vaultName,
-      bl.sourcePath,
-    );
+    const linkedDocId = formatDocId(anchorScheme, anchorCandidate.vaultName, bl.sourcePath);
     let linkedDoc: Document;
     try {
       linkedDoc = await anchorSource.readDocument(linkedDocId);
@@ -461,4 +454,3 @@ export async function assembleDossier(
     error: null,
   };
 }
-

@@ -41,22 +41,16 @@ function makeFakeVault(overrides?: Partial<FakeVault>): FakeVault {
     db: {
       notes: { countAll: () => 42 },
       audit: {
-        listRuns: () => [
-          { run_id: "r1", started_at: 1700000000000, finished_at: 1700000060000 },
-        ],
-        listWrites: () => [
-          { op: "create" },
-          { op: "create" },
-          { op: "update" },
-        ],
+        listRuns: () => [{ run_id: "r1", started_at: 1700000000000, finished_at: 1700000060000 }],
+        listWrites: () => [{ op: "create" }, { op: "create" }, { op: "update" }],
       },
       models: {
         getActive: () => ({ name: "qwen3-embedding", dim: 1024 }),
       },
       handle: {
-        prepare: <T,>(_sql: string) => ({
+        prepare: <T>(_sql: string) => ({
           // count(*) FROM chunks
-          get: (..._args: unknown[]) => ({ c: 137 } as unknown as T),
+          get: (..._args: unknown[]) => ({ c: 137 }) as unknown as T,
         }),
       },
     },
@@ -76,7 +70,13 @@ describe("get_runtime_stats tool (PLG-04)", () => {
     const result = await getRuntimeStatsTool.handler(
       {},
       {
-        listVaults: () => [vault as unknown as Parameters<typeof getRuntimeStatsTool.handler>[1]["listVaults"] extends () => infer R ? R[number] : never],
+        listVaults: () => [
+          vault as unknown as Parameters<
+            typeof getRuntimeStatsTool.handler
+          >[1]["listVaults"] extends () => infer R
+            ? R[number]
+            : never,
+        ],
         peerMcpStatus: () => [{ name: "gh", available: true }],
         contractCountFor: (name: string) => (name === "atlas" ? 3 : 0),
       },

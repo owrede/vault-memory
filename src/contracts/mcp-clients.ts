@@ -245,10 +245,7 @@ export class PeerMcpRegistry {
   // ─── internals ─────────────────────────────────────────────────────────
 
   /** Connect (factory or default), store the entry, prime tools cache. */
-  private async connectAndStore(
-    name: string,
-    cfg: PeerMcpClientConfig,
-  ): Promise<void> {
+  private async connectAndStore(name: string, cfg: PeerMcpClientConfig): Promise<void> {
     try {
       const { client, transport } = this.clientFactory
         ? await this.clientFactory(cfg)
@@ -263,9 +260,7 @@ export class PeerMcpRegistry {
       await this.primeTools(entry);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      process.stderr.write(
-        `[contracts] peer-MCP client '${name}' failed to start: ${msg}\n`,
-      );
+      process.stderr.write(`[contracts] peer-MCP client '${name}' failed to start: ${msg}\n`);
       this.entries.set(name, {
         client: wrapUnavailable(),
         status: "unavailable",
@@ -308,10 +303,7 @@ export class PeerMcpRegistry {
   }
 }
 
-function wrapAvailable(
-  client: PeerClientLike,
-  transport: { close(): void },
-): PeerMcpClient {
+function wrapAvailable(client: PeerClientLike, transport: { close(): void }): PeerMcpClient {
   return {
     available: true,
     async callTool(name: string, args: unknown): Promise<unknown> {

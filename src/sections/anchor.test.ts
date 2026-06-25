@@ -20,8 +20,7 @@ describe("computeAnchor", () => {
     expect(anchor).toMatch(/^[0-9a-f]{64}$/);
     // Sanity: hash of "" (empty input) differs from hash of "\n".
     // The function MUST hash "\n", not "".
-    const expected =
-      "1da3aff43e3afc8a4ba8d97a23f6e3f02d23a3e98c0a9e2c2cca9f8de1c4dbf6"; // placeholder
+    const expected = "1da3aff43e3afc8a4ba8d97a23f6e3f02d23a3e98c0a9e2c2cca9f8de1c4dbf6"; // placeholder
     expect(anchor).not.toBe(expected); // we don't pin the exact hash here — see below for an explicit byte test
   });
 
@@ -88,14 +87,12 @@ describe("blockToPlainText", () => {
   });
 
   it("renders unordered list with `- ` prefix", () => {
-    expect(
-      blockToPlainText({ kind: "list", ordered: false, items: ["a", "b"] }),
-    ).toBe("- a\n- b");
+    expect(blockToPlainText({ kind: "list", ordered: false, items: ["a", "b"] })).toBe("- a\n- b");
   });
 
   it("renders ordered list with `1.` prefix", () => {
-    expect(
-      blockToPlainText({ kind: "list", ordered: true, items: ["one", "two"] }),
-    ).toBe("1. one\n1. two");
+    expect(blockToPlainText({ kind: "list", ordered: true, items: ["one", "two"] })).toBe(
+      "1. one\n1. two",
+    );
   });
 });

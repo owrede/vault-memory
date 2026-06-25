@@ -138,10 +138,7 @@ function buildFixture(): Fixture {
     });
   };
 
-  const seedNote = (
-    path: string,
-    overrides: { mtime?: number; hash?: string } = {},
-  ): number =>
+  const seedNote = (path: string, overrides: { mtime?: number; hash?: string } = {}): number =>
     db.notes.upsertByPath({
       path,
       content: "x",
@@ -371,9 +368,7 @@ describe("getOutline", () => {
     expect(out.source_handle).toBe(SOURCE_HANDLE);
     expect(out.hash).toBe("hash-empty.md");
     expect(out.mtime).toBe(1_700_000_000_000);
-    expect(out.display_url).toBe(
-      "obsidian://open?vault=test-vault&file=empty.md",
-    );
+    expect(out.display_url).toBe("obsidian://open?vault=test-vault&file=empty.md");
   });
 
   // (f) chunk_ids populated from chunk_id_first..chunk_id_last.
@@ -516,9 +511,7 @@ describe("getOutline", () => {
     expect(out.title).toBe("Packet Title");
     expect(out.mtime).toBe(1_234_567_890_000);
     expect(out.hash).toBe("abc-hash");
-    expect(out.display_url).toBe(
-      "obsidian://open?vault=test-vault&file=packet.md",
-    );
+    expect(out.display_url).toBe("obsidian://open?vault=test-vault&file=packet.md");
     expect(out.root).toHaveLength(1);
     expect(out.root[0]!.anchor).toBe("only");
   });

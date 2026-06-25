@@ -1,10 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Database } from "../db/database.js";
 import { backfillSectionsFromChunks } from "./backfill.js";
-import {
-  extractSections,
-  markdownToSectionBlocks,
-} from "./extract.js";
+import { extractSections, markdownToSectionBlocks } from "./extract.js";
 
 /**
  * Co-located tests for `backfillSectionsFromChunks` per plan 03-01
@@ -76,8 +73,7 @@ describe("backfillSectionsFromChunks", () => {
   });
 
   it("(2) anchor-equivalence — backfill anchors === extractSections anchors", () => {
-    const content =
-      "preamble.\n\n# H1\nbody1.\n\n## H2\nbody2.\n\n# H1b\nbody3.\n";
+    const content = "preamble.\n\n# H1\nbody1.\n\n## H2\nbody2.\n\n# H1b\nbody3.\n";
     const nid = seedNote("a.md", content);
 
     backfillSectionsFromChunks(db.handle);
@@ -172,8 +168,7 @@ describe("backfillSectionsFromChunks", () => {
     // sectionInfos points at the LAST "Notes" entry — which after the
     // collision must resolve to the same surviving row id, not to
     // garbage.
-    const content =
-      "# Doc\n\n## Notes\n\n## Notes\n\n### Detail\n\ndeep.\n";
+    const content = "# Doc\n\n## Notes\n\n## Notes\n\n### Detail\n\ndeep.\n";
     const nid = seedNote("deep.md", content);
 
     expect(() => backfillSectionsFromChunks(db.handle)).not.toThrow();

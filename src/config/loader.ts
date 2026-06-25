@@ -74,17 +74,13 @@ const ContractsConfigSchema = z.object({
   auto_register_tools: z
     .boolean()
     .default(false)
-    .describe(
-      "D-A1b — per-vault gate for auto-registering contracts as MCP Tools",
-    ),
+    .describe("D-A1b — per-vault gate for auto-registering contracts as MCP Tools"),
   tool_prefix: z
     .string()
     .min(1)
     .regex(/^[a-z_][a-z0-9_]*$/)
     .default("vm_")
-    .describe(
-      "D-A1c — slug prefix for auto-registered tool names; A7 enforces non-empty",
-    ),
+    .describe("D-A1c — slug prefix for auto-registered tool names; A7 enforces non-empty"),
   step_timeout_seconds: z
     .number()
     .int()
@@ -243,9 +239,7 @@ export async function loadConfig(path: string = configPath()): Promise<AppConfig
  * brief writes through the parent sink's `default-memory-v1`
  * contract, which rejects `status: "stale"`.
  */
-function sortSinksByPathSpecificity<T extends { handle: string }>(
-  sinks: T[],
-): T[] {
+function sortSinksByPathSpecificity<T extends { handle: string }>(sinks: T[]): T[] {
   // Compute the resource length once per sink — avoids re-parsing
   // inside the comparator (n*log(n) calls).
   type Tagged = { sink: T; resourceLength: number; order: number };

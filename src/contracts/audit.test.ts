@@ -51,9 +51,7 @@ describe("contract-audit writers (Q-AUD, Invariant C-5)", () => {
     const row = rows[0]!;
     expect(row.kind).toBe("contract_load_error");
     expect(row.vault).toBe("my-vault");
-    expect(row.errorMessage).toBe(
-      "_contracts/bad.yaml: malformed yaml at line 5",
-    );
+    expect(row.errorMessage).toBe("_contracts/bad.yaml: malformed yaml at line 5");
     expect(row.contract).toBeUndefined();
     expect(row.verb).toBeUndefined();
     expect(row.stepAlias).toBeUndefined();

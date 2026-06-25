@@ -42,20 +42,13 @@ import { readFile, writeFile } from "node:fs/promises";
  * (`SetMcpClientArgs`) which the handler re-parses with.
  */
 export const SetMcpClientShape = {
-  name: z
-    .string()
-    .min(1)
-    .optional()
-    .describe("Client name (required for Variants A and B)."),
+  name: z.string().min(1).optional().describe("Client name (required for Variants A and B)."),
   command: z
     .string()
     .min(1)
     .optional()
     .describe("Executable path. Required for Variant A (add/update)."),
-  args: z
-    .array(z.string())
-    .optional()
-    .describe("Argv tail for child_process.spawn (Variant A)."),
+  args: z.array(z.string()).optional().describe("Argv tail for child_process.spawn (Variant A)."),
   env_secrets: z
     .record(z.string(), z.string())
     .optional()
@@ -76,10 +69,7 @@ export const SetMcpClientShape = {
 const SetMcpClientArgs = z.union([
   // Variant A — add/update
   z.object({
-    name: z
-      .string()
-      .min(1)
-      .describe("Peer-MCP client name (used as TOML table key)."),
+    name: z.string().min(1).describe("Peer-MCP client name (used as TOML table key)."),
     command: z
       .string()
       .min(1)
@@ -124,10 +114,7 @@ export type SetMcpClientResult =
   | { ok: true; clients: McpClientInventoryEntry[] };
 
 type TomlRoot = Record<string, unknown> & {
-  contracts?: { mcp_clients?: Record<string, McpClientTomlEntry> } & Record<
-    string,
-    unknown
-  >;
+  contracts?: { mcp_clients?: Record<string, McpClientTomlEntry> } & Record<string, unknown>;
 };
 
 interface McpClientTomlEntry {
@@ -165,15 +152,13 @@ async function handler(
   if ("list" in args) {
     const root = await readConfig(deps.configPath);
     const map = root.contracts?.mcp_clients ?? {};
-    const clients: McpClientInventoryEntry[] = Object.entries(map).map(
-      ([name, entry]) => ({
-        name,
-        command: entry.command ?? "",
-        args: entry.args ?? [],
-        // SECURITY: emit key-list only — values stay in plugin storage.
-        env_secrets: Object.keys(entry.env_secrets ?? {}),
-      }),
-    );
+    const clients: McpClientInventoryEntry[] = Object.entries(map).map(([name, entry]) => ({
+      name,
+      command: entry.command ?? "",
+      args: entry.args ?? [],
+      // SECURITY: emit key-list only — values stay in plugin storage.
+      env_secrets: Object.keys(entry.env_secrets ?? {}),
+    }));
     return { ok: true, clients };
   }
 

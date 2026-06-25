@@ -419,9 +419,10 @@ async function buildObsidianFsAssemblyHarness(): Promise<AssemblyHarness> {
     noteIdByPath.set(p.relativePath, res.id);
 
     // Maintain notes.status (denormalized — needed for the superseded path).
-    const status = p.frontmatter && typeof p.frontmatter["status"] === "string"
-      ? (p.frontmatter["status"] as string)
-      : null;
+    const status =
+      p.frontmatter && typeof p.frontmatter["status"] === "string"
+        ? (p.frontmatter["status"] as string)
+        : null;
     if (status !== null) vault.db.notes.setStatus(res.id, status);
 
     // Chunks → then sections (sections need chunk IDs).
@@ -555,9 +556,8 @@ function buildStubAssemblyHarness(): AssemblyHarness {
     noteIdByPath.set(path, res.id);
 
     // Maintain notes.status from properties.
-    const status = typeof d.properties["status"] === "string"
-      ? (d.properties["status"] as string)
-      : null;
+    const status =
+      typeof d.properties["status"] === "string" ? (d.properties["status"] as string) : null;
     if (status !== null) vault.db.notes.setStatus(res.id, status);
 
     // Chunks → sections.
@@ -995,9 +995,7 @@ describe.each(assemblyAdapters)("Phase 4 graph tools — $name", (adapterCase) =
     expect(b.ok).toBe(true);
     if (!a.ok || !b.ok) return;
     expect(a.node_count).toBe(b.node_count);
-    const normalize = (
-      r: typeof a,
-    ): Array<{ cluster_id: string; member_doc_ids: string[] }> =>
+    const normalize = (r: typeof a): Array<{ cluster_id: string; member_doc_ids: string[] }> =>
       r.clusters.map((c) => ({
         cluster_id: String(c.cluster_id),
         member_doc_ids: c.members.map((m) => String(m.doc_id)).sort(),
@@ -1119,9 +1117,7 @@ const briefAdapters: BriefAdapterCase[] = [
   },
 ];
 
-async function buildBriefFixture(
-  adapterCase: BriefAdapterCase,
-): Promise<BriefConformanceFixture> {
+async function buildBriefFixture(adapterCase: BriefAdapterCase): Promise<BriefConformanceFixture> {
   const vaultDir = await mkdtemp(join(tmpdir(), `vm-brf11-${adapterCase.name}-`));
   const lockRoot = await mkdtemp(join(tmpdir(), `vm-brf11-lock-`));
   const db = new Database(":memory:", adapterCase.vaultName);
@@ -1214,9 +1210,7 @@ function seedBriefSource(
       chunkIdFragment: computeChunkIdFragment(text),
     },
   ]);
-  return parseDocId(
-    `${adapterCase.docIdScheme}://${vault.config.name}/${path}`,
-  );
+  return parseDocId(`${adapterCase.docIdScheme}://${vault.config.name}/${path}`);
 }
 
 /** Mutate a source doc's chunk text — replaces the row in-place. */
@@ -1300,11 +1294,7 @@ describe.each(briefAdapters)(
         sourcePath,
         "Atlas-1 original content",
       );
-      const briefId = await compile(
-        "atlas",
-        [d1],
-        "Brief about Atlas-1 source.",
-      );
+      const briefId = await compile("atlas", [d1], "Brief about Atlas-1 source.");
       expect(fixture.docs.get(briefId)!.properties.status).toBe("active");
 
       const daemon = new BriefStalenessDaemon();
@@ -1318,9 +1308,7 @@ describe.each(briefAdapters)(
 
       const after = fixture.docs.get(briefId)!;
       expect(after.properties.status).toBe("stale");
-      expect(after.properties.changed_sources).toEqual(
-        expect.arrayContaining([d1]),
-      );
+      expect(after.properties.changed_sources).toEqual(expect.arrayContaining([d1]));
 
       await daemon.shutdown();
     });
@@ -1333,19 +1321,11 @@ describe.each(briefAdapters)(
         sourcePath,
         "Atlas-2 original content",
       );
-      const briefId = await compile(
-        "atlas-2",
-        [d1],
-        "Brief about Atlas-2 source.",
-      );
+      const briefId = await compile("atlas-2", [d1], "Brief about Atlas-2 source.");
 
       // Mutate source while NO daemon is running — the divergence is
       // recorded only in the chunks table; the brief is still active.
-      mutateBriefSource(
-        fixture.vault,
-        sourcePath,
-        "Atlas-2 mutated while daemon was down",
-      );
+      mutateBriefSource(fixture.vault, sourcePath, "Atlas-2 mutated while daemon was down");
       expect(fixture.docs.get(briefId)!.properties.status).toBe("active");
 
       // Boot the daemon — startup full scan must detect the divergence.
@@ -1354,9 +1334,7 @@ describe.each(briefAdapters)(
 
       const after = fixture.docs.get(briefId)!;
       expect(after.properties.status).toBe("stale");
-      expect(after.properties.changed_sources).toEqual(
-        expect.arrayContaining([d1]),
-      );
+      expect(after.properties.changed_sources).toEqual(expect.arrayContaining([d1]));
 
       await daemon.shutdown();
     });
@@ -1370,11 +1348,7 @@ describe.each(briefAdapters)(
         sourcePath,
         "Atlas-3 original content",
       );
-      const briefId = await compile(
-        "atlas-3",
-        [d1],
-        "Brief about Atlas-3 source.",
-      );
+      const briefId = await compile("atlas-3", [d1], "Brief about Atlas-3 source.");
 
       const daemon = new BriefStalenessDaemon();
       await daemon.start(fixture.vault, fixture.feed, {
@@ -1398,9 +1372,7 @@ describe.each(briefAdapters)(
 
       const after = fixture.docs.get(briefId)!;
       expect(after.properties.status).toBe("stale");
-      expect(after.properties.changed_sources).toEqual(
-        expect.arrayContaining([d1]),
-      );
+      expect(after.properties.changed_sources).toEqual(expect.arrayContaining([d1]));
 
       await daemon.shutdown();
     });
@@ -1413,9 +1385,7 @@ describe.each(briefAdapters)(
       const briefId = await compile("atlas-4", [d1], "Brief about Atlas-4 source.");
 
       // Reverse-index has one row pointing at d1.
-      expect(
-        fixture.vault.db.briefSources.briefsForChunkDoc(d1).length,
-      ).toBe(1);
+      expect(fixture.vault.db.briefSources.briefsForChunkDoc(d1).length).toBe(1);
 
       let clock = 8_000_000;
       const daemon = new BriefStalenessDaemon();
@@ -1459,18 +1429,14 @@ describe.each(briefAdapters)(
       }
 
       clock += 100; // Still within grace-window.
-      const newId = parseDocId(
-        `${adapterCase.docIdScheme}://${adapterCase.vaultName}/${NEW_PATH}`,
-      );
+      const newId = parseDocId(`${adapterCase.docIdScheme}://${adapterCase.vaultName}/${NEW_PATH}`);
       fixture.feed.emit({ kind: "create", id: newId, at: clock });
       await briefTick();
 
       // Brief NOT marked stale — rename heuristic rewrote the chunk_doc_id.
       expect(fixture.docs.get(briefId)!.properties.status).toBe("active");
       expect(fixture.vault.db.briefSources.briefsForChunkDoc(d1).length).toBe(0);
-      expect(
-        fixture.vault.db.briefSources.briefsForChunkDoc(newId).length,
-      ).toBe(1);
+      expect(fixture.vault.db.briefSources.briefsForChunkDoc(newId).length).toBe(1);
 
       await daemon.shutdown();
     });
@@ -1500,9 +1466,7 @@ describe("contracts stub-parity (CON-10)", () => {
   // the source connector is exercised structurally only.
   const buildParityContract = async () => {
     const { ContractRegistry } = await import("../../contracts/registry.js");
-    const { buildInputSchema } = await import(
-      "../../contracts/input-schema.js"
-    );
+    const { buildInputSchema } = await import("../../contracts/input-schema.js");
     const inputs = { meeting_doc_id: { type: "string" } };
     const required = ["meeting_doc_id"];
     const built = buildInputSchema(inputs, required);
@@ -1613,16 +1577,11 @@ describe("contracts stub-parity (CON-10)", () => {
   };
 
   it("meeting-prep-like contract produces structurally identical bundle on obsidian-fs and stub source connectors", async () => {
-    const { instantiateContract } = await import(
-      "../../contracts/instantiate.js"
-    );
+    const { instantiateContract } = await import("../../contracts/instantiate.js");
 
     // Run A: simulating the obsidian-fs source connector run.
     const registryA = await buildParityContract();
-    const { deps: depsA, captured: capturedA } = await buildParityDeps(
-      registryA,
-      "obsidian-fs",
-    );
+    const { deps: depsA, captured: capturedA } = await buildParityDeps(registryA, "obsidian-fs");
     const resultA = await instantiateContract(depsA, {
       name: "parity-probe",
       inputs: { meeting_doc_id: "obsidian-fs://test-vault/meetings/x.md" },
@@ -1632,10 +1591,7 @@ describe("contracts stub-parity (CON-10)", () => {
 
     // Run B: simulating the stub source connector run with source_overrides.
     const registryB = await buildParityContract();
-    const { deps: depsB, captured: capturedB } = await buildParityDeps(
-      registryB,
-      "stub",
-    );
+    const { deps: depsB, captured: capturedB } = await buildParityDeps(registryB, "stub");
     const resultB = await instantiateContract(depsB, {
       name: "parity-probe",
       inputs: { meeting_doc_id: "obsidian-fs://test-vault/meetings/x.md" },
@@ -1650,9 +1606,7 @@ describe("contracts stub-parity (CON-10)", () => {
 
     // Parity assertions:
     //   1. Same step keys.
-    expect(Object.keys(resultA.steps).sort()).toEqual(
-      Object.keys(resultB.steps).sort(),
-    );
+    expect(Object.keys(resultA.steps).sort()).toEqual(Object.keys(resultB.steps).sort());
 
     //   2. Same write_back.sink (both runs wrote to the same MemorySink).
     expect(resultA.write_back?.sink).toBe(resultB.write_back?.sink);

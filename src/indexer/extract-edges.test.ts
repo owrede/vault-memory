@@ -64,7 +64,12 @@ interface SeededNote {
   path: string;
 }
 
-function seedNote(db: Database, relPath: string, title: string, aliases: string[] = []): SeededNote {
+function seedNote(
+  db: Database,
+  relPath: string,
+  title: string,
+  aliases: string[] = [],
+): SeededNote {
   const up = db.notes.upsertByPath({
     path: relPath,
     content: `# ${title}`,
@@ -407,9 +412,11 @@ describe("extractAllEdges integration", () => {
 
     const parsed = makeParsed({
       relativePath: "meeting.md",
-      content: ["See [[bob-martinez]] for details.", "", "Alice attended yesterday. https://example.com"].join(
-        "\n",
-      ),
+      content: [
+        "See [[bob-martinez]] for details.",
+        "",
+        "Alice attended yesterday. https://example.com",
+      ].join("\n"),
       frontmatter: { owner: "[[alice-chen]]" },
       wikilinks: [
         {

@@ -54,9 +54,10 @@ describe("AuditQueries — MEM-08 is_memory_sink_write column (Plan 02-06)", () 
     // SQLite normalizes the DEFAULT expression; verify it reads as 0.
     expect(String(col!.dflt_value)).toBe("0");
 
-    const indexes = db.handle
-      .prepare("PRAGMA index_list(write_audit)")
-      .all() as Array<{ name: string; partial: number }>;
+    const indexes = db.handle.prepare("PRAGMA index_list(write_audit)").all() as Array<{
+      name: string;
+      partial: number;
+    }>;
     const memIdx = indexes.find((i) => i.name === "idx_write_audit_memory");
     expect(memIdx).toBeDefined();
     expect(memIdx!.partial).toBe(1);
@@ -191,9 +192,10 @@ describe("AuditQueries — v1.x → v9 forward-compat (Plan 02-06)", () => {
       expect(migrated.is_memory_sink_write).toBe(0);
 
       // Partial index actually exists on the simulated v8→v9 DB.
-      const indexes = raw
-        .prepare("PRAGMA index_list(write_audit)")
-        .all() as Array<{ name: string; partial: number }>;
+      const indexes = raw.prepare("PRAGMA index_list(write_audit)").all() as Array<{
+        name: string;
+        partial: number;
+      }>;
       const memIdx = indexes.find((i) => i.name === "idx_write_audit_memory");
       expect(memIdx).toBeDefined();
       expect(memIdx!.partial).toBe(1);

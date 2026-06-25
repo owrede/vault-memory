@@ -67,9 +67,7 @@ describe("formatMemorySinkHandle", () => {
   });
 
   it("rejects malformed compositions", () => {
-    expect(() => formatMemorySinkHandle("OBSIDIAN", "x", "y/")).toThrow(
-      /Invalid MemorySinkHandle/,
-    );
+    expect(() => formatMemorySinkHandle("OBSIDIAN", "x", "y/")).toThrow(/Invalid MemorySinkHandle/);
   });
 });
 
@@ -109,10 +107,7 @@ describe("parseMemorySinkHandle — CR-01 path-traversal rejection", () => {
   // identify why the handle was refused.
   it.each([
     ["obsidian-fs://atlas/../escape/", "rejects path traversal segment at root"],
-    [
-      "obsidian-fs://atlas/../../etc/passwd-fake/",
-      "rejects multi-step path traversal escape",
-    ],
+    ["obsidian-fs://atlas/../../etc/passwd-fake/", "rejects multi-step path traversal escape"],
     ["obsidian-fs://atlas/foo/../bar/", "rejects interior `..` segment"],
     ["obsidian-fs://atlas/./foo/", "rejects interior `.` segment"],
     ["obsidian-fs://atlas//double/", "rejects empty segment from `//`"],
@@ -122,9 +117,7 @@ describe("parseMemorySinkHandle — CR-01 path-traversal rejection", () => {
   });
 
   it("error message names the offending segment and the allowed shape", () => {
-    expect(() => parseMemorySinkHandle("obsidian-fs://atlas/../escape/")).toThrow(
-      /"\.\."/,
-    );
+    expect(() => parseMemorySinkHandle("obsidian-fs://atlas/../escape/")).toThrow(/"\.\."/);
     expect(() => parseMemorySinkHandle("obsidian-fs://atlas/../escape/")).toThrow(
       /\[A-Za-z0-9\._\\?-\]\+/,
     );
@@ -209,12 +202,9 @@ describe("M3 — parser → pathInSink composition characterization", () => {
     ["obsidian-fs://atlas//double/", "/double/", "empty segment via leading slash"],
   ];
 
-  it.each(adversarial)(
-    "parser REJECTS adversarial handle %s — primary CR-01 defense",
-    (handle) => {
-      expect(() => parseMemorySinkHandle(handle)).toThrow();
-    },
-  );
+  it.each(adversarial)("parser REJECTS adversarial handle %s — primary CR-01 defense", (handle) => {
+    expect(() => parseMemorySinkHandle(handle)).toThrow();
+  });
 
   it.each(adversarial)(
     "pathInSink with bypassed parser (%s) does NOT contain the escape (documents current design dependency)",

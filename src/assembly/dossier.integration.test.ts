@@ -159,9 +159,7 @@ describe("assembleDossier — integration against Atlas Robotics fixture", () =>
       );
       expect(result.error).toBeNull();
       expect(result.anchor).not.toBeNull();
-      expect(result.anchor?.doc_id).toBe(
-        "obsidian-fs://v2-test-vault/people/alice-chen.md",
-      );
+      expect(result.anchor?.doc_id).toBe("obsidian-fs://v2-test-vault/people/alice-chen.md");
       expect(result.anchor?.title).toBe("Alice Chen");
       // The aliases array survives the round-trip from YAML → notes.frontmatter
       // → toCitationPacket.
@@ -198,9 +196,7 @@ describe("assembleDossier — integration against Atlas Robotics fixture", () =>
       );
       expect(result.error).toBeNull();
       expect(result.anchor).not.toBeNull();
-      expect(result.anchor?.doc_id).toBe(
-        "obsidian-fs://v2-test-vault/projects/atlas-1.md",
-      );
+      expect(result.anchor?.doc_id).toBe("obsidian-fs://v2-test-vault/projects/atlas-1.md");
       // Plan 03-06's authoritative-atlas-1 eval case asserts this:
       expect(result.anchor?.properties.authoritative).toBe(true);
       expect(result.anchor?.status).toBe("active");

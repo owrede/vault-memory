@@ -568,7 +568,7 @@ export const TOOLS = [
     description:
       "Mark an existing memory document as superseded by a replacement document. " +
       "Forward-only — the replacement doc is NOT touched; back-links are derived by the Phase 4 " +
-      "graph layer at query time. Atomic single OCC update on the OLD doc; sets status=\"superseded\", " +
+      'graph layer at query time. Atomic single OCC update on the OLD doc; sets status="superseded", ' +
       "superseded_by, and superseded_reason.",
     inputSchema: {
       type: "object",
@@ -755,8 +755,7 @@ export const TOOLS = [
       properties: {
         query: {
           type: "string",
-          description:
-            "Natural-language query; routes through hybrid (semantic + BM25) search.",
+          description: "Natural-language query; routes through hybrid (semantic + BM25) search.",
         },
         min_confidence: {
           type: "string",
@@ -801,14 +800,14 @@ export const TOOLS = [
       "Document-tree retrieval. Returns a structured bundle for a single document: " +
       "{ anchor (citation packet + optional status/superseded_by), outline (section tree " +
       "via buildOutlineTree — same shape as get_outline.root), backlinks (citation packets " +
-      "+ property_snippet + relation:\"wikilink\"), forward_links (same shape; broken links " +
+      '+ property_snippet + relation:"wikilink"), forward_links (same shape; broken links ' +
       "omitted), recent_edits (≤10 most recent audit_log rows mapped to {at, op, client_id, " +
       "is_memory_sink_write?}) }. Every citation packet is the full 8-field D-01 shape from " +
       "src/memory/citation-packet.ts. v2.0.0 accepts only depth:1 (one-hop links); the field " +
       "is zod-pinned to z.literal(1) for forward compatibility. recent_edits is keyed by the " +
       "anchor's CURRENT note path — pre-rename history is preserved in audit_log but not " +
       "surfaced here (Phase 4 widens). Unknown doc_id returns " +
-      "{ isError: true, error: \"doc_not_found\", doc_id }.",
+      '{ isError: true, error: "doc_not_found", doc_id }.',
     inputSchema: {
       type: "object",
       required: ["doc_id"],
@@ -879,14 +878,12 @@ export const TOOLS = [
             type: "string",
             enum: ["wikilink", "mention", "frontmatter-ref", "hyperlink"],
           },
-          description:
-            "Optional filter on edge types; default = all four types.",
+          description: "Optional filter on edge types; default = all four types.",
         },
         filter_properties: {
           type: "object",
           additionalProperties: true,
-          description:
-            "Strict-equality predicate on document properties (e.g. {type: 'Project'}).",
+          description: "Strict-equality predicate on document properties (e.g. {type: 'Project'}).",
         },
         include_superseded: {
           type: "boolean",
@@ -943,8 +940,7 @@ export const TOOLS = [
         method: {
           type: "string",
           enum: ["edge-community"],
-          description:
-            "Clustering algorithm. v2.0.0 supports only 'edge-community' (Louvain).",
+          description: "Clustering algorithm. v2.0.0 supports only 'edge-community' (Louvain).",
         },
         query_top_k: {
           type: "integer",
@@ -972,7 +968,7 @@ export const TOOLS = [
       "(citation packets + relation), property_rollups (linked_count, linked_types, " +
       "status_distribution) }. Strict properties.type match (D-03). The key matches " +
       "the candidate's title OR any entry in properties.aliases (D-04). " +
-      "v2.0.0 returns relation:\"wikilink\" on every linked_documents entry (the v1 " +
+      'v2.0.0 returns relation:"wikilink" on every linked_documents entry (the v1 ' +
       "wikilinks table is the only edge source); Phase 4 (GRA-04) widens to typed edges. " +
       "Superseded backlinks are NOT filtered — dossiers show the whole picture (CONTEXT D-04).",
     inputSchema: {
@@ -1332,10 +1328,7 @@ export const TOOL_SCHEMAS = {
   },
 
   supersede: {
-    doc_id: z
-      .string()
-      .regex(DOC_ID_PATTERN)
-      .describe("DocId of the document being superseded"),
+    doc_id: z.string().regex(DOC_ID_PATTERN).describe("DocId of the document being superseded"),
     replacement_doc_id: z
       .string()
       .regex(DOC_ID_PATTERN)
@@ -1375,11 +1368,7 @@ export const TOOL_SCHEMAS = {
       .min(1)
       .optional()
       .describe("D-10 tier 3 fallback when no LLM is reachable — verbatim body to stitch in"),
-    sink: z
-      .string()
-      .min(1)
-      .optional()
-      .describe("Override the default `_memory/_briefs` sink"),
+    sink: z.string().min(1).optional().describe("Override the default `_memory/_briefs` sink"),
   },
 
   get_brief: {
@@ -1493,9 +1482,7 @@ export const TOOL_SCHEMAS = {
     seed_doc_ids: z
       .array(z.string().regex(DOC_ID_PATTERN))
       .min(1)
-      .describe(
-        "1+ opaque DocIds (e.g. obsidian-fs://<vault>/<path>) — seeds of the BFS.",
-      ),
+      .describe("1+ opaque DocIds (e.g. obsidian-fs://<vault>/<path>) — seeds of the BFS."),
     // Hops hard-capped at 2 (D-05) via Zod literal union — `hops: 3`
     // is rejected at the boundary; the controller does not clamp.
     hops: z
@@ -1513,16 +1500,12 @@ export const TOOL_SCHEMAS = {
     filter_properties: z
       .record(z.string(), z.unknown())
       .optional()
-      .describe(
-        "Strict-equality predicate on document properties (e.g. {type: 'Project'}).",
-      ),
+      .describe("Strict-equality predicate on document properties (e.g. {type: 'Project'})."),
     include_superseded: z
       .boolean()
       .optional()
       .default(false)
-      .describe(
-        "When false (default), docs whose properties.status === 'superseded' are dropped.",
-      ),
+      .describe("When false (default), docs whose properties.status === 'superseded' are dropped."),
   },
 
   // ── Phase 4 graph tools (Plan 04-05 / GRA-02) ───────────────────────────
@@ -1570,24 +1553,13 @@ export const TOOL_SCHEMAS = {
 
   // ── Phase 6 task-contract DSL (Plan 06-02 / D-A1 escape valve) ─────────
   register_contracts_as_tools: {
-    vault: z
-      .string()
-      .min(1)
-      .optional()
-      .describe("Vault name; omit to apply to all vaults"),
+    vault: z.string().min(1).optional().describe("Vault name; omit to apply to all vaults"),
   },
 
   // ── Phase 6 task-contract DSL (Plan 06-03 / CON-05, Q-DESCRIBE) ────────
   describe_contract: {
-    name: z
-      .string()
-      .min(1)
-      .describe("Registered contract name (see register_contracts_as_tools)"),
-    vault: z
-      .string()
-      .min(1)
-      .optional()
-      .describe("Vault name; omit on single-vault setups"),
+    name: z.string().min(1).describe("Registered contract name (see register_contracts_as_tools)"),
+    vault: z.string().min(1).optional().describe("Vault name; omit on single-vault setups"),
   },
 
   // ── Phase 6 task-contract DSL (Plan 06-03 / CON-06) ────────────────────
@@ -1608,11 +1580,7 @@ export const TOOL_SCHEMAS = {
       .describe(
         "Override declared sink handles by handle name. Targets MUST resolve through MemorySinkRegistry (D-A4c).",
       ),
-    vault: z
-      .string()
-      .min(1)
-      .optional()
-      .describe("Vault name; omit on single-vault setups"),
+    vault: z.string().min(1).optional().describe("Vault name; omit on single-vault setups"),
   },
 } as const satisfies Record<string, ZodRawShape>;
 

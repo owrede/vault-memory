@@ -64,11 +64,7 @@ export const SYNC_DOC_ID = formatDocId("stub", "memory", "notes/sync.md");
  * (a non-memory source); used by the Plan 04-06 Task 5 conformance
  * case that pins expand()'s `_memory` opacity rule (ADR-004).
  */
-export const MEMORY_OUTER_DOC_ID = formatDocId(
-  "stub",
-  "memory",
-  "_memory/observations/outer.md",
-);
+export const MEMORY_OUTER_DOC_ID = formatDocId("stub", "memory", "_memory/observations/outer.md");
 /**
  * Phase 4 / 04-06 — inner `_memory` doc. Reachable ONLY via
  * `MEMORY_OUTER_DOC_ID` (memory→memory). At hop 2 from Alice, expand()
@@ -76,11 +72,7 @@ export const MEMORY_OUTER_DOC_ID = formatDocId(
  * `inboundSourceNoteId` in the BFS visited record is the outer memory
  * doc, which is also `_memory`-pathed.
  */
-export const MEMORY_INNER_DOC_ID = formatDocId(
-  "stub",
-  "memory",
-  "_memory/_briefs/inner.md",
-);
+export const MEMORY_INNER_DOC_ID = formatDocId("stub", "memory", "_memory/_briefs/inner.md");
 
 /**
  * Build the ~8-document assembly fixture. Returns a fresh array each

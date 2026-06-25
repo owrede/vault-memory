@@ -193,9 +193,7 @@ describe("ContractFileSchema (CON-01)", () => {
   it("Test 13: validates Example 1 — meeting-prep", () => {
     const result = ContractFileSchema.safeParse(parse(MEETING_PREP_YAML));
     if (!result.success) {
-      throw new Error(
-        `meeting-prep failed: ${JSON.stringify(result.error.issues, null, 2)}`,
-      );
+      throw new Error(`meeting-prep failed: ${JSON.stringify(result.error.issues, null, 2)}`);
     }
     expect(result.success).toBe(true);
     expect(result.data.name).toBe("meeting-prep");
@@ -206,9 +204,7 @@ describe("ContractFileSchema (CON-01)", () => {
   it("Test 13b: validates Example 6 — project-status", () => {
     const result = ContractFileSchema.safeParse(parse(PROJECT_STATUS_YAML));
     if (!result.success) {
-      throw new Error(
-        `project-status failed: ${JSON.stringify(result.error.issues, null, 2)}`,
-      );
+      throw new Error(`project-status failed: ${JSON.stringify(result.error.issues, null, 2)}`);
     }
     expect(result.success).toBe(true);
     expect(result.data.name).toBe("project-status");
@@ -217,9 +213,7 @@ describe("ContractFileSchema (CON-01)", () => {
   it("Test 13c: validates Example 7 — code-review-brief", () => {
     const result = ContractFileSchema.safeParse(parse(CODE_REVIEW_YAML));
     if (!result.success) {
-      throw new Error(
-        `code-review-brief failed: ${JSON.stringify(result.error.issues, null, 2)}`,
-      );
+      throw new Error(`code-review-brief failed: ${JSON.stringify(result.error.issues, null, 2)}`);
     }
     expect(result.success).toBe(true);
     expect(result.data.name).toBe("code-review-brief");

@@ -27,10 +27,9 @@ describe("buildInputSchema (D-A3a, Pitfalls F1/F2, Assumption A3)", () => {
   });
 
   it("Test 11: zod parse accepts a well-formed DocId, rejects malformed, rejects typo'd extra keys (Pitfall F2 regression)", () => {
-    const { zodSchema } = buildInputSchema(
-      { meeting_doc_id: { $ref: "#/types/DocId" } },
-      ["meeting_doc_id"],
-    );
+    const { zodSchema } = buildInputSchema({ meeting_doc_id: { $ref: "#/types/DocId" } }, [
+      "meeting_doc_id",
+    ]);
 
     const okResult = zodSchema.safeParse({
       meeting_doc_id: "obsidian-fs://v/p.md",
@@ -51,10 +50,7 @@ describe("buildInputSchema (D-A3a, Pitfalls F1/F2, Assumption A3)", () => {
   });
 
   it("Test 12: x-validator extension keyword survives the round-trip (Assumption A3)", () => {
-    const { jsonSchema } = buildInputSchema(
-      { sink: { $ref: "#/types/MemorySink" } },
-      ["sink"],
-    );
+    const { jsonSchema } = buildInputSchema({ sink: { $ref: "#/types/MemorySink" } }, ["sink"]);
     const props = jsonSchema.properties as Record<string, Record<string, unknown>>;
     expect(props.sink?.["x-validator"]).toBe("memory-sink");
   });

@@ -25,10 +25,12 @@ import { parseDocId } from "../adapters/registry.js";
 
 const VAULT_ROOT = "/abs/vault/atlas";
 
-function makeOpts(overrides: Partial<{
-  defaultSinkName: string;
-  provisioner: ReturnType<typeof vi.fn>;
-}> = {}) {
+function makeOpts(
+  overrides: Partial<{
+    defaultSinkName: string;
+    provisioner: ReturnType<typeof vi.fn>;
+  }> = {},
+) {
   const provisioner = overrides.provisioner ?? vi.fn().mockResolvedValue(undefined);
   return {
     resolveVaultAbsolutePath: (_v: string) => VAULT_ROOT,
@@ -85,9 +87,7 @@ describe("MemorySinkRegistry.resolveMemorySink", () => {
   it("resolves by name", async () => {
     const reg = new MemorySinkRegistry();
     await reg.registerMemorySinks(
-      [
-        { name: "default", handle: "obsidian-fs://atlas/_memory/", contract: "default-memory-v1" },
-      ],
+      [{ name: "default", handle: "obsidian-fs://atlas/_memory/", contract: "default-memory-v1" }],
       makeOpts(),
     );
     const resolved = reg.resolveMemorySink("default");
@@ -97,9 +97,7 @@ describe("MemorySinkRegistry.resolveMemorySink", () => {
   it("resolves by full handle string", async () => {
     const reg = new MemorySinkRegistry();
     await reg.registerMemorySinks(
-      [
-        { name: "default", handle: "obsidian-fs://atlas/_memory/", contract: "default-memory-v1" },
-      ],
+      [{ name: "default", handle: "obsidian-fs://atlas/_memory/", contract: "default-memory-v1" }],
       makeOpts(),
     );
     const resolved = reg.resolveMemorySink("obsidian-fs://atlas/_memory/");
@@ -109,9 +107,7 @@ describe("MemorySinkRegistry.resolveMemorySink", () => {
   it("throws on an unknown name with the registered-sink list in the message", async () => {
     const reg = new MemorySinkRegistry();
     await reg.registerMemorySinks(
-      [
-        { name: "default", handle: "obsidian-fs://atlas/_memory/", contract: "default-memory-v1" },
-      ],
+      [{ name: "default", handle: "obsidian-fs://atlas/_memory/", contract: "default-memory-v1" }],
       makeOpts(),
     );
     expect(() => reg.resolveMemorySink("absent")).toThrow(/Unknown memory sink/);
@@ -162,9 +158,7 @@ describe("MemorySinkRegistry.findSinkContaining", () => {
   it("returns the enclosing sink when the DocId resource starts with the sink path", async () => {
     const reg = new MemorySinkRegistry();
     await reg.registerMemorySinks(
-      [
-        { name: "default", handle: "obsidian-fs://atlas/_memory/", contract: "default-memory-v1" },
-      ],
+      [{ name: "default", handle: "obsidian-fs://atlas/_memory/", contract: "default-memory-v1" }],
       makeOpts(),
     );
     const docId = parseDocId("obsidian-fs://atlas/_memory/observations/foo.md");
@@ -175,9 +169,7 @@ describe("MemorySinkRegistry.findSinkContaining", () => {
   it("returns null when the DocId is outside any sink", async () => {
     const reg = new MemorySinkRegistry();
     await reg.registerMemorySinks(
-      [
-        { name: "default", handle: "obsidian-fs://atlas/_memory/", contract: "default-memory-v1" },
-      ],
+      [{ name: "default", handle: "obsidian-fs://atlas/_memory/", contract: "default-memory-v1" }],
       makeOpts(),
     );
     const docId = parseDocId("obsidian-fs://atlas/projects/Atlas-1.md");
@@ -187,9 +179,7 @@ describe("MemorySinkRegistry.findSinkContaining", () => {
   it("returns null when the DocId belongs to a different vault authority", async () => {
     const reg = new MemorySinkRegistry();
     await reg.registerMemorySinks(
-      [
-        { name: "default", handle: "obsidian-fs://atlas/_memory/", contract: "default-memory-v1" },
-      ],
+      [{ name: "default", handle: "obsidian-fs://atlas/_memory/", contract: "default-memory-v1" }],
       makeOpts(),
     );
     const docId = parseDocId("obsidian-fs://other-vault/_memory/observations/foo.md");
@@ -199,9 +189,7 @@ describe("MemorySinkRegistry.findSinkContaining", () => {
   it("returns null for a non-obsidian-fs DocId scheme", async () => {
     const reg = new MemorySinkRegistry();
     await reg.registerMemorySinks(
-      [
-        { name: "default", handle: "obsidian-fs://atlas/_memory/", contract: "default-memory-v1" },
-      ],
+      [{ name: "default", handle: "obsidian-fs://atlas/_memory/", contract: "default-memory-v1" }],
       makeOpts(),
     );
     const docId = parseDocId("notion-api://workspace/page-123");

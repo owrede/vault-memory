@@ -98,11 +98,7 @@ export class StubDelivery implements DeliveryAdapter {
    * Run Guards A/B for a write or update. Returns the conflict to
    * short-circuit on, or `null` to proceed. No sentinel check (no FS).
    */
-  private preflight(
-    id: DocId,
-    doc: Partial<Document>,
-    opts?: WriteOptions,
-  ): WriteResult | null {
+  private preflight(id: DocId, doc: Partial<Document>, opts?: WriteOptions): WriteResult | null {
     if (!this.memorySinkRegistry) return null;
     const sink = this.resolveTargetSink(id, opts);
     const contract = sink ? getContract(sink.contractName) : null;

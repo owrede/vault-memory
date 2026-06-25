@@ -367,7 +367,9 @@ describe("single-indexer: edge extraction (04-02)", () => {
 
   function readEdgeTypes(noteId: number): Array<{ type: string; target_path: string | null }> {
     return vault.db.handle
-      .prepare("SELECT type, target_path FROM edges WHERE source_doc = ? ORDER BY type, target_path")
+      .prepare(
+        "SELECT type, target_path FROM edges WHERE source_doc = ? ORDER BY type, target_path",
+      )
       .all(noteId) as Array<{ type: string; target_path: string | null }>;
   }
 
@@ -396,7 +398,7 @@ describe("single-indexer: edge extraction (04-02)", () => {
       "meeting.md",
       [
         "---",
-        "owner: \"[[alice-chen]]\"",
+        'owner: "[[alice-chen]]"',
         "---",
         "",
         "See [[target]] for details.",
@@ -465,10 +467,7 @@ describe("single-indexer: edge extraction (04-02)", () => {
       embeddingModel: MODEL,
       ollama: ollama.client,
     });
-    const note = await writeNoteFile(
-      "source.md",
-      "# Source\n\n[[target]] https://example.com",
-    );
+    const note = await writeNoteFile("source.md", "# Source\n\n[[target]] https://example.com");
     const r = await indexNote({
       vault,
       absolutePath: note,
@@ -524,7 +523,7 @@ describe("single-indexer: edge extraction (04-02)", () => {
     // no new ollama.embed call for the source note.
     await fs.writeFile(
       note,
-      ["---", "tags: [a]", "owner: \"[[alice-chen]]\"", "---", "", "[[target]]"].join("\n"),
+      ["---", "tags: [a]", 'owner: "[[alice-chen]]"', "---", "", "[[target]]"].join("\n"),
       "utf-8",
     );
     const callsBefore = ollama.embed.mock.calls.length;

@@ -95,12 +95,7 @@ export class FtsQueries {
    *                             docs never reach the caller. v1-default path
    *                             passes `false` and stays byte-identical.
    */
-  search(
-    query: string,
-    topK: number,
-    withSnippet = false,
-    excludeSuperseded = false,
-  ): BM25Hit[] {
+  search(query: string, topK: number, withSnippet = false, excludeSuperseded = false): BM25Hit[] {
     const sanitized = FtsQueries.sanitize(query);
     if (sanitized.length === 0) return [];
 

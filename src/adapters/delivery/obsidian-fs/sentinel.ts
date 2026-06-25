@@ -211,10 +211,7 @@ export async function assertSentinelExists(
  * (ADR-002 I-2). Server bootstrap calls this through `joinVaultPath` so
  * the path-join stays inside the licensed adapter dir too.
  */
-export async function sentinelExistsAt(
-  vaultRoot: string,
-  relPath: string,
-): Promise<boolean> {
+export async function sentinelExistsAt(vaultRoot: string, relPath: string): Promise<boolean> {
   // We intentionally do NOT use pathInSink here — auto-discovery probes a
   // candidate folder BEFORE any sink record exists, so the join must
   // operate on a plain relative path.
