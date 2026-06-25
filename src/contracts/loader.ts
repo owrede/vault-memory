@@ -57,11 +57,7 @@ import { sha256 } from "../adapters/source/obsidian-fs/hash.js";
 import type { SuppressionSet } from "../adapters/change-feed/obsidian-fs/suppression.js";
 import type { Vault } from "../vault/index.js";
 import type { SourceConnector } from "../adapters/source/types.js";
-import type {
-  ChangeFeed,
-  ChangeEvent,
-  Disposable,
-} from "../adapters/change-feed/types.js";
+import type { ChangeFeed, ChangeEvent, Disposable } from "../adapters/change-feed/types.js";
 import type { DocId, Document } from "../types.js";
 
 /**
@@ -363,9 +359,7 @@ function buildParsedContract(data: ContractFileShape): ParsedContract {
   const required = data.required;
   const built = buildInputSchema(inputs, required);
   const outputShape =
-    data.output_shape !== undefined
-      ? (resolveRefs(data.output_shape) as object)
-      : undefined;
+    data.output_shape !== undefined ? (resolveRefs(data.output_shape) as object) : undefined;
 
   // Narrow the optional shapes from the Zod-defaulted shape to the
   // ParsedContract surface. The Zod `HandleDeclSchema` fills `required`

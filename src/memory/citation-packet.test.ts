@@ -21,11 +21,7 @@ import type { Document } from "../types.js";
 function makeDoc(overrides: Partial<Document> & { heading_path?: string[] } = {}): Document & {
   heading_path?: string[];
 } {
-  const id = formatDocId(
-    "obsidian-fs",
-    "atlas",
-    "_memory/observations/2026-04-22-test.md",
-  );
+  const id = formatDocId("obsidian-fs", "atlas", "_memory/observations/2026-04-22-test.md");
   const source = parseSourceHandle("obsidian-fs://atlas");
   const base: Document & { heading_path?: string[] } = {
     id,
@@ -103,8 +99,7 @@ describe("displayUrlFor — adapter seam delegation", () => {
   it("delegates to the source's formatDisplayUrl when available", () => {
     const id = formatDocId("obsidian-fs", "atlas", "_memory/observations/foo.md");
     const fakeSource = {
-      formatDisplayUrl: (d: typeof id): string =>
-        `fake://${d}#test`,
+      formatDisplayUrl: (d: typeof id): string => `fake://${d}#test`,
     };
     expect(displayUrlFor(id, fakeSource)).toBe(`fake://${id}#test`);
   });

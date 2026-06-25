@@ -42,9 +42,9 @@ describe("buildSourceHashes (Phase 5)", () => {
 
   it("rejects malformed fragments via formatChunkId", () => {
     // formatChunkId throws when fragment isn't exactly 7 hex chars.
-    expect(() =>
-      buildSourceHashes([{ docId: docA, fragment: "bad", text: "x" }]),
-    ).toThrow(/Invalid chunk fragment/);
+    expect(() => buildSourceHashes([{ docId: docA, fragment: "bad", text: "x" }])).toThrow(
+      /Invalid chunk fragment/,
+    );
   });
 
   it("recomputeCurrentHash matches buildSourceHashes value for the same text", () => {

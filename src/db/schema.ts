@@ -492,9 +492,7 @@ function runMigration009(db: BetterSqlite3Database, _ctx: MigrationContext): voi
   }>;
   const hasColumn = cols.some((c) => c.name === "is_memory_sink_write");
   if (!hasColumn) {
-    db.exec(
-      "ALTER TABLE write_audit ADD COLUMN is_memory_sink_write INTEGER NOT NULL DEFAULT 0",
-    );
+    db.exec("ALTER TABLE write_audit ADD COLUMN is_memory_sink_write INTEGER NOT NULL DEFAULT 0");
   }
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_write_audit_memory
@@ -684,9 +682,7 @@ function runMigration011(db: BetterSqlite3Database, _ctx: MigrationContext): voi
   // ── Step B: zero-row short-circuit ───────────────────────────────────
   // Mirrors runMigration008 lines 444–448. Fresh DBs have no wikilinks
   // to backfill; skip the scan entirely.
-  const pending = db
-    .prepare<[], { c: number }>("SELECT COUNT(*) AS c FROM wikilinks")
-    .get();
+  const pending = db.prepare<[], { c: number }>("SELECT COUNT(*) AS c FROM wikilinks").get();
   if (!pending || pending.c === 0) return;
 
   // ── Step C: chunked backfill from wikilinks → edges ──────────────────
@@ -712,10 +708,9 @@ function runMigration011(db: BetterSqlite3Database, _ctx: MigrationContext): voi
   // `nextLastIdAfter(@after_id, @chunk)` returns the wikilinks.id at
   // position @chunk-th row past @after_id, OR undefined if fewer than
   // @chunk rows remain — which signals the final partial chunk.
-  const nextLast = db.prepare<
-    [number, number],
-    { id: number }
-  >("SELECT id FROM wikilinks WHERE id > ? ORDER BY id ASC LIMIT 1 OFFSET ?");
+  const nextLast = db.prepare<[number, number], { id: number }>(
+    "SELECT id FROM wikilinks WHERE id > ? ORDER BY id ASC LIMIT 1 OFFSET ?",
+  );
 
   let lastId = 0;
   while (true) {
@@ -806,9 +801,7 @@ function runMigration012(db: BetterSqlite3Database, _ctx: MigrationContext): voi
   // pagination via wikilinks.id > @after_id ORDER BY id ASC LIMIT
   // @chunk). The zero-row short-circuit also mirrors 011 — fresh DBs
   // do not need the backfill scan.
-  const pending = db
-    .prepare<[], { c: number }>("SELECT COUNT(*) AS c FROM wikilinks")
-    .get();
+  const pending = db.prepare<[], { c: number }>("SELECT COUNT(*) AS c FROM wikilinks").get();
   if (!pending || pending.c === 0) return;
 
   const CHUNK = 10_000;
@@ -821,10 +814,9 @@ function runMigration012(db: BetterSqlite3Database, _ctx: MigrationContext): voi
      ORDER BY id ASC
      LIMIT @chunk
   `);
-  const nextLast = db.prepare<
-    [number, number],
-    { id: number }
-  >("SELECT id FROM wikilinks WHERE id > ? ORDER BY id ASC LIMIT 1 OFFSET ?");
+  const nextLast = db.prepare<[number, number], { id: number }>(
+    "SELECT id FROM wikilinks WHERE id > ? ORDER BY id ASC LIMIT 1 OFFSET ?",
+  );
 
   let lastId = 0;
   while (true) {
@@ -887,9 +879,7 @@ function runMigration013(db: BetterSqlite3Database, _ctx: MigrationContext): voi
   }>;
   const hasColumn = cols.some((c) => c.name === "chunk_id_fragment");
   if (!hasColumn) {
-    db.exec(
-      "ALTER TABLE chunks ADD COLUMN chunk_id_fragment TEXT NOT NULL DEFAULT ''",
-    );
+    db.exec("ALTER TABLE chunks ADD COLUMN chunk_id_fragment TEXT NOT NULL DEFAULT ''");
   }
 
   // ── Step A.2: zero-row short-circuit ──────────────────────────────
@@ -897,20 +887,13 @@ function runMigration013(db: BetterSqlite3Database, _ctx: MigrationContext): voi
   // re-runs against an already-backfilled DB. Mirrors
   // runMigration008:447-450.
   const pending = db
-    .prepare<[], { c: number }>(
-      "SELECT COUNT(*) AS c FROM chunks WHERE chunk_id_fragment = ''",
-    )
+    .prepare<[], { c: number }>("SELECT COUNT(*) AS c FROM chunks WHERE chunk_id_fragment = ''")
     .get();
   if (pending && pending.c > 0) {
     // ── Step A.3: chunked backfill at 10k rows/batch ────────────────
     const CHUNK = 10_000;
-    const update = db.prepare(
-      "UPDATE chunks SET chunk_id_fragment = ? WHERE id = ?",
-    );
-    const select = db.prepare<
-      [number],
-      { id: number; text: string }
-    >(
+    const update = db.prepare("UPDATE chunks SET chunk_id_fragment = ? WHERE id = ?");
+    const select = db.prepare<[number], { id: number; text: string }>(
       "SELECT id, text FROM chunks WHERE id > ? AND chunk_id_fragment = '' ORDER BY id ASC LIMIT 10000",
     );
     let afterId = 0;

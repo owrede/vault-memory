@@ -62,11 +62,7 @@
 
 import { z } from "zod";
 import type { ContractRegistry } from "./registry.js";
-import type {
-  InstantiateError,
-  OverrideMap,
-  ContractStep,
-} from "./types.js";
+import type { InstantiateError, OverrideMap, ContractStep } from "./types.js";
 import { resolveTemplate, type TemplateBindings } from "./templates.js";
 import { verbDispatcher, type VerbDeps } from "./verbs/index.js";
 import { recordContractStep, type ContractAuditDeps } from "./audit.js";
@@ -104,9 +100,7 @@ export interface InstantiateBundle {
   write_back: { doc_id: string; sink: string } | null;
 }
 
-export type InstantiateResult =
-  | ({ ok: true } & InstantiateBundle)
-  | InstantiateError;
+export type InstantiateResult = ({ ok: true } & InstantiateBundle) | InstantiateError;
 
 // ─────────────────────────────────────────────────────────────────────────
 // Orchestrator
@@ -436,11 +430,7 @@ async function runStep(
   return { value: output };
 }
 
-function writeAuditRow(
-  deps: InstantiateDeps,
-  contractName: string,
-  step: ContractStep,
-): void {
+function writeAuditRow(deps: InstantiateDeps, contractName: string, step: ContractStep): void {
   recordContractStep(deps, {
     contract: contractName,
     verb: step.verb,

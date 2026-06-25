@@ -30,13 +30,7 @@ describe("loadConfig — Phase 2 memory blocks", () => {
   }
 
   it("parses a v1-style TOML without [memory] / [[memory_sinks]]", async () => {
-    const path = await seed(
-      [
-        "[[vaults]]",
-        "name = 'atlas'",
-        "path = '/vaults/atlas'",
-      ].join("\n"),
-    );
+    const path = await seed(["[[vaults]]", "name = 'atlas'", "path = '/vaults/atlas'"].join("\n"));
     const config = await loadConfig(path);
     expect(config.vaults).toHaveLength(1);
     expect(config.memory_sinks).toEqual([]);
@@ -137,13 +131,7 @@ describe("loadConfig — Phase 5 brief block + sub-folder sink ordering", () => 
   });
 
   it("backwards-compatible: configs without [brief] still parse", async () => {
-    const path = await seed(
-      [
-        "[[vaults]]",
-        "name = 'atlas'",
-        "path = '/vaults/atlas'",
-      ].join("\n"),
-    );
+    const path = await seed(["[[vaults]]", "name = 'atlas'", "path = '/vaults/atlas'"].join("\n"));
     const config = await loadConfig(path);
     expect(config.brief).toBeUndefined();
   });
@@ -223,13 +211,7 @@ describe("loadConfig — Phase 6 [contracts] block", () => {
   }
 
   it("Test 1: config without [contracts] yields documented defaults", async () => {
-    const path = await seed(
-      [
-        "[[vaults]]",
-        "name = 'atlas'",
-        "path = '/vaults/atlas'",
-      ].join("\n"),
-    );
+    const path = await seed(["[[vaults]]", "name = 'atlas'", "path = '/vaults/atlas'"].join("\n"));
     const config = await loadConfig(path);
     expect(config.contracts).toEqual({
       auto_register_tools: false,
@@ -262,31 +244,18 @@ describe("loadConfig — Phase 6 [contracts] block", () => {
   });
 
   it("Test 3: empty tool_prefix is REJECTED (A7 .min(1))", async () => {
-    const path = await seed(
-      [
-        "[contracts]",
-        "tool_prefix = ''",
-      ].join("\n"),
-    );
+    const path = await seed(["[contracts]", "tool_prefix = ''"].join("\n"));
     await expect(loadConfig(path)).rejects.toThrow();
   });
 
   it("Test 4: tool_prefix '1bad' (leading digit) REJECTED", async () => {
-    const path = await seed(
-      [
-        "[contracts]",
-        "tool_prefix = '1bad'",
-      ].join("\n"),
-    );
+    const path = await seed(["[contracts]", "tool_prefix = '1bad'"].join("\n"));
     await expect(loadConfig(path)).rejects.toThrow();
   });
 
   it("Test 5: [contracts.defaults] populates the handle→URI map", async () => {
     const path = await seed(
-      [
-        "[contracts.defaults]",
-        "default_source = 'obsidian-fs://my-vault'",
-      ].join("\n"),
+      ["[contracts.defaults]", "default_source = 'obsidian-fs://my-vault'"].join("\n"),
     );
     const config = await loadConfig(path);
     expect(config.contracts.defaults).toEqual({
@@ -296,11 +265,9 @@ describe("loadConfig — Phase 6 [contracts] block", () => {
 
   it("Test 6: [contracts.mcp_clients.<name>] populates command + args", async () => {
     const path = await seed(
-      [
-        "[contracts.mcp_clients.gh]",
-        "command = 'gh-mcp-server'",
-        "args = ['--config', '/p']",
-      ].join("\n"),
+      ["[contracts.mcp_clients.gh]", "command = 'gh-mcp-server'", "args = ['--config', '/p']"].join(
+        "\n",
+      ),
     );
     const config = await loadConfig(path);
     expect(config.contracts.mcp_clients.gh).toBeDefined();
@@ -310,32 +277,17 @@ describe("loadConfig — Phase 6 [contracts] block", () => {
   });
 
   it("Test 7: step_timeout_seconds = 0 REJECTED (positive int)", async () => {
-    const path = await seed(
-      [
-        "[contracts]",
-        "step_timeout_seconds = 0",
-      ].join("\n"),
-    );
+    const path = await seed(["[contracts]", "step_timeout_seconds = 0"].join("\n"));
     await expect(loadConfig(path)).rejects.toThrow();
   });
 
   it("Test 8: step_timeout_seconds = -5 REJECTED", async () => {
-    const path = await seed(
-      [
-        "[contracts]",
-        "step_timeout_seconds = -5",
-      ].join("\n"),
-    );
+    const path = await seed(["[contracts]", "step_timeout_seconds = -5"].join("\n"));
     await expect(loadConfig(path)).rejects.toThrow();
   });
 
   it("Test 9: mcp_clients.<name>.command empty string REJECTED", async () => {
-    const path = await seed(
-      [
-        "[contracts.mcp_clients.bad]",
-        "command = ''",
-      ].join("\n"),
-    );
+    const path = await seed(["[contracts.mcp_clients.bad]", "command = ''"].join("\n"));
     await expect(loadConfig(path)).rejects.toThrow();
   });
 
@@ -404,13 +356,7 @@ describe("loadConfig — Phase 7 [plugin] block", () => {
   }
 
   it("configs without [plugin] parse identically with plugin.enabled = false", async () => {
-    const path = await seed(
-      [
-        "[[vaults]]",
-        "name = 'atlas'",
-        "path = '/vaults/atlas'",
-      ].join("\n"),
-    );
+    const path = await seed(["[[vaults]]", "name = 'atlas'", "path = '/vaults/atlas'"].join("\n"));
     const config = await loadConfig(path);
     expect(config.plugin).toEqual({ enabled: false });
   });
@@ -431,12 +377,7 @@ describe("loadConfig — Phase 7 [plugin] block", () => {
   });
 
   it("[plugin] enabled = 'not-a-bool' is REJECTED by Zod validation", async () => {
-    const path = await seed(
-      [
-        "[plugin]",
-        "enabled = 'not-a-bool'",
-      ].join("\n"),
-    );
+    const path = await seed(["[plugin]", "enabled = 'not-a-bool'"].join("\n"));
     await expect(loadConfig(path)).rejects.toThrow();
   });
 

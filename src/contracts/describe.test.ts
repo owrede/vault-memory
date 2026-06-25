@@ -100,7 +100,9 @@ describe("describeContract (CON-05, Q-DESCRIBE)", () => {
     expect(result.summary).toContain(
       "1. **related_notes** — Search the vault (semantic + keyword) _(`search_hybrid(query)`)_",
     );
-    expect(result.summary).toContain("2. **literal_block** — Use a fixed inline value _(`literal()`)_");
+    expect(result.summary).toContain(
+      "2. **literal_block** — Use a fixed inline value _(`literal()`)_",
+    );
     // json_schema returned verbatim (the cached inputJsonSchema).
     expect(result.json_schema).toBeDefined();
     expect((result.json_schema as { type?: string }).type).toBe("object");
@@ -188,9 +190,7 @@ describe("describeContract (CON-05, Q-DESCRIBE)", () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.summary).toContain("- **src** → `obsidian-fs://a` (required)");
-    expect(r.summary).toContain(
-      "- **snk** → `obsidian-fs://b/_memory/` (optional MemorySink)",
-    );
+    expect(r.summary).toContain("- **snk** → `obsidian-fs://b/_memory/` (optional MemorySink)");
   });
 
   it("Test 7: pure — works with minimal registry-only deps (no DB/network/FS surface)", () => {

@@ -116,13 +116,10 @@ describe("verbDispatcher (D-A2a baseline)", () => {
   it("Test 6: unknown verb returns verb_not_available envelope (defense-in-depth)", async () => {
     const deps = buildDeps();
     // The TS type rejects this; cast to bypass for runtime test.
-    const r = await verbDispatcher(
-      "write_note" as never,
-      {},
-      undefined,
-      deps,
-      { stepAlias: "x", timeoutSeconds: 30 },
-    );
+    const r = await verbDispatcher("write_note" as never, {}, undefined, deps, {
+      stepAlias: "x",
+      timeoutSeconds: 30,
+    });
     expect(r).toEqual({ ok: false, reason: "verb_not_available", verb: "write_note" });
   });
 
@@ -138,13 +135,10 @@ describe("verbDispatcher (D-A2a baseline)", () => {
     const reg = new PeerMcpRegistry(factory);
     await reg.start({ gh: { command: "node" } });
     const deps = buildDeps({ peerMcpRegistry: reg });
-    const r = await verbDispatcher(
-      "mcp://gh/list_issues",
-      { repo: "x" },
-      undefined,
-      deps,
-      { stepAlias: "i", timeoutSeconds: 30 },
-    );
+    const r = await verbDispatcher("mcp://gh/list_issues", { repo: "x" }, undefined, deps, {
+      stepAlias: "i",
+      timeoutSeconds: 30,
+    });
     expect(callToolSpy).toHaveBeenCalledWith({
       name: "list_issues",
       arguments: { repo: "x" },
@@ -154,13 +148,10 @@ describe("verbDispatcher (D-A2a baseline)", () => {
 
   it("Test 8: mcp:// — unknown peer client → mcp_client_unavailable", async () => {
     const deps = buildDeps();
-    const r = await verbDispatcher(
-      "mcp://ghost/x",
-      {},
-      undefined,
-      deps,
-      { stepAlias: "s", timeoutSeconds: 30 },
-    );
+    const r = await verbDispatcher("mcp://ghost/x", {}, undefined, deps, {
+      stepAlias: "s",
+      timeoutSeconds: 30,
+    });
     expect(r).toEqual({
       ok: false,
       reason: "mcp_client_unavailable",
@@ -176,13 +167,10 @@ describe("verbDispatcher (D-A2a baseline)", () => {
     const reg = new PeerMcpRegistry(factory);
     await reg.start({ gh: { command: "echo" } });
     const deps = buildDeps({ peerMcpRegistry: reg });
-    const r = await verbDispatcher(
-      "mcp://gh/x",
-      {},
-      undefined,
-      deps,
-      { stepAlias: "s", timeoutSeconds: 30 },
-    );
+    const r = await verbDispatcher("mcp://gh/x", {}, undefined, deps, {
+      stepAlias: "s",
+      timeoutSeconds: 30,
+    });
     expect(r).toEqual({
       ok: false,
       reason: "mcp_client_unavailable",
@@ -193,9 +181,7 @@ describe("verbDispatcher (D-A2a baseline)", () => {
 
   it("Test 10: Q-TIMEOUT — peer-MCP verb wrapped in timeout", async () => {
     // Hang forever; the timeout must fire.
-    const callToolSpy = vi.fn(
-      () => new Promise(() => undefined),
-    );
+    const callToolSpy = vi.fn(() => new Promise(() => undefined));
     const factory: ClientFactory = async () => ({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       client: { callTool: callToolSpy } as any,
@@ -204,13 +190,10 @@ describe("verbDispatcher (D-A2a baseline)", () => {
     const reg = new PeerMcpRegistry(factory);
     await reg.start({ gh: { command: "node" } });
     const deps = buildDeps({ peerMcpRegistry: reg });
-    const r = await verbDispatcher(
-      "mcp://gh/slow",
-      {},
-      undefined,
-      deps,
-      { stepAlias: "s", timeoutSeconds: 0.05 },
-    );
+    const r = await verbDispatcher("mcp://gh/slow", {}, undefined, deps, {
+      stepAlias: "s",
+      timeoutSeconds: 0.05,
+    });
     expect(r).toEqual({
       ok: false,
       reason: "assembly_step_failed",
@@ -224,25 +207,19 @@ describe("verbDispatcher (D-A2a baseline)", () => {
     // timeoutSeconds must not affect the result.
     const fake = vi.fn(async () => ({ hits: [] }));
     const deps = buildDeps({ hybridSearch: fake });
-    const r = await verbDispatcher(
-      "search_hybrid",
-      { query: "x" },
-      undefined,
-      deps,
-      { stepAlias: "s", timeoutSeconds: 0.001 },
-    );
+    const r = await verbDispatcher("search_hybrid", { query: "x" }, undefined, deps, {
+      stepAlias: "s",
+      timeoutSeconds: 0.001,
+    });
     expect(r).toEqual({ hits: [] });
   });
 
   it("Test 12: mcp:// malformed → verb_not_available (defense-in-depth)", async () => {
     const deps = buildDeps();
-    const r = await verbDispatcher(
-      "mcp://onlyslashbad" as never,
-      {},
-      undefined,
-      deps,
-      { stepAlias: "s", timeoutSeconds: 30 },
-    );
+    const r = await verbDispatcher("mcp://onlyslashbad" as never, {}, undefined, deps, {
+      stepAlias: "s",
+      timeoutSeconds: 30,
+    });
     expect(r).toEqual({
       ok: false,
       reason: "verb_not_available",
@@ -262,13 +239,10 @@ describe("verbDispatcher (D-A2a baseline)", () => {
     const reg = new PeerMcpRegistry(factory);
     await reg.start({ gh: { command: "node" } });
     const deps = buildDeps({ peerMcpRegistry: reg });
-    const r = await verbDispatcher(
-      "mcp://gh/x",
-      {},
-      undefined,
-      deps,
-      { stepAlias: "step1", timeoutSeconds: 30 },
-    );
+    const r = await verbDispatcher("mcp://gh/x", {}, undefined, deps, {
+      stepAlias: "step1",
+      timeoutSeconds: 30,
+    });
     expect(r).toEqual({
       ok: false,
       reason: "assembly_step_failed",

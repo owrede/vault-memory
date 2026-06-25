@@ -107,8 +107,7 @@ export class MemorySinkRegistry {
       const contract = getC(cfg.contract);
       const isFirst = this.sinks.size === 0;
       const isExplicitDefault = opts.defaultSinkName === cfg.name;
-      const isDefault =
-        isExplicitDefault || (opts.defaultSinkName === undefined && isFirst);
+      const isDefault = isExplicitDefault || (opts.defaultSinkName === undefined && isFirst);
       const sink: MemorySink = {
         name: cfg.name,
         handle,
@@ -153,10 +152,11 @@ export class MemorySinkRegistry {
       }
     }
     const known =
-      this.order.map((h) => this.sinks.get(h)?.name).filter(Boolean).join(", ") || "(none)";
-    throw new Error(
-      `Unknown memory sink: "${nameOrHandle}". Registered sinks: ${known}`,
-    );
+      this.order
+        .map((h) => this.sinks.get(h)?.name)
+        .filter(Boolean)
+        .join(", ") || "(none)";
+    throw new Error(`Unknown memory sink: "${nameOrHandle}". Registered sinks: ${known}`);
   }
 
   /** Return the default sink. Throws if no sinks are registered. */

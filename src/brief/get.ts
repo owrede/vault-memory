@@ -124,10 +124,7 @@ async function findBriefByTarget(
  * (status !== "superseded" or superseded_by is null) or the cycle
  * guard trips. Returns the terminal Document.
  */
-async function followSupersedeChain(
-  source: SourceConnector,
-  start: Document,
-): Promise<Document> {
+async function followSupersedeChain(source: SourceConnector, start: Document): Promise<Document> {
   let current = start;
   let hops = 0;
   while (current.properties.status === "superseded") {
@@ -179,9 +176,7 @@ export async function handleGetBrief(
   const vaultName = vault.config.name;
 
   // Resolve the brief sink so we know which path prefix to enumerate.
-  const briefSink = deps.memorySinkRegistry.resolveMemorySink(
-    args.sink ?? DEFAULT_BRIEF_SINK_NAME,
-  );
+  const briefSink = deps.memorySinkRegistry.resolveMemorySink(args.sink ?? DEFAULT_BRIEF_SINK_NAME);
   if (briefSink.vault !== vaultName) {
     throw new Error(
       `Brief sink "${briefSink.name}" belongs to vault "${briefSink.vault}", not "${vaultName}"`,
@@ -189,11 +184,7 @@ export async function handleGetBrief(
   }
 
   const source = deps.sourceConnectorFor(vaultName);
-  const found = await findBriefByTarget(
-    source,
-    briefSink.resolveToRelativePath,
-    args.target,
-  );
+  const found = await findBriefByTarget(source, briefSink.resolveToRelativePath, args.target);
   if (found === null) {
     return { brief: null, reason: "not_found" };
   }

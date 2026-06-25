@@ -18,11 +18,7 @@ import { Database } from "../db/database.js";
 import { ContractRegistry } from "./registry.js";
 import { buildInputSchema } from "./input-schema.js";
 import { PeerMcpRegistry } from "./mcp-clients.js";
-import {
-  instantiateContract,
-  type InstantiateDeps,
-  type InstantiateArgs,
-} from "./instantiate.js";
+import { instantiateContract, type InstantiateDeps, type InstantiateArgs } from "./instantiate.js";
 import type { ParsedContract, ContractStep, WriteBackSpec } from "./types.js";
 import type { DocId } from "../types.js";
 
@@ -247,14 +243,16 @@ describe("instantiateContract (CON-06)", () => {
             required: true,
           },
         },
-        assembly: [
-          { as: "src", verb: "literal", value: "{{inputs.default_source}}" },
-        ],
+        assembly: [{ as: "src", verb: "literal", value: "{{inputs.default_source}}" }],
       }),
     );
     // (a) explicit override wins
     const explicit = await instantiateContract(
-      buildDeps({ db, registry, configDefaults: { default_source: "obsidian-fs://config-default" } }),
+      buildDeps({
+        db,
+        registry,
+        configDefaults: { default_source: "obsidian-fs://config-default" },
+      }),
       {
         name: "c6",
         inputs: {},
@@ -275,10 +273,10 @@ describe("instantiateContract (CON-06)", () => {
     expect(config.ok).toBe(true);
     if (config.ok) expect(config.steps.src).toBe("obsidian-fs://config-default");
     // (c) literal wins when neither override nor config
-    const lit = await instantiateContract(
-      buildDeps({ db: new Database(":memory:"), registry }),
-      { name: "c6", inputs: {} },
-    );
+    const lit = await instantiateContract(buildDeps({ db: new Database(":memory:"), registry }), {
+      name: "c6",
+      inputs: {},
+    });
     expect(lit.ok).toBe(true);
     if (lit.ok) expect(lit.steps.src).toBe("obsidian-fs://contract-lit");
   });
@@ -608,7 +606,7 @@ describe("instantiateContract (CON-06)", () => {
       write: vi.fn(async () => ({
         ok: true,
         newHash: "h",
-        doc_id: (`obsidian-fs://my-vault/_memory/_briefs/x${++n}.md` as DocId),
+        doc_id: `obsidian-fs://my-vault/_memory/_briefs/x${++n}.md` as DocId,
         created: true,
       })),
     };
@@ -663,9 +661,7 @@ describe("instantiateContract (CON-06)", () => {
       "c20",
       buildContract({
         name: "c20",
-        assembly: [
-          { as: "x", verb: "write_note" as unknown as ContractStep["verb"], args: {} },
-        ],
+        assembly: [{ as: "x", verb: "write_note" as unknown as ContractStep["verb"], args: {} }],
       }),
     );
     const r = await instantiateContract(buildDeps({ db, registry }), {

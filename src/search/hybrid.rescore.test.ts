@@ -121,11 +121,7 @@ function buildFixture(): {
   // this automatically; the test fixture is hand-built.)
   db.notes.setStatus(superseded.id, "superseded");
 
-  const makeChunk = (
-    noteId: number,
-    text: string,
-    end: number,
-  ): { id: number } => {
+  const makeChunk = (noteId: number, text: string, end: number): { id: number } => {
     const ids = db.chunks.insertBatch(noteId, [
       { idx: 0, text, headingPath: null, startOffset: 0, endOffset: end, tokenCount: 5 },
     ]);
@@ -329,7 +325,7 @@ describe("hybridSearch — Phase 3 / 03-05 (rescore + filter + hydration)", () =
       // recency contribution = 1.0 × exp(-1) ≈ 0.3679
       expect(v1Auth).toBeDefined();
       expect(wAuth).toBeDefined();
-      const delta = (wAuth!.score) - (v1Auth!.score);
+      const delta = wAuth!.score - v1Auth!.score;
       expect(delta).toBeCloseTo(Math.exp(-1), 3);
     });
   });

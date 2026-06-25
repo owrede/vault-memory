@@ -266,7 +266,19 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
       // chunker's start_offset to find each chunk's owning heading
       // region. Sections of a heading with no body content get
       // chunk_id_first = chunk_id_last = NULL.
-      buildSectionsForNote(vault, noteId, parsed.content, chunkIds);
+      // Defensive: section building must never abort the whole vault index
+      // because of one pathological note. The duplicate-anchor crash is
+      // handled at the insert layer (insertOneResolving); this catch covers
+      // any other unexpected failure — log and continue with the rest of the
+      // vault (see ISSUE-indexer-duplicate-anchor.md "Notes for the agent").
+      try {
+        buildSectionsForNote(vault, noteId, parsed.content, chunkIds);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(
+          `[indexer:${vault.config.name}] section build failed for ${parsed.relativePath}: ${message} — skipping sections for this note`,
+        );
+      }
 
       // Embed
       const embedResult = await options.ollama.embed({
@@ -544,10 +556,16 @@ export function buildSectionsForNote(
 
   // Materialize rows: parent_id is filled in via the inserted-id map
   // (the in-memory `SectionInfo.parent_index` is an array index).
-  const insertedIds: number[] = [];
+  // Duplicate-anchor sibling sections (two H2s GitHub-slugify to the same
+  // anchor) would collide on UNIQUE(note_id, anchor). `insertOneResolving`
+  // collapses later siblings into the first one's row and returns that
+  // surviving id, so a single offending note can't abort the whole index
+  // run (see ISSUE-indexer-duplicate-anchor.md). `null` is possible in
+  // theory (insert ignored AND lookup miss) — mirror the backfill type.
+  const insertedIds: Array<number | null> = [];
   for (let i = 0; i < sections.length; i++) {
     const s = sections[i]!;
-    const parentId = s.parent_index === null ? null : insertedIds[s.parent_index] ?? null;
+    const parentId = s.parent_index === null ? null : (insertedIds[s.parent_index] ?? null);
     const pair = rangePairs[i] ?? { first: null, last: null };
     const row: InsertSectionRow = {
       note_id: noteId,
@@ -560,8 +578,7 @@ export function buildSectionsForNote(
       chunk_id_first: pair.first,
       chunk_id_last: pair.last,
     };
-    const ids = vault.db.sections.insertMany([row]);
-    insertedIds.push(ids[0]!);
+    insertedIds.push(vault.db.sections.insertOneResolving(row));
   }
   return insertedIds.length;
 }
@@ -579,9 +596,10 @@ export function mapChunksToSections(
   chunks: ChunkRow[],
   sectionRanges: Array<{ start: number; end: number }>,
 ): Array<{ first: number | null; last: number | null }> {
-  const out: Array<{ first: number | null; last: number | null }> = sectionRanges.map(
-    () => ({ first: null, last: null }),
-  );
+  const out: Array<{ first: number | null; last: number | null }> = sectionRanges.map(() => ({
+    first: null,
+    last: null,
+  }));
   for (const chunk of chunks) {
     const offset = chunk.start_offset;
     let chosenIdx: number | null = null;
@@ -618,8 +636,7 @@ function computeSectionOffsetRanges(
   const ranges: Array<{ start: number; end: number }> = [];
   const hasPreamble =
     sections.length > 0 && sections[0]!.level === 0 && sections[0]!.heading_text === "";
-  const firstHeadingOffset =
-    headings.length === 0 ? content.length : headings[0]!.startOffset;
+  const firstHeadingOffset = headings.length === 0 ? content.length : headings[0]!.startOffset;
   if (hasPreamble) {
     ranges.push({ start: 0, end: firstHeadingOffset });
   }

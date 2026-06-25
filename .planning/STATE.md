@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: release
-status: phase_in_progress
-stopped_at: "Phase 8.5 INSERTED (contracts-real-laufen) gates 08-08; concept ADRs 026/027 written, implementation not started"
-last_updated: "2026-05-26T09:00:00.000Z"
-last_activity: 2026-05-26 -- Inserted Phase 8.5 (contracts real-laufen) before v2.0.0 cut; wrote concept ADRs 026-030 + HOW-IT-WORKS; resolved phase-numbering conflict (Phase 9 premise-check keeps its number)
+status: released
+stopped_at: "v2.0.0 published — npm @owrede/vault-memory@2.0.0 (latest) + GitHub Release v2.0.0 with plugin tarball + manifest.sha256"
+last_updated: "2026-06-25"
+last_activity: 2026-06-25 -- v2.0.0 cut via scripts/release.mjs and published. Pre-release: ported duplicate-anchor indexer fix (ISSUE-indexer-duplicate-anchor) + eliminated chokidar watcher test flake (poll + single-fork isolation + retry:2; 12/12 green full-suite runs). Release commit a4ea1b7, tag v2.0.0; publish.yml CI run 28202251613 succeeded (npm publish + GitHub Release).
 progress:
   total_phases: 11
-  completed_phases: 7
-  total_plans: 81
-  completed_plans: 80
-  percent: 79
+  completed_phases: 8
+  total_plans: 82
+  completed_plans: 82
+  percent: 100
 ---
 
 # Project State

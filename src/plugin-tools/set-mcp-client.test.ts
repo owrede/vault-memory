@@ -61,11 +61,7 @@ describe("set_mcp_client tool (PLG-05)", () => {
   it("Variant A (update): rewrites an existing entry idempotently", async () => {
     await writeFile(
       configPath,
-      [
-        "[contracts.mcp_clients.gh]",
-        "command = 'old-cmd'",
-        "args = ['--old']",
-      ].join("\n") + "\n",
+      ["[contracts.mcp_clients.gh]", "command = 'old-cmd'", "args = ['--old']"].join("\n") + "\n",
       "utf-8",
     );
 
@@ -85,17 +81,11 @@ describe("set_mcp_client tool (PLG-05)", () => {
   it("Variant B (remove): deletes the [contracts.mcp_clients.<name>] block; idempotent", async () => {
     await writeFile(
       configPath,
-      [
-        "[contracts.mcp_clients.gh]",
-        "command = 'gh-mcp-server'",
-      ].join("\n") + "\n",
+      ["[contracts.mcp_clients.gh]", "command = 'gh-mcp-server'"].join("\n") + "\n",
       "utf-8",
     );
 
-    const first = await setMcpClientTool.handler(
-      { name: "gh", remove: true },
-      { configPath },
-    );
+    const first = await setMcpClientTool.handler({ name: "gh", remove: true }, { configPath });
     expect(first).toEqual({ ok: true, name: "gh", action: "removed" });
 
     const after = parseToml(await readFile(configPath, "utf-8")) as {
@@ -104,10 +94,7 @@ describe("set_mcp_client tool (PLG-05)", () => {
     expect(after.contracts?.mcp_clients?.gh).toBeUndefined();
 
     // Idempotent: removing again still returns ok with action='removed'
-    const second = await setMcpClientTool.handler(
-      { name: "gh", remove: true },
-      { configPath },
-    );
+    const second = await setMcpClientTool.handler({ name: "gh", remove: true }, { configPath });
     expect(second).toEqual({ ok: true, name: "gh", action: "removed" });
   });
 

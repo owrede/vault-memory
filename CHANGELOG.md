@@ -10,6 +10,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > with today's date, and a fresh `## [Unreleased]` block is started above it. See the
 > bottom of this file for the one-paragraph cut-a-release recipe.
 
+## [Unreleased]
+
+### Added
+
+- **Alias-aware query expansion** (`ISSUE-aliases-not-in-fulltext-retrieval.md`). A note's frontmatter `aliases` live in `note_aliases`, not in the BM25 source (`chunks_fts`), so searching an exact alias (e.g. `JHE`) never surfaced its target person note. `search_hybrid` now resolves an exact-alias query and injects/promotes the target note to the top of the results. Additive and guarded — non-alias queries are byte-identical (no BM25/semantic scoring change). Set `aliasExpansion: false` to restore prior behavior. `SearchHit.scoreBreakdown` gains an optional `alias` provenance field.
+
+### Fixed
+
+- **Obsidian plugin self-heals when the `vault-memory` CLI isn't on the GUI PATH** (`ISSUE-install-vault-memory-skill-improvements.md` §23). When Obsidian is launched from Finder/Dock its stripped PATH can make even an absolute path to the CLI fail (the `#!/usr/bin/env node` shebang can't find `node`). On `ENOENT` the plugin now probes common dev-machine locations (homebrew, npm-global, `~/.local`, volta, asdf, nvm versioned dirs) for both the `vault-memory` script and `node`, and retries as `node <script> serve`. The not-found banner now lists every path it tried.
+
+### Docs
+
+- **ADR-032** — duplicate section anchors are collapsed (`INSERT OR IGNORE`), not positionally suffixed; documents why suffixing would violate ADR-003 H-7 (content-hash anchors / D-05 source hashes). Closes the deferred "better fix" from the two duplicate-anchor issues.
+
+## [2.0.0] — 2026-06-25
+
+### Fixed
+
+- **Live indexer no longer crashes on duplicate-anchor sibling sections** (`ISSUE-indexer-duplicate-anchor.md`). A note containing two sibling sections with identical heading + body produces the same content-hash anchor and collided on `UNIQUE(note_id, anchor)`, aborting the entire `vault-memory index` / `index --full` run with `SQLITE_CONSTRAINT_UNIQUE`. `SectionsQueries` now uses `INSERT OR IGNORE` and a new `insertOneResolving()` that returns the surviving row's id on collision (so `parent_id` linkage still resolves); `buildSectionsForNote` uses it inside a per-note try/catch so one pathological note can never abort the whole vault's index. Mirrors the migration-010 backfill fix already shipped. Verified end-to-end: a full index of a vault with a colliding note exits 0.
+
 ## [2.0.0-rc.1] — 2026-05-19
 
 

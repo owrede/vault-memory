@@ -50,6 +50,7 @@ import {
   ProgressNotificationSchema,
   ResourceUpdatedNotificationSchema,
 } from "@modelcontextprotocol/sdk/types.js";
+import { resolveCli, probedPaths, realResolverDeps } from "./cli-resolver.js";
 
 export interface VaultMemoryMcpClientConfig {
   command: string;
@@ -74,10 +75,7 @@ export class CliNotFoundError extends Error {
 
 /** Minimal Client surface the wrapper depends on (subset of SDK `Client`). */
 export interface McpClientLike {
-  callTool(req: {
-    name: string;
-    arguments: Record<string, unknown>;
-  }): Promise<unknown>;
+  callTool(req: { name: string; arguments: Record<string, unknown> }): Promise<unknown>;
   readResource?(req: { uri: string }): Promise<{
     contents: Array<{ text?: string; mimeType?: string; uri?: string }>;
   }>;
@@ -100,34 +98,60 @@ export type ClientFactory = (
   cfg: VaultMemoryMcpClientConfig,
 ) => Promise<{ client: McpClientLike; transport: McpTransportLike }>;
 
-/** Production factory: spawns `vault-memory serve` over stdio. */
-export const defaultClientFactory: ClientFactory = async (cfg) => {
-  const transport = new StdioClientTransport({
-    command: cfg.command,
-    args: cfg.args,
-    env: cfg.env,
-  });
+async function connectOnce(
+  command: string,
+  args: string[],
+  env: Record<string, string> | undefined,
+): Promise<{ client: McpClientLike; transport: McpTransportLike }> {
+  const transport = new StdioClientTransport({ command, args, env });
   const client = new Client(
     { name: "vault-memory-plugin", version: "2.0.0" },
     { capabilities: {} },
   );
-  try {
-    await client.connect(transport);
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException | undefined)?.code;
-    if (code === "ENOENT") {
-      throw new CliNotFoundError(
-        `vault-memory CLI not found on PATH (tried '${cfg.command}'). ` +
-          `Install via the /vmem:install skill, or set the Server Command setting ` +
-          `to the absolute path of the vault-memory binary.`,
-      );
-    }
-    throw err;
-  }
+  await client.connect(transport);
   return {
     client: client as unknown as McpClientLike,
     transport: transport as unknown as McpTransportLike,
   };
+}
+
+/**
+ * Production factory: spawns `vault-memory serve` over stdio.
+ *
+ * Self-healing PATH resolution (ISSUE-install-vault-memory-skill-improvements
+ * §23): Obsidian launched from Finder/Dock has a stripped GUI PATH, so a bare
+ * `serverCommand` — and even an absolute path to the shebang script — can spawn
+ * ENOENT (the script's `#!/usr/bin/env node` can't find `node`). On ENOENT we
+ * probe common dev-machine locations for both the `vault-memory` script and a
+ * `node` binary and retry as `node <script> serve`. Only when that also fails
+ * do we surface the CliNotFoundError banner — now listing every path tried.
+ */
+export const defaultClientFactory: ClientFactory = async (cfg) => {
+  try {
+    return await connectOnce(cfg.command, cfg.args, cfg.env);
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException | undefined)?.code;
+    if (code !== "ENOENT") throw err;
+
+    // Layer-1/2 recovery: probe for the binary + node and retry as node <script>.
+    const deps = realResolverDeps();
+    const resolved = resolveCli(cfg.args, deps);
+    if (resolved) {
+      try {
+        return await connectOnce(resolved.command, resolved.args, cfg.env);
+      } catch (retryErr) {
+        const retryCode = (retryErr as NodeJS.ErrnoException | undefined)?.code;
+        if (retryCode !== "ENOENT") throw retryErr;
+        // fall through to the diagnostic banner
+      }
+    }
+    throw new CliNotFoundError(
+      `vault-memory CLI not found (tried '${cfg.command}' and common install ` +
+        `locations). Run the /vmem:install skill, or set the Server Command ` +
+        `setting to a node + script pair or a shim that resolves node. ` +
+        `Probed: ${probedPaths(deps.home).join(", ")}.`,
+    );
+  }
 };
 
 type ProgressHandler = (progress: number, total: number | undefined) => void;
@@ -197,17 +221,14 @@ export class VaultMemoryMcpClient {
       // The SDK dispatches by method literal in the Zod schema, so we
       // register one handler that fans out to every generic sub whose
       // method matches the resource-updated notification method.
-      client.setNotificationHandler(
-        ResourceUpdatedNotificationSchema,
-        (notif) => {
-          const params = (notif as { params?: Record<string, unknown> }).params ?? {};
-          for (const sub of this.genericSubs) {
-            if (sub.method === "notifications/resources/updated") {
-              sub.handler(params);
-            }
+      client.setNotificationHandler(ResourceUpdatedNotificationSchema, (notif) => {
+        const params = (notif as { params?: Record<string, unknown> }).params ?? {};
+        for (const sub of this.genericSubs) {
+          if (sub.method === "notifications/resources/updated") {
+            sub.handler(params);
           }
-        },
-      );
+        }
+      });
     } catch (err) {
       // Promote ENOENT from the factory to CliNotFoundError if the
       // factory didn't already wrap it (test factories often throw raw
@@ -337,9 +358,7 @@ export class VaultMemoryMcpClient {
  */
 function peelEnvelope(res: unknown): unknown {
   if (!res || typeof res !== "object") {
-    throw new Error(
-      `Malformed MCP envelope: response is not an object (got ${typeof res})`,
-    );
+    throw new Error(`Malformed MCP envelope: response is not an object (got ${typeof res})`);
   }
   const content = (res as { content?: unknown; isError?: unknown }).content;
   // isError envelope: the server signalled a tool-level error. The text

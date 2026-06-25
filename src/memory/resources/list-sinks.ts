@@ -43,13 +43,15 @@ export function readListSinks(registry: MemorySinkRegistry): ListSinksResource {
   const sinks = registry.listMemorySinks();
   return {
     total: sinks.length,
-    sinks: sinks.map((s): ListSinkEntry => ({
-      name: s.name,
-      handle: s.handle,
-      vault: s.vault,
-      contract: s.contractName,
-      default: s.isDefault,
-      resolves_to: s.resolveToRelativePath,
-    })),
+    sinks: sinks.map(
+      (s): ListSinkEntry => ({
+        name: s.name,
+        handle: s.handle,
+        vault: s.vault,
+        contract: s.contractName,
+        default: s.isDefault,
+        resolves_to: s.resolveToRelativePath,
+      }),
+    ),
   };
 }

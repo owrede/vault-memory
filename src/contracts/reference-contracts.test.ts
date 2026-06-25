@@ -52,13 +52,8 @@ describe("reference contracts (CON-07)", () => {
 
     it(`builds inputZodSchema for: ${path}`, async () => {
       const text = await readFile(path, "utf8");
-      const validated = ContractFileSchema.parse(
-        parseDocument(text).toJS() as unknown,
-      );
-      const { zodSchema, jsonSchema } = buildInputSchema(
-        validated.inputs,
-        validated.required,
-      );
+      const validated = ContractFileSchema.parse(parseDocument(text).toJS() as unknown);
+      const { zodSchema, jsonSchema } = buildInputSchema(validated.inputs, validated.required);
       // Pitfall F2 — typo'd input keys are rejected at instantiation.
       expect(jsonSchema.additionalProperties).toBe(false);
       // Pitfall F1 — SDK 1.29 requires a Zod schema, not a JSON Schema.
@@ -72,8 +67,7 @@ describe("reference contracts (CON-07)", () => {
   }
 
   it("CON-01 round-trip: meeting-prep comments survive parseDocument → toString", async () => {
-    const path =
-      "evals/fixtures/v2-test-vault/_contracts/meeting-prep.yaml";
+    const path = "evals/fixtures/v2-test-vault/_contracts/meeting-prep.yaml";
     const text = await readFile(path, "utf8");
     const doc = parseDocument(text);
     const roundTripped = doc.toString();

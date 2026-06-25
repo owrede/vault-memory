@@ -18,10 +18,7 @@
  * (`parseDocId` / `decomposeDocId`) lives in `src/adapters/registry.ts`.
  */
 
-import type {
-  DeliveryAdapter,
-  UpdateResult,
-} from "../../adapters/delivery/types.js";
+import type { DeliveryAdapter, UpdateResult } from "../../adapters/delivery/types.js";
 import type { SourceConnector } from "../../adapters/source/types.js";
 import { decomposeDocId, parseDocId } from "../../adapters/registry.js";
 import type { Document } from "../../types.js";
@@ -97,10 +94,10 @@ export async function handleSupersede(
   // reading, but the field is never written back into frontmatter.
   // The delivery's `stripWikilinks` runs the same trim later, but
   // keeping the patch clean avoids a no-op diff in the merged set.
-  const {
-    wikilinks: _w,
-    ...existingProps
-  } = oldDoc.properties as { wikilinks?: unknown } & Record<string, unknown>;
+  const { wikilinks: _w, ...existingProps } = oldDoc.properties as { wikilinks?: unknown } & Record<
+    string,
+    unknown
+  >;
 
   // Forward-only — writes ONLY on the OLD doc. The replacement doc is
   // never touched (D-03; back-link materialization is the Phase 4

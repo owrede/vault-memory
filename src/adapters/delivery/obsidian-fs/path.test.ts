@@ -18,12 +18,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import {
-  joinVaultPath,
-  joinVaultPathPosix,
-  pathInSink,
-  vaultRelativeInSink,
-} from "./path.js";
+import { joinVaultPath, joinVaultPathPosix, pathInSink, vaultRelativeInSink } from "./path.js";
 import { formatDocId, decomposeDocId } from "../../registry.js";
 
 describe("joinVaultPath (FS-bound, OS-native)", () => {
@@ -60,11 +55,7 @@ describe("pathInSink (FS-bound, OS-native absolute)", () => {
   });
 
   it("works with nested sink folders", () => {
-    const p = pathInSink(
-      "/abs/vault",
-      { resolveToRelativePath: "_memory/inbox/" },
-      "note.md",
-    );
+    const p = pathInSink("/abs/vault", { resolveToRelativePath: "_memory/inbox/" }, "note.md");
     expect(p).toContain("inbox");
     expect(p).toContain("note.md");
   });
@@ -105,27 +96,18 @@ describe("vaultRelativeInSink (comparison-bound, forward-slash)", () => {
   });
 
   it("returns the forward-slash form for a sink + subpath", () => {
-    const rel = vaultRelativeInSink(
-      { resolveToRelativePath: "_memory/" },
-      "observations/foo.md",
-    );
+    const rel = vaultRelativeInSink({ resolveToRelativePath: "_memory/" }, "observations/foo.md");
     expect(rel).toBe("_memory/observations/foo.md");
     expect(rel).not.toContain("\\");
   });
 
   it("handles nested sink folder", () => {
-    const rel = vaultRelativeInSink(
-      { resolveToRelativePath: "_memory/inbox/" },
-      "note.md",
-    );
+    const rel = vaultRelativeInSink({ resolveToRelativePath: "_memory/inbox/" }, "note.md");
     expect(rel).toBe("_memory/inbox/note.md");
   });
 
   it("normalizes caller-supplied backslashes in the subpath", () => {
-    const rel = vaultRelativeInSink(
-      { resolveToRelativePath: "_memory/" },
-      "observations\\foo.md",
-    );
+    const rel = vaultRelativeInSink({ resolveToRelativePath: "_memory/" }, "observations\\foo.md");
     expect(rel).not.toContain("\\");
     expect(rel).toBe("_memory/observations/foo.md");
   });
@@ -134,10 +116,7 @@ describe("vaultRelativeInSink (comparison-bound, forward-slash)", () => {
     // The sink-handle parser refuses backslashes (Plan 02-09), but the
     // helper defends against future regression — output is forward-slash
     // regardless of input shape.
-    const rel = vaultRelativeInSink(
-      { resolveToRelativePath: "_memory\\" },
-      "foo.md",
-    );
+    const rel = vaultRelativeInSink({ resolveToRelativePath: "_memory\\" }, "foo.md");
     expect(rel).not.toContain("\\");
     expect(rel).toBe("_memory/foo.md");
   });

@@ -105,10 +105,7 @@ export async function tryAcquireLock(
   // us. Two retries is plenty (steal once, then acquire on the next).
   const MAX_ATTEMPTS = 3;
 
-  const attempt = async (
-    n: number,
-    stolenFromPid?: number,
-  ): Promise<LockResult> => {
+  const attempt = async (n: number, stolenFromPid?: number): Promise<LockResult> => {
     if (n > MAX_ATTEMPTS) {
       // Treat as contended with an unknown owner; caller logs WARN.
       return { acquired: false, ownerPid: stolenFromPid ?? -1, path };
@@ -143,7 +140,5 @@ export async function releaseLock(
   vaultName: string,
   options: AcquireLockOptions = {},
 ): Promise<void> {
-  await unlink(lockPath(vaultName, options.rootOverride)).catch(
-    () => undefined,
-  );
+  await unlink(lockPath(vaultName, options.rootOverride)).catch(() => undefined);
 }

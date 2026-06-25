@@ -133,7 +133,10 @@ describe.each(adapters)("ChangeFeed conformance (%s)", (_name, factory) => {
     }
   });
 
-  it("4. events have a valid ChangeEvent shape", async () => {
+  // retry: 2 — obsidian-fs path uses a real chokidar watcher whose event
+  // delivery can stall past the shared drain() window under full-suite load
+  // (documented flake, STATE.md). Stub adapters are synchronous and unaffected.
+  it("4. events have a valid ChangeEvent shape", { retry: 2 }, async () => {
     const f = await factory();
     try {
       const seen: ChangeEvent[] = [];

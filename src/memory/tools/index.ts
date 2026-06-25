@@ -10,10 +10,7 @@
  */
 
 export { handleRecordObservation } from "./record-observation.js";
-export type {
-  RecordObservationArgs,
-  RecordObservationDeps,
-} from "./record-observation.js";
+export type { RecordObservationArgs, RecordObservationDeps } from "./record-observation.js";
 
 export { handleSupersede } from "./supersede.js";
 export type { SupersedeArgs, SupersedeDeps } from "./supersede.js";

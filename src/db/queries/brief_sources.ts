@@ -42,10 +42,7 @@ export interface BriefSourceRow {
 export class BriefSourcesQueries {
   private readonly _insert: BetterSqlite3.Statement;
   private readonly _deleteByBrief: BetterSqlite3.Statement<[string]>;
-  private readonly _listBriefDocIds: BetterSqlite3.Statement<
-    [],
-    { brief_doc_id: string }
-  >;
+  private readonly _listBriefDocIds: BetterSqlite3.Statement<[], { brief_doc_id: string }>;
   private readonly _briefsForChunkDoc: BetterSqlite3.Statement<
     [string],
     {
@@ -71,12 +68,8 @@ export class BriefSourcesQueries {
         (brief_doc_id, chunk_id_fragment, chunk_doc_id, recorded_hash)
       VALUES (@brief_doc_id, @chunk_id_fragment, @chunk_doc_id, @recorded_hash)
     `);
-    this._deleteByBrief = db.prepare(
-      "DELETE FROM brief_sources WHERE brief_doc_id = ?",
-    );
-    this._listBriefDocIds = db.prepare(
-      "SELECT DISTINCT brief_doc_id FROM brief_sources",
-    );
+    this._deleteByBrief = db.prepare("DELETE FROM brief_sources WHERE brief_doc_id = ?");
+    this._listBriefDocIds = db.prepare("SELECT DISTINCT brief_doc_id FROM brief_sources");
     this._briefsForChunkDoc = db.prepare(
       `SELECT brief_doc_id, chunk_id_fragment, chunk_doc_id, recorded_hash
          FROM brief_sources

@@ -102,9 +102,7 @@ export const ContractDocumentSchema = z
       "Plugin-only spatial state — survives YAML round-trip via the # vm-editor-state: base64 comment (D-FORMAT2)",
     ),
   })
-  .describe(
-    "The `.contract` JSON document — editor source of truth per ADR-007 D-FORMAT-SCHEMA",
-  );
+  .describe("The `.contract` JSON document — editor source of truth per ADR-007 D-FORMAT-SCHEMA");
 
 export type ContractDocumentShape = z.infer<typeof ContractDocumentSchema>;
 export type EditorStateShape = z.infer<typeof EditorStateSchema>;

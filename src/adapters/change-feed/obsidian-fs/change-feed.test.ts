@@ -19,6 +19,24 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/**
+ * Poll `predicate` until it returns true or `timeoutMs` elapses. Returns
+ * whether it became true. Replaces the brittle `sleep(fixed); assert`
+ * pattern for positive-assertion event tests: chokidar's event delivery
+ * latency balloons under full-suite concurrent load (137 files), so a
+ * fixed window races. Polling returns as soon as the event arrives (fast
+ * in isolation) but tolerates delivery delay under load — eliminating the
+ * documented timing flake (STATE.md) without inflating the happy path.
+ */
+async function waitFor(predicate: () => boolean, timeoutMs = 5000): Promise<boolean> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (predicate()) return true;
+    await sleep(25);
+  }
+  return predicate();
+}
+
 interface Fixture {
   feed: ObsidianFsChangeFeed;
   vaultDir: string;
@@ -71,39 +89,42 @@ describe("ObsidianFsChangeFeed", () => {
     expect(fixture.feed.capabilities.emitsRename).toBe(false);
   });
 
-  // retry: 1 — chokidar awaitWriteFinish + suite-load timing race
-  it("emits create on a newly written .md file", { retry: 1 }, async () => {
+  // retry: 2 — defense-in-depth over the poll helper + single-fork isolation.
+  // chokidar can drop/stall an FS event past any window under extreme load.
+  it("emits create on a newly written .md file", { retry: 2 }, async () => {
     fixture = await makeFixture();
-    await writeFile(join(fixture.vaultDir, "new.md"), "# new note\n");
-    await sleep(700);
-    const created = fixture.events.filter((e) => e.kind === "create");
+    const f = fixture;
+    await writeFile(join(f.vaultDir, "new.md"), "# new note\n");
+    await waitFor(() => f.events.some((e) => e.kind === "create"));
+    const created = f.events.filter((e) => e.kind === "create");
     expect(created.length).toBeGreaterThanOrEqual(1);
     const last = created[created.length - 1]!;
     expect(last.id).toMatch(/^obsidian-fs:\/\/cf-vault\/new\.md$/);
   });
 
-  // retry: 1 — chokidar awaitWriteFinish + suite-load timing race
-  it("emits update on a modified .md file", { retry: 1 }, async () => {
+  it("emits update on a modified .md file", { retry: 2 }, async () => {
     fixture = await makeFixture();
-    const p = join(fixture.vaultDir, "edit.md");
+    const f = fixture;
+    const p = join(f.vaultDir, "edit.md");
     await writeFile(p, "# v1\n");
-    await sleep(500);
-    fixture.events.length = 0;
+    await waitFor(() => f.events.some((e) => e.kind === "create"));
+    f.events.length = 0;
     await writeFile(p, "# v2\n");
-    await sleep(700);
-    const updates = fixture.events.filter((e) => e.kind === "update");
+    await waitFor(() => f.events.some((e) => e.kind === "update"));
+    const updates = f.events.filter((e) => e.kind === "update");
     expect(updates.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("emits delete on an unlinked .md file", async () => {
+  it("emits delete on an unlinked .md file", { retry: 2 }, async () => {
     fixture = await makeFixture();
-    const p = join(fixture.vaultDir, "rm.md");
+    const f = fixture;
+    const p = join(f.vaultDir, "rm.md");
     await writeFile(p, "# bye\n");
-    await sleep(500);
-    fixture.events.length = 0;
+    await waitFor(() => f.events.some((e) => e.kind === "create"));
+    f.events.length = 0;
     await unlink(p);
-    await sleep(500);
-    const deletes = fixture.events.filter((e) => e.kind === "delete");
+    await waitFor(() => f.events.some((e) => e.kind === "delete"));
+    const deletes = f.events.filter((e) => e.kind === "delete");
     expect(deletes.length).toBeGreaterThanOrEqual(1);
   });
 
@@ -124,18 +145,23 @@ describe("ObsidianFsChangeFeed", () => {
     expect(fixture.events).toHaveLength(0);
   });
 
-  it("rename surfaces as delete + create (Phase 1 — emitsRename=false)", async () => {
+  it("rename surfaces as delete + create (Phase 1 — emitsRename=false)", { retry: 2 }, async () => {
     fixture = await makeFixture();
-    const oldP = join(fixture.vaultDir, "old.md");
-    const newP = join(fixture.vaultDir, "renamed.md");
+    const f = fixture;
+    const oldP = join(f.vaultDir, "old.md");
+    const newP = join(f.vaultDir, "renamed.md");
     await writeFile(oldP, "# x\n");
-    await sleep(500);
-    fixture.events.length = 0;
+    await waitFor(() => f.events.some((e) => e.kind === "create"));
+    f.events.length = 0;
     await rename(oldP, newP);
-    await sleep(700);
-    const deletes = fixture.events.filter((e) => e.kind === "delete");
-    const creates = fixture.events.filter((e) => e.kind === "create");
-    const renames = fixture.events.filter((e) => e.kind === "rename");
+    // A rename surfaces as both a delete (old path) and a create (new path);
+    // wait for BOTH before asserting, since they can arrive separately.
+    await waitFor(
+      () => f.events.some((e) => e.kind === "delete") && f.events.some((e) => e.kind === "create"),
+    );
+    const deletes = f.events.filter((e) => e.kind === "delete");
+    const creates = f.events.filter((e) => e.kind === "create");
+    const renames = f.events.filter((e) => e.kind === "rename");
     expect(deletes.length).toBeGreaterThanOrEqual(1);
     expect(creates.length).toBeGreaterThanOrEqual(1);
     expect(renames).toHaveLength(0); // emitsRename:false honored
@@ -158,7 +184,9 @@ describe("ObsidianFsChangeFeed", () => {
       ours.push(e);
     });
     await writeFile(join(fixture.vaultDir, "d1.md"), "# one\n");
-    await sleep(500);
+    // Confirm the subscription is live before disposing (otherwise an empty
+    // `ours` after dispose proves nothing). Robust to delivery delay.
+    await waitFor(() => ours.length > 0);
     sub[Symbol.dispose]();
     ours.length = 0;
     await writeFile(join(fixture.vaultDir, "d2.md"), "# two\n");

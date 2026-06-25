@@ -110,8 +110,7 @@ export function extractSections(blocks: readonly BlockNode[]): SectionInfo[] {
         }
       }
       const parentIdx = stackTop();
-      const parentPath =
-        parentIdx === null ? [] : out[parentIdx]!.heading_path;
+      const parentPath = parentIdx === null ? [] : out[parentIdx]!.heading_path;
       const headingText = block.text;
       out.push({
         level: block.level,
@@ -139,7 +138,7 @@ export function extractSections(blocks: readonly BlockNode[]): SectionInfo[] {
   const seenPerParent = new Map<number | null, number>();
   for (let i = 0; i < out.length; i++) {
     const parent = out[i]!.parent_index;
-    const next = (seenPerParent.get(parent) ?? 0);
+    const next = seenPerParent.get(parent) ?? 0;
     ords[i] = next;
     seenPerParent.set(parent, next + 1);
   }

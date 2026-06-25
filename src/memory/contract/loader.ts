@@ -21,11 +21,7 @@ import {
   readContractYaml,
   ContractYamlNotFoundError,
 } from "../../adapters/delivery/obsidian-fs/contract-yaml-read.js";
-import {
-  MemoryContractYamlSchema,
-  type MemoryContractYaml,
-  type PropertyRule,
-} from "./schema.js";
+import { MemoryContractYamlSchema, type MemoryContractYaml, type PropertyRule } from "./schema.js";
 import type { MemoryContract } from "./types.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -79,10 +75,7 @@ function ruleToZod(rule: PropertyRule, key: string): ZodType {
   let schema: ZodType;
   switch (rule.type) {
     case "string":
-      schema =
-        rule.min_length !== undefined
-          ? z.string().min(rule.min_length)
-          : z.string();
+      schema = rule.min_length !== undefined ? z.string().min(rule.min_length) : z.string();
       break;
     case "datetime":
     case "date":
@@ -211,7 +204,10 @@ function buildPropertiesSchema(yaml: MemoryContractYaml): ZodType {
         const [, whenKey, whenValue] = whenMatch;
         if (whenKey === undefined || whenValue === undefined) continue;
         if ((data as Record<string, unknown>)[whenKey] !== whenValue) continue;
-        const requiredKeys = rule.require.split(/&&|,/).map((k) => k.trim()).filter(Boolean);
+        const requiredKeys = rule.require
+          .split(/&&|,/)
+          .map((k) => k.trim())
+          .filter(Boolean);
         for (const key of requiredKeys) {
           const value = (data as Record<string, unknown>)[key];
           if (value === undefined || value === null || value === "") {
@@ -258,9 +254,7 @@ export async function loadContractFromDisk(
     text = read.text;
   } catch (err) {
     if (err instanceof ContractYamlNotFoundError) {
-      throw new MemoryContractNotFoundError(
-        `Memory contract "${name}" not found at ${err.path}`,
-      );
+      throw new MemoryContractNotFoundError(`Memory contract "${name}" not found at ${err.path}`);
     }
     throw err;
   }

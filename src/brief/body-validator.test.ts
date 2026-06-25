@@ -30,8 +30,7 @@ describe("validateAndPatchBody (D-11)", () => {
   });
 
   it("returns body unchanged when sources are referenced via aliases or headings", () => {
-    const body =
-      "See [[Atlas-1|the project]] and [[Atlas-2#status]] for context.";
+    const body = "See [[Atlas-1|the project]] and [[Atlas-2#status]] for context.";
     const out = validateAndPatchBody(body, [docA, docB], resolveTitle);
     expect(out).toBe(body);
   });

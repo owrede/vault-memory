@@ -22,10 +22,7 @@
 import type BetterSqlite3 from "better-sqlite3";
 
 export class DaemonStateQueries {
-  private readonly _getCursor: BetterSqlite3.Statement<
-    [string],
-    { last_seen_doc_mtime: number }
-  >;
+  private readonly _getCursor: BetterSqlite3.Statement<[string], { last_seen_doc_mtime: number }>;
   private readonly _setCursor: BetterSqlite3.Statement;
 
   constructor(private readonly db: BetterSqlite3.Database) {

@@ -55,9 +55,10 @@ describe("EdgesQueries / migration 011", () => {
 
   describe("migration 011 DDL", () => {
     it("creates the edges table with the expected columns", () => {
-      const cols = db.handle
-        .prepare("PRAGMA table_info(edges)")
-        .all() as Array<{ name: string; notnull: number }>;
+      const cols = db.handle.prepare("PRAGMA table_info(edges)").all() as Array<{
+        name: string;
+        notnull: number;
+      }>;
       const colNames = cols.map((c) => c.name).sort();
       expect(colNames).toEqual(
         [
@@ -81,9 +82,10 @@ describe("EdgesQueries / migration 011", () => {
     });
 
     it("creates the three expected indexes", () => {
-      const indexes = db.handle
-        .prepare("PRAGMA index_list(edges)")
-        .all() as Array<{ name: string; unique: number }>;
+      const indexes = db.handle.prepare("PRAGMA index_list(edges)").all() as Array<{
+        name: string;
+        unique: number;
+      }>;
       const names = indexes.map((i) => i.name);
       // Indexes the migration declares explicitly.
       expect(names).toContain("idx_edges_source");
@@ -211,9 +213,7 @@ describe("EdgesQueries / migration 011", () => {
         .get()?.c;
       expect(total).toBe(N);
       const wikilinkOnly = fresh.handle
-        .prepare<[], { c: number }>(
-          "SELECT COUNT(*) AS c FROM edges WHERE type = 'wikilink'",
-        )
+        .prepare<[], { c: number }>("SELECT COUNT(*) AS c FROM edges WHERE type = 'wikilink'")
         .get()?.c;
       expect(wikilinkOnly).toBe(N);
 
@@ -328,9 +328,10 @@ describe("EdgesQueries / migration 011", () => {
         },
       ]);
       const rows = db.handle
-        .prepare<[], { rel: string | null }>(
-          `SELECT rel FROM edges WHERE source_doc = ? AND target_doc = ? AND type = 'frontmatter-ref' ORDER BY rel`,
-        )
+        .prepare<
+          [],
+          { rel: string | null }
+        >(`SELECT rel FROM edges WHERE source_doc = ? AND target_doc = ? AND type = 'frontmatter-ref' ORDER BY rel`)
         .all(a, b);
       expect(rows).toHaveLength(2);
       expect(rows.map((r) => r.rel)).toEqual(["assignee", "owner"]);
@@ -359,9 +360,10 @@ describe("EdgesQueries / migration 011", () => {
         },
       ]);
       const rows = db.handle
-        .prepare<[], { line_number: number | null }>(
-          `SELECT line_number FROM edges WHERE source_doc = ? AND target_doc = ? AND type = 'mention' ORDER BY line_number`,
-        )
+        .prepare<
+          [],
+          { line_number: number | null }
+        >(`SELECT line_number FROM edges WHERE source_doc = ? AND target_doc = ? AND type = 'mention' ORDER BY line_number`)
         .all(a, b);
       expect(rows).toHaveLength(2);
       expect(rows.map((r) => r.line_number)).toEqual([5, 12]);
@@ -390,9 +392,10 @@ describe("EdgesQueries / migration 011", () => {
         },
       ]);
       const rows = db.handle
-        .prepare<[], { target_path: string | null }>(
-          `SELECT target_path FROM edges WHERE source_doc = ? AND type = 'hyperlink' ORDER BY target_path`,
-        )
+        .prepare<
+          [],
+          { target_path: string | null }
+        >(`SELECT target_path FROM edges WHERE source_doc = ? AND type = 'hyperlink' ORDER BY target_path`)
         .all(a);
       expect(rows).toHaveLength(2);
       expect(rows.map((r) => r.target_path)).toEqual([
@@ -534,12 +537,7 @@ describe("EdgesQueries / migration 011", () => {
         .prepare<[], { type: string }>("SELECT type FROM edges ORDER BY type")
         .all()
         .map((r) => r.type);
-      expect(types).toEqual([
-        "frontmatter-ref",
-        "hyperlink",
-        "mention",
-        "wikilink",
-      ]);
+      expect(types).toEqual(["frontmatter-ref", "hyperlink", "mention", "wikilink"]);
     });
   });
 
@@ -801,15 +799,9 @@ describe("EdgesQueries / migration 011", () => {
       const rows = db.edges.getAllForNodes([a, b, c]);
       // Exactly 3 in-set edges; unresolved row excluded.
       expect(rows).toHaveLength(3);
-      const triples = rows
-        .map((r) => `${r.sourceDoc}→${r.targetDoc}/${r.type}`)
-        .sort();
+      const triples = rows.map((r) => `${r.sourceDoc}→${r.targetDoc}/${r.type}`).sort();
       expect(triples).toEqual(
-        [
-          `${a}→${b}/wikilink`,
-          `${a}→${c}/wikilink`,
-          `${b}→${c}/mention`,
-        ].sort(),
+        [`${a}→${b}/wikilink`, `${a}→${c}/wikilink`, `${b}→${c}/mention`].sort(),
       );
       // Each row carries the documented fields.
       for (const r of rows) {

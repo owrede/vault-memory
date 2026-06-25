@@ -82,7 +82,9 @@ export type GetRuntimeStatsResult =
 function resolveVault(
   arg: string | undefined,
   vaults: StatsVault[],
-): StatsVault | { reason: "unknown_vault" | "ambiguous_vault"; vault?: string; available_vaults?: string[] } {
+):
+  | StatsVault
+  | { reason: "unknown_vault" | "ambiguous_vault"; vault?: string; available_vaults?: string[] } {
   if (arg !== undefined) {
     const v = vaults.find((vt) => vt.config.name === arg);
     if (v === undefined) return { reason: "unknown_vault", vault: arg };
