@@ -165,11 +165,45 @@ describe("SectionsQueries", () => {
     expect(db.sections.countByNote(nid)).toBe(0);
   });
 
-  it("UNIQUE constraint on (note_id, anchor) is enforced", () => {
+  it("insertMany is collision-safe (INSERT OR IGNORE): a duplicate anchor does not throw", () => {
+    // Regression for ISSUE-indexer-duplicate-anchor.md: a note with two
+    // sibling sections that GitHub-slugify to the same anchor must not abort
+    // the index run. The first sibling wins the UNIQUE(note_id, anchor) slot;
+    // the second is silently ignored rather than throwing.
     const nid = seedNote("a.md");
     db.sections.insertMany([row(nid, { anchor: "dup", heading_text: "A" })]);
     expect(() =>
       db.sections.insertMany([row(nid, { anchor: "dup", heading_text: "B" })]),
-    ).toThrow();
+    ).not.toThrow();
+    expect(db.sections.countByNote(nid)).toBe(1);
+    expect(db.sections.getByAnchor(nid, "dup")!.heading_text).toBe("A");
+  });
+
+  describe("insertOneResolving (collision-safe single insert)", () => {
+    it("returns the new row id on a fresh insert", () => {
+      const nid = seedNote("a.md");
+      const id = db.sections.insertOneResolving(row(nid, { anchor: "fresh", heading_text: "A" }));
+      expect(id).not.toBeNull();
+      expect(id!).toBeGreaterThan(0);
+      expect(db.sections.countByNote(nid)).toBe(1);
+    });
+
+    it("returns the SURVIVING row id on a duplicate-anchor collision (parent linkage)", () => {
+      const nid = seedNote("a.md");
+      const first = db.sections.insertOneResolving(
+        row(nid, { anchor: "dup", heading_text: "First" }),
+      );
+      const second = db.sections.insertOneResolving(
+        row(nid, { anchor: "dup", heading_text: "Second" }),
+      );
+      expect(second).toBe(first);
+      expect(db.sections.countByNote(nid)).toBe(1);
+      expect(db.sections.getByAnchor(nid, "dup")!.heading_text).toBe("First");
+      db.sections.insertOneResolving(
+        row(nid, { anchor: "child", heading_text: "Child", parent_id: second!, level: 2 }),
+      );
+      const child = db.sections.getByAnchor(nid, "child");
+      expect(child!.parent_id).toBe(first);
+    });
   });
 });

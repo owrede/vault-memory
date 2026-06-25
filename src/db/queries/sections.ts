@@ -28,8 +28,15 @@ export class SectionsQueries {
   private readonly _countByNote: BetterSqlite3.Statement<[number], { c: number }>;
 
   constructor(private readonly db: BetterSqlite3.Database) {
+    // INSERT OR IGNORE: a note can contain sibling sections that GitHub-slugify
+    // to the same anchor (e.g. two H2s both titled "Anti-Patterns"). The table
+    // has UNIQUE(note_id, anchor); a plain INSERT crashes the whole index run on
+    // the second sibling (see ISSUE-indexer-duplicate-anchor.md). `OR IGNORE`
+    // makes the first sibling win the unique slot; callers that need the surviving
+    // id for parent linkage use `insertOneResolving`. Mirrors the backfill path
+    // in src/sections/backfill.ts.
     this._insert = db.prepare(`
-      INSERT INTO sections
+      INSERT OR IGNORE INTO sections
         (note_id, anchor, heading_path, heading_text, level,
          parent_id, ord, chunk_id_first, chunk_id_last, created_at)
       VALUES
@@ -92,6 +99,35 @@ export class SectionsQueries {
     });
     tx(rows);
     return ids;
+  }
+
+  /**
+   * Insert one section, collision-safe. Returns the id of the row that
+   * now owns (note_id, anchor): the freshly inserted row, or — when a
+   * same-anchor sibling already won the unique slot — that surviving
+   * row's id (so callers can resolve parent_id linkage). Mirrors the
+   * backfill behavior in src/sections/backfill.ts. The live indexer
+   * uses this instead of `insertMany` so duplicate-anchor sibling
+   * headings can't abort the whole index run
+   * (see ISSUE-indexer-duplicate-anchor.md).
+   */
+  insertOneResolving(r: InsertSectionRow): number | null {
+    const info = this._insert.run({
+      note_id: r.note_id,
+      anchor: r.anchor,
+      heading_path: r.heading_path,
+      heading_text: r.heading_text,
+      level: r.level,
+      parent_id: r.parent_id,
+      ord: r.ord,
+      chunk_id_first: r.chunk_id_first,
+      chunk_id_last: r.chunk_id_last,
+      created_at: Date.now(),
+    });
+    if (info.changes > 0) return Number(info.lastInsertRowid);
+    // Collision on UNIQUE(note_id, anchor): reuse the surviving row's id.
+    const existing = this._getByAnchor.get(r.note_id, r.anchor);
+    return existing ? Number(existing.id) : null;
   }
 
   deleteByNote(noteId: number): number {

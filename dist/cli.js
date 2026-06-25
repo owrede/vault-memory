@@ -760,6 +760,52 @@ var init_suppress_contract_write = __esm({
   }
 });
 
+// src/plugin-tools/source-tools.ts
+import { z as z8 } from "zod";
+async function refreshHandler(args2, deps) {
+  const info = await deps.refresh(args2.name);
+  if (info === void 0) {
+    return { ok: false, name: args2.name, error: `unknown source: ${args2.name}` };
+  }
+  const result = {
+    ok: true,
+    name: args2.name,
+    status: info.status,
+    tool_count: info.tools.length
+  };
+  if (info.error !== void 0) result.error = info.error;
+  return result;
+}
+async function unsetHandler(args2, deps) {
+  const removed = deps.remove(args2.name);
+  return { ok: true, name: args2.name, removed };
+}
+var RefreshSourceArgs, refreshSourceTool, UnsetMcpClientArgs, unsetMcpClientTool;
+var init_source_tools = __esm({
+  "src/plugin-tools/source-tools.ts"() {
+    "use strict";
+    init_esm_shims();
+    RefreshSourceArgs = z8.object({
+      name: z8.string().min(1).describe("Peer-MCP source name to refresh (re-poll tools/list).")
+    });
+    refreshSourceTool = {
+      name: "refresh_source",
+      description: "Re-poll tools/list against a live peer-MCP source and refresh its cached tool list. Returns the updated status (connected/unavailable/unreachable) and tool_count. SOURCES-REGISTRY \xA76.3.",
+      inputSchema: RefreshSourceArgs,
+      handler: refreshHandler
+    };
+    UnsetMcpClientArgs = z8.object({
+      name: z8.string().min(1).describe("Peer-MCP source name to disconnect + drop from the registry.")
+    });
+    unsetMcpClientTool = {
+      name: "unset_mcp_client",
+      description: "Disconnect a live peer-MCP source and drop it from the running registry. Idempotent (removed:false when the name is unknown). Affects the running process only \u2014 pair with set_mcp_client({name, remove:true}) to also delete the persisted config entry. SOURCES-REGISTRY \xA76.2.",
+      inputSchema: UnsetMcpClientArgs,
+      handler: unsetHandler
+    };
+  }
+});
+
 // src/plugin-tools/index.ts
 function ok(data) {
   return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
@@ -921,6 +967,54 @@ function syncPluginTools(server, registered, opts) {
           }
         }
       )
+    },
+    {
+      name: "refresh_source",
+      reg: () => server.registerTool(
+        refreshSourceTool.name,
+        {
+          description: refreshSourceTool.description,
+          inputSchema: refreshSourceTool.inputSchema.shape
+        },
+        async (args2) => {
+          try {
+            const validated = refreshSourceTool.inputSchema.parse(
+              args2
+            );
+            const result = await refreshSourceTool.handler(
+              validated,
+              opts.sourceRegistry
+            );
+            return ok(result);
+          } catch (err) {
+            return errorResponse(err instanceof Error ? err.message : String(err));
+          }
+        }
+      )
+    },
+    {
+      name: "unset_mcp_client",
+      reg: () => server.registerTool(
+        unsetMcpClientTool.name,
+        {
+          description: unsetMcpClientTool.description,
+          inputSchema: unsetMcpClientTool.inputSchema.shape
+        },
+        async (args2) => {
+          try {
+            const validated = unsetMcpClientTool.inputSchema.parse(
+              args2
+            );
+            const result = await unsetMcpClientTool.handler(
+              validated,
+              opts.sourceRegistry
+            );
+            return ok(result);
+          } catch (err) {
+            return errorResponse(err instanceof Error ? err.message : String(err));
+          }
+        }
+      )
     }
   ];
   for (const { name, reg } of adds) {
@@ -941,12 +1035,14 @@ var init_plugin_tools = __esm({
     init_get_runtime_stats();
     init_trigger_reindex();
     init_suppress_contract_write();
+    init_source_tools();
     init_set_runtime_config();
     init_resolve_secret();
     init_set_mcp_client();
     init_get_runtime_stats();
     init_trigger_reindex();
     init_suppress_contract_write();
+    init_source_tools();
     init_runtime_config();
     PLUGIN_TOOL_NAMES = [
       "set_runtime_config",
@@ -954,7 +1050,10 @@ var init_plugin_tools = __esm({
       "set_mcp_client",
       "get_runtime_stats",
       "trigger_reindex",
-      "suppress_contract_write"
+      "suppress_contract_write",
+      // SOURCES-REGISTRY.md §6 (Stage 2) — live-registry source management.
+      "refresh_source",
+      "unset_mcp_client"
     ];
   }
 });
@@ -2957,7 +3056,7 @@ var init_sections = __esm({
       constructor(db) {
         this.db = db;
         this._insert = db.prepare(`
-      INSERT INTO sections
+      INSERT OR IGNORE INTO sections
         (note_id, anchor, heading_path, heading_text, level,
          parent_id, ord, chunk_id_first, chunk_id_last, created_at)
       VALUES
@@ -3026,6 +3125,33 @@ var init_sections = __esm({
         });
         tx(rows);
         return ids;
+      }
+      /**
+       * Insert one section, collision-safe. Returns the id of the row that
+       * now owns (note_id, anchor): the freshly inserted row, or — when a
+       * same-anchor sibling already won the unique slot — that surviving
+       * row's id (so callers can resolve parent_id linkage). Mirrors the
+       * backfill behavior in src/sections/backfill.ts. The live indexer
+       * uses this instead of `insertMany` so duplicate-anchor sibling
+       * headings can't abort the whole index run
+       * (see ISSUE-indexer-duplicate-anchor.md).
+       */
+      insertOneResolving(r) {
+        const info = this._insert.run({
+          note_id: r.note_id,
+          anchor: r.anchor,
+          heading_path: r.heading_path,
+          heading_text: r.heading_text,
+          level: r.level,
+          parent_id: r.parent_id,
+          ord: r.ord,
+          chunk_id_first: r.chunk_id_first,
+          chunk_id_last: r.chunk_id_last,
+          created_at: Date.now()
+        });
+        if (info.changes > 0) return Number(info.lastInsertRowid);
+        const existing = this._getByAnchor.get(r.note_id, r.anchor);
+        return existing ? Number(existing.id) : null;
       }
       deleteByNote(noteId) {
         return this._deleteByNote.run(noteId).changes;
@@ -3525,7 +3651,7 @@ var init_retry = __esm({
 });
 
 // src/ollama/client.ts
-import { z as z8 } from "zod";
+import { z as z9 } from "zod";
 function isRetryable(err) {
   if (err instanceof OllamaHttpError) {
     return err.status >= 500 && err.status < 600;
@@ -3548,26 +3674,26 @@ var init_client = __esm({
     DEFAULT_BATCH_SIZE = 10;
     DEFAULT_TIMEOUT_MS = 3e4;
     DEFAULT_RETRIES = 3;
-    EmbedResponseSchema = z8.object({
-      embeddings: z8.array(z8.array(z8.number())),
-      model: z8.string().optional()
+    EmbedResponseSchema = z9.object({
+      embeddings: z9.array(z9.array(z9.number())),
+      model: z9.string().optional()
     });
-    TagsResponseSchema = z8.object({
-      models: z8.array(
-        z8.object({
-          name: z8.string()
+    TagsResponseSchema = z9.object({
+      models: z9.array(
+        z9.object({
+          name: z9.string()
         })
       )
     });
-    ChatResponseSchema = z8.object({
-      model: z8.string(),
-      message: z8.object({
-        role: z8.literal("assistant"),
-        content: z8.string()
+    ChatResponseSchema = z9.object({
+      model: z9.string(),
+      message: z9.object({
+        role: z9.literal("assistant"),
+        content: z9.string()
       }),
-      done: z8.boolean().optional(),
-      total_duration: z8.number().optional(),
-      eval_count: z8.number().optional()
+      done: z9.boolean().optional(),
+      total_duration: z9.number().optional(),
+      eval_count: z9.number().optional()
     });
     OllamaHttpError = class extends Error {
       status;
@@ -5434,7 +5560,16 @@ var init_obsidian_fs = __esm({
           if (since !== void 0 && mtime < since) continue;
           const body = await fs4.readFile(abs, "utf-8");
           const hash = computeBodyHash(body);
-          yield { id: this.pathToDocId(rel), mtime, hash };
+          let id;
+          try {
+            id = this.pathToDocId(rel);
+          } catch (err) {
+            console.error(
+              `[obsidian-fs:${this.vault.name}] skipping un-addressable file ${JSON.stringify(rel)}: ${err instanceof Error ? err.message : String(err)}`
+            );
+            continue;
+          }
+          yield { id, mtime, hash };
           yielded++;
         }
       }
@@ -6244,7 +6379,14 @@ async function indexVault(vault, options) {
         chunkIdFragment: computeChunkIdFragment(c.text)
       }));
       const chunkIds = vault.db.chunks.insertBatch(noteId, chunkInputs);
-      buildSectionsForNote(vault, noteId, parsed.content, chunkIds);
+      try {
+        buildSectionsForNote(vault, noteId, parsed.content, chunkIds);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error(
+          `[indexer:${vault.config.name}] section build failed for ${parsed.relativePath}: ${message} \u2014 skipping sections for this note`
+        );
+      }
       const embedResult = await options.ollama.embed({
         model: options.embeddingModel,
         texts: chunks.map((c) => c.text)
@@ -6409,15 +6551,15 @@ function buildSectionsForNote(vault, noteId, content, insertedChunkIds) {
       chunk_id_first: pair.first,
       chunk_id_last: pair.last
     };
-    const ids = vault.db.sections.insertMany([row]);
-    insertedIds.push(ids[0]);
+    insertedIds.push(vault.db.sections.insertOneResolving(row));
   }
   return insertedIds.length;
 }
 function mapChunksToSections(chunks, sectionRanges) {
-  const out = sectionRanges.map(
-    () => ({ first: null, last: null })
-  );
+  const out = sectionRanges.map(() => ({
+    first: null,
+    last: null
+  }));
   for (const chunk of chunks) {
     const offset = chunk.start_offset;
     let chosenIdx = null;
@@ -7395,7 +7537,7 @@ var init_validator = __esm({
 });
 
 // src/memory/contract/default-v1.ts
-import { z as z9 } from "zod";
+import { z as z10 } from "zod";
 var requiredKeys, baseShape, DEFAULT_MEMORY_V1;
 var init_default_v1 = __esm({
   "src/memory/contract/default-v1.ts"() {
@@ -7410,15 +7552,15 @@ var init_default_v1 = __esm({
       "superseded_by",
       "type"
     ];
-    baseShape = z9.object({
-      source: z9.enum(["agent", "user", "imported"]),
-      confidence: z9.enum(["direct", "inferred", "uncertain"]),
-      evidence: z9.array(z9.string()),
-      status: z9.enum(["active", "superseded", "archived"]).default("active"),
-      observed_at: z9.string().datetime({ offset: true }),
-      superseded_by: z9.string().nullable().default(null),
-      type: z9.string().min(1),
-      superseded_reason: z9.string().optional()
+    baseShape = z10.object({
+      source: z10.enum(["agent", "user", "imported"]),
+      confidence: z10.enum(["direct", "inferred", "uncertain"]),
+      evidence: z10.array(z10.string()),
+      status: z10.enum(["active", "superseded", "archived"]).default("active"),
+      observed_at: z10.string().datetime({ offset: true }),
+      superseded_by: z10.string().nullable().default(null),
+      type: z10.string().min(1),
+      superseded_reason: z10.string().optional()
     }).passthrough().superRefine((data, ctx) => {
       if (data.status === "superseded") {
         if (data.superseded_by === null || data.superseded_by === void 0) {
@@ -7451,7 +7593,7 @@ var init_default_v1 = __esm({
 });
 
 // src/memory/contract/default-brief-v1.ts
-import { z as z10 } from "zod";
+import { z as z11 } from "zod";
 var requiredKeys2, baseShape2, DEFAULT_BRIEF_V1;
 var init_default_brief_v1 = __esm({
   "src/memory/contract/default-brief-v1.ts"() {
@@ -7473,29 +7615,29 @@ var init_default_brief_v1 = __esm({
       "compiled_at",
       "source_hashes"
     ];
-    baseShape2 = z10.object({
+    baseShape2 = z11.object({
       // ── Base shape inherited from default-v1 ────────────────────────
-      source: z10.enum(["agent", "user", "imported"]),
-      confidence: z10.enum(["direct", "inferred", "uncertain"]),
-      evidence: z10.array(z10.string()),
+      source: z11.enum(["agent", "user", "imported"]),
+      confidence: z11.enum(["direct", "inferred", "uncertain"]),
+      evidence: z11.array(z11.string()),
       // ── Status enum WIDENED for briefs: + "stale" ──────────────────
-      status: z10.enum(["active", "stale", "superseded", "archived"]).default("active"),
-      observed_at: z10.string().datetime({ offset: true }),
-      superseded_by: z10.string().nullable().default(null),
-      type: z10.string().min(1),
-      superseded_reason: z10.string().optional(),
+      status: z11.enum(["active", "stale", "superseded", "archived"]).default("active"),
+      observed_at: z11.string().datetime({ offset: true }),
+      superseded_by: z11.string().nullable().default(null),
+      type: z11.string().min(1),
+      superseded_reason: z11.string().optional(),
       // ── Brief-specific properties (D-11 brief shape) ───────────────
-      target: z10.string().min(1),
+      target: z11.string().min(1),
       /**
        * Brief purpose — free text but bounded at 500 chars so
        * `list_briefs` stays scannable. Lower bound `min(1)` matches
        * BRF-03 "no empty purpose".
        */
-      purpose: z10.string().min(1).max(500),
+      purpose: z11.string().min(1).max(500),
       /** DocId list of all sources the brief was compiled from. */
-      compiled_from: z10.array(z10.string()).min(1),
+      compiled_from: z11.array(z11.string()).min(1),
       /** ISO-8601 datetime with offset (mirrors observed_at). */
-      compiled_at: z10.string().datetime({ offset: true }),
+      compiled_at: z11.string().datetime({ offset: true }),
       /**
        * Record<ChunkId, BriefSourceHash> — staleness contract. The map
        * key is the public ChunkId (`<DocId>#chunk-<7-hex>`); the value
@@ -7503,12 +7645,12 @@ var init_default_brief_v1 = __esm({
        * the cross-field invariant below only REQUIRES it on stale; the
        * validator still rejects `status: "stale"` writes that omit it.
        */
-      source_hashes: z10.record(z10.string(), z10.string()).optional(),
+      source_hashes: z11.record(z11.string(), z11.string()).optional(),
       /**
        * Daemon-computed list of source DocIds whose hashes have
        * diverged. Populated when `status` flips to `"stale"`.
        */
-      changed_sources: z10.array(z10.string()).optional()
+      changed_sources: z11.array(z11.string()).optional()
     }).passthrough().superRefine((data, ctx) => {
       if (data.status === "superseded") {
         if (data.superseded_by === null || data.superseded_by === void 0) {
@@ -7578,36 +7720,36 @@ var init_contract_yaml_read = __esm({
 });
 
 // src/memory/contract/schema.ts
-import { z as z11 } from "zod";
+import { z as z12 } from "zod";
 var PropertyRuleSchema, CrossFieldRuleSchema, MemoryContractYamlSchema;
 var init_schema2 = __esm({
   "src/memory/contract/schema.ts"() {
     "use strict";
     init_esm_shims();
-    PropertyRuleSchema = z11.object({
-      type: z11.enum(["string", "datetime", "array", "doc_id", "number", "boolean", "reference", "date"]),
-      allowed: z11.array(z11.string()).optional(),
-      default: z11.unknown().optional(),
-      items: z11.object({ type: z11.string() }).optional(),
-      min_length: z11.number().optional(),
+    PropertyRuleSchema = z12.object({
+      type: z12.enum(["string", "datetime", "array", "doc_id", "number", "boolean", "reference", "date"]),
+      allowed: z12.array(z12.string()).optional(),
+      default: z12.unknown().optional(),
+      items: z12.object({ type: z12.string() }).optional(),
+      min_length: z12.number().optional(),
       /** When true, the property accepts `null` as a sentinel value (in
        *  addition to whatever `type` says). Used for required-but-null-by-
        *  default properties like `superseded_by` on active observations. */
-      nullable: z11.boolean().optional()
+      nullable: z12.boolean().optional()
     });
-    CrossFieldRuleSchema = z11.object({
-      when: z11.string(),
-      require: z11.string()
+    CrossFieldRuleSchema = z12.object({
+      when: z12.string(),
+      require: z12.string()
     });
-    MemoryContractYamlSchema = z11.object({
-      name: z11.string().min(1),
-      version: z11.string().default("1.0"),
-      required_properties: z11.record(z11.string(), PropertyRuleSchema),
-      optional_properties: z11.record(z11.string(), PropertyRuleSchema).default({}),
-      cross_field_rules: z11.array(CrossFieldRuleSchema).default([]),
-      naming: z11.object({
-        strategy: z11.enum(["caller-provided", "date-slug", "adapter-assigned"]),
-        pattern: z11.string().optional()
+    MemoryContractYamlSchema = z12.object({
+      name: z12.string().min(1),
+      version: z12.string().default("1.0"),
+      required_properties: z12.record(z12.string(), PropertyRuleSchema),
+      optional_properties: z12.record(z12.string(), PropertyRuleSchema).default({}),
+      cross_field_rules: z12.array(CrossFieldRuleSchema).default([]),
+      naming: z12.object({
+        strategy: z12.enum(["caller-provided", "date-slug", "adapter-assigned"]),
+        pattern: z12.string().optional()
       })
     });
   }
@@ -7615,7 +7757,7 @@ var init_schema2 = __esm({
 
 // src/memory/contract/loader.ts
 import { parse as parseYaml } from "yaml";
-import { z as z12 } from "zod";
+import { z as z13 } from "zod";
 function __cacheContract(name, contract) {
   contractCache.set(name, contract);
 }
@@ -9213,7 +9355,7 @@ var init_memory_stats = __esm({
 });
 
 // src/memory/resources/index.ts
-var RESOURCE_URI_LIST_SINKS, RESOURCE_URI_MEMORY_STATS, RESOURCE_URI_LIST_BRIEFS, RESOURCE_URI_LIST_CONTRACTS, RESOURCE_URI_LIST_CONTRACT_VERBS, RESOURCE_URI_VAULTS, RESOURCE_URI_MODELS, RESOURCE_URI_RECENT, RESOURCE_URI_STATS, RESOURCE_URI_BACKLINKS;
+var RESOURCE_URI_LIST_SINKS, RESOURCE_URI_MEMORY_STATS, RESOURCE_URI_LIST_BRIEFS, RESOURCE_URI_LIST_CONTRACTS, RESOURCE_URI_LIST_CONTRACT_VERBS, RESOURCE_URI_SOURCES, RESOURCE_URI_VAULTS, RESOURCE_URI_MODELS, RESOURCE_URI_RECENT, RESOURCE_URI_STATS, RESOURCE_URI_BACKLINKS;
 var init_resources = __esm({
   "src/memory/resources/index.ts"() {
     "use strict";
@@ -9225,6 +9367,7 @@ var init_resources = __esm({
     RESOURCE_URI_LIST_BRIEFS = "vault-memory://briefs";
     RESOURCE_URI_LIST_CONTRACTS = "vault-memory://contracts";
     RESOURCE_URI_LIST_CONTRACT_VERBS = "vault-memory://contract-verbs";
+    RESOURCE_URI_SOURCES = "vault-memory://sources";
     RESOURCE_URI_VAULTS = "vault-memory://vaults";
     RESOURCE_URI_MODELS = "vault-memory://models";
     RESOURCE_URI_RECENT = "vault-memory://recent";
@@ -9284,6 +9427,25 @@ var init_resource_registry = __esm({
         name: "contract-verbs",
         uriTemplate: "vault-memory://contract-verbs/{vault}",
         description: "List baseline assembly verbs + custom (mcp://) verbs in use, with invocation_count + last_seen aggregated from contract_audit (D-A2b). Baseline verbs are constant per ADR-006 \xA7Decision 3.",
+        mimeType: "application/json"
+      },
+      // ─── SOURCES-REGISTRY.md §5 (Stage 2) — peer-MCP source discovery ───────
+      {
+        name: "sources",
+        uriTemplate: "vault-memory://sources",
+        description: "List peer MCP servers vault-memory connects to, with per-source status (connected/unavailable/unreachable), tool_count, and last_refreshed. vault-memory itself is not included. SOURCES-REGISTRY \xA75.1.",
+        mimeType: "application/json"
+      },
+      {
+        name: "source-tools",
+        uriTemplate: "vault-memory://sources/{name}/tools",
+        description: "List the cached tools/list for one peer MCP source. Empty when the source is not connected. SOURCES-REGISTRY \xA75.2.",
+        mimeType: "application/json"
+      },
+      {
+        name: "source-tool",
+        uriTemplate: "vault-memory://sources/{name}/tools/{tool}",
+        description: "Read a single tool's schema from one peer MCP source, inlined from the cached tools/list. SOURCES-REGISTRY \xA75.3.",
         mimeType: "application/json"
       },
       // ─── Phase 8 (Plan 08-05 / REL-08) — promoted from v1 tools ─────────────
@@ -11797,11 +11959,11 @@ var init_obsidian_fs3 = __esm({
 });
 
 // src/tool-registry.ts
-import { z as z13 } from "zod";
+import { z as z14 } from "zod";
 function buildToolSchema(name) {
   const builder = SCHEMA_BUILDERS[name];
   if (builder) return builder();
-  return z13.object(TOOL_SCHEMAS[name]);
+  return z14.object(TOOL_SCHEMAS[name]);
 }
 var TOOLS, DOC_ID_PATTERN2, PredicateSchema, TOOL_SCHEMAS, SCHEMA_BUILDERS;
 var init_tool_registry = __esm({
@@ -12674,243 +12836,243 @@ var init_tool_registry = __esm({
       }
     ];
     DOC_ID_PATTERN2 = /^[a-z][a-z0-9-]*:\/\/[^/]+\/.+$/;
-    PredicateSchema = z13.union([
-      z13.string(),
-      z13.number(),
-      z13.boolean(),
-      z13.null(),
-      z13.object({ $in: z13.array(z13.union([z13.string(), z13.number(), z13.boolean(), z13.null()])) }),
-      z13.object({ $exists: z13.boolean() }),
-      z13.object({ $contains: z13.union([z13.string(), z13.number(), z13.boolean(), z13.null()]) })
+    PredicateSchema = z14.union([
+      z14.string(),
+      z14.number(),
+      z14.boolean(),
+      z14.null(),
+      z14.object({ $in: z14.array(z14.union([z14.string(), z14.number(), z14.boolean(), z14.null()])) }),
+      z14.object({ $exists: z14.boolean() }),
+      z14.object({ $contains: z14.union([z14.string(), z14.number(), z14.boolean(), z14.null()]) })
     ]);
     TOOL_SCHEMAS = {
       list_vaults: {},
       read_note: {
-        vault: z13.string(),
-        path: z13.string()
+        vault: z14.string(),
+        path: z14.string()
       },
       search_semantic: {
-        query: z13.string().min(1),
-        vaults: z13.array(z13.string()).optional(),
-        top_k: z13.number().int().positive().max(100).optional().default(10),
-        exclude_paths: z13.array(z13.string()).optional()
+        query: z14.string().min(1),
+        vaults: z14.array(z14.string()).optional(),
+        top_k: z14.number().int().positive().max(100).optional().default(10),
+        exclude_paths: z14.array(z14.string()).optional()
       },
       search_text: {
-        query: z13.string().min(1),
-        vaults: z13.array(z13.string()).optional(),
-        top_k: z13.number().int().positive().max(100).optional().default(10),
-        exclude_paths: z13.array(z13.string()).optional()
+        query: z14.string().min(1),
+        vaults: z14.array(z14.string()).optional(),
+        top_k: z14.number().int().positive().max(100).optional().default(10),
+        exclude_paths: z14.array(z14.string()).optional()
       },
       search_hybrid: {
-        query: z13.string().min(1),
-        vaults: z13.array(z13.string()).optional(),
-        top_k: z13.number().int().positive().max(100).optional().default(10),
-        rrf_k: z13.number().int().positive().max(1e3).optional().default(60),
-        exclude_paths: z13.array(z13.string()).optional(),
-        rerank: z13.boolean().optional().default(false),
+        query: z14.string().min(1),
+        vaults: z14.array(z14.string()).optional(),
+        top_k: z14.number().int().positive().max(100).optional().default(10),
+        rrf_k: z14.number().int().positive().max(1e3).optional().default(60),
+        exclude_paths: z14.array(z14.string()).optional(),
+        rerank: z14.boolean().optional().default(false),
         // Phase 3 / 03-05 additive params — D-07, D-08, ASM-07, ASM-08.
         // All `.optional()` with defaults that vanish when unset, so v1
         // callers see no behavior change.
-        recency_weight: z13.number().optional().default(0),
-        authority_weight: z13.number().optional().default(0),
-        half_life_days: z13.number().positive().optional().default(30),
-        include_superseded: z13.boolean().optional().default(false),
+        recency_weight: z14.number().optional().default(0),
+        authority_weight: z14.number().optional().default(0),
+        half_life_days: z14.number().positive().optional().default(30),
+        include_superseded: z14.boolean().optional().default(false),
         // ── Phase 4 / 04-04 / GRA-03 (D-15): additive auto-expansion ──
         // Nested under a single optional `expand` object per D-15. When
         // omitted, hybridSearch behavior is byte-identical to v1 (the
         // guard `if (opts.expand && opts.expandDeps && ...)` at the end of
         // `src/search/hybrid.ts` short-circuits entirely). The literal-
         // union for `hops` enforces the D-05 hop cap at the boundary.
-        expand: z13.object({
-          hops: z13.union([z13.literal(1), z13.literal(2)]),
-          direction: z13.enum(["forward", "backward", "both"]).optional(),
-          edge_types: z13.array(z13.enum(["wikilink", "mention", "frontmatter-ref", "hyperlink"])).optional()
+        expand: z14.object({
+          hops: z14.union([z14.literal(1), z14.literal(2)]),
+          direction: z14.enum(["forward", "backward", "both"]).optional(),
+          edge_types: z14.array(z14.enum(["wikilink", "mention", "frontmatter-ref", "hyperlink"])).optional()
         }).optional()
       },
       list_backlinks: {
-        vault: z13.string(),
-        path: z13.string()
+        vault: z14.string(),
+        path: z14.string()
       },
       list_forward_links: {
-        vault: z13.string(),
-        path: z13.string(),
-        include_broken: z13.boolean().optional().default(true)
+        vault: z14.string(),
+        path: z14.string(),
+        include_broken: z14.boolean().optional().default(true)
       },
       find_broken_links: {
-        vault: z13.string()
+        vault: z14.string()
       },
       query_frontmatter: {
-        vault: z13.string(),
-        where: z13.record(z13.string(), PredicateSchema),
-        limit: z13.number().int().positive().max(1e3).optional().default(100)
+        vault: z14.string(),
+        where: z14.record(z14.string(), PredicateSchema),
+        limit: z14.number().int().positive().max(1e3).optional().default(100)
       },
       write_note: {
-        vault: z13.string(),
-        path: z13.string(),
-        content: z13.string(),
-        frontmatter: z13.record(z13.string(), z13.unknown()).nullable().optional(),
-        expected_hash: z13.string().optional(),
-        client_id: z13.string().optional()
+        vault: z14.string(),
+        path: z14.string(),
+        content: z14.string(),
+        frontmatter: z14.record(z14.string(), z14.unknown()).nullable().optional(),
+        expected_hash: z14.string().optional(),
+        client_id: z14.string().optional()
       },
       update_frontmatter: {
-        vault: z13.string(),
-        path: z13.string(),
-        merge: z13.record(z13.string(), z13.unknown()),
-        expected_hash: z13.string().optional(),
-        client_id: z13.string().optional()
+        vault: z14.string(),
+        path: z14.string(),
+        merge: z14.record(z14.string(), z14.unknown()),
+        expected_hash: z14.string().optional(),
+        client_id: z14.string().optional()
       },
       delete_note: {
-        vault: z13.string(),
-        path: z13.string(),
-        expected_hash: z13.string(),
-        client_id: z13.string().optional()
+        vault: z14.string(),
+        path: z14.string(),
+        expected_hash: z14.string(),
+        client_id: z14.string().optional()
       },
       audit_log: {
-        vault: z13.string(),
-        note_path: z13.string().optional(),
-        op: z13.enum(["create", "update", "delete"]).optional(),
-        since: z13.number().int().nonnegative().optional(),
-        limit: z13.number().int().positive().max(1e3).optional().default(50),
+        vault: z14.string(),
+        note_path: z14.string().optional(),
+        op: z14.enum(["create", "update", "delete"]).optional(),
+        since: z14.number().int().nonnegative().optional(),
+        limit: z14.number().int().positive().max(1e3).optional().default(50),
         // Plan 02-06 (MEM-08): additive optional filter. The MCP tool's
         // `description` string is INTENTIONALLY unchanged — Phase 1 byte-identity
         // is preserved. New capability is documented in docs/tools/audit_log.md.
-        is_memory_sink_write: z13.boolean().optional()
+        is_memory_sink_write: z14.boolean().optional()
       },
       list_models: {
-        vault: z13.string()
+        vault: z14.string()
       },
       start_shadow_index: {
-        vault: z13.string(),
-        model: z13.string().min(1),
-        batch_size: z13.number().int().positive().max(256).optional()
+        vault: z14.string(),
+        model: z14.string().min(1),
+        batch_size: z14.number().int().positive().max(256).optional()
       },
       switch_active_model: {
-        vault: z13.string(),
-        model_name: z13.string().min(1)
+        vault: z14.string(),
+        model_name: z14.string().min(1)
       },
       vacuum_embeddings: {
-        vault: z13.string()
+        vault: z14.string()
       },
       index_runs: {
-        vault: z13.string(),
-        limit: z13.number().int().positive().max(200).optional().default(20)
+        vault: z14.string(),
+        limit: z14.number().int().positive().max(200).optional().default(20)
       },
       search: {
-        query: z13.string().min(1),
-        limit: z13.number().int().positive().max(50).optional().default(10)
+        query: z14.string().min(1),
+        limit: z14.number().int().positive().max(50).optional().default(10)
       },
       fetch: {
-        id: z13.string().min(1)
+        id: z14.string().min(1)
       },
       vault_stats: {
-        vault: z13.string().optional()
+        vault: z14.string().optional()
       },
       recent_notes: {
-        vault: z13.string().optional(),
-        limit: z13.number().int().positive().max(200).optional().default(20),
-        since: z13.number().int().nonnegative().optional()
+        vault: z14.string().optional(),
+        limit: z14.number().int().positive().max(200).optional().default(20),
+        since: z14.number().int().nonnegative().optional()
       },
       suggest_frontmatter: {
-        vault: z13.string(),
-        path: z13.string().optional(),
-        content: z13.string().optional(),
-        title: z13.string().optional(),
-        folder_hint: z13.string().optional()
+        vault: z14.string(),
+        path: z14.string().optional(),
+        content: z14.string().optional(),
+        title: z14.string().optional(),
+        folder_hint: z14.string().optional()
       },
       // ── Phase 2 memory tools (Plan 02-04) ───────────────────────────────────
       record_observation: {
-        vault: z13.string().min(1).describe("Vault name (registered in [vaults] config block)"),
-        claim: z13.string().min(1).describe("Short natural-language statement of the observation (becomes title + body)"),
-        evidence: z13.array(z13.string()).describe("DocIds or quoted source spans supporting the claim; empty array allowed"),
-        confidence: z13.enum(["direct", "inferred", "uncertain"]).describe("How the agent arrived at this claim"),
-        type: z13.string().min(1).describe(
+        vault: z14.string().min(1).describe("Vault name (registered in [vaults] config block)"),
+        claim: z14.string().min(1).describe("Short natural-language statement of the observation (becomes title + body)"),
+        evidence: z14.array(z14.string()).describe("DocIds or quoted source spans supporting the claim; empty array allowed"),
+        confidence: z14.enum(["direct", "inferred", "uncertain"]).describe("How the agent arrived at this claim"),
+        type: z14.string().min(1).describe(
           "Observation type per the sink contract (e.g. 'observation', 'hypothesis', 'decision')"
         ),
-        sink: z13.string().min(1).optional().describe(
+        sink: z14.string().min(1).optional().describe(
           "Memory sink name OR full obsidian-fs://\u2026 handle. Defaults to the vault's default sink."
         ),
-        properties: z13.record(z13.string(), z13.unknown()).optional().describe(
+        properties: z14.record(z14.string(), z14.unknown()).optional().describe(
           "Escape-hatch: contract-allowed extra properties; merged AFTER sugar args (caller wins)"
         )
       },
       supersede: {
-        doc_id: z13.string().regex(DOC_ID_PATTERN2).describe("DocId of the document being superseded"),
-        replacement_doc_id: z13.string().regex(DOC_ID_PATTERN2).describe("DocId of the replacement document"),
-        reason: z13.string().min(1).describe("Why the old document is being retired; written to superseded_reason")
+        doc_id: z14.string().regex(DOC_ID_PATTERN2).describe("DocId of the document being superseded"),
+        replacement_doc_id: z14.string().regex(DOC_ID_PATTERN2).describe("DocId of the replacement document"),
+        reason: z14.string().min(1).describe("Why the old document is being retired; written to superseded_reason")
       },
       // ── Phase 5 brief tools (Plan 05-02 / BRF-03, BRF-04) ───────────────────
       compile_brief: {
-        vault: z13.string().min(1).describe("Vault name (registered in [vaults] config block)"),
-        target: z13.string().min(1).describe("Stable cross-version handle for the brief (e.g. 'atlas-q3')"),
-        source_doc_ids: z13.array(z13.string().regex(DOC_ID_PATTERN2)).min(1).max(50).describe("DocIds the brief is compiled from; deduped, capped at 50 (D-03)"),
-        purpose: z13.string().min(1).max(500).describe("Free-form purpose; bounded so list_briefs stays scannable"),
-        max_tokens: z13.number().int().positive().optional().default(2e3).describe("Hint for the LLM ladder; default 2000"),
-        prepared_text: z13.string().min(1).optional().describe("D-10 tier 3 fallback when no LLM is reachable \u2014 verbatim body to stitch in"),
-        sink: z13.string().min(1).optional().describe("Override the default `_memory/_briefs` sink")
+        vault: z14.string().min(1).describe("Vault name (registered in [vaults] config block)"),
+        target: z14.string().min(1).describe("Stable cross-version handle for the brief (e.g. 'atlas-q3')"),
+        source_doc_ids: z14.array(z14.string().regex(DOC_ID_PATTERN2)).min(1).max(50).describe("DocIds the brief is compiled from; deduped, capped at 50 (D-03)"),
+        purpose: z14.string().min(1).max(500).describe("Free-form purpose; bounded so list_briefs stays scannable"),
+        max_tokens: z14.number().int().positive().optional().default(2e3).describe("Hint for the LLM ladder; default 2000"),
+        prepared_text: z14.string().min(1).optional().describe("D-10 tier 3 fallback when no LLM is reachable \u2014 verbatim body to stitch in"),
+        sink: z14.string().min(1).optional().describe("Override the default `_memory/_briefs` sink")
       },
       get_brief: {
-        vault: z13.string().min(1).describe("Vault name (registered in [vaults] config block)"),
-        target: z13.string().min(1).describe("Stable cross-version handle for the brief"),
-        max_age_days: z13.number().int().nonnegative().optional().describe("Reject briefs older than this many days unless allow_stale=true"),
-        allow_stale: z13.boolean().optional().default(false).describe(
+        vault: z14.string().min(1).describe("Vault name (registered in [vaults] config block)"),
+        target: z14.string().min(1).describe("Stable cross-version handle for the brief"),
+        max_age_days: z14.number().int().nonnegative().optional().describe("Reject briefs older than this many days unless allow_stale=true"),
+        allow_stale: z14.boolean().optional().default(false).describe(
           "When true, return briefs flagged stale or too_old with annotation rather than null"
         )
       },
       // ── Phase 3 assembly tools (Plan 03-02 / ASM-02) ────────────────────────
       get_outline: {
-        doc_id: z13.string().regex(DOC_ID_PATTERN2).describe("Opaque DocId (obsidian-fs://<vault>/<path>) of the document"),
-        vaults: z13.array(z13.string().min(1)).optional().describe("Optional vault filter; usually omitted (the DocId names a vault)")
+        doc_id: z14.string().regex(DOC_ID_PATTERN2).describe("Opaque DocId (obsidian-fs://<vault>/<path>) of the document"),
+        vaults: z14.array(z14.string().min(1)).optional().describe("Optional vault filter; usually omitted (the DocId names a vault)")
       },
       // ── Phase 3 assembly tools (Plan 03-03) ─────────────────────────────────
       search_sections: {
-        query: z13.string().min(1),
-        limit: z13.number().int().positive().max(50).optional().default(10),
-        vaults: z13.array(z13.string().min(1)).optional(),
+        query: z14.string().min(1),
+        limit: z14.number().int().positive().max(50).optional().default(10),
+        vaults: z14.array(z14.string().min(1)).optional(),
         // Forward-compat with slice 03-05's authority/staleness rescore.
         // Accepted today; ignored by the controller until 03-05 wires the
         // forwarding inside hybridSearch. See 03-03-DEVIATIONS.md.
-        recency_weight: z13.number().min(0).optional().default(0),
-        authority_weight: z13.number().min(0).optional().default(0),
-        include_superseded: z13.boolean().optional().default(false)
+        recency_weight: z14.number().min(0).optional().default(0),
+        authority_weight: z14.number().min(0).optional().default(0),
+        include_superseded: z14.boolean().optional().default(false)
       },
       // ── Phase 2 memory tools (Plan 02-05) ───────────────────────────────────
       recall: {
-        query: z13.string().min(1).describe("Natural-language query; routes through hybrid (semantic + BM25) search"),
-        min_confidence: z13.enum(["direct", "inferred", "uncertain"]).optional().describe(
+        query: z14.string().min(1).describe("Natural-language query; routes through hybrid (semantic + BM25) search"),
+        min_confidence: z14.enum(["direct", "inferred", "uncertain"]).optional().describe(
           "Exclude docs whose confidence ordinal is lower than this (direct=3, inferred=2, uncertain=1)"
         ),
-        types: z13.array(z13.string().min(1)).optional().describe("Restrict to docs whose `type` property is in this set"),
-        max_age_days: z13.number().int().positive().optional().describe("Exclude docs whose `observed_at` is older than this many days"),
-        sink: z13.string().min(1).optional().describe(
+        types: z14.array(z14.string().min(1)).optional().describe("Restrict to docs whose `type` property is in this set"),
+        max_age_days: z14.number().int().positive().optional().describe("Exclude docs whose `observed_at` is older than this many days"),
+        sink: z14.string().min(1).optional().describe(
           "Memory sink name OR full obsidian-fs://\u2026 handle. Defaults to all configured sinks."
         ),
-        limit: z13.number().int().positive().max(200).optional().describe("Maximum results AFTER filter+sort; default 20"),
-        vaults: z13.array(z13.string().min(1)).optional().describe("Restrict to these vault names; defaults to all configured")
+        limit: z14.number().int().positive().max(200).optional().describe("Maximum results AFTER filter+sort; default 20"),
+        vaults: z14.array(z14.string().min(1)).optional().describe("Restrict to these vault names; defaults to all configured")
       },
       // ── Phase 3 assembly tools (Plan 03-04 / ASM-01) ────────────────────────
       get_document_bundle: {
-        doc_id: z13.string().regex(DOC_ID_PATTERN2).describe("Opaque DocId (obsidian-fs://<vault>/<path>) of the anchor document"),
+        doc_id: z14.string().regex(DOC_ID_PATTERN2).describe("Opaque DocId (obsidian-fs://<vault>/<path>) of the anchor document"),
         // v2.0.0 accepts only depth:1. The literal pin guarantees Zod
         // rejects any other value at the boundary so the controller does
         // not need to clamp. Phase 4 may widen additively (z.union of
         // literals, or `z.number().int().min(1).max(2)`).
-        depth: z13.literal(1).optional().default(1).describe("Link-walk depth. v2.0.0: only 1 (one-hop). Phase 4 may widen."),
-        vaults: z13.array(z13.string().min(1)).optional().describe("Optional vault filter; usually omitted (the DocId names a vault)")
+        depth: z14.literal(1).optional().default(1).describe("Link-walk depth. v2.0.0: only 1 (one-hop). Phase 4 may widen."),
+        vaults: z14.array(z14.string().min(1)).optional().describe("Optional vault filter; usually omitted (the DocId names a vault)")
       },
       // ── Phase 4 graph tools (Plan 04-03 / GRA-01) ───────────────────────────
       expand: {
-        seed_doc_ids: z13.array(z13.string().regex(DOC_ID_PATTERN2)).min(1).describe(
+        seed_doc_ids: z14.array(z14.string().regex(DOC_ID_PATTERN2)).min(1).describe(
           "1+ opaque DocIds (e.g. obsidian-fs://<vault>/<path>) \u2014 seeds of the BFS."
         ),
         // Hops hard-capped at 2 (D-05) via Zod literal union — `hops: 3`
         // is rejected at the boundary; the controller does not clamp.
-        hops: z13.union([z13.literal(1), z13.literal(2)]).describe("Hop cap (1 or 2). v2.0.0 hard-caps at 2."),
-        direction: z13.enum(["forward", "backward", "both"]).optional().default("both").describe("Edge traversal direction; default 'both'."),
-        edge_types: z13.array(z13.enum(["wikilink", "mention", "frontmatter-ref", "hyperlink"])).optional().describe("Optional filter on edge types; default = all four types."),
-        filter_properties: z13.record(z13.string(), z13.unknown()).optional().describe(
+        hops: z14.union([z14.literal(1), z14.literal(2)]).describe("Hop cap (1 or 2). v2.0.0 hard-caps at 2."),
+        direction: z14.enum(["forward", "backward", "both"]).optional().default("both").describe("Edge traversal direction; default 'both'."),
+        edge_types: z14.array(z14.enum(["wikilink", "mention", "frontmatter-ref", "hyperlink"])).optional().describe("Optional filter on edge types; default = all four types."),
+        filter_properties: z14.record(z14.string(), z14.unknown()).optional().describe(
           "Strict-equality predicate on document properties (e.g. {type: 'Project'})."
         ),
-        include_superseded: z13.boolean().optional().default(false).describe(
+        include_superseded: z14.boolean().optional().default(false).describe(
           "When false (default), docs whose properties.status === 'superseded' are dropped."
         )
       },
@@ -12924,50 +13086,50 @@ var init_tool_registry = __esm({
       // works. The runtime path goes through `buildToolSchema("cluster")`
       // which calls the SCHEMA_BUILDERS entry.
       cluster: {
-        query: z13.string().min(1).optional(),
-        seed_doc_ids: z13.array(z13.string().regex(DOC_ID_PATTERN2)).min(1).optional(),
+        query: z14.string().min(1).optional(),
+        seed_doc_ids: z14.array(z14.string().regex(DOC_ID_PATTERN2)).min(1).optional(),
         // CR-02: `vault` scopes the `query` path on multi-vault setups so
         // search_hybrid is not silently restricted to whichever vault
         // sorts first in VaultManager insertion order. Optional at the
         // schema layer; the runtime cluster() entry enforces the
         // multi-vault-without-vault error.
-        vault: z13.string().min(1).optional(),
-        method: z13.literal("edge-community"),
-        query_top_k: z13.number().int().positive().max(200).optional().default(50),
-        force: z13.boolean().optional().default(false)
+        vault: z14.string().min(1).optional(),
+        method: z14.literal("edge-community"),
+        query_top_k: z14.number().int().positive().max(200).optional().default(50),
+        force: z14.boolean().optional().default(false)
       },
       // ── Phase 3 assembly tools (Plan 03-06) ─────────────────────────────────
       assemble_dossier: {
-        type: z13.string().min(1).describe(
+        type: z14.string().min(1).describe(
           "Exact-match value for properties.type on the anchor document (D-03 \u2014 no fuzzy match)"
         ),
-        key: z13.string().min(1).describe(
+        key: z14.string().min(1).describe(
           "Candidate key \u2014 matches the document's title OR any entry in properties.aliases (D-04)"
         ),
-        vaults: z13.array(z13.string().min(1)).optional().describe("Restrict to these vault names; defaults to all configured")
+        vaults: z14.array(z14.string().min(1)).optional().describe("Restrict to these vault names; defaults to all configured")
       },
       // ── Phase 6 task-contract DSL (Plan 06-02 / D-A1 escape valve) ─────────
       register_contracts_as_tools: {
-        vault: z13.string().min(1).optional().describe("Vault name; omit to apply to all vaults")
+        vault: z14.string().min(1).optional().describe("Vault name; omit to apply to all vaults")
       },
       // ── Phase 6 task-contract DSL (Plan 06-03 / CON-05, Q-DESCRIBE) ────────
       describe_contract: {
-        name: z13.string().min(1).describe("Registered contract name (see register_contracts_as_tools)"),
-        vault: z13.string().min(1).optional().describe("Vault name; omit on single-vault setups")
+        name: z14.string().min(1).describe("Registered contract name (see register_contracts_as_tools)"),
+        vault: z14.string().min(1).optional().describe("Vault name; omit on single-vault setups")
       },
       // ── Phase 6 task-contract DSL (Plan 06-03 / CON-06) ────────────────────
       instantiate_contract: {
-        name: z13.string().min(1).describe("Registered contract name"),
-        inputs: z13.record(z13.string(), z13.unknown()).optional().default({}).describe("Contract inputs; validated against the contract's inputZodSchema"),
-        source_overrides: z13.record(z13.string(), z13.string()).optional().describe("Override declared source handles by handle name"),
-        sink_overrides: z13.record(z13.string(), z13.string()).optional().describe(
+        name: z14.string().min(1).describe("Registered contract name"),
+        inputs: z14.record(z14.string(), z14.unknown()).optional().default({}).describe("Contract inputs; validated against the contract's inputZodSchema"),
+        source_overrides: z14.record(z14.string(), z14.string()).optional().describe("Override declared source handles by handle name"),
+        sink_overrides: z14.record(z14.string(), z14.string()).optional().describe(
           "Override declared sink handles by handle name. Targets MUST resolve through MemorySinkRegistry (D-A4c)."
         ),
-        vault: z13.string().min(1).optional().describe("Vault name; omit on single-vault setups")
+        vault: z14.string().min(1).optional().describe("Vault name; omit on single-vault setups")
       }
     };
     SCHEMA_BUILDERS = {
-      suggest_frontmatter: () => z13.object(TOOL_SCHEMAS.suggest_frontmatter).refine((v) => v.path !== void 0 || v.content !== void 0, {
+      suggest_frontmatter: () => z14.object(TOOL_SCHEMAS.suggest_frontmatter).refine((v) => v.path !== void 0 || v.content !== void 0, {
         message: "suggest_frontmatter requires either `path` or `content`"
       }),
       // Plan 04-05 / D-15a — EXACTLY ONE of `query` or `seed_doc_ids` must
@@ -12976,7 +13138,7 @@ var init_tool_registry = __esm({
       // so this Zod refinement is the early-rejection gate at the MCP
       // boundary (cluster's internal validator handles the same case for
       // direct callers that bypass Zod).
-      cluster: () => z13.object(TOOL_SCHEMAS.cluster).refine(
+      cluster: () => z14.object(TOOL_SCHEMAS.cluster).refine(
         (v) => v.query !== void 0 && v.seed_doc_ids === void 0 || v.query === void 0 && v.seed_doc_ids !== void 0,
         {
           message: "cluster requires EXACTLY ONE of `query` or `seed_doc_ids` (D-15a mutual exclusion)"
@@ -13071,7 +13233,7 @@ var init_json_schema_ref = __esm({
 });
 
 // src/contracts/input-schema.ts
-import { z as z14 } from "zod";
+import { z as z15 } from "zod";
 function buildInputSchema(yamlInputs, required = []) {
   const resolvedProperties = resolveRefs(yamlInputs);
   const jsonSchema = {
@@ -13080,7 +13242,7 @@ function buildInputSchema(yamlInputs, required = []) {
     required,
     additionalProperties: false
   };
-  const zodSchema = z14.fromJSONSchema(
+  const zodSchema = z15.fromJSONSchema(
     jsonSchema
   );
   return { zodSchema, jsonSchema };
@@ -13166,7 +13328,7 @@ var init_audit4 = __esm({
 });
 
 // src/contracts/schema.ts
-import { z as z15 } from "zod";
+import { z as z16 } from "zod";
 var BASELINE_VERBS, MCP_VERB_RE, VerbSchema, StepSchema, HandleDeclSchema, WriteBackSchema, ContractFileSchema;
 var init_schema4 = __esm({
   "src/contracts/schema.ts"() {
@@ -13186,40 +13348,40 @@ var init_schema4 = __esm({
       "read_note"
     ];
     MCP_VERB_RE = /^mcp:\/\/[a-z][a-z0-9_-]*\/[a-z][a-z0-9_-]*$/;
-    VerbSchema = z15.union([
-      z15.enum([...BASELINE_VERBS, "literal"]),
-      z15.string().regex(MCP_VERB_RE)
+    VerbSchema = z16.union([
+      z16.enum([...BASELINE_VERBS, "literal"]),
+      z16.string().regex(MCP_VERB_RE)
     ]);
-    StepSchema = z15.object({
-      as: z15.string().min(1).regex(/^[a-z_][a-z0-9_]*$/, "alias must be snake_case").describe("D-A2c \u2014 unique snake_case alias for this step's output"),
+    StepSchema = z16.object({
+      as: z16.string().min(1).regex(/^[a-z_][a-z0-9_]*$/, "alias must be snake_case").describe("D-A2c \u2014 unique snake_case alias for this step's output"),
       verb: VerbSchema.describe(
         "Closed enum + literal + mcp:// extension (D-A2a / C-1)"
       ),
-      args: z15.record(z15.string(), z15.unknown()).optional(),
-      value: z15.unknown().optional()
+      args: z16.record(z16.string(), z16.unknown()).optional(),
+      value: z16.unknown().optional()
     }).describe("One step in an assembly: array");
-    HandleDeclSchema = z15.object({
-      handle: z15.string().min(1),
-      required: z15.boolean().default(true)
+    HandleDeclSchema = z16.object({
+      handle: z16.string().min(1),
+      required: z16.boolean().default(true)
     }).describe("Source or sink handle declaration (D-A4a)");
-    WriteBackSchema = z15.object({
-      sink: z15.string().min(1).describe("Template expression OR literal sink handle"),
-      document_kind: z15.enum(["brief", "observation", "custom"]),
-      properties: z15.record(z15.string(), z15.unknown()).default({}),
-      body_from: z15.string().min(1).describe("Template expression that resolves to the body string")
+    WriteBackSchema = z16.object({
+      sink: z16.string().min(1).describe("Template expression OR literal sink handle"),
+      document_kind: z16.enum(["brief", "observation", "custom"]),
+      properties: z16.record(z16.string(), z16.unknown()).default({}),
+      body_from: z16.string().min(1).describe("Template expression that resolves to the body string")
     }).describe(
       "DeliveryAdapter.write chokepoint \u2014 only ground-truth DocId source (C-3)"
     );
-    ContractFileSchema = z15.object({
-      version: z15.literal(1).describe("v2.0.0 supports version 1 only; v2.x may extend additively"),
-      name: z15.string().min(1).regex(/^[a-z][a-z0-9-]*$/, "name must be kebab-case").describe("Contract name \u2014 used by instantiate_contract and slugify"),
-      description: z15.string().default(""),
-      inputs: z15.record(z15.string(), z15.unknown()).default({}),
-      required: z15.array(z15.string()).default([]),
-      sources: z15.record(z15.string(), HandleDeclSchema).default({}),
-      sinks: z15.record(z15.string(), HandleDeclSchema).default({}),
-      assembly: z15.array(StepSchema).min(1, "assembly must contain at least one step"),
-      output_shape: z15.unknown().optional(),
+    ContractFileSchema = z16.object({
+      version: z16.literal(1).describe("v2.0.0 supports version 1 only; v2.x may extend additively"),
+      name: z16.string().min(1).regex(/^[a-z][a-z0-9-]*$/, "name must be kebab-case").describe("Contract name \u2014 used by instantiate_contract and slugify"),
+      description: z16.string().default(""),
+      inputs: z16.record(z16.string(), z16.unknown()).default({}),
+      required: z16.array(z16.string()).default([]),
+      sources: z16.record(z16.string(), HandleDeclSchema).default({}),
+      sinks: z16.record(z16.string(), HandleDeclSchema).default({}),
+      assembly: z16.array(StepSchema).min(1, "assembly must contain at least one step"),
+      output_shape: z16.unknown().optional(),
       write_back: WriteBackSchema.optional()
     }).superRefine((data, ctx) => {
       const aliases = /* @__PURE__ */ new Set();
@@ -13571,6 +13733,9 @@ var init_templates = __esm({
 // src/contracts/mcp-clients.ts
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+function nowSeconds() {
+  return Math.floor(Date.now() / 1e3);
+}
 function wrapAvailable(client, transport) {
   return {
     available: true,
@@ -13592,6 +13757,27 @@ function wrapAvailable(client, transport) {
       }
       return res;
     },
+    async listTools() {
+      if (typeof client.listTools !== "function") return [];
+      const res = await client.listTools();
+      const tools = res.tools;
+      if (!Array.isArray(tools)) return [];
+      const out = [];
+      for (const t of tools) {
+        if (!t || typeof t !== "object") continue;
+        const name = t.name;
+        if (typeof name !== "string") continue;
+        const tool = { name };
+        const description = t.description;
+        if (typeof description === "string") tool.description = description;
+        const inputSchema = t.inputSchema;
+        if (inputSchema && typeof inputSchema === "object") {
+          tool.inputSchema = inputSchema;
+        }
+        out.push(tool);
+      }
+      return out;
+    },
     [Symbol.dispose]() {
       transport.close();
     }
@@ -13601,6 +13787,9 @@ function wrapUnavailable() {
   return {
     available: false,
     async callTool() {
+      throw new Error("peer-MCP client unavailable");
+    },
+    async listTools() {
       throw new Error("peer-MCP client unavailable");
     },
     [Symbol.dispose]() {
@@ -13613,49 +13802,155 @@ var init_mcp_clients = __esm({
     "use strict";
     init_esm_shims();
     PeerMcpRegistry = class {
-      clients = /* @__PURE__ */ new Map();
+      entries = /* @__PURE__ */ new Map();
       clientFactory;
       constructor(clientFactory) {
         this.clientFactory = clientFactory;
       }
       get size() {
-        return this.clients.size;
+        return this.entries.size;
       }
       /**
        * Boot every `[contracts.mcp_clients.<name>]` entry. Failures are
        * non-fatal: the name is recorded as unavailable and a WARN line is
        * written to stderr. Returns when all attempts have settled.
+       *
+       * On a successful connect we prime the tools cache via tools/list. A
+       * tools/list failure does NOT mark the source unavailable — the
+       * connection is live and callTool may still work — but the status
+       * becomes "unreachable" so the UI can prompt a retry.
        */
       async start(configs) {
         for (const [name, cfg] of Object.entries(configs)) {
-          try {
-            const { client, transport } = this.clientFactory ? await this.clientFactory(cfg) : await this.defaultConnect(cfg);
-            this.clients.set(name, wrapAvailable(client, transport));
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            process.stderr.write(
-              `[contracts] peer-MCP client '${name}' failed to start: ${msg}
-`
-            );
-            this.clients.set(name, wrapUnavailable());
-          }
+          await this.connectAndStore(name, cfg);
         }
       }
       get(name) {
-        return this.clients.get(name);
+        return this.entries.get(name)?.client;
+      }
+      /** All registered source names, in insertion order. */
+      names() {
+        return Array.from(this.entries.keys());
+      }
+      /** Cached metadata projection for one source; undefined if unknown. */
+      getInfo(name) {
+        const e = this.entries.get(name);
+        if (e === void 0) return void 0;
+        return {
+          status: e.status,
+          tools: e.tools,
+          lastRefreshed: e.lastRefreshed,
+          ...e.error !== void 0 ? { error: e.error } : {}
+        };
+      }
+      /**
+       * Register a new source at runtime: spawn + connect, then prime the
+       * tools cache. Replaces any existing entry of the same name (the old
+       * client is disposed first). Returns the resulting info projection.
+       */
+      async add(name, cfg) {
+        const existing = this.entries.get(name);
+        if (existing !== void 0) {
+          try {
+            existing.client[Symbol.dispose]();
+          } catch {
+          }
+        }
+        await this.connectAndStore(name, cfg);
+        return this.getInfo(name);
+      }
+      /**
+       * Dispose a source and drop it from the registry. Idempotent —
+       * removing an unknown name is a no-op that returns false.
+       */
+      remove(name) {
+        const e = this.entries.get(name);
+        if (e === void 0) return false;
+        try {
+          e.client[Symbol.dispose]();
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          process.stderr.write(`[contracts] peer-MCP dispose error: ${msg}
+`);
+        }
+        this.entries.delete(name);
+        return true;
+      }
+      /**
+       * Re-issue tools/list against the live client and refresh the cache.
+       * Returns the updated info, or undefined if the name is unknown.
+       *
+       * If the client is currently unavailable this only updates the error;
+       * re-spawning a failed source requires `add(name, cfg)` with the
+       * config (the registry does not retain configs).
+       */
+      async refresh(name) {
+        const e = this.entries.get(name);
+        if (e === void 0) return void 0;
+        if (!e.client.available) {
+          e.status = "unavailable";
+          return this.getInfo(name);
+        }
+        await this.primeTools(e);
+        return this.getInfo(name);
       }
       /** Dispose every client and clear the internal map. Idempotent. */
       async shutdown() {
-        for (const c of this.clients.values()) {
+        for (const e of this.entries.values()) {
           try {
-            c[Symbol.dispose]();
+            e.client[Symbol.dispose]();
           } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             process.stderr.write(`[contracts] peer-MCP dispose error: ${msg}
 `);
           }
         }
-        this.clients.clear();
+        this.entries.clear();
+      }
+      // ─── internals ─────────────────────────────────────────────────────────
+      /** Connect (factory or default), store the entry, prime tools cache. */
+      async connectAndStore(name, cfg) {
+        try {
+          const { client, transport } = this.clientFactory ? await this.clientFactory(cfg) : await this.defaultConnect(cfg);
+          const entry = {
+            client: wrapAvailable(client, transport),
+            status: "connected",
+            tools: [],
+            lastRefreshed: null
+          };
+          this.entries.set(name, entry);
+          await this.primeTools(entry);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          process.stderr.write(
+            `[contracts] peer-MCP client '${name}' failed to start: ${msg}
+`
+          );
+          this.entries.set(name, {
+            client: wrapUnavailable(),
+            status: "unavailable",
+            tools: [],
+            lastRefreshed: null,
+            error: msg
+          });
+        }
+      }
+      /**
+       * Call tools/list and update the entry's cache + status. A failure
+       * keeps the connection (status → "unreachable") rather than tearing it
+       * down — the source is reachable for callTool even if discovery failed.
+       */
+      async primeTools(entry) {
+        try {
+          const tools = await entry.client.listTools();
+          entry.tools = tools;
+          entry.lastRefreshed = nowSeconds();
+          entry.status = "connected";
+          delete entry.error;
+        } catch (err) {
+          entry.status = "unreachable";
+          entry.error = err instanceof Error ? err.message : String(err);
+        }
       }
       async defaultConnect(cfg) {
         const transport = new StdioClientTransport({
@@ -13760,7 +14055,7 @@ var init_verbs = __esm({
 });
 
 // src/contracts/instantiate.ts
-import { z as z16 } from "zod";
+import { z as z17 } from "zod";
 async function instantiateContract(deps, args2) {
   const parsed = deps.registry.get(args2.name);
   if (!parsed) return { ok: false, reason: "unknown_contract", name: args2.name };
@@ -13908,7 +14203,7 @@ async function instantiateContract(deps, args2) {
   };
   if (parsed.output_shape) {
     try {
-      const outputSchema = z16.fromJSONSchema(
+      const outputSchema = z17.fromJSONSchema(
         parsed.output_shape
       );
       const check = outputSchema.safeParse(bundle);
@@ -13996,6 +14291,12 @@ var init_instantiate = __esm({
 });
 
 // src/contracts/describe.ts
+function glossFor(verb) {
+  if (VERB_GLOSS[verb]) return VERB_GLOSS[verb];
+  if (verb === "literal") return "Use a fixed inline value";
+  if (verb.startsWith("mcp://")) return `Call an external tool (${verb})`;
+  return verb;
+}
 function describeContract(deps, args2) {
   const parsed = deps.registry.get(args2.name);
   if (!parsed) return { ok: false, reason: "unknown_contract", name: args2.name };
@@ -14045,7 +14346,9 @@ function renderSummary(parsed) {
     lines.push("## Assembly");
     parsed.assembly.forEach((step, i) => {
       const argsRender = step.args ? `(${Object.keys(step.args).join(", ")})` : "()";
-      lines.push(`${i + 1}. **${step.as}** \u2190 \`${step.verb}${argsRender}\``);
+      lines.push(
+        `${i + 1}. **${step.as}** \u2014 ${glossFor(step.verb)} _(\`${step.verb}${argsRender}\`)_`
+      );
     });
     lines.push("");
   }
@@ -14069,10 +14372,24 @@ function renderSummary(parsed) {
   }
   return lines.join("\n").trim() + "\n";
 }
+var VERB_GLOSS;
 var init_describe = __esm({
   "src/contracts/describe.ts"() {
     "use strict";
     init_esm_shims();
+    VERB_GLOSS = {
+      read_note: "Read a note's content",
+      search_hybrid: "Search the vault (semantic + keyword)",
+      search_sections: "Search for matching sections within notes",
+      query_frontmatter: "Find notes by their properties (frontmatter)",
+      expand: "Gather notes linked to the starting note (follow the graph)",
+      cluster: "Group the gathered notes into related communities",
+      recall: "Recall earlier agent observations from memory",
+      compile_brief: "Compile the gathered notes into a brief",
+      get_brief: "Fetch an already-compiled brief",
+      list_backlinks: "List notes that link back to this one",
+      get_outline: "Read a note's heading outline"
+    };
   }
 });
 
@@ -14143,6 +14460,59 @@ var init_resources3 = __esm({
   }
 });
 
+// src/contracts/sources-resources.ts
+function readListSources(reg, configMeta) {
+  const sources = [];
+  for (const name of reg.names()) {
+    const info = reg.getInfo(name);
+    if (info === void 0) continue;
+    const meta = configMeta[name];
+    const entry = {
+      name,
+      transport: "stdio",
+      command: meta?.command ?? "",
+      args: meta?.args ?? [],
+      status: info.status,
+      tool_count: info.tools.length,
+      last_refreshed: info.lastRefreshed
+    };
+    if (info.error !== void 0) entry.error = info.error;
+    sources.push(entry);
+  }
+  return { sources };
+}
+function readSourceTools(reg, name) {
+  const info = reg.getInfo(name);
+  if (info === void 0) {
+    return { error: `unknown source: ${name}` };
+  }
+  const out = {
+    name,
+    status: info.status,
+    last_refreshed: info.lastRefreshed,
+    tools: info.tools
+  };
+  if (info.error !== void 0) out.error = info.error;
+  return out;
+}
+function readSourceTool(reg, name, toolName) {
+  const info = reg.getInfo(name);
+  if (info === void 0) {
+    return { found: false, error: `unknown source: ${name}` };
+  }
+  const tool = info.tools.find((t) => t.name === toolName);
+  if (tool === void 0) {
+    return { found: false, error: `unknown tool: ${name}/${toolName}` };
+  }
+  return { found: true, name, tool };
+}
+var init_sources_resources = __esm({
+  "src/contracts/sources-resources.ts"() {
+    "use strict";
+    init_esm_shims();
+  }
+});
+
 // src/contracts/index.ts
 var init_contracts = __esm({
   "src/contracts/index.ts"() {
@@ -14165,6 +14535,7 @@ var init_contracts = __esm({
     init_instantiate();
     init_describe();
     init_resources3();
+    init_sources_resources();
   }
 });
 
@@ -15418,6 +15789,86 @@ async function serve(options = {}) {
       };
     }
   );
+  const sourceConfigMeta = () => {
+    const out = {};
+    for (const [name, cfg] of Object.entries(config.contracts.mcp_clients)) {
+      out[name] = { command: cfg.command, args: cfg.args ?? [] };
+    }
+    return out;
+  };
+  server.registerResource(
+    "sources",
+    RESOURCE_URI_SOURCES,
+    {
+      title: "Peer MCP sources",
+      description: "List peer MCP servers vault-memory connects to, with per-source status (connected/unavailable/unreachable), tool_count, and last_refreshed. vault-memory itself is not included. SOURCES-REGISTRY \xA75.1.",
+      mimeType: "application/json"
+    },
+    async (uri) => ({
+      contents: [
+        {
+          uri: uri.href,
+          mimeType: "application/json",
+          text: JSON.stringify(
+            readListSources(peerMcpRegistry, sourceConfigMeta()),
+            null,
+            2
+          )
+        }
+      ]
+    })
+  );
+  server.registerResource(
+    "source-tools",
+    new ResourceTemplate(`${RESOURCE_URI_SOURCES}/{name}/tools`, {
+      list: void 0
+    }),
+    {
+      title: "Peer MCP source tools",
+      description: "List the cached tools/list for one peer MCP source. Empty when the source is not connected. SOURCES-REGISTRY \xA75.2.",
+      mimeType: "application/json"
+    },
+    async (uri, variables) => {
+      const name = String(variables.name ?? "");
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify(readSourceTools(peerMcpRegistry, name), null, 2)
+          }
+        ]
+      };
+    }
+  );
+  server.registerResource(
+    "source-tool",
+    new ResourceTemplate(`${RESOURCE_URI_SOURCES}/{name}/tools/{tool}`, {
+      list: void 0
+    }),
+    {
+      title: "Peer MCP source tool",
+      description: "Read a single tool's schema from one peer MCP source, inlined from the cached tools/list (no extra peer call). SOURCES-REGISTRY \xA75.3.",
+      mimeType: "application/json"
+    },
+    async (uri, variables) => {
+      const name = String(variables.name ?? "");
+      const tool = String(variables.tool ?? "");
+      return {
+        contents: [
+          {
+            uri: uri.href,
+            mimeType: "application/json",
+            text: JSON.stringify(
+              readSourceTool(peerMcpRegistry, name, tool),
+              null,
+              2
+            )
+          }
+        ]
+      };
+    }
+  );
   const rel08Vaults = RESOURCES.find((r) => r.name === "vaults");
   const rel08Models = RESOURCES.find((r) => r.name === "models");
   const rel08Recent = RESOURCES.find((r) => r.name === "recent");
@@ -15730,6 +16181,9 @@ async function serve(options = {}) {
     // sees, so the plugin's `suppress_contract_write` call and the
     // change-feed handler observe the same entries.
     suppression,
+    // SOURCES-REGISTRY.md §6 (Stage 2) — live registry for refresh_source
+    // + unset_mcp_client. The singleton booted above.
+    sourceRegistry: peerMcpRegistry,
     notifier: (notification) => {
       server.server.notification(notification);
     }

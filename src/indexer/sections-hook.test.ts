@@ -1,11 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Database } from "../db/index.js";
 import type { Vault } from "../vault/index.js";
-import {
-  buildSectionsForNote,
-  extractStatus,
-  mapChunksToSections,
-} from "./indexer.js";
+import { buildSectionsForNote, extractStatus, mapChunksToSections } from "./indexer.js";
 
 /**
  * Phase 3 / 03-01 Task 7: indexer's section hook + denormalized
@@ -78,6 +74,22 @@ describe("indexer section hook + status maintenance (03-01 Task 7)", () => {
     // The chunk falls inside the H2 → it should own the chunk range.
     expect(rows[1]!.chunk_id_first).toBe(cid);
     expect(rows[1]!.chunk_id_last).toBe(cid);
+  });
+
+  it("buildSectionsForNote: duplicate-anchor sibling sections do not crash the index (ISSUE-indexer-duplicate-anchor)", () => {
+    // Two H2s with identical heading AND identical body produce the same
+    // content-hash anchor and collide on UNIQUE(note_id, anchor). The live
+    // indexer used to throw SQLITE_CONSTRAINT_UNIQUE here and abort the whole
+    // vault index. It must now collapse the collision (first sibling wins) and
+    // keep going. A trailing "## End" section keeps both Dup bodies byte-
+    // identical (otherwise the EOF block drops a trailing newline and the
+    // anchors differ — see src/sections/anchor.ts).
+    const content = "## Dup\nsame body\n\n## Dup\nsame body\n\n## End\ntail\n";
+    const nid = seedNote("dup.md", content);
+    expect(() => buildSectionsForNote(vault, nid, content, [])).not.toThrow();
+    const rows = db.sections.getByNote(nid);
+    expect(rows.filter((r) => r.heading_text === "Dup")).toHaveLength(1);
+    expect(rows).toHaveLength(2);
   });
 
   it("buildSectionsForNote: preamble + H1 produces two sections, preamble at top level", () => {
