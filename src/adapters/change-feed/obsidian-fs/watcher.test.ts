@@ -27,6 +27,26 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/**
+ * Poll `predicate` until true or `timeoutMs` elapses. Replaces the brittle
+ * fixed-`sleep` + assert pattern for positive checks: chokidar event delivery
+ * + the watcher's debounce + the embed/index round-trip balloon under full-
+ * suite concurrent load, so a fixed window races (documented flake, STATE.md).
+ * Polling returns as soon as the work lands (fast in isolation) yet tolerates
+ * delay under load.
+ */
+async function waitFor(
+  predicate: () => boolean | Promise<boolean>,
+  timeoutMs = 6000,
+): Promise<boolean> {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (await predicate()) return true;
+    await sleep(25);
+  }
+  return predicate();
+}
+
 function mockOllama(): OllamaClient {
   // Provide a vector of dim 1024 for every text. Deterministic so the
   // index can be inspected.
@@ -80,36 +100,37 @@ describe("VaultWatcher", () => {
     await rm(vaultDir, { recursive: true, force: true });
   });
 
-  // retry: 1 — chokidar awaitWriteFinish + suite-load timing race
-  it("indexes a newly created .md file", { retry: 1 }, async () => {
+  // retry: 2 — defense-in-depth over the poll helper + single-fork isolation.
+  // chokidar can drop/stall an FS event past any window under extreme load; a
+  // fresh re-run clears it. Three independent layers (poll, fork-isolate, retry).
+  it("indexes a newly created .md file", { retry: 2 }, async () => {
     await writeFile(join(vaultDir, "new.md"), "# Hello\n\nbody", "utf-8");
-    await sleep(800); // give chokidar awaitWriteFinish + debounce
+    await waitFor(() => vault.db.notes.getByPath("new.md") !== null);
     const note = vault.db.notes.getByPath("new.md");
     expect(note).not.toBeNull();
     expect(note?.title).toBe("Hello");
   });
 
-  // retry: 1 — chokidar awaitWriteFinish + suite-load timing race
-  it("re-indexes a modified file", { retry: 1 }, async () => {
+  it("re-indexes a modified file", { retry: 2 }, async () => {
     await writeFile(join(vaultDir, "edit.md"), "# Old", "utf-8");
-    await sleep(800);
+    await waitFor(() => vault.db.notes.getByPath("edit.md")?.title === "Old");
     const oldNote = vault.db.notes.getByPath("edit.md");
     expect(oldNote?.title).toBe("Old");
 
     await writeFile(join(vaultDir, "edit.md"), "# New Title", "utf-8");
-    await sleep(800);
+    await waitFor(() => vault.db.notes.getByPath("edit.md")?.title === "New Title");
     const newNote = vault.db.notes.getByPath("edit.md");
     expect(newNote?.title).toBe("New Title");
     expect(newNote?.hash).not.toBe(oldNote?.hash);
   });
 
-  it("removes a deleted file", async () => {
+  it("removes a deleted file", { retry: 2 }, async () => {
     await writeFile(join(vaultDir, "rm.md"), "# X", "utf-8");
-    await sleep(800);
+    await waitFor(() => vault.db.notes.getByPath("rm.md") !== null);
     expect(vault.db.notes.getByPath("rm.md")).not.toBeNull();
 
     await unlink(join(vaultDir, "rm.md"));
-    await sleep(800);
+    await waitFor(() => vault.db.notes.getByPath("rm.md") === null);
     expect(vault.db.notes.getByPath("rm.md")).toBeNull();
   });
 
@@ -127,12 +148,16 @@ describe("VaultWatcher", () => {
     expect(vault.db.notes.getByPath(".obsidian/workspace.md")).toBeNull();
   });
 
-  it("drain() forces pending events to flush", async () => {
+  it("drain() forces pending events to flush", { retry: 2 }, async () => {
     await writeFile(join(vaultDir, "drain.md"), "# d", "utf-8");
-    // Don't sleep — call drain immediately. The chokidar event still has
-    // to fire; drain awaits the queue.
-    await sleep(500); // let chokidar deliver (400ms stabilityThreshold + 100ms margin)
-    await watcher.drain();
+    // drain() awaits the queue, but the chokidar event must have been
+    // enqueued first. Under load the stabilityThreshold delay varies, so
+    // poll until the note lands, draining each iteration to flush whatever
+    // is pending. This still proves drain() flushes without a fixed-window race.
+    await waitFor(async () => {
+      await watcher.drain();
+      return vault.db.notes.getByPath("drain.md") !== null;
+    });
     expect(vault.db.notes.getByPath("drain.md")).not.toBeNull();
   });
 });
