@@ -9,11 +9,11 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
-// node_modules/tsup/assets/esm_shims.js
+// ../../../../../../../Users/wrede/Documents/GitHub/vault-memory/node_modules/tsup/assets/esm_shims.js
 import path from "path";
 import { fileURLToPath } from "url";
 var init_esm_shims = __esm({
-  "node_modules/tsup/assets/esm_shims.js"() {
+  "../../../../../../../Users/wrede/Documents/GitHub/vault-memory/node_modules/tsup/assets/esm_shims.js"() {
     "use strict";
   }
 });
@@ -796,6 +796,17 @@ var init_source_tools = __esm({
   }
 });
 
+// src/errors/format.ts
+function errorMessage(err) {
+  return err instanceof Error ? err.message : String(err);
+}
+var init_format = __esm({
+  "src/errors/format.ts"() {
+    "use strict";
+    init_esm_shims();
+  }
+});
+
 // src/plugin-tools/index.ts
 function ok(data) {
   return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
@@ -836,7 +847,7 @@ function syncPluginTools(server, registered, opts) {
             });
             return ok(result);
           } catch (err) {
-            return errorResponse(err instanceof Error ? err.message : String(err));
+            return errorResponse(errorMessage(err));
           }
         }
       )
@@ -858,7 +869,7 @@ function syncPluginTools(server, registered, opts) {
             const result = await resolveSecretTool.handler(validated);
             return ok(result);
           } catch (err) {
-            return errorResponse(err instanceof Error ? err.message : String(err));
+            return errorResponse(errorMessage(err));
           }
         }
       )
@@ -881,7 +892,7 @@ function syncPluginTools(server, registered, opts) {
             });
             return ok(result);
           } catch (err) {
-            return errorResponse(err instanceof Error ? err.message : String(err));
+            return errorResponse(errorMessage(err));
           }
         }
       )
@@ -904,7 +915,7 @@ function syncPluginTools(server, registered, opts) {
             });
             return ok(result);
           } catch (err) {
-            return errorResponse(err instanceof Error ? err.message : String(err));
+            return errorResponse(errorMessage(err));
           }
         }
       )
@@ -927,7 +938,7 @@ function syncPluginTools(server, registered, opts) {
             });
             return ok(result);
           } catch (err) {
-            return errorResponse(err instanceof Error ? err.message : String(err));
+            return errorResponse(errorMessage(err));
           }
         }
       )
@@ -950,7 +961,7 @@ function syncPluginTools(server, registered, opts) {
             });
             return ok(result);
           } catch (err) {
-            return errorResponse(err instanceof Error ? err.message : String(err));
+            return errorResponse(errorMessage(err));
           }
         }
       )
@@ -969,7 +980,7 @@ function syncPluginTools(server, registered, opts) {
             const result = await refreshSourceTool.handler(validated, opts.sourceRegistry);
             return ok(result);
           } catch (err) {
-            return errorResponse(err instanceof Error ? err.message : String(err));
+            return errorResponse(errorMessage(err));
           }
         }
       )
@@ -988,7 +999,7 @@ function syncPluginTools(server, registered, opts) {
             const result = await unsetMcpClientTool.handler(validated, opts.sourceRegistry);
             return ok(result);
           } catch (err) {
-            return errorResponse(err instanceof Error ? err.message : String(err));
+            return errorResponse(errorMessage(err));
           }
         }
       )
@@ -1013,6 +1024,7 @@ var init_plugin_tools = __esm({
     init_trigger_reindex();
     init_suppress_contract_write();
     init_source_tools();
+    init_format();
     init_set_runtime_config();
     init_resolve_secret();
     init_set_mcp_client();
@@ -3632,6 +3644,7 @@ var init_client = __esm({
     "use strict";
     init_esm_shims();
     init_retry();
+    init_format();
     DEFAULT_ENDPOINT = "http://localhost:11434";
     DEFAULT_BATCH_SIZE = 10;
     DEFAULT_TIMEOUT_MS = 3e4;
@@ -3784,7 +3797,7 @@ var init_client = __esm({
           const parsed = TagsResponseSchema.parse(json);
           return { ok: true, models: parsed.models.map((m) => m.name) };
         } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
+          const message = errorMessage(err);
           return { ok: false, error: message };
         }
       }
@@ -4022,6 +4035,14 @@ var init_graph = __esm({
 });
 
 // src/memory/citation-packet.ts
+function withPropertyExtras(packet) {
+  const out = { ...packet };
+  const status = packet.properties.status;
+  if (typeof status === "string") out.status = status;
+  const supersededBy = packet.properties.superseded_by;
+  if (typeof supersededBy === "string") out.superseded_by = supersededBy;
+  return out;
+}
 function toCitationPacket(doc, displayUrl2) {
   return {
     doc_id: doc.id,
@@ -5112,6 +5133,133 @@ var init_rerank = __esm({
   }
 });
 
+// src/server/responses.ts
+function ok2(data) {
+  return {
+    content: [{ type: "text", text: JSON.stringify(data, null, 2) }]
+  };
+}
+function errorResponse2(message) {
+  return {
+    isError: true,
+    content: [{ type: "text", text: message }]
+  };
+}
+function errorResponseJson(payload) {
+  return {
+    isError: true,
+    content: [{ type: "text", text: JSON.stringify(payload) }]
+  };
+}
+var init_responses = __esm({
+  "src/server/responses.ts"() {
+    "use strict";
+    init_esm_shims();
+  }
+});
+
+// src/server/utils.ts
+function countWords(content) {
+  if (content.length === 0) return 0;
+  return content.split(/\s+/).filter((s) => s.length > 0).length;
+}
+function resolveVaultTargets(manager, vaultFilter, activeVault) {
+  if (vaultFilter) {
+    return { targets: vaultFilter.map((n) => manager.require(n)), skipped: [] };
+  }
+  const candidates = activeVault ? [manager.require(activeVault)] : manager.list();
+  const targets = [];
+  const skipped = [];
+  for (const v of candidates) {
+    if (v.db.audit.isIndexing()) {
+      skipped.push(v.config.name);
+    } else {
+      targets.push(v);
+    }
+  }
+  return { targets, skipped };
+}
+function encodeNoteId(vault, path7) {
+  return `${vault}:${path7}`;
+}
+function decodeNoteId(id) {
+  const idx = id.indexOf(":");
+  if (idx <= 0 || idx === id.length - 1) {
+    throw new Error(`Invalid id: ${id}. Expected format <vault>:<vault-relative-path>.`);
+  }
+  return { vault: id.slice(0, idx), path: id.slice(idx + 1) };
+}
+function displayUrl(registry, vaultName, notePath) {
+  const source = registry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`));
+  const docId = formatDocId("obsidian-fs", vaultName, notePath);
+  return source.formatDisplayUrl?.(docId) ?? `obsidian-fs://${vaultName}/${notePath}`;
+}
+function truncateSnippet(text, max) {
+  const collapsed = text.replace(/\s+/g, " ").trim();
+  if (collapsed.length <= max) return collapsed;
+  return collapsed.slice(0, max - 1).trimEnd() + "\u2026";
+}
+function aggregateTopTags(db, limit) {
+  const rows = db.prepare(
+    `
+      SELECT je.value AS tag, COUNT(*) AS count
+      FROM notes
+      JOIN json_each(json_extract(notes.frontmatter, '$.tags')) AS je
+      WHERE notes.frontmatter IS NOT NULL
+        AND json_type(notes.frontmatter, '$.tags') = 'array'
+        AND typeof(je.value) = 'text'
+      GROUP BY je.value
+      ORDER BY count DESC, tag ASC
+      LIMIT ?
+    `
+  ).all(limit);
+  return rows;
+}
+function aggregateTopFrontmatterKeys(db, limit) {
+  const rows = db.prepare(
+    `
+      SELECT je.key AS key, COUNT(*) AS count
+      FROM notes
+      JOIN json_each(notes.frontmatter) AS je
+      WHERE notes.frontmatter IS NOT NULL
+        AND json_type(notes.frontmatter) = 'object'
+      GROUP BY je.key
+      ORDER BY count DESC, key ASC
+      LIMIT ?
+    `
+  ).all(limit);
+  return rows;
+}
+function safeParseFrontmatter(s) {
+  try {
+    const parsed = JSON.parse(s);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+function defaultBasename(path7) {
+  const base = path7.split("/").pop() ?? path7;
+  return base.replace(/\.md$/i, "");
+}
+function normalizeFolderHint(hint) {
+  if (!hint) return "";
+  let h = hint.trim();
+  if (h.startsWith("/")) h = h.slice(1);
+  if (h.length > 0 && !h.endsWith("/")) h = `${h}/`;
+  return h;
+}
+var init_utils = __esm({
+  "src/server/utils.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_registry();
+  }
+});
+
 // src/frontmatter/query.ts
 function isPlainObject(v) {
   return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -5473,7 +5621,7 @@ async function parseNote(absolutePath, vaultRoot) {
   const bodyLinks = extractWikilinks(content);
   const frontmatterLinks = extractFrontmatterWikilinks(frontmatter);
   const wikilinks = frontmatterLinks.length === 0 ? bodyLinks : mergeFrontmatterIntoBody(bodyLinks, frontmatterLinks);
-  const wordCount = countWords(content);
+  const wordCount = countWords2(content);
   const relativePath = toPosix2(path3.relative(path3.resolve(vaultRoot), path3.resolve(absolutePath)));
   return {
     relativePath,
@@ -5509,7 +5657,7 @@ function extractTitle(content) {
   }
   return null;
 }
-function countWords(content) {
+function countWords2(content) {
   if (content.length === 0) return 0;
   return content.split(/\s+/).filter((s) => s.length > 0).length;
 }
@@ -5541,6 +5689,7 @@ var init_obsidian_fs = __esm({
     init_scanner();
     init_parser();
     init_hash();
+    init_format();
     CONTRACT_PATH_RE = /^_contracts\/[^/]+\.yaml$/;
     SCHEME = "obsidian-fs";
     ObsidianFsSource = class {
@@ -5585,7 +5734,7 @@ var init_obsidian_fs = __esm({
             id = this.pathToDocId(rel);
           } catch (err) {
             console.error(
-              `[obsidian-fs:${this.vault.name}] skipping un-addressable file ${JSON.stringify(rel)}: ${err instanceof Error ? err.message : String(err)}`
+              `[obsidian-fs:${this.vault.name}] skipping un-addressable file ${JSON.stringify(rel)}: ${errorMessage(err)}`
             );
             continue;
           }
@@ -6486,7 +6635,7 @@ async function indexVault(vault, options) {
       durationMs: Date.now() - startedAt
     };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     vault.db.audit.finishRun(runId, {
       notesIndexed,
       chunksCreated,
@@ -6645,6 +6794,7 @@ var init_indexer = __esm({
     init_extract_edges();
     init_sections2();
     init_headings();
+    init_format();
   }
 });
 
@@ -7002,7 +7152,7 @@ async function startShadowIndex(options) {
       notesDeleted: 0
     });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     vault.db.audit.finishRun(runId, {
       notesIndexed: 0,
       chunksCreated: chunksEmbedded,
@@ -7087,6 +7237,7 @@ var init_shadow = __esm({
   "src/indexer/shadow.ts"() {
     "use strict";
     init_esm_shims();
+    init_format();
   }
 });
 
@@ -7274,7 +7425,7 @@ function extractTitle2(content, relativePath) {
   }
   return basename3(relativePath, ".md");
 }
-function countWords2(content) {
+function countWords3(content) {
   if (content.length === 0) return 0;
   return content.split(/\s+/).filter((s) => s.length > 0).length;
 }
@@ -7359,7 +7510,7 @@ async function writeNote(input) {
         hash: written.hash,
         bodyHash: computeBodyHash(written.content),
         mtime: Math.floor(stat.mtimeMs),
-        wordCount: countWords2(written.content)
+        wordCount: countWords3(written.content)
       });
       vault.db.aliases.setForNote(up.id, extractAliases(written.frontmatter));
       vault.db.audit.recordWrite({
@@ -8469,7 +8620,7 @@ async function updateFrontmatter(input) {
   try {
     doc = await source.readDocument(docId);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
+    const msg = errorMessage(err);
     return {
       ok: false,
       reason: "note_not_found",
@@ -8556,6 +8707,7 @@ var init_update = __esm({
     "use strict";
     init_esm_shims();
     init_registry();
+    init_format();
   }
 });
 
@@ -8566,579 +8718,6 @@ var init_frontmatter = __esm({
     init_esm_shims();
     init_query();
     init_update();
-  }
-});
-
-// src/schema/folder-conventions.ts
-function folderOf(notePath) {
-  const idx = notePath.lastIndexOf("/");
-  return idx === -1 ? "" : notePath.slice(0, idx + 1);
-}
-function parentFolder(folder) {
-  if (folder === "") return null;
-  const trimmed = folder.endsWith("/") ? folder.slice(0, -1) : folder;
-  const idx = trimmed.lastIndexOf("/");
-  if (idx === -1) return "";
-  return trimmed.slice(0, idx + 1);
-}
-function countSiblings(vault, folder, excludePath) {
-  const handle = vault.db.handle;
-  if (folder === "") {
-    const row2 = handle.prepare("SELECT COUNT(*) AS c FROM notes WHERE instr(path, '/') = 0 AND path != COALESCE(?, '')").get(excludePath);
-    return row2?.c ?? 0;
-  }
-  const row = handle.prepare("SELECT COUNT(*) AS c FROM notes WHERE path LIKE ? || '%' AND path != COALESCE(?, '')").get(folder, excludePath);
-  return row?.c ?? 0;
-}
-function fetchSiblings(vault, folder, excludePath) {
-  const handle = vault.db.handle;
-  if (folder === "") {
-    return handle.prepare("SELECT path, frontmatter FROM notes WHERE instr(path, '/') = 0 AND path != COALESCE(?, '')").all(excludePath);
-  }
-  return handle.prepare("SELECT path, frontmatter FROM notes WHERE path LIKE ? || '%' AND path != COALESCE(?, '')").all(folder, excludePath);
-}
-function resolveInferenceFolder(vault, notePath, excludePath = notePath) {
-  const start = folderOf(notePath);
-  let current = start;
-  let levels = 0;
-  while (current !== null && levels < MAX_FALLBACK_LEVELS) {
-    const count = countSiblings(vault, current, excludePath);
-    if (count >= MIN_SIBLINGS || current === "") {
-      return {
-        folder: current,
-        fellBackFrom: current === start ? null : start,
-        siblingCount: count
-      };
-    }
-    current = parentFolder(current);
-    levels++;
-  }
-  return { folder: "", fellBackFrom: start, siblingCount: 0 };
-}
-function aggregateEntries(siblings) {
-  const total = siblings.length;
-  if (total === 0) return [];
-  const keyPresence = /* @__PURE__ */ new Map();
-  const keyValues = /* @__PURE__ */ new Map();
-  for (const row of siblings) {
-    if (!row.frontmatter) continue;
-    let fm;
-    try {
-      fm = JSON.parse(row.frontmatter);
-    } catch {
-      continue;
-    }
-    if (!fm || typeof fm !== "object" || Array.isArray(fm)) continue;
-    const obj = fm;
-    for (const [key, value] of Object.entries(obj)) {
-      keyPresence.set(key, (keyPresence.get(key) ?? 0) + 1);
-      const valKey = stableStringify(value);
-      if (!keyValues.has(key)) keyValues.set(key, /* @__PURE__ */ new Map());
-      const bucket = keyValues.get(key);
-      bucket.set(valKey, (bucket.get(valKey) ?? 0) + 1);
-    }
-  }
-  const entries = [];
-  for (const [key, presenceCount] of keyPresence) {
-    const valueBucket = keyValues.get(key);
-    const [domValStr, domCount] = pickDominant(valueBucket);
-    const dominantValue = domCount / presenceCount > 0.5 ? safeParse(domValStr) : null;
-    entries.push({
-      key,
-      presenceCount,
-      siblingCount: total,
-      prevalence: presenceCount / total,
-      dominantValue,
-      dominantValueRatio: domCount / presenceCount
-    });
-  }
-  entries.sort((a, b) => {
-    if (b.prevalence !== a.prevalence) return b.prevalence - a.prevalence;
-    return a.key.localeCompare(b.key);
-  });
-  return entries;
-}
-function pickDominant(bucket) {
-  let bestKey = "";
-  let bestCount = 0;
-  for (const [k, c] of bucket) {
-    if (c > bestCount) {
-      bestKey = k;
-      bestCount = c;
-    }
-  }
-  return [bestKey, bestCount];
-}
-function stableStringify(v) {
-  if (v === void 0) return "null";
-  return JSON.stringify(v, Object.keys(v ?? {}).sort());
-}
-function safeParse(s) {
-  try {
-    return JSON.parse(s);
-  } catch {
-    return null;
-  }
-}
-function inferFromFolder(vault, notePath, options = {}) {
-  const excludePath = options.excludePath ?? notePath;
-  const { folder, fellBackFrom, siblingCount } = resolveInferenceFolder(
-    vault,
-    notePath,
-    excludePath
-  );
-  const siblings = fetchSiblings(vault, folder, excludePath);
-  return {
-    resolvedFolder: folder,
-    siblingCount,
-    fellBackFrom,
-    entries: aggregateEntries(siblings)
-  };
-}
-var MIN_SIBLINGS, MAX_FALLBACK_LEVELS;
-var init_folder_conventions = __esm({
-  "src/schema/folder-conventions.ts"() {
-    "use strict";
-    init_esm_shims();
-    MIN_SIBLINGS = 3;
-    MAX_FALLBACK_LEVELS = 4;
-  }
-});
-
-// src/schema/neighbor-inference.ts
-function gatherNeighbors(vault, notePath, additionalForwardTargets = []) {
-  const seenIds = /* @__PURE__ */ new Set();
-  const out = [];
-  const note = vault.db.notes.getByPath(notePath);
-  if (note) {
-    const back = vault.db.wikilinks.getBacklinks(note.id);
-    for (const row of back) {
-      if (seenIds.has(row.sourceNoteId)) continue;
-      const src = vault.db.notes.getById(row.sourceNoteId);
-      if (!src) continue;
-      seenIds.add(src.id);
-      out.push({ path: src.path, frontmatter: src.frontmatter });
-    }
-    const forward = vault.db.wikilinks.getForwardLinks(note.id);
-    for (const row of forward) {
-      if (row.targetNoteId === null) continue;
-      if (seenIds.has(row.targetNoteId)) continue;
-      const target = vault.db.notes.getById(row.targetNoteId);
-      if (!target) continue;
-      seenIds.add(target.id);
-      out.push({ path: target.path, frontmatter: target.frontmatter });
-    }
-  }
-  for (const target of additionalForwardTargets) {
-    const candidate = vault.db.notes.getByPath(`${target}.md`) ?? vault.db.notes.getByPath(target);
-    if (!candidate) continue;
-    if (seenIds.has(candidate.id)) continue;
-    seenIds.add(candidate.id);
-    out.push({ path: candidate.path, frontmatter: candidate.frontmatter });
-  }
-  return out;
-}
-function aggregateEntries2(neighbors) {
-  const total = neighbors.length;
-  if (total === 0) return [];
-  const keyPresence = /* @__PURE__ */ new Map();
-  const keyValues = /* @__PURE__ */ new Map();
-  for (const row of neighbors) {
-    if (!row.frontmatter) continue;
-    let fm;
-    try {
-      fm = JSON.parse(row.frontmatter);
-    } catch {
-      continue;
-    }
-    if (!fm || typeof fm !== "object" || Array.isArray(fm)) continue;
-    const obj = fm;
-    for (const [key, value] of Object.entries(obj)) {
-      keyPresence.set(key, (keyPresence.get(key) ?? 0) + 1);
-      const valKey = JSON.stringify(value, Object.keys(value ?? {}).sort());
-      if (!keyValues.has(key)) keyValues.set(key, /* @__PURE__ */ new Map());
-      const bucket = keyValues.get(key);
-      bucket.set(valKey, (bucket.get(valKey) ?? 0) + 1);
-    }
-  }
-  const entries = [];
-  for (const [key, presenceCount] of keyPresence) {
-    const valueBucket = keyValues.get(key);
-    let bestKey = "";
-    let bestCount = 0;
-    for (const [k, c] of valueBucket) {
-      if (c > bestCount) {
-        bestKey = k;
-        bestCount = c;
-      }
-    }
-    const dominantValue = bestCount / presenceCount > 0.5 ? safeParse2(bestKey) : null;
-    entries.push({
-      key,
-      neighborCount: presenceCount,
-      totalNeighbors: total,
-      prevalence: presenceCount / total,
-      dominantValue,
-      dominantValueRatio: bestCount / presenceCount
-    });
-  }
-  entries.sort((a, b) => {
-    if (b.prevalence !== a.prevalence) return b.prevalence - a.prevalence;
-    return a.key.localeCompare(b.key);
-  });
-  return entries;
-}
-function safeParse2(s) {
-  try {
-    return JSON.parse(s);
-  } catch {
-    return null;
-  }
-}
-function inferFromNeighbors(vault, notePath, additionalForwardTargets = []) {
-  const neighbors = gatherNeighbors(vault, notePath, additionalForwardTargets);
-  const note = vault.db.notes.getByPath(notePath);
-  let forwardCount = 0;
-  let backwardCount = 0;
-  if (note) {
-    forwardCount = vault.db.wikilinks.getForwardLinks(note.id).filter((r) => r.targetNoteId !== null).length;
-    backwardCount = vault.db.wikilinks.getBacklinks(note.id).length;
-  }
-  return {
-    forwardCount,
-    backwardCount,
-    totalNeighbors: neighbors.length,
-    entries: aggregateEntries2(neighbors)
-  };
-}
-var init_neighbor_inference = __esm({
-  "src/schema/neighbor-inference.ts"() {
-    "use strict";
-    init_esm_shims();
-  }
-});
-
-// src/schema/content-heuristics.ts
-function inferFromContent(input) {
-  const heuristicInput = {
-    title: input.title,
-    bodyHead: input.body.slice(0, 2e3),
-    fullBody: input.body
-  };
-  const entries = [];
-  const matchedRules = [];
-  for (const rule of RULES) {
-    const matches = rule.match(heuristicInput);
-    if (matches.length > 0) {
-      matchedRules.push(rule.name);
-      for (const m of matches) {
-        entries.push({ ...m, rule: rule.name });
-      }
-    }
-  }
-  return { entries, matchedRules };
-}
-var DEFAULT_CONFIDENCE, STRONG_CONFIDENCE, WEAK_CONFIDENCE, emailRule, meetingRule, personRule, clippingRule, factRule, dateInTitleRule, RULES;
-var init_content_heuristics = __esm({
-  "src/schema/content-heuristics.ts"() {
-    "use strict";
-    init_esm_shims();
-    DEFAULT_CONFIDENCE = 0.7;
-    STRONG_CONFIDENCE = 0.85;
-    WEAK_CONFIDENCE = 0.5;
-    emailRule = {
-      name: "email-title-or-header",
-      match: ({ title, bodyHead }) => {
-        const titleMatch = /^(E-?Mail|Email|Mail)\s+(von|from)\s+\S+/i.test(title) || /^(Re|Fwd|AW|WG):\s/i.test(title);
-        const headerMatch = /^(From|Von):\s+\S+/im.test(bodyHead) && /^(To|An):\s+\S+/im.test(bodyHead);
-        if (!titleMatch && !headerMatch) return [];
-        return [
-          { key: "class", value: "Email", confidence: STRONG_CONFIDENCE },
-          { key: "type", value: "email", confidence: STRONG_CONFIDENCE }
-        ];
-      }
-    };
-    meetingRule = {
-      name: "meeting-title-keyword",
-      match: ({ title, bodyHead }) => {
-        const keywords = /\b(Meeting|Treffen|Call|Sondierung|Termin|Standup|Sync|Kickoff|Kick-off|Jour\s*fixe|Workshop)\b/i;
-        const isMeeting = keywords.test(title) || /^\d{4}-\d{2}-\d{2}.*\b(Meeting|Treffen|Call|Sondierung)/i.test(title);
-        if (!isMeeting) return [];
-        const attendeesPresent = /^(Attendees|Teilnehmer|Participants):/im.test(bodyHead);
-        const conf = attendeesPresent ? STRONG_CONFIDENCE : DEFAULT_CONFIDENCE;
-        return [
-          { key: "class", value: "Meeting", confidence: conf },
-          { key: "type", value: "meeting", confidence: conf }
-        ];
-      }
-    };
-    personRule = {
-      name: "person-name-title-with-corroboration",
-      match: ({ title, bodyHead }) => {
-        const nameLike = /^[A-ZÄÖÜ][a-zäöüß'\-]+( [A-ZÄÖÜ][a-zäöüß'\-]+){0,3}$/.test(title.trim());
-        if (!nameLike) return [];
-        const corroborating = /linkedin\.com\/in\//i.test(bodyHead) || /\b[\w._-]+@[\w.-]+\.[a-z]{2,}\b/i.test(bodyHead) || /\+?\d[\d\s\-./()]{6,}/.test(bodyHead);
-        if (!corroborating) return [];
-        return [
-          { key: "class", value: "Person", confidence: STRONG_CONFIDENCE },
-          { key: "type", value: "person", confidence: STRONG_CONFIDENCE },
-          { key: "participation", value: [], confidence: WEAK_CONFIDENCE }
-        ];
-      }
-    };
-    clippingRule = {
-      name: "clipping-source-url",
-      match: ({ bodyHead }) => {
-        const headSnippet = bodyHead.slice(0, 500);
-        const hasMdLink = /^\s*\[.+\]\(https?:\/\/[^\s)]+\)/m.test(headSnippet);
-        const hasSourceField = /^source:\s*https?:\/\//im.test(headSnippet);
-        if (!hasMdLink && !hasSourceField) return [];
-        return [
-          { key: "class", value: "Clipping", confidence: DEFAULT_CONFIDENCE },
-          { key: "tags", value: ["clippings"], confidence: DEFAULT_CONFIDENCE }
-        ];
-      }
-    };
-    factRule = {
-      name: "short-fact",
-      match: ({ fullBody }) => {
-        const trimmed = fullBody.trim();
-        if (trimmed.length === 0 || trimmed.length > 150) return [];
-        if (/\n\s*\n/.test(trimmed)) return [];
-        return [{ key: "class", value: "Fact", confidence: WEAK_CONFIDENCE }];
-      }
-    };
-    dateInTitleRule = {
-      name: "date-prefix-in-title",
-      match: ({ title }) => {
-        const m = title.match(/^(\d{4})-(\d{2})-(\d{2})/);
-        if (!m) return [];
-        const iso = `${m[1]}-${m[2]}-${m[3]}`;
-        return [{ key: "created", value: iso, confidence: STRONG_CONFIDENCE }];
-      }
-    };
-    RULES = [
-      emailRule,
-      meetingRule,
-      personRule,
-      clippingRule,
-      factRule,
-      dateInTitleRule
-    ];
-  }
-});
-
-// src/schema/combiner.ts
-function valueKey(v) {
-  if (v === null || v === void 0) return "null";
-  if (Array.isArray(v)) {
-    return "[" + v.map(valueKey).join(",") + "]";
-  }
-  if (typeof v === "object") {
-    const obj = v;
-    const keys = Object.keys(obj).sort();
-    return "{" + keys.map((k) => JSON.stringify(k) + ":" + valueKey(obj[k])).join(",") + "}";
-  }
-  return JSON.stringify(v);
-}
-function suggestFrontmatter(input) {
-  const title = input.title ?? defaultTitleFromPath(input.path);
-  const folder = inferFromFolder(input.vault, input.path, {
-    excludePath: input.excludePath ?? input.path
-  });
-  const neighbor = inferFromNeighbors(input.vault, input.path, input.draftWikilinkTargets ?? []);
-  const content = input.content !== void 0 ? inferFromContent({ title, body: input.content }) : { entries: [], matchedRules: [] };
-  return combineSuggestions({
-    existingFrontmatter: input.existingFrontmatter ?? null,
-    folder,
-    neighbor,
-    content
-  });
-}
-function defaultTitleFromPath(path7) {
-  const base = path7.split("/").pop() ?? path7;
-  return base.replace(/\.md$/i, "");
-}
-function combineSuggestions(args2) {
-  const { existingFrontmatter, folder, neighbor, content } = args2;
-  const candidates = /* @__PURE__ */ new Map();
-  const push = (key, c) => {
-    if (!candidates.has(key)) candidates.set(key, []);
-    candidates.get(key).push(c);
-  };
-  for (const e of folder.entries) {
-    if (e.prevalence < MIN_PRESENTATION_CONFIDENCE) continue;
-    push(e.key, {
-      source: "folder",
-      value: e.dominantValue,
-      confidence: e.prevalence
-    });
-  }
-  for (const e of neighbor.entries) {
-    const conf = e.prevalence * NEIGHBOR_DAMPING;
-    if (conf < MIN_PRESENTATION_CONFIDENCE) continue;
-    push(e.key, {
-      source: "neighbor",
-      value: e.dominantValue,
-      confidence: conf
-    });
-  }
-  for (const e of content.entries) {
-    push(e.key, {
-      source: "content",
-      value: e.value,
-      confidence: e.confidence,
-      rule: e.rule
-    });
-  }
-  const existing = [];
-  const suggestions = [];
-  const conflicts = [];
-  const fm = existingFrontmatter ?? {};
-  const existingKeys = new Set(Object.keys(fm));
-  const allKeys = /* @__PURE__ */ new Set([...candidates.keys(), ...existingKeys]);
-  for (const key of allKeys) {
-    const cands = candidates.get(key) ?? [];
-    const existingValue = existingKeys.has(key) ? fm[key] : void 0;
-    const hasExisting = existingValue !== void 0;
-    const existingValueKey = hasExisting ? valueKey(existingValue) : null;
-    const byValue = /* @__PURE__ */ new Map();
-    for (const c of cands) {
-      if (c.value === null) {
-        const k = "__keyonly__";
-        if (!byValue.has(k)) byValue.set(k, []);
-        byValue.get(k).push(c);
-      } else {
-        const k = valueKey(c.value);
-        if (!byValue.has(k)) byValue.set(k, []);
-        byValue.get(k).push(c);
-      }
-    }
-    const distinctValueCount = Array.from(byValue.keys()).filter((k) => k !== "__keyonly__").length;
-    if (hasExisting) {
-      const agreeingBucket = byValue.get(existingValueKey);
-      if (agreeingBucket) {
-        byValue.delete(existingValueKey);
-      }
-      const disagreeingValues = Array.from(byValue.entries()).filter(([k]) => k !== "__keyonly__");
-      if (disagreeingValues.length === 0) {
-        existing.push({ key, value: existingValue });
-      } else {
-        const candidatesList = [
-          {
-            value: existingValue,
-            source: "existing",
-            confidence: 1
-          }
-        ];
-        for (const [, group] of disagreeingValues) {
-          const best = pickBestCandidate(group);
-          candidatesList.push({
-            value: best.value,
-            source: best.source,
-            confidence: best.confidence,
-            ...best.rule ? { rule: best.rule } : {}
-          });
-        }
-        conflicts.push({ key, candidates: candidatesList });
-      }
-    } else {
-      if (distinctValueCount > 1) {
-        const candidatesList = [];
-        for (const [k, group] of byValue) {
-          if (k === "__keyonly__") continue;
-          const best = pickBestCandidate(group);
-          candidatesList.push({
-            value: best.value,
-            source: best.source,
-            confidence: best.confidence,
-            ...best.rule ? { rule: best.rule } : {}
-          });
-        }
-        candidatesList.sort((a, b) => b.confidence - a.confidence);
-        conflicts.push({ key, candidates: candidatesList });
-      } else if (distinctValueCount === 1) {
-        const [valueKeyStr, group] = Array.from(byValue.entries()).find(
-          ([k]) => k !== "__keyonly__"
-        );
-        const best = pickBestCandidate(group);
-        const sources = uniqueSources(group);
-        suggestions.push({
-          key,
-          suggestedValue: best.value,
-          confidence: best.confidence,
-          sources,
-          ...best.rule ? { rule: best.rule } : {}
-        });
-        void valueKeyStr;
-      } else {
-        const group = byValue.get("__keyonly__");
-        const best = pickBestCandidate(group);
-        suggestions.push({
-          key,
-          suggestedValue: null,
-          confidence: best.confidence,
-          sources: uniqueSources(group)
-        });
-      }
-    }
-  }
-  suggestions.sort((a, b) => {
-    if (b.confidence !== a.confidence) return b.confidence - a.confidence;
-    return a.key.localeCompare(b.key);
-  });
-  conflicts.sort((a, b) => a.key.localeCompare(b.key));
-  existing.sort((a, b) => a.key.localeCompare(b.key));
-  return {
-    existing,
-    suggestions,
-    conflicts,
-    diagnostics: { folder, neighbor, content }
-  };
-}
-function pickBestCandidate(group) {
-  if (group.length === 0) {
-    throw new Error("pickBestCandidate called with empty group");
-  }
-  let best = group[0];
-  for (const c of group) {
-    if (c.confidence > best.confidence) best = c;
-  }
-  return best;
-}
-function uniqueSources(group) {
-  const seen = /* @__PURE__ */ new Set();
-  const out = [];
-  const sorted = [...group].sort((a, b) => b.confidence - a.confidence);
-  for (const c of sorted) {
-    if (seen.has(c.source)) continue;
-    seen.add(c.source);
-    out.push(c.source);
-  }
-  return out;
-}
-var NEIGHBOR_DAMPING, MIN_PRESENTATION_CONFIDENCE;
-var init_combiner = __esm({
-  "src/schema/combiner.ts"() {
-    "use strict";
-    init_esm_shims();
-    init_folder_conventions();
-    init_neighbor_inference();
-    init_content_heuristics();
-    NEIGHBOR_DAMPING = 0.6;
-    MIN_PRESENTATION_CONFIDENCE = 0.2;
-  }
-});
-
-// src/schema/index.ts
-var init_schema3 = __esm({
-  "src/schema/index.ts"() {
-    "use strict";
-    init_esm_shims();
-    init_folder_conventions();
-    init_neighbor_inference();
-    init_content_heuristics();
-    init_combiner();
   }
 });
 
@@ -10413,6 +9992,7 @@ var init_daemon = __esm({
     init_registry();
     init_source_hashes();
     init_lock();
+    init_format();
     DEFAULT_BRIEF_SINK_NAME3 = "_memory/_briefs";
     RENAME_GRACE_MS = 5e3;
     MAX_EXPIRE_PER_TICK = 1024;
@@ -10457,7 +10037,7 @@ var init_daemon = __esm({
             await this.handleEvent(event);
             vault.db.daemonState.setCursor(vault.config.name, this.now());
           } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
+            const message = errorMessage(err);
             const payload = JSON.stringify({
               kind: "brief_staleness_error",
               vault: vault.config.name,
@@ -10503,7 +10083,7 @@ var init_daemon = __esm({
           try {
             await this.evaluateBrief(briefId);
           } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
+            const message = errorMessage(err);
             const payload = JSON.stringify({
               kind: "brief_staleness_error",
               vault: vault.config.name,
@@ -10593,7 +10173,7 @@ var init_daemon = __esm({
         try {
           briefDoc = await source.readDocument(briefId);
         } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
+          const message = errorMessage(err);
           const payload = JSON.stringify({
             kind: "brief_staleness_error",
             vault: vault.config.name,
@@ -10710,7 +10290,7 @@ var init_daemon = __esm({
             try {
               await this.evaluateChangedDocId(id);
             } catch (err) {
-              const message = err instanceof Error ? err.message : String(err);
+              const message = errorMessage(err);
               const vault = this.vault;
               const payload = JSON.stringify({
                 kind: "brief_staleness_error",
@@ -11017,445 +10597,6 @@ var init_outline = __esm({
   }
 });
 
-// src/assembly/dossier.ts
-function emptyResult2(args2) {
-  return {
-    anchor: null,
-    linked_documents: [],
-    property_rollups: {
-      linked_count: 0,
-      linked_types: {},
-      status_distribution: {}
-    },
-    error: {
-      code: "no_matching_anchor_document",
-      type: args2.type,
-      key: args2.key
-    }
-  };
-}
-function sortByKey(counts) {
-  const keys = Object.keys(counts).sort();
-  const out = {};
-  for (const k of keys) {
-    out[k] = counts[k];
-  }
-  return out;
-}
-function readAliases(props) {
-  const raw = props.aliases;
-  if (!Array.isArray(raw)) return [];
-  const out = [];
-  for (const v of raw) {
-    if (typeof v === "string") out.push(v);
-  }
-  return out;
-}
-function noteSortKey(vaultName, notePath) {
-  return `vault://${vaultName}/${notePath}`;
-}
-function schemeFromSource(source) {
-  const parts = source.handle.split("://");
-  return parts[0] ?? "obsidian-fs";
-}
-function findAnchorCandidate(vault, args2) {
-  const rows = queryFrontmatter(vault, {
-    where: { type: args2.type },
-    limit: 1e3
-  });
-  if (rows.length === 0) return null;
-  const matches = [];
-  for (const row of rows) {
-    let props = {};
-    if (row.frontmatter !== null) {
-      try {
-        const parsed = JSON.parse(row.frontmatter);
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-          props = parsed;
-        }
-      } catch {
-        continue;
-      }
-    }
-    const titleMatch = row.title === args2.key;
-    const aliasMatch = readAliases(props).includes(args2.key);
-    if (!titleMatch && !aliasMatch) continue;
-    matches.push({
-      vaultName: vault.config.name,
-      notePath: row.path,
-      title: row.title,
-      sortKey: `${row.title}\0${noteSortKey(vault.config.name, row.path)}`
-    });
-  }
-  if (matches.length === 0) return null;
-  matches.sort((a, b) => a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0);
-  return matches[0] ?? null;
-}
-function findAnchorAcrossVaults(vaults, args2) {
-  const matches = [];
-  for (const vault of vaults) {
-    const c = findAnchorCandidate(vault, args2);
-    if (c) matches.push(c);
-  }
-  if (matches.length === 0) return null;
-  matches.sort((a, b) => a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0);
-  return matches[0] ?? null;
-}
-function withDossierExtras(packet) {
-  const out = { ...packet };
-  const status = packet.properties.status;
-  if (typeof status === "string") out.status = status;
-  const supersededBy = packet.properties.superseded_by;
-  if (typeof supersededBy === "string") out.superseded_by = supersededBy;
-  return out;
-}
-async function assembleDossier(deps, args2) {
-  const vaults = [];
-  if (args2.vaults && args2.vaults.length > 0) {
-    for (const name of args2.vaults) {
-      vaults.push(deps.manager.require(name));
-    }
-  } else {
-    for (const v of deps.manager.list()) {
-      vaults.push(v);
-    }
-  }
-  if (vaults.length === 0) return emptyResult2(args2);
-  const anchorCandidate = findAnchorAcrossVaults(vaults, args2);
-  if (anchorCandidate === null) return emptyResult2(args2);
-  const anchorVault = vaults.find((v) => v.config.name === anchorCandidate.vaultName);
-  if (anchorVault === void 0) return emptyResult2(args2);
-  const anchorSource = deps.sourceConnectorFor(anchorCandidate.vaultName);
-  const anchorScheme = schemeFromSource(anchorSource);
-  const anchorDocId = formatDocId(
-    anchorScheme,
-    anchorCandidate.vaultName,
-    anchorCandidate.notePath
-  );
-  let anchorDoc;
-  try {
-    anchorDoc = await anchorSource.readDocument(anchorDocId);
-  } catch {
-    return emptyResult2(args2);
-  }
-  const anchorPacket = withDossierExtras(
-    toCitationPacket(anchorDoc, displayUrlFor(anchorDocId, anchorSource))
-  );
-  let backlinkRows;
-  try {
-    backlinkRows = listBacklinks(anchorVault, anchorCandidate.notePath);
-  } catch {
-    return emptyResult2(args2);
-  }
-  const linkedDocuments = [];
-  for (const bl of backlinkRows) {
-    const linkedDocId = formatDocId(anchorScheme, anchorCandidate.vaultName, bl.sourcePath);
-    let linkedDoc;
-    try {
-      linkedDoc = await anchorSource.readDocument(linkedDocId);
-    } catch {
-      continue;
-    }
-    const packet = toCitationPacket(
-      linkedDoc,
-      displayUrlFor(linkedDocId, anchorSource)
-    );
-    const withExtras = withDossierExtras(packet);
-    linkedDocuments.push({
-      ...withExtras,
-      relation: "wikilink"
-    });
-  }
-  const linked_types = {};
-  const status_distribution = {};
-  for (const linked of linkedDocuments) {
-    const type = typeof linked.properties.type === "string" ? linked.properties.type : "unknown";
-    linked_types[type] = (linked_types[type] ?? 0) + 1;
-    const status = typeof linked.properties.status === "string" ? linked.properties.status : "unknown";
-    status_distribution[status] = (status_distribution[status] ?? 0) + 1;
-  }
-  return {
-    anchor: anchorPacket,
-    linked_documents: linkedDocuments,
-    property_rollups: {
-      linked_count: linkedDocuments.length,
-      linked_types: sortByKey(linked_types),
-      status_distribution: sortByKey(status_distribution)
-    },
-    error: null
-  };
-}
-var init_dossier = __esm({
-  "src/assembly/dossier.ts"() {
-    "use strict";
-    init_esm_shims();
-    init_registry();
-    init_query();
-    init_graph();
-    init_citation_packet();
-  }
-});
-
-// src/audit/audit.ts
-function clampLimit(value, fallback, max) {
-  if (value === void 0) return fallback;
-  if (!Number.isFinite(value) || value <= 0) return fallback;
-  const n = Math.floor(value);
-  return n > max ? max : n;
-}
-function getAuditLog(input) {
-  const { vault } = input;
-  const limit = clampLimit(input.limit, DEFAULT_AUDIT_LIMIT, MAX_AUDIT_LIMIT);
-  const filter = { limit };
-  if (input.notePath !== void 0) {
-    const note = vault.db.notes.getByPath(input.notePath);
-    if (!note) return [];
-    filter.noteId = note.id;
-  }
-  if (input.op !== void 0) filter.op = input.op;
-  if (input.since !== void 0) filter.since = input.since;
-  if (input.is_memory_sink_write !== void 0) {
-    filter.isMemorySinkWrite = input.is_memory_sink_write;
-  }
-  const rows = vault.db.audit.listWrites(filter);
-  return rows.map((row) => {
-    const note = vault.db.notes.getById(row.note_id);
-    return {
-      id: row.id,
-      notePath: note?.path ?? null,
-      noteTitle: note?.title ?? null,
-      op: row.op,
-      previousHash: row.previous_hash,
-      newHash: row.new_hash,
-      expectedHash: row.expected_hash,
-      clientId: row.client_id,
-      diffSummary: row.diff_summary,
-      at: row.at,
-      // SQLite returns the column as 0 | 1; convert to JS boolean at the
-      // audit-layer boundary so callers (MCP audit_log + tests) see the
-      // documented `is_memory_sink_write: boolean` shape.
-      is_memory_sink_write: row.is_memory_sink_write === 1
-    };
-  });
-}
-function getIndexRuns(input) {
-  const { vault } = input;
-  const limit = clampLimit(input.limit, DEFAULT_RUNS_LIMIT, MAX_RUNS_LIMIT);
-  const rows = vault.db.audit.listRuns(limit);
-  return rows.map((row) => {
-    let modelName = null;
-    if (row.model_id !== null) {
-      const all = vault.db.models.listAll();
-      const found = all.find((m) => m.id === row.model_id);
-      modelName = found?.name ?? null;
-    }
-    const durationMs = row.finished_at !== null ? row.finished_at - row.started_at : null;
-    return {
-      runId: row.run_id,
-      vaultName: row.vault_name,
-      modelName,
-      trigger: row.trigger,
-      startedAt: row.started_at,
-      finishedAt: row.finished_at,
-      durationMs,
-      notesIndexed: row.notes_indexed,
-      notesUpdated: row.notes_updated,
-      notesDeleted: row.notes_deleted,
-      chunksCreated: row.chunks_created,
-      error: row.error
-    };
-  });
-}
-var DEFAULT_AUDIT_LIMIT, MAX_AUDIT_LIMIT, DEFAULT_RUNS_LIMIT, MAX_RUNS_LIMIT;
-var init_audit2 = __esm({
-  "src/audit/audit.ts"() {
-    "use strict";
-    init_esm_shims();
-    DEFAULT_AUDIT_LIMIT = 50;
-    MAX_AUDIT_LIMIT = 1e3;
-    DEFAULT_RUNS_LIMIT = 20;
-    MAX_RUNS_LIMIT = 200;
-  }
-});
-
-// src/assembly/bundle.ts
-function withBundleAnchorExtras(packet) {
-  const out = { ...packet };
-  const status = packet.properties.status;
-  if (typeof status === "string") out.status = status;
-  const supersededBy = packet.properties.superseded_by;
-  if (typeof supersededBy === "string") out.superseded_by = supersededBy;
-  return out;
-}
-function bodyPlainText(blocks) {
-  const parts = [];
-  for (const b of blocks) {
-    switch (b.kind) {
-      case "paragraph":
-      case "code":
-        parts.push(b.text);
-        break;
-      case "heading":
-        parts.push(b.text);
-        break;
-      case "list":
-        parts.push(b.items.join(" "));
-        break;
-      case "section":
-        parts.push(bodyPlainText(b.blocks));
-        break;
-      default:
-        break;
-    }
-  }
-  const text = parts.join(" ").trim();
-  if (text.length <= PROPERTY_SNIPPET_MAX) return text;
-  return text.slice(0, PROPERTY_SNIPPET_MAX);
-}
-async function getDocumentBundle(deps, args2) {
-  let parsed;
-  try {
-    const docId2 = parseDocId(args2.doc_id);
-    parsed = decomposeDocId(docId2);
-  } catch {
-    throw new DocNotFoundError(args2.doc_id);
-  }
-  const { scheme: anchorScheme, authority: vaultName, resource: path7 } = parsed;
-  if (args2.vaults && args2.vaults.length > 0 && !args2.vaults.includes(vaultName)) {
-    throw new DocNotFoundError(args2.doc_id);
-  }
-  let vault;
-  try {
-    vault = deps.manager.require(vaultName);
-  } catch {
-    throw new DocNotFoundError(args2.doc_id);
-  }
-  const noteRow = vault.db.notes.getByPath(path7);
-  if (!noteRow) {
-    throw new DocNotFoundError(args2.doc_id);
-  }
-  const source = deps.sourceConnectorFor(vaultName);
-  const docId = parseDocId(args2.doc_id);
-  let anchorDoc;
-  try {
-    anchorDoc = await source.readDocument(docId);
-  } catch {
-    throw new DocNotFoundError(args2.doc_id);
-  }
-  const anchorPacket = withBundleAnchorExtras(
-    toCitationPacket(anchorDoc, displayUrlFor(docId, source))
-  );
-  const sectionRows = vault.db.sections.getByNote(noteRow.id);
-  const allChunks = vault.db.chunks.getByNote(noteRow.id);
-  const outline = buildOutlineTree(sectionRows, allChunks);
-  let backlinkRows;
-  try {
-    backlinkRows = listBacklinks(vault, path7);
-  } catch {
-    throw new DocNotFoundError(args2.doc_id);
-  }
-  const backlinks = [];
-  for (const bl of backlinkRows) {
-    const sourceDocId = formatDocId(anchorScheme, vaultName, bl.sourcePath);
-    let linkedDoc;
-    try {
-      linkedDoc = await source.readDocument(sourceDocId);
-    } catch {
-      continue;
-    }
-    const packet = toCitationPacket(linkedDoc, displayUrlFor(sourceDocId, source));
-    backlinks.push({
-      ...packet,
-      property_snippet: bodyPlainText(linkedDoc.blocks),
-      relation: bl.type
-    });
-  }
-  let forwardLinkRows;
-  try {
-    forwardLinkRows = listForwardLinks(
-      vault,
-      path7,
-      /* includeBroken */
-      false
-    );
-  } catch {
-    throw new DocNotFoundError(args2.doc_id);
-  }
-  const forward_links = [];
-  for (const fl of forwardLinkRows) {
-    const targetDocId = formatDocId(anchorScheme, vaultName, fl.targetPath);
-    let linkedDoc;
-    try {
-      linkedDoc = await source.readDocument(targetDocId);
-    } catch {
-      continue;
-    }
-    const packet = toCitationPacket(linkedDoc, displayUrlFor(targetDocId, source));
-    forward_links.push({
-      ...packet,
-      property_snippet: bodyPlainText(linkedDoc.blocks),
-      // PHASE-4-WIDEN — see backlinks loop above. COMPLETED Phase 4 / 04-01.
-      relation: fl.type
-    });
-  }
-  const auditEntries = getAuditLog({
-    vault,
-    notePath: path7,
-    limit: RECENT_EDITS_LIMIT
-  });
-  const recent_edits = auditEntries.map((e) => {
-    const out = {
-      at: e.at,
-      op: e.op,
-      client_id: e.clientId
-    };
-    if (e.is_memory_sink_write) out.is_memory_sink_write = true;
-    return out;
-  });
-  return {
-    anchor: anchorPacket,
-    outline,
-    backlinks,
-    forward_links,
-    recent_edits
-  };
-}
-var RECENT_EDITS_LIMIT, PROPERTY_SNIPPET_MAX;
-var init_bundle = __esm({
-  "src/assembly/bundle.ts"() {
-    "use strict";
-    init_esm_shims();
-    init_registry();
-    init_audit2();
-    init_graph();
-    init_citation_packet();
-    init_outline();
-    init_outline();
-    RECENT_EDITS_LIMIT = 10;
-    PROPERTY_SNIPPET_MAX = 200;
-  }
-});
-
-// src/assembly/index.ts
-var init_assembly = __esm({
-  "src/assembly/index.ts"() {
-    "use strict";
-    init_esm_shims();
-    init_dossier();
-    init_bundle();
-    init_outline();
-  }
-});
-
-// src/audit/index.ts
-var init_audit3 = __esm({
-  "src/audit/index.ts"() {
-    "use strict";
-    init_esm_shims();
-    init_audit2();
-  }
-});
-
 // src/adapters/change-feed/obsidian-fs/queue.ts
 var DebouncedQueue;
 var init_queue = __esm({
@@ -11599,6 +10740,7 @@ var init_watcher = __esm({
     init_indexer2();
     init_queue();
     init_chokidar_config();
+    init_format();
     VaultWatcher = class {
       fsWatcher = null;
       queue;
@@ -11620,7 +10762,7 @@ var init_watcher = __esm({
           maxLatencyMs: 5e3,
           onFlush: (event) => this.handleFlush(event),
           onError: (event, err) => {
-            const message = err instanceof Error ? err.message : String(err);
+            const message = errorMessage(err);
             this.opts.log(`error processing ${event.path}: ${message}`);
           }
         });
@@ -11634,7 +10776,7 @@ var init_watcher = __esm({
         this.fsWatcher.on("change", (path7) => this.onFsEvent(path7, "change"));
         this.fsWatcher.on("unlink", (path7) => this.onFsEvent(path7, "delete"));
         this.fsWatcher.on("error", (err) => {
-          const message = err instanceof Error ? err.message : String(err);
+          const message = errorMessage(err);
           this.opts.log(`fs watcher error: ${message}`);
         });
         await new Promise((resolve7) => {
@@ -11816,6 +10958,7 @@ var init_change_feed = __esm({
     init_registry();
     init_suppression();
     init_chokidar_config();
+    init_format();
     SCHEME3 = "obsidian-fs";
     ObsidianFsChangeFeed = class {
       handle;
@@ -11887,7 +11030,7 @@ var init_change_feed = __esm({
         watcher.on("change", (absolutePath) => this.onFsEvent(absolutePath, "update"));
         watcher.on("unlink", (absolutePath) => this.onFsEvent(absolutePath, "delete"));
         watcher.on("error", (err) => {
-          const message = err instanceof Error ? err.message : String(err);
+          const message = errorMessage(err);
           this.log(`fs watcher error: ${message}`);
         });
         await new Promise((resolve7) => {
@@ -11919,12 +11062,12 @@ var init_change_feed = __esm({
             const result = handler7(event);
             if (result && typeof result.then === "function") {
               result.catch((err) => {
-                const message = err instanceof Error ? err.message : String(err);
+                const message = errorMessage(err);
                 this.log(`handler error: ${message}`);
               });
             }
           } catch (err) {
-            const message = err instanceof Error ? err.message : String(err);
+            const message = errorMessage(err);
             this.log(`handler error: ${message}`);
           }
         }
@@ -13299,7 +12442,7 @@ function recordContractLoadError(deps, args2) {
     errorMessage: `${args2.file}: ${args2.error_message}`
   });
 }
-var init_audit4 = __esm({
+var init_audit2 = __esm({
   "src/contracts/audit.ts"() {
     "use strict";
     init_esm_shims();
@@ -13309,7 +12452,7 @@ var init_audit4 = __esm({
 // src/contracts/schema.ts
 import { z as z16 } from "zod";
 var BASELINE_VERBS, MCP_VERB_RE, VerbSchema, StepSchema, HandleDeclSchema, WriteBackSchema, ContractFileSchema;
-var init_schema4 = __esm({
+var init_schema3 = __esm({
   "src/contracts/schema.ts"() {
     "use strict";
     init_esm_shims();
@@ -13561,11 +12704,11 @@ var init_loader3 = __esm({
     "use strict";
     init_esm_shims();
     init_types();
-    init_schema4();
+    init_schema3();
     init_input_schema();
     init_json_schema_ref();
     init_registry3();
-    init_audit4();
+    init_audit2();
     init_registry();
     init_hash();
   }
@@ -13773,6 +12916,7 @@ var init_mcp_clients = __esm({
   "src/contracts/mcp-clients.ts"() {
     "use strict";
     init_esm_shims();
+    init_format();
     PeerMcpRegistry = class {
       entries = /* @__PURE__ */ new Map();
       clientFactory;
@@ -13841,7 +12985,7 @@ var init_mcp_clients = __esm({
         try {
           e.client[Symbol.dispose]();
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
+          const msg = errorMessage(err);
           process.stderr.write(`[contracts] peer-MCP dispose error: ${msg}
 `);
         }
@@ -13872,7 +13016,7 @@ var init_mcp_clients = __esm({
           try {
             e.client[Symbol.dispose]();
           } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
+            const msg = errorMessage(err);
             process.stderr.write(`[contracts] peer-MCP dispose error: ${msg}
 `);
           }
@@ -13893,7 +13037,7 @@ var init_mcp_clients = __esm({
           this.entries.set(name, entry);
           await this.primeTools(entry);
         } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
+          const msg = errorMessage(err);
           process.stderr.write(`[contracts] peer-MCP client '${name}' failed to start: ${msg}
 `);
           this.entries.set(name, {
@@ -13919,7 +13063,7 @@ var init_mcp_clients = __esm({
           delete entry.error;
         } catch (err) {
           entry.status = "unreachable";
-          entry.error = err instanceof Error ? err.message : String(err);
+          entry.error = errorMessage(err);
         }
       }
       async defaultConnect(cfg) {
@@ -14163,7 +13307,7 @@ async function instantiateContract(deps, args2) {
         sink: sinkHandle
       };
     } catch (err) {
-      const cause = err instanceof Error ? err.message : String(err);
+      const cause = errorMessage(err);
       return { ok: false, reason: "write_back_failed", cause };
     }
   }
@@ -14185,7 +13329,7 @@ async function instantiateContract(deps, args2) {
         };
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       process.stderr.write(`[contracts] output_shape validation skipped: ${msg}
 `);
     }
@@ -14226,7 +13370,7 @@ async function runStep(deps, contractName, step, bindings) {
     );
   } catch (err) {
     writeAuditRow(deps, contractName, step);
-    const cause = err instanceof Error ? err.message : String(err);
+    const cause = errorMessage(err);
     return {
       error: {
         ok: false,
@@ -14256,7 +13400,8 @@ var init_instantiate = __esm({
     init_esm_shims();
     init_templates();
     init_verbs();
-    init_audit4();
+    init_audit2();
+    init_format();
   }
 });
 
@@ -14494,8 +13639,8 @@ var init_contracts = __esm({
     init_input_schema();
     init_registry3();
     init_slug();
-    init_audit4();
-    init_schema4();
+    init_audit2();
+    init_schema3();
     init_loader3();
     init_auto_register();
     init_templates();
@@ -14506,6 +13651,2066 @@ var init_contracts = __esm({
     init_describe();
     init_resources3();
     init_sources_resources();
+  }
+});
+
+// src/audit/audit.ts
+function clampLimit(value, fallback, max) {
+  if (value === void 0) return fallback;
+  if (!Number.isFinite(value) || value <= 0) return fallback;
+  const n = Math.floor(value);
+  return n > max ? max : n;
+}
+function getAuditLog(input) {
+  const { vault } = input;
+  const limit = clampLimit(input.limit, DEFAULT_AUDIT_LIMIT, MAX_AUDIT_LIMIT);
+  const filter = { limit };
+  if (input.notePath !== void 0) {
+    const note = vault.db.notes.getByPath(input.notePath);
+    if (!note) return [];
+    filter.noteId = note.id;
+  }
+  if (input.op !== void 0) filter.op = input.op;
+  if (input.since !== void 0) filter.since = input.since;
+  if (input.is_memory_sink_write !== void 0) {
+    filter.isMemorySinkWrite = input.is_memory_sink_write;
+  }
+  const rows = vault.db.audit.listWrites(filter);
+  return rows.map((row) => {
+    const note = vault.db.notes.getById(row.note_id);
+    return {
+      id: row.id,
+      notePath: note?.path ?? null,
+      noteTitle: note?.title ?? null,
+      op: row.op,
+      previousHash: row.previous_hash,
+      newHash: row.new_hash,
+      expectedHash: row.expected_hash,
+      clientId: row.client_id,
+      diffSummary: row.diff_summary,
+      at: row.at,
+      // SQLite returns the column as 0 | 1; convert to JS boolean at the
+      // audit-layer boundary so callers (MCP audit_log + tests) see the
+      // documented `is_memory_sink_write: boolean` shape.
+      is_memory_sink_write: row.is_memory_sink_write === 1
+    };
+  });
+}
+function getIndexRuns(input) {
+  const { vault } = input;
+  const limit = clampLimit(input.limit, DEFAULT_RUNS_LIMIT, MAX_RUNS_LIMIT);
+  const rows = vault.db.audit.listRuns(limit);
+  return rows.map((row) => {
+    let modelName = null;
+    if (row.model_id !== null) {
+      const all = vault.db.models.listAll();
+      const found = all.find((m) => m.id === row.model_id);
+      modelName = found?.name ?? null;
+    }
+    const durationMs = row.finished_at !== null ? row.finished_at - row.started_at : null;
+    return {
+      runId: row.run_id,
+      vaultName: row.vault_name,
+      modelName,
+      trigger: row.trigger,
+      startedAt: row.started_at,
+      finishedAt: row.finished_at,
+      durationMs,
+      notesIndexed: row.notes_indexed,
+      notesUpdated: row.notes_updated,
+      notesDeleted: row.notes_deleted,
+      chunksCreated: row.chunks_created,
+      error: row.error
+    };
+  });
+}
+var DEFAULT_AUDIT_LIMIT, MAX_AUDIT_LIMIT, DEFAULT_RUNS_LIMIT, MAX_RUNS_LIMIT;
+var init_audit3 = __esm({
+  "src/audit/audit.ts"() {
+    "use strict";
+    init_esm_shims();
+    DEFAULT_AUDIT_LIMIT = 50;
+    MAX_AUDIT_LIMIT = 1e3;
+    DEFAULT_RUNS_LIMIT = 20;
+    MAX_RUNS_LIMIT = 200;
+  }
+});
+
+// src/audit/index.ts
+var init_audit4 = __esm({
+  "src/audit/index.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_audit3();
+  }
+});
+
+// src/server/handlers/vault.ts
+function handleListVaults(manager) {
+  const vaults = manager.list().map((v) => {
+    const noteCount = v.db.notes.countAll();
+    const runs = v.db.audit.listRuns(1);
+    const lastRun = runs[0];
+    return {
+      name: v.config.name,
+      path: v.config.path,
+      embedding_model: v.config.embedding_model ?? null,
+      note_count: noteCount,
+      write_enabled: v.config.write_enabled ?? false,
+      last_run: lastRun ? {
+        run_id: lastRun.run_id,
+        started_at: lastRun.started_at,
+        finished_at: lastRun.finished_at,
+        error: lastRun.error
+      } : null
+    };
+  });
+  return { vaults, count: vaults.length };
+}
+function handleVaultStats(manager, vaultFilter) {
+  const targets = vaultFilter ? [manager.require(vaultFilter)] : manager.list();
+  const stats = targets.map((v) => {
+    const total_notes = v.db.notes.countAll();
+    const wordRow = v.db.handle.prepare("SELECT SUM(word_count) AS total FROM notes").get();
+    const lastRun = v.db.audit.listRuns(1)[0];
+    const activeModel = v.db.models.getActive();
+    return {
+      vault: v.config.name,
+      vault_path: v.config.path,
+      total_notes,
+      total_words: wordRow?.total ?? 0,
+      embedding_model: activeModel?.name ?? v.config.embedding_model ?? null,
+      indexed_at: lastRun?.finished_at ?? null,
+      top_tags: aggregateTopTags(v.db.handle, 10),
+      top_frontmatter_keys: aggregateTopFrontmatterKeys(v.db.handle, 10)
+    };
+  });
+  if (vaultFilter) {
+    return stats[0];
+  }
+  return { vaults: stats, count: stats.length };
+}
+function handleRecentNotes(manager, vaultFilter, limit, since) {
+  const targets = vaultFilter ? [manager.require(vaultFilter)] : manager.list();
+  const all = [];
+  for (const v of targets) {
+    const rows = since !== void 0 ? v.db.handle.prepare(
+      "SELECT path, title, mtime, word_count, frontmatter FROM notes WHERE mtime > ? ORDER BY mtime DESC LIMIT ?"
+    ).all(since, limit) : v.db.handle.prepare(
+      "SELECT path, title, mtime, word_count, frontmatter FROM notes ORDER BY mtime DESC LIMIT ?"
+    ).all(limit);
+    for (const r of rows) {
+      let tags = null;
+      if (r.frontmatter) {
+        try {
+          const fm = JSON.parse(r.frontmatter);
+          if (Array.isArray(fm.tags)) {
+            tags = fm.tags.filter((t) => typeof t === "string");
+          }
+        } catch {
+        }
+      }
+      all.push({
+        vault: v.config.name,
+        path: r.path,
+        title: r.title,
+        mtime: r.mtime,
+        word_count: r.word_count,
+        tags
+      });
+    }
+  }
+  all.sort((a, b) => b.mtime - a.mtime);
+  return { notes: all.slice(0, limit), count: Math.min(all.length, limit) };
+}
+function makeVaultHandlers(deps) {
+  const { manager, ollama } = deps;
+  return {
+    list_vaults: async () => handleListVaults(manager),
+    vault_stats: async (a) => {
+      const p = a;
+      return handleVaultStats(manager, p.vault);
+    },
+    recent_notes: async (a) => {
+      const p = a;
+      return handleRecentNotes(manager, p.vault, p.limit, p.since);
+    },
+    audit_log: async (a) => {
+      const p = a;
+      const vault = manager.require(p.vault);
+      const entries = getAuditLog({
+        vault,
+        notePath: p.note_path,
+        op: p.op,
+        since: p.since,
+        limit: p.limit,
+        ...p.is_memory_sink_write !== void 0 ? { is_memory_sink_write: p.is_memory_sink_write } : {}
+      });
+      return { entries, count: entries.length };
+    },
+    list_models: async (a) => {
+      const p = a;
+      const vault = manager.require(p.vault);
+      const models = listModels(vault);
+      return { models, count: models.length };
+    },
+    start_shadow_index: async (a) => {
+      const p = a;
+      const vault = manager.require(p.vault);
+      return startShadowIndex({
+        vault,
+        model: p.model,
+        ollama,
+        batchSize: p.batch_size,
+        log: (m) => process.stderr.write(`[shadow:${vault.config.name}] ${m}
+`)
+      });
+    },
+    switch_active_model: async (a) => {
+      const p = a;
+      const vault = manager.require(p.vault);
+      return switchActiveModel(vault, p.model_name);
+    },
+    vacuum_embeddings: async (a) => {
+      const p = a;
+      const vault = manager.require(p.vault);
+      return vacuumEmbeddings(vault);
+    },
+    index_runs: async (a) => {
+      const p = a;
+      const vault = manager.require(p.vault);
+      const runs = getIndexRuns({ vault, limit: p.limit });
+      return { runs, count: runs.length };
+    }
+  };
+}
+var init_vault2 = __esm({
+  "src/server/handlers/vault.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_utils();
+    init_indexer2();
+    init_audit4();
+  }
+});
+
+// src/schema/folder-conventions.ts
+function folderOf(notePath) {
+  const idx = notePath.lastIndexOf("/");
+  return idx === -1 ? "" : notePath.slice(0, idx + 1);
+}
+function parentFolder(folder) {
+  if (folder === "") return null;
+  const trimmed = folder.endsWith("/") ? folder.slice(0, -1) : folder;
+  const idx = trimmed.lastIndexOf("/");
+  if (idx === -1) return "";
+  return trimmed.slice(0, idx + 1);
+}
+function countSiblings(vault, folder, excludePath) {
+  const handle = vault.db.handle;
+  if (folder === "") {
+    const row2 = handle.prepare("SELECT COUNT(*) AS c FROM notes WHERE instr(path, '/') = 0 AND path != COALESCE(?, '')").get(excludePath);
+    return row2?.c ?? 0;
+  }
+  const row = handle.prepare("SELECT COUNT(*) AS c FROM notes WHERE path LIKE ? || '%' AND path != COALESCE(?, '')").get(folder, excludePath);
+  return row?.c ?? 0;
+}
+function fetchSiblings(vault, folder, excludePath) {
+  const handle = vault.db.handle;
+  if (folder === "") {
+    return handle.prepare("SELECT path, frontmatter FROM notes WHERE instr(path, '/') = 0 AND path != COALESCE(?, '')").all(excludePath);
+  }
+  return handle.prepare("SELECT path, frontmatter FROM notes WHERE path LIKE ? || '%' AND path != COALESCE(?, '')").all(folder, excludePath);
+}
+function resolveInferenceFolder(vault, notePath, excludePath = notePath) {
+  const start = folderOf(notePath);
+  let current = start;
+  let levels = 0;
+  while (current !== null && levels < MAX_FALLBACK_LEVELS) {
+    const count = countSiblings(vault, current, excludePath);
+    if (count >= MIN_SIBLINGS || current === "") {
+      return {
+        folder: current,
+        fellBackFrom: current === start ? null : start,
+        siblingCount: count
+      };
+    }
+    current = parentFolder(current);
+    levels++;
+  }
+  return { folder: "", fellBackFrom: start, siblingCount: 0 };
+}
+function aggregateEntries(siblings) {
+  const total = siblings.length;
+  if (total === 0) return [];
+  const keyPresence = /* @__PURE__ */ new Map();
+  const keyValues = /* @__PURE__ */ new Map();
+  for (const row of siblings) {
+    if (!row.frontmatter) continue;
+    let fm;
+    try {
+      fm = JSON.parse(row.frontmatter);
+    } catch {
+      continue;
+    }
+    if (!fm || typeof fm !== "object" || Array.isArray(fm)) continue;
+    const obj = fm;
+    for (const [key, value] of Object.entries(obj)) {
+      keyPresence.set(key, (keyPresence.get(key) ?? 0) + 1);
+      const valKey = stableStringify(value);
+      if (!keyValues.has(key)) keyValues.set(key, /* @__PURE__ */ new Map());
+      const bucket = keyValues.get(key);
+      bucket.set(valKey, (bucket.get(valKey) ?? 0) + 1);
+    }
+  }
+  const entries = [];
+  for (const [key, presenceCount] of keyPresence) {
+    const valueBucket = keyValues.get(key);
+    const [domValStr, domCount] = pickDominant(valueBucket);
+    const dominantValue = domCount / presenceCount > 0.5 ? safeParse(domValStr) : null;
+    entries.push({
+      key,
+      presenceCount,
+      siblingCount: total,
+      prevalence: presenceCount / total,
+      dominantValue,
+      dominantValueRatio: domCount / presenceCount
+    });
+  }
+  entries.sort((a, b) => {
+    if (b.prevalence !== a.prevalence) return b.prevalence - a.prevalence;
+    return a.key.localeCompare(b.key);
+  });
+  return entries;
+}
+function pickDominant(bucket) {
+  let bestKey = "";
+  let bestCount = 0;
+  for (const [k, c] of bucket) {
+    if (c > bestCount) {
+      bestKey = k;
+      bestCount = c;
+    }
+  }
+  return [bestKey, bestCount];
+}
+function stableStringify(v) {
+  if (v === void 0) return "null";
+  return JSON.stringify(v, Object.keys(v ?? {}).sort());
+}
+function safeParse(s) {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
+}
+function inferFromFolder(vault, notePath, options = {}) {
+  const excludePath = options.excludePath ?? notePath;
+  const { folder, fellBackFrom, siblingCount } = resolveInferenceFolder(
+    vault,
+    notePath,
+    excludePath
+  );
+  const siblings = fetchSiblings(vault, folder, excludePath);
+  return {
+    resolvedFolder: folder,
+    siblingCount,
+    fellBackFrom,
+    entries: aggregateEntries(siblings)
+  };
+}
+var MIN_SIBLINGS, MAX_FALLBACK_LEVELS;
+var init_folder_conventions = __esm({
+  "src/schema/folder-conventions.ts"() {
+    "use strict";
+    init_esm_shims();
+    MIN_SIBLINGS = 3;
+    MAX_FALLBACK_LEVELS = 4;
+  }
+});
+
+// src/schema/neighbor-inference.ts
+function gatherNeighbors(vault, notePath, additionalForwardTargets = []) {
+  const seenIds = /* @__PURE__ */ new Set();
+  const out = [];
+  const note = vault.db.notes.getByPath(notePath);
+  if (note) {
+    const back = vault.db.wikilinks.getBacklinks(note.id);
+    for (const row of back) {
+      if (seenIds.has(row.sourceNoteId)) continue;
+      const src = vault.db.notes.getById(row.sourceNoteId);
+      if (!src) continue;
+      seenIds.add(src.id);
+      out.push({ path: src.path, frontmatter: src.frontmatter });
+    }
+    const forward = vault.db.wikilinks.getForwardLinks(note.id);
+    for (const row of forward) {
+      if (row.targetNoteId === null) continue;
+      if (seenIds.has(row.targetNoteId)) continue;
+      const target = vault.db.notes.getById(row.targetNoteId);
+      if (!target) continue;
+      seenIds.add(target.id);
+      out.push({ path: target.path, frontmatter: target.frontmatter });
+    }
+  }
+  for (const target of additionalForwardTargets) {
+    const candidate = vault.db.notes.getByPath(`${target}.md`) ?? vault.db.notes.getByPath(target);
+    if (!candidate) continue;
+    if (seenIds.has(candidate.id)) continue;
+    seenIds.add(candidate.id);
+    out.push({ path: candidate.path, frontmatter: candidate.frontmatter });
+  }
+  return out;
+}
+function aggregateEntries2(neighbors) {
+  const total = neighbors.length;
+  if (total === 0) return [];
+  const keyPresence = /* @__PURE__ */ new Map();
+  const keyValues = /* @__PURE__ */ new Map();
+  for (const row of neighbors) {
+    if (!row.frontmatter) continue;
+    let fm;
+    try {
+      fm = JSON.parse(row.frontmatter);
+    } catch {
+      continue;
+    }
+    if (!fm || typeof fm !== "object" || Array.isArray(fm)) continue;
+    const obj = fm;
+    for (const [key, value] of Object.entries(obj)) {
+      keyPresence.set(key, (keyPresence.get(key) ?? 0) + 1);
+      const valKey = JSON.stringify(value, Object.keys(value ?? {}).sort());
+      if (!keyValues.has(key)) keyValues.set(key, /* @__PURE__ */ new Map());
+      const bucket = keyValues.get(key);
+      bucket.set(valKey, (bucket.get(valKey) ?? 0) + 1);
+    }
+  }
+  const entries = [];
+  for (const [key, presenceCount] of keyPresence) {
+    const valueBucket = keyValues.get(key);
+    let bestKey = "";
+    let bestCount = 0;
+    for (const [k, c] of valueBucket) {
+      if (c > bestCount) {
+        bestKey = k;
+        bestCount = c;
+      }
+    }
+    const dominantValue = bestCount / presenceCount > 0.5 ? safeParse2(bestKey) : null;
+    entries.push({
+      key,
+      neighborCount: presenceCount,
+      totalNeighbors: total,
+      prevalence: presenceCount / total,
+      dominantValue,
+      dominantValueRatio: bestCount / presenceCount
+    });
+  }
+  entries.sort((a, b) => {
+    if (b.prevalence !== a.prevalence) return b.prevalence - a.prevalence;
+    return a.key.localeCompare(b.key);
+  });
+  return entries;
+}
+function safeParse2(s) {
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
+}
+function inferFromNeighbors(vault, notePath, additionalForwardTargets = []) {
+  const neighbors = gatherNeighbors(vault, notePath, additionalForwardTargets);
+  const note = vault.db.notes.getByPath(notePath);
+  let forwardCount = 0;
+  let backwardCount = 0;
+  if (note) {
+    forwardCount = vault.db.wikilinks.getForwardLinks(note.id).filter((r) => r.targetNoteId !== null).length;
+    backwardCount = vault.db.wikilinks.getBacklinks(note.id).length;
+  }
+  return {
+    forwardCount,
+    backwardCount,
+    totalNeighbors: neighbors.length,
+    entries: aggregateEntries2(neighbors)
+  };
+}
+var init_neighbor_inference = __esm({
+  "src/schema/neighbor-inference.ts"() {
+    "use strict";
+    init_esm_shims();
+  }
+});
+
+// src/schema/content-heuristics.ts
+function inferFromContent(input) {
+  const heuristicInput = {
+    title: input.title,
+    bodyHead: input.body.slice(0, 2e3),
+    fullBody: input.body
+  };
+  const entries = [];
+  const matchedRules = [];
+  for (const rule of RULES) {
+    const matches = rule.match(heuristicInput);
+    if (matches.length > 0) {
+      matchedRules.push(rule.name);
+      for (const m of matches) {
+        entries.push({ ...m, rule: rule.name });
+      }
+    }
+  }
+  return { entries, matchedRules };
+}
+var DEFAULT_CONFIDENCE, STRONG_CONFIDENCE, WEAK_CONFIDENCE, emailRule, meetingRule, personRule, clippingRule, factRule, dateInTitleRule, RULES;
+var init_content_heuristics = __esm({
+  "src/schema/content-heuristics.ts"() {
+    "use strict";
+    init_esm_shims();
+    DEFAULT_CONFIDENCE = 0.7;
+    STRONG_CONFIDENCE = 0.85;
+    WEAK_CONFIDENCE = 0.5;
+    emailRule = {
+      name: "email-title-or-header",
+      match: ({ title, bodyHead }) => {
+        const titleMatch = /^(E-?Mail|Email|Mail)\s+(von|from)\s+\S+/i.test(title) || /^(Re|Fwd|AW|WG):\s/i.test(title);
+        const headerMatch = /^(From|Von):\s+\S+/im.test(bodyHead) && /^(To|An):\s+\S+/im.test(bodyHead);
+        if (!titleMatch && !headerMatch) return [];
+        return [
+          { key: "class", value: "Email", confidence: STRONG_CONFIDENCE },
+          { key: "type", value: "email", confidence: STRONG_CONFIDENCE }
+        ];
+      }
+    };
+    meetingRule = {
+      name: "meeting-title-keyword",
+      match: ({ title, bodyHead }) => {
+        const keywords = /\b(Meeting|Treffen|Call|Sondierung|Termin|Standup|Sync|Kickoff|Kick-off|Jour\s*fixe|Workshop)\b/i;
+        const isMeeting = keywords.test(title) || /^\d{4}-\d{2}-\d{2}.*\b(Meeting|Treffen|Call|Sondierung)/i.test(title);
+        if (!isMeeting) return [];
+        const attendeesPresent = /^(Attendees|Teilnehmer|Participants):/im.test(bodyHead);
+        const conf = attendeesPresent ? STRONG_CONFIDENCE : DEFAULT_CONFIDENCE;
+        return [
+          { key: "class", value: "Meeting", confidence: conf },
+          { key: "type", value: "meeting", confidence: conf }
+        ];
+      }
+    };
+    personRule = {
+      name: "person-name-title-with-corroboration",
+      match: ({ title, bodyHead }) => {
+        const nameLike = /^[A-ZÄÖÜ][a-zäöüß'\-]+( [A-ZÄÖÜ][a-zäöüß'\-]+){0,3}$/.test(title.trim());
+        if (!nameLike) return [];
+        const corroborating = /linkedin\.com\/in\//i.test(bodyHead) || /\b[\w._-]+@[\w.-]+\.[a-z]{2,}\b/i.test(bodyHead) || /\+?\d[\d\s\-./()]{6,}/.test(bodyHead);
+        if (!corroborating) return [];
+        return [
+          { key: "class", value: "Person", confidence: STRONG_CONFIDENCE },
+          { key: "type", value: "person", confidence: STRONG_CONFIDENCE },
+          { key: "participation", value: [], confidence: WEAK_CONFIDENCE }
+        ];
+      }
+    };
+    clippingRule = {
+      name: "clipping-source-url",
+      match: ({ bodyHead }) => {
+        const headSnippet = bodyHead.slice(0, 500);
+        const hasMdLink = /^\s*\[.+\]\(https?:\/\/[^\s)]+\)/m.test(headSnippet);
+        const hasSourceField = /^source:\s*https?:\/\//im.test(headSnippet);
+        if (!hasMdLink && !hasSourceField) return [];
+        return [
+          { key: "class", value: "Clipping", confidence: DEFAULT_CONFIDENCE },
+          { key: "tags", value: ["clippings"], confidence: DEFAULT_CONFIDENCE }
+        ];
+      }
+    };
+    factRule = {
+      name: "short-fact",
+      match: ({ fullBody }) => {
+        const trimmed = fullBody.trim();
+        if (trimmed.length === 0 || trimmed.length > 150) return [];
+        if (/\n\s*\n/.test(trimmed)) return [];
+        return [{ key: "class", value: "Fact", confidence: WEAK_CONFIDENCE }];
+      }
+    };
+    dateInTitleRule = {
+      name: "date-prefix-in-title",
+      match: ({ title }) => {
+        const m = title.match(/^(\d{4})-(\d{2})-(\d{2})/);
+        if (!m) return [];
+        const iso = `${m[1]}-${m[2]}-${m[3]}`;
+        return [{ key: "created", value: iso, confidence: STRONG_CONFIDENCE }];
+      }
+    };
+    RULES = [
+      emailRule,
+      meetingRule,
+      personRule,
+      clippingRule,
+      factRule,
+      dateInTitleRule
+    ];
+  }
+});
+
+// src/schema/combiner.ts
+function valueKey(v) {
+  if (v === null || v === void 0) return "null";
+  if (Array.isArray(v)) {
+    return "[" + v.map(valueKey).join(",") + "]";
+  }
+  if (typeof v === "object") {
+    const obj = v;
+    const keys = Object.keys(obj).sort();
+    return "{" + keys.map((k) => JSON.stringify(k) + ":" + valueKey(obj[k])).join(",") + "}";
+  }
+  return JSON.stringify(v);
+}
+function suggestFrontmatter(input) {
+  const title = input.title ?? defaultTitleFromPath(input.path);
+  const folder = inferFromFolder(input.vault, input.path, {
+    excludePath: input.excludePath ?? input.path
+  });
+  const neighbor = inferFromNeighbors(input.vault, input.path, input.draftWikilinkTargets ?? []);
+  const content = input.content !== void 0 ? inferFromContent({ title, body: input.content }) : { entries: [], matchedRules: [] };
+  return combineSuggestions({
+    existingFrontmatter: input.existingFrontmatter ?? null,
+    folder,
+    neighbor,
+    content
+  });
+}
+function defaultTitleFromPath(path7) {
+  const base = path7.split("/").pop() ?? path7;
+  return base.replace(/\.md$/i, "");
+}
+function combineSuggestions(args2) {
+  const { existingFrontmatter, folder, neighbor, content } = args2;
+  const candidates = /* @__PURE__ */ new Map();
+  const push = (key, c) => {
+    if (!candidates.has(key)) candidates.set(key, []);
+    candidates.get(key).push(c);
+  };
+  for (const e of folder.entries) {
+    if (e.prevalence < MIN_PRESENTATION_CONFIDENCE) continue;
+    push(e.key, {
+      source: "folder",
+      value: e.dominantValue,
+      confidence: e.prevalence
+    });
+  }
+  for (const e of neighbor.entries) {
+    const conf = e.prevalence * NEIGHBOR_DAMPING;
+    if (conf < MIN_PRESENTATION_CONFIDENCE) continue;
+    push(e.key, {
+      source: "neighbor",
+      value: e.dominantValue,
+      confidence: conf
+    });
+  }
+  for (const e of content.entries) {
+    push(e.key, {
+      source: "content",
+      value: e.value,
+      confidence: e.confidence,
+      rule: e.rule
+    });
+  }
+  const existing = [];
+  const suggestions = [];
+  const conflicts = [];
+  const fm = existingFrontmatter ?? {};
+  const existingKeys = new Set(Object.keys(fm));
+  const allKeys = /* @__PURE__ */ new Set([...candidates.keys(), ...existingKeys]);
+  for (const key of allKeys) {
+    const cands = candidates.get(key) ?? [];
+    const existingValue = existingKeys.has(key) ? fm[key] : void 0;
+    const hasExisting = existingValue !== void 0;
+    const existingValueKey = hasExisting ? valueKey(existingValue) : null;
+    const byValue = /* @__PURE__ */ new Map();
+    for (const c of cands) {
+      if (c.value === null) {
+        const k = "__keyonly__";
+        if (!byValue.has(k)) byValue.set(k, []);
+        byValue.get(k).push(c);
+      } else {
+        const k = valueKey(c.value);
+        if (!byValue.has(k)) byValue.set(k, []);
+        byValue.get(k).push(c);
+      }
+    }
+    const distinctValueCount = Array.from(byValue.keys()).filter((k) => k !== "__keyonly__").length;
+    if (hasExisting) {
+      const agreeingBucket = byValue.get(existingValueKey);
+      if (agreeingBucket) {
+        byValue.delete(existingValueKey);
+      }
+      const disagreeingValues = Array.from(byValue.entries()).filter(([k]) => k !== "__keyonly__");
+      if (disagreeingValues.length === 0) {
+        existing.push({ key, value: existingValue });
+      } else {
+        const candidatesList = [
+          {
+            value: existingValue,
+            source: "existing",
+            confidence: 1
+          }
+        ];
+        for (const [, group] of disagreeingValues) {
+          const best = pickBestCandidate(group);
+          candidatesList.push({
+            value: best.value,
+            source: best.source,
+            confidence: best.confidence,
+            ...best.rule ? { rule: best.rule } : {}
+          });
+        }
+        conflicts.push({ key, candidates: candidatesList });
+      }
+    } else {
+      if (distinctValueCount > 1) {
+        const candidatesList = [];
+        for (const [k, group] of byValue) {
+          if (k === "__keyonly__") continue;
+          const best = pickBestCandidate(group);
+          candidatesList.push({
+            value: best.value,
+            source: best.source,
+            confidence: best.confidence,
+            ...best.rule ? { rule: best.rule } : {}
+          });
+        }
+        candidatesList.sort((a, b) => b.confidence - a.confidence);
+        conflicts.push({ key, candidates: candidatesList });
+      } else if (distinctValueCount === 1) {
+        const [valueKeyStr, group] = Array.from(byValue.entries()).find(
+          ([k]) => k !== "__keyonly__"
+        );
+        const best = pickBestCandidate(group);
+        const sources = uniqueSources(group);
+        suggestions.push({
+          key,
+          suggestedValue: best.value,
+          confidence: best.confidence,
+          sources,
+          ...best.rule ? { rule: best.rule } : {}
+        });
+        void valueKeyStr;
+      } else {
+        const group = byValue.get("__keyonly__");
+        const best = pickBestCandidate(group);
+        suggestions.push({
+          key,
+          suggestedValue: null,
+          confidence: best.confidence,
+          sources: uniqueSources(group)
+        });
+      }
+    }
+  }
+  suggestions.sort((a, b) => {
+    if (b.confidence !== a.confidence) return b.confidence - a.confidence;
+    return a.key.localeCompare(b.key);
+  });
+  conflicts.sort((a, b) => a.key.localeCompare(b.key));
+  existing.sort((a, b) => a.key.localeCompare(b.key));
+  return {
+    existing,
+    suggestions,
+    conflicts,
+    diagnostics: { folder, neighbor, content }
+  };
+}
+function pickBestCandidate(group) {
+  if (group.length === 0) {
+    throw new Error("pickBestCandidate called with empty group");
+  }
+  let best = group[0];
+  for (const c of group) {
+    if (c.confidence > best.confidence) best = c;
+  }
+  return best;
+}
+function uniqueSources(group) {
+  const seen = /* @__PURE__ */ new Set();
+  const out = [];
+  const sorted = [...group].sort((a, b) => b.confidence - a.confidence);
+  for (const c of sorted) {
+    if (seen.has(c.source)) continue;
+    seen.add(c.source);
+    out.push(c.source);
+  }
+  return out;
+}
+var NEIGHBOR_DAMPING, MIN_PRESENTATION_CONFIDENCE;
+var init_combiner = __esm({
+  "src/schema/combiner.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_folder_conventions();
+    init_neighbor_inference();
+    init_content_heuristics();
+    NEIGHBOR_DAMPING = 0.6;
+    MIN_PRESENTATION_CONFIDENCE = 0.2;
+  }
+});
+
+// src/schema/index.ts
+var init_schema4 = __esm({
+  "src/schema/index.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_folder_conventions();
+    init_neighbor_inference();
+    init_content_heuristics();
+    init_combiner();
+  }
+});
+
+// src/server/handlers/notes.ts
+async function handleReadNote(registry, vaultName, path7) {
+  const handle = parseSourceHandle(`obsidian-fs://${vaultName}`);
+  let source;
+  try {
+    source = registry.resolveSource(handle);
+  } catch {
+    throw new Error(`Note not found: ${vaultName}/${path7}`);
+  }
+  const id = formatDocId("obsidian-fs", vaultName, path7);
+  let doc;
+  try {
+    doc = await source.readDocument(id);
+  } catch {
+    throw new Error(`Note not found: ${vaultName}/${path7}`);
+  }
+  const { wikilinks: _wikilinks, ...frontmatterOnly } = doc.properties;
+  const hasFrontmatter = Object.keys(frontmatterOnly).length > 0;
+  const content = doc.blocks[0]?.kind === "paragraph" ? doc.blocks[0].text : "";
+  return {
+    path: path7,
+    title: doc.title,
+    content,
+    frontmatter: hasFrontmatter ? frontmatterOnly : null,
+    hash: doc.hash,
+    mtime: doc.mtime,
+    word_count: countWords(content)
+  };
+}
+async function handleWriteNote(registry, vault, parsed) {
+  const handle = parseSourceHandle(`obsidian-fs://${parsed.vault}`);
+  const delivery = registry.resolveDelivery(handle);
+  const docId = formatDocId("obsidian-fs", parsed.vault, parsed.path);
+  const partial = {
+    blocks: [{ kind: "paragraph", text: parsed.content }],
+    properties: parsed.frontmatter ?? {}
+  };
+  const opts = {};
+  if (parsed.expected_hash !== void 0) opts.expectedHash = parsed.expected_hash;
+  if (parsed.client_id !== void 0) opts.clientId = parsed.client_id;
+  const res = await delivery.write(docId, partial, opts);
+  if (!res.ok) {
+    const out = {
+      ok: false,
+      reason: res.reason === "not_found" ? "hash_mismatch" : res.reason
+    };
+    if (res.currentHash !== void 0) out.currentHash = res.currentHash;
+    if (res.message !== void 0) out.message = res.message;
+    if (res.sinkName !== void 0) out.sinkName = res.sinkName;
+    if (res.suggestion !== void 0) out.suggestion = res.suggestion;
+    if (res.key !== void 0) out.key = res.key;
+    if (res.observedValue !== void 0) out.observedValue = res.observedValue;
+    return out;
+  }
+  const noteRow = vault.db.notes.getByPath(parsed.path);
+  return {
+    ok: true,
+    newHash: res.newHash,
+    noteId: noteRow?.id ?? 0,
+    created: res.created
+  };
+}
+async function handleDeleteNote(registry, vault, parsed) {
+  const noteRow = vault.db.notes.getByPath(parsed.path);
+  const preDeleteHash = noteRow?.hash ?? parsed.expected_hash;
+  const handle = parseSourceHandle(`obsidian-fs://${parsed.vault}`);
+  const delivery = registry.resolveDelivery(handle);
+  const docId = formatDocId("obsidian-fs", parsed.vault, parsed.path);
+  const opts = {
+    expectedHash: parsed.expected_hash
+  };
+  if (parsed.client_id !== void 0) opts.clientId = parsed.client_id;
+  const res = await delivery.delete(docId, opts);
+  if (!res.ok) {
+    const out = {
+      ok: false,
+      reason: res.reason === "not_found" ? "hash_mismatch" : res.reason
+    };
+    if (res.currentHash !== void 0) out.currentHash = res.currentHash;
+    if (res.message !== void 0) out.message = res.message;
+    if (res.sinkName !== void 0) out.sinkName = res.sinkName;
+    if (res.suggestion !== void 0) out.suggestion = res.suggestion;
+    return out;
+  }
+  return {
+    ok: true,
+    newHash: preDeleteHash,
+    noteId: noteRow?.id ?? 0,
+    created: false
+  };
+}
+function handleSuggestFrontmatter(manager, parsed) {
+  const vault = manager.require(parsed.vault);
+  if (parsed.path) {
+    const note = vault.db.notes.getByPath(parsed.path);
+    if (!note) {
+      throw new Error(
+        `Note not found: ${parsed.vault}/${parsed.path}. Use draft mode ({content, folder_hint}) for unindexed notes.`
+      );
+    }
+    const existingFm = note.frontmatter ? safeParseFrontmatter(note.frontmatter) : null;
+    const result2 = suggestFrontmatter({
+      vault,
+      path: note.path,
+      existingFrontmatter: existingFm,
+      content: parsed.content ?? note.content,
+      title: parsed.title ?? note.title ?? defaultBasename(note.path),
+      excludePath: note.path
+    });
+    return {
+      mode: "existing",
+      path: note.path,
+      ...result2
+    };
+  }
+  const folderHint = normalizeFolderHint(parsed.folder_hint);
+  const probePath = `${folderHint}__draft__${Date.now()}.md`;
+  const result = suggestFrontmatter({
+    vault,
+    path: probePath,
+    existingFrontmatter: null,
+    content: parsed.content,
+    title: parsed.title ?? "Draft",
+    // Exclude the synthetic path explicitly — though it won't match any
+    // existing note, this future-proofs against collisions.
+    excludePath: probePath
+  });
+  return {
+    mode: "draft",
+    folder_hint: folderHint,
+    note: "Draft mode: no backlinks contributed. Provide `path` (and index the note first) for richer neighbor-inference.",
+    ...result
+  };
+}
+function makeNotesHandlers(deps) {
+  const { manager, adapterRegistry, suppression, memorySinkRegistry } = deps;
+  return {
+    read_note: async (a) => {
+      const p = a;
+      return handleReadNote(adapterRegistry, p.vault, p.path);
+    },
+    query_frontmatter: async (a) => {
+      const p = a;
+      const vault = manager.require(p.vault);
+      const hits = queryFrontmatter(vault, {
+        where: p.where,
+        limit: p.limit
+      });
+      return {
+        notes: hits.map((n) => ({
+          path: n.path,
+          title: n.title,
+          frontmatter: n.frontmatter ? JSON.parse(n.frontmatter) : null,
+          mtime: n.mtime
+        })),
+        count: hits.length
+      };
+    },
+    write_note: async (a) => {
+      const p = a;
+      const vault = manager.require(p.vault);
+      suppression.add(p.path);
+      return handleWriteNote(adapterRegistry, vault, p);
+    },
+    update_frontmatter: async (a) => {
+      const p = a;
+      const vault = manager.require(p.vault);
+      return updateFrontmatter({
+        vault,
+        registry: adapterRegistry,
+        memorySinkRegistry,
+        relativePath: p.path,
+        merge: p.merge,
+        ...p.expected_hash !== void 0 ? { expectedHash: p.expected_hash } : {},
+        ...p.client_id !== void 0 ? { clientId: p.client_id } : {},
+        onBeforeFsWrite: () => suppression.add(p.path)
+      });
+    },
+    delete_note: async (a) => {
+      const p = a;
+      const vault = manager.require(p.vault);
+      suppression.add(p.path);
+      return handleDeleteNote(adapterRegistry, vault, p);
+    },
+    suggest_frontmatter: async (a) => {
+      const p = a;
+      return handleSuggestFrontmatter(manager, p);
+    }
+  };
+}
+var init_notes2 = __esm({
+  "src/server/handlers/notes.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_registry();
+    init_frontmatter();
+    init_schema4();
+    init_utils();
+  }
+});
+
+// src/server/handlers/search.ts
+async function handleSearchSemantic(manager, ollama, defaultModel, activeVault, query, vaultFilter, topK, excludePaths) {
+  const { targets, skipped } = resolveVaultTargets(manager, vaultFilter, activeVault);
+  if (targets.length === 0) {
+    return {
+      hits: [],
+      note: skipped.length > 0 ? `All eligible vaults are indexing; skipped: ${skipped.join(", ")}.` : "No vaults configured."
+    };
+  }
+  const hasExclude = excludePaths !== void 0 && excludePaths.length > 0;
+  const fanK = hasExclude ? topK * 3 : topK;
+  const embedCache = /* @__PURE__ */ new Map();
+  const allHits = [];
+  for (const vault of targets) {
+    const model = vault.db.models.getActive();
+    if (!model) continue;
+    const modelName = model.name;
+    let queryVec = embedCache.get(modelName);
+    if (!queryVec) {
+      const embedResp = await ollama.embed({ model: modelName, texts: [query] });
+      queryVec = embedResp.vectors[0];
+      if (!queryVec) continue;
+      embedCache.set(modelName, queryVec);
+    }
+    const semanticHits = vault.db.embeddings.searchSemantic(model.id, queryVec, fanK);
+    for (const hit of semanticHits) {
+      const chunk = vault.db.chunks.getById(hit.chunkId);
+      if (!chunk) continue;
+      const note = vault.db.notes.getById(chunk.note_id);
+      if (!note) continue;
+      if (hasExclude && matchesAnyGlob(note.path, excludePaths)) continue;
+      const score = 1 / (1 + hit.distance);
+      allHits.push({
+        vault: vault.config.name,
+        notePath: note.path,
+        noteTitle: note.title,
+        chunkText: chunk.text,
+        chunkIdx: chunk.idx,
+        headingPath: chunk.heading_path,
+        score,
+        scoreBreakdown: { semantic: score }
+      });
+    }
+  }
+  allHits.sort((a, b) => b.score - a.score);
+  const out = {
+    hits: allHits.slice(0, topK),
+    count: allHits.length
+  };
+  if (skipped.length > 0) {
+    out.note = `Skipped vault(s) currently indexing: ${skipped.join(", ")}.`;
+  }
+  return out;
+}
+function handleSearchText(manager, activeVault, query, vaultFilter, topK, excludePaths) {
+  const { targets, skipped } = resolveVaultTargets(manager, vaultFilter, activeVault);
+  if (targets.length === 0) {
+    return {
+      hits: [],
+      note: skipped.length > 0 ? `All eligible vaults are indexing; skipped: ${skipped.join(", ")}.` : "No vaults configured."
+    };
+  }
+  const hasExclude = excludePaths !== void 0 && excludePaths.length > 0;
+  const fanK = hasExclude ? topK * 3 : topK;
+  const sanitized = FtsQueries.sanitize(query);
+  const allHits = [];
+  for (const vault of targets) {
+    const ftsHits = vault.db.fts.search(sanitized, fanK, true);
+    for (const hit of ftsHits) {
+      const chunk = vault.db.chunks.getById(hit.chunkId);
+      if (!chunk) continue;
+      const note = vault.db.notes.getById(chunk.note_id);
+      if (!note) continue;
+      if (hasExclude && matchesAnyGlob(note.path, excludePaths)) continue;
+      allHits.push({
+        vault: vault.config.name,
+        notePath: note.path,
+        noteTitle: note.title,
+        chunkText: hit.snippet ?? chunk.text,
+        chunkIdx: chunk.idx,
+        headingPath: chunk.heading_path,
+        score: hit.score,
+        scoreBreakdown: { text: hit.score }
+      });
+    }
+  }
+  allHits.sort((a, b) => b.score - a.score);
+  const out = {
+    hits: allHits.slice(0, topK),
+    count: allHits.length
+  };
+  if (skipped.length > 0) {
+    out.note = `Skipped vault(s) currently indexing: ${skipped.join(", ")}.`;
+  }
+  return out;
+}
+async function handleSearchHybrid(manager, ollama, defaultModel, activeVault, query, vaultFilter, topK, rrfK, excludePaths, reranker, recencyWeight = 0, authorityWeight = 0, halfLifeDays = 30, includeSuperseded = false, displayUrlFor2, expandOpts, expandDeps) {
+  const { targets, skipped } = resolveVaultTargets(manager, vaultFilter, activeVault);
+  if (targets.length === 0) {
+    return {
+      hits: [],
+      note: skipped.length > 0 ? `All eligible vaults are indexing; skipped: ${skipped.join(", ")}.` : "No vaults configured."
+    };
+  }
+  const hasExclude = excludePaths !== void 0 && excludePaths.length > 0;
+  const innerTopK = hasExclude ? topK * 3 : topK;
+  const hits = await hybridSearch({
+    query,
+    embeddingModel: defaultModel,
+    ollama,
+    vaults: targets,
+    topK: innerTopK,
+    rrfK,
+    includeBreakdown: true,
+    reranker,
+    recencyWeight,
+    authorityWeight,
+    halfLifeDays,
+    includeSuperseded,
+    ...displayUrlFor2 ? { displayUrlFor: displayUrlFor2 } : {},
+    // Phase 4 / 04-04 (D-15): forward optional expand + deps. When
+    // `expandOpts` is undefined, hybridSearch short-circuits the
+    // expand block (zero new DB reads — v1-baseline byte-identical).
+    ...expandOpts ? { expand: expandOpts } : {},
+    ...expandDeps ? { expandDeps } : {}
+  });
+  const filtered = hasExclude ? hits.filter((h) => !matchesAnyGlob(h.notePath, excludePaths)) : hits;
+  const out = {
+    hits: filtered.slice(0, topK),
+    count: filtered.length
+  };
+  if (skipped.length > 0) {
+    out.note = `Skipped vault(s) currently indexing: ${skipped.join(", ")}.`;
+  }
+  return out;
+}
+async function handleSearchCompat(manager, registry, ollama, defaultModel, activeVault, query, limit, reranker) {
+  const { targets, skipped } = resolveVaultTargets(manager, void 0, activeVault);
+  if (targets.length === 0) {
+    return {
+      results: [],
+      note: skipped.length > 0 ? `All eligible vaults are indexing; skipped: ${skipped.join(", ")}.` : "No vaults configured."
+    };
+  }
+  const hits = await hybridSearch({
+    query,
+    embeddingModel: defaultModel,
+    ollama,
+    vaults: targets,
+    topK: limit,
+    rrfK: 60,
+    includeBreakdown: false,
+    reranker
+  });
+  const seen = /* @__PURE__ */ new Set();
+  const results = [];
+  for (const h of hits) {
+    const noteKey = `${h.vault}:${h.notePath}`;
+    if (seen.has(noteKey)) continue;
+    seen.add(noteKey);
+    results.push({
+      id: encodeNoteId(h.vault, h.notePath),
+      title: h.noteTitle ?? h.notePath,
+      url: displayUrl(registry, h.vault, h.notePath),
+      snippet: truncateSnippet(h.chunkText, 280)
+    });
+    if (results.length >= limit) break;
+  }
+  const out = { results };
+  if (skipped.length > 0) {
+    out.note = `Skipped vault(s) currently indexing: ${skipped.join(", ")}.`;
+  }
+  return out;
+}
+function handleFetchCompat(manager, registry, id) {
+  const { vault: vaultName, path: path7 } = decodeNoteId(id);
+  const vault = manager.require(vaultName);
+  const note = vault.db.notes.getByPath(path7);
+  if (!note) {
+    throw new Error(`Note not found: ${vaultName}/${path7}`);
+  }
+  const metadata = {
+    vault: vaultName,
+    path: note.path,
+    mtime: note.mtime,
+    hash: note.hash,
+    word_count: note.word_count
+  };
+  if (note.frontmatter) {
+    try {
+      metadata.frontmatter = JSON.parse(note.frontmatter);
+    } catch {
+    }
+  }
+  return {
+    id,
+    title: note.title ?? note.path,
+    text: note.content,
+    url: displayUrl(registry, vaultName, note.path),
+    metadata
+  };
+}
+function makeSearchHandlers(deps) {
+  const { manager, ollama, defaultModel, activeVault, reranker, adapterRegistry } = deps;
+  return {
+    search_semantic: async (a) => {
+      const p = a;
+      return handleSearchSemantic(
+        manager,
+        ollama,
+        defaultModel,
+        activeVault,
+        p.query,
+        p.vaults,
+        p.top_k,
+        p.exclude_paths
+      );
+    },
+    search_text: async (a) => {
+      const p = a;
+      return handleSearchText(manager, activeVault, p.query, p.vaults, p.top_k, p.exclude_paths);
+    },
+    search_hybrid: async (a) => {
+      const p = a;
+      return handleSearchHybrid(
+        manager,
+        ollama,
+        defaultModel,
+        activeVault,
+        p.query,
+        p.vaults,
+        p.top_k,
+        p.rrf_k,
+        p.exclude_paths,
+        p.rerank ? reranker : void 0,
+        p.recency_weight,
+        p.authority_weight,
+        p.half_life_days,
+        p.include_superseded,
+        // 03-05: display-URL resolver — delegates to the obsidian-fs source
+        // adapter (or whichever adapter owns the vault) so hybrid.ts never
+        // mints adapter URL strings (ADR-002 §I-5b).
+        (vaultName, notePath) => displayUrl(adapterRegistry, vaultName, notePath),
+        // Phase 4 / 04-04 (D-15): pass the optional expand object + its
+        // injected deps (manager + sourceConnectorFor) so hybridSearch
+        // can compose Plan 04-03's `expand()` over the rescored top-K.
+        p.expand,
+        {
+          manager,
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`))
+        }
+      );
+    },
+    search: async (a) => {
+      const p = a;
+      return handleSearchCompat(
+        manager,
+        adapterRegistry,
+        ollama,
+        defaultModel,
+        activeVault,
+        p.query,
+        p.limit,
+        reranker
+      );
+    },
+    fetch: async (a) => {
+      const p = a;
+      return handleFetchCompat(manager, adapterRegistry, p.id);
+    }
+  };
+}
+var init_search2 = __esm({
+  "src/server/handlers/search.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_registry();
+    init_db();
+    init_search();
+    init_utils();
+  }
+});
+
+// src/server/handlers/graph.ts
+function makeGraphHandlers(deps) {
+  const { manager, ollama, defaultModel, reranker, adapterRegistry } = deps;
+  return {
+    list_backlinks: async (a) => {
+      const p = a;
+      const vault = manager.require(p.vault);
+      return { backlinks: listBacklinks(vault, p.path) };
+    },
+    list_forward_links: async (a) => {
+      const p = a;
+      const vault = manager.require(p.vault);
+      return { links: listForwardLinks(vault, p.path, p.include_broken) };
+    },
+    find_broken_links: async (a) => {
+      const p = a;
+      const vault = manager.require(p.vault);
+      return { broken: findBrokenLinks(vault) };
+    },
+    // ── Phase 4 graph tools (Plan 04-03 / GRA-01) ─────────────────────────
+    expand: async (a) => {
+      const p = a;
+      const seeds = p.seed_doc_ids.map((s) => parseDocId(s));
+      return expand(
+        {
+          manager,
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`))
+        },
+        {
+          seed_doc_ids: seeds,
+          hops: p.hops,
+          direction: p.direction,
+          ...p.edge_types !== void 0 ? { edge_types: p.edge_types } : {},
+          ...p.filter_properties !== void 0 ? { filter_properties: p.filter_properties } : {},
+          include_superseded: p.include_superseded
+        }
+      );
+    },
+    // ── Phase 4 graph tools (Plan 04-05 / GRA-02) ─────────────────────────
+    cluster: async (a) => {
+      const p = a;
+      let opts;
+      if (p.query !== void 0) {
+        opts = {
+          query: p.query,
+          method: "edge-community",
+          ...p.vault !== void 0 ? { vault: p.vault } : {},
+          ...p.query_top_k !== void 0 ? { query_top_k: p.query_top_k } : {},
+          ...p.force !== void 0 ? { force: p.force } : {}
+        };
+      } else {
+        const seeds = (p.seed_doc_ids ?? []).map((s) => parseDocId(s));
+        opts = {
+          seed_doc_ids: seeds,
+          method: "edge-community",
+          ...p.force !== void 0 ? { force: p.force } : {}
+        };
+      }
+      return cluster(
+        {
+          manager,
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)),
+          // Bind hybridSearch at call time — avoids the
+          // src/graph/cluster.ts → src/search/hybrid.ts circular
+          // import. The injected callback returns SearchHit[]; the
+          // dispatcher already has `ollama` + `defaultModel` in scope.
+          hybridSearch: async (vault, query, limit) => hybridSearch({
+            query,
+            embeddingModel: defaultModel,
+            ollama,
+            vaults: [vault],
+            topK: limit,
+            includeBreakdown: false,
+            ...reranker ? { reranker } : {},
+            displayUrlFor: (vaultName, notePath) => displayUrl(adapterRegistry, vaultName, notePath)
+          })
+        },
+        opts
+      );
+    }
+  };
+}
+var init_graph3 = __esm({
+  "src/server/handlers/graph.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_registry();
+    init_graph2();
+    init_search();
+    init_utils();
+  }
+});
+
+// src/server/handlers/memory.ts
+function makeMemoryHandlers(deps) {
+  const { manager, ollama, defaultModel, adapterRegistry, suppression, memorySinkRegistry } = deps;
+  return {
+    // ── Phase 2 memory tools (Plan 02-04) ──────────────────────────────────
+    record_observation: async (a) => {
+      const p = a;
+      const result = await handleRecordObservation(
+        {
+          memorySinkRegistry,
+          manager,
+          deliveryAdapterFor: (vaultName) => adapterRegistry.resolveDelivery(parseSourceHandle(`obsidian-fs://${vaultName}`)),
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`))
+        },
+        p
+      );
+      if (result.ok) {
+        const resource = result.doc_id.replace(`obsidian-fs://${p.vault}/`, "");
+        suppression.add(resource);
+      }
+      return result;
+    },
+    supersede: async (a) => {
+      const p = a;
+      const result = await handleSupersede(
+        {
+          memorySinkRegistry,
+          manager,
+          deliveryAdapterFor: (vaultName) => adapterRegistry.resolveDelivery(parseSourceHandle(`obsidian-fs://${vaultName}`)),
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`))
+        },
+        p
+      );
+      if (result.ok) {
+        const resource = result.doc_id.replace(/^obsidian-fs:\/\/[^/]+\//, "");
+        suppression.add(resource);
+      }
+      return result;
+    },
+    // ── Phase 2 memory tools (Plan 02-05) ──────────────────────────────────
+    recall: async (a) => {
+      const p = a;
+      const packets = await handleRecall(
+        {
+          memorySinkRegistry,
+          manager,
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)),
+          searchHybrid: async (input) => hybridSearch({
+            query: input.query,
+            embeddingModel: defaultModel,
+            ollama,
+            vaults: input.vaults,
+            topK: input.topK,
+            rrfK: 60,
+            includeBreakdown: false
+          })
+        },
+        p
+      );
+      return { packets, count: packets.length };
+    }
+  };
+}
+var init_memory2 = __esm({
+  "src/server/handlers/memory.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_registry();
+    init_tools();
+    init_search();
+  }
+});
+
+// src/server/handlers/brief.ts
+function makeBriefHandlers(deps) {
+  const { manager, ollama, adapterRegistry, suppression, memorySinkRegistry, server, config } = deps;
+  return {
+    // ── Phase 5 brief tools (Plan 05-02 / BRF-03, BRF-04) ──────────────────
+    compile_brief: async (a) => {
+      const p = a;
+      const result = await handleCompileBrief(
+        {
+          memorySinkRegistry,
+          manager,
+          deliveryAdapterFor: (vaultName) => adapterRegistry.resolveDelivery(parseSourceHandle(`obsidian-fs://${vaultName}`)),
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)),
+          server,
+          ollama,
+          briefConfig: config.brief
+        },
+        p
+      );
+      if (result.ok) {
+        const resource = result.doc_id.replace(`obsidian-fs://${p.vault}/`, "");
+        suppression.add(resource);
+        if (result.supersededPrior) {
+          const oldResource = result.supersededPrior.replace(/^obsidian-fs:\/\/[^/]+\//, "");
+          suppression.add(oldResource);
+        }
+      }
+      return result;
+    },
+    get_brief: async (a) => {
+      const p = a;
+      return handleGetBrief(
+        {
+          memorySinkRegistry,
+          manager,
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`))
+        },
+        p
+      );
+    }
+  };
+}
+var init_brief2 = __esm({
+  "src/server/handlers/brief.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_registry();
+    init_brief();
+  }
+});
+
+// src/assembly/dossier.ts
+function emptyResult2(args2) {
+  return {
+    anchor: null,
+    linked_documents: [],
+    property_rollups: {
+      linked_count: 0,
+      linked_types: {},
+      status_distribution: {}
+    },
+    error: {
+      code: "no_matching_anchor_document",
+      type: args2.type,
+      key: args2.key
+    }
+  };
+}
+function sortByKey(counts) {
+  const keys = Object.keys(counts).sort();
+  const out = {};
+  for (const k of keys) {
+    out[k] = counts[k];
+  }
+  return out;
+}
+function readAliases(props) {
+  const raw = props.aliases;
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  for (const v of raw) {
+    if (typeof v === "string") out.push(v);
+  }
+  return out;
+}
+function noteSortKey(vaultName, notePath) {
+  return `vault://${vaultName}/${notePath}`;
+}
+function schemeFromSource(source) {
+  const parts = source.handle.split("://");
+  return parts[0] ?? "obsidian-fs";
+}
+function findAnchorCandidate(vault, args2) {
+  const rows = queryFrontmatter(vault, {
+    where: { type: args2.type },
+    limit: 1e3
+  });
+  if (rows.length === 0) return null;
+  const matches = [];
+  for (const row of rows) {
+    let props = {};
+    if (row.frontmatter !== null) {
+      try {
+        const parsed = JSON.parse(row.frontmatter);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          props = parsed;
+        }
+      } catch {
+        continue;
+      }
+    }
+    const titleMatch = row.title === args2.key;
+    const aliasMatch = readAliases(props).includes(args2.key);
+    if (!titleMatch && !aliasMatch) continue;
+    matches.push({
+      vaultName: vault.config.name,
+      notePath: row.path,
+      title: row.title,
+      sortKey: `${row.title}\0${noteSortKey(vault.config.name, row.path)}`
+    });
+  }
+  if (matches.length === 0) return null;
+  matches.sort((a, b) => a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0);
+  return matches[0] ?? null;
+}
+function findAnchorAcrossVaults(vaults, args2) {
+  const matches = [];
+  for (const vault of vaults) {
+    const c = findAnchorCandidate(vault, args2);
+    if (c) matches.push(c);
+  }
+  if (matches.length === 0) return null;
+  matches.sort((a, b) => a.sortKey < b.sortKey ? -1 : a.sortKey > b.sortKey ? 1 : 0);
+  return matches[0] ?? null;
+}
+async function assembleDossier(deps, args2) {
+  const vaults = [];
+  if (args2.vaults && args2.vaults.length > 0) {
+    for (const name of args2.vaults) {
+      vaults.push(deps.manager.require(name));
+    }
+  } else {
+    for (const v of deps.manager.list()) {
+      vaults.push(v);
+    }
+  }
+  if (vaults.length === 0) return emptyResult2(args2);
+  const anchorCandidate = findAnchorAcrossVaults(vaults, args2);
+  if (anchorCandidate === null) return emptyResult2(args2);
+  const anchorVault = vaults.find((v) => v.config.name === anchorCandidate.vaultName);
+  if (anchorVault === void 0) return emptyResult2(args2);
+  const anchorSource = deps.sourceConnectorFor(anchorCandidate.vaultName);
+  const anchorScheme = schemeFromSource(anchorSource);
+  const anchorDocId = formatDocId(
+    anchorScheme,
+    anchorCandidate.vaultName,
+    anchorCandidate.notePath
+  );
+  let anchorDoc;
+  try {
+    anchorDoc = await anchorSource.readDocument(anchorDocId);
+  } catch {
+    return emptyResult2(args2);
+  }
+  const anchorPacket = withPropertyExtras(
+    toCitationPacket(anchorDoc, displayUrlFor(anchorDocId, anchorSource))
+  );
+  let backlinkRows;
+  try {
+    backlinkRows = listBacklinks(anchorVault, anchorCandidate.notePath);
+  } catch {
+    return emptyResult2(args2);
+  }
+  const linkedDocuments = [];
+  for (const bl of backlinkRows) {
+    const linkedDocId = formatDocId(anchorScheme, anchorCandidate.vaultName, bl.sourcePath);
+    let linkedDoc;
+    try {
+      linkedDoc = await anchorSource.readDocument(linkedDocId);
+    } catch {
+      continue;
+    }
+    const packet = toCitationPacket(
+      linkedDoc,
+      displayUrlFor(linkedDocId, anchorSource)
+    );
+    const withExtras = withPropertyExtras(packet);
+    linkedDocuments.push({
+      ...withExtras,
+      relation: "wikilink"
+    });
+  }
+  const linked_types = {};
+  const status_distribution = {};
+  for (const linked of linkedDocuments) {
+    const type = typeof linked.properties.type === "string" ? linked.properties.type : "unknown";
+    linked_types[type] = (linked_types[type] ?? 0) + 1;
+    const status = typeof linked.properties.status === "string" ? linked.properties.status : "unknown";
+    status_distribution[status] = (status_distribution[status] ?? 0) + 1;
+  }
+  return {
+    anchor: anchorPacket,
+    linked_documents: linkedDocuments,
+    property_rollups: {
+      linked_count: linkedDocuments.length,
+      linked_types: sortByKey(linked_types),
+      status_distribution: sortByKey(status_distribution)
+    },
+    error: null
+  };
+}
+var init_dossier = __esm({
+  "src/assembly/dossier.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_registry();
+    init_query();
+    init_graph();
+    init_citation_packet();
+  }
+});
+
+// src/assembly/bundle.ts
+function bodyPlainText(blocks) {
+  const parts = [];
+  for (const b of blocks) {
+    switch (b.kind) {
+      case "paragraph":
+      case "code":
+        parts.push(b.text);
+        break;
+      case "heading":
+        parts.push(b.text);
+        break;
+      case "list":
+        parts.push(b.items.join(" "));
+        break;
+      case "section":
+        parts.push(bodyPlainText(b.blocks));
+        break;
+      default:
+        break;
+    }
+  }
+  const text = parts.join(" ").trim();
+  if (text.length <= PROPERTY_SNIPPET_MAX) return text;
+  return text.slice(0, PROPERTY_SNIPPET_MAX);
+}
+async function getDocumentBundle(deps, args2) {
+  let parsed;
+  try {
+    const docId2 = parseDocId(args2.doc_id);
+    parsed = decomposeDocId(docId2);
+  } catch {
+    throw new DocNotFoundError(args2.doc_id);
+  }
+  const { scheme: anchorScheme, authority: vaultName, resource: path7 } = parsed;
+  if (args2.vaults && args2.vaults.length > 0 && !args2.vaults.includes(vaultName)) {
+    throw new DocNotFoundError(args2.doc_id);
+  }
+  let vault;
+  try {
+    vault = deps.manager.require(vaultName);
+  } catch {
+    throw new DocNotFoundError(args2.doc_id);
+  }
+  const noteRow = vault.db.notes.getByPath(path7);
+  if (!noteRow) {
+    throw new DocNotFoundError(args2.doc_id);
+  }
+  const source = deps.sourceConnectorFor(vaultName);
+  const docId = parseDocId(args2.doc_id);
+  let anchorDoc;
+  try {
+    anchorDoc = await source.readDocument(docId);
+  } catch {
+    throw new DocNotFoundError(args2.doc_id);
+  }
+  const anchorPacket = withPropertyExtras(
+    toCitationPacket(anchorDoc, displayUrlFor(docId, source))
+  );
+  const sectionRows = vault.db.sections.getByNote(noteRow.id);
+  const allChunks = vault.db.chunks.getByNote(noteRow.id);
+  const outline = buildOutlineTree(sectionRows, allChunks);
+  let backlinkRows;
+  try {
+    backlinkRows = listBacklinks(vault, path7);
+  } catch {
+    throw new DocNotFoundError(args2.doc_id);
+  }
+  const backlinks = [];
+  for (const bl of backlinkRows) {
+    const sourceDocId = formatDocId(anchorScheme, vaultName, bl.sourcePath);
+    let linkedDoc;
+    try {
+      linkedDoc = await source.readDocument(sourceDocId);
+    } catch {
+      continue;
+    }
+    const packet = toCitationPacket(linkedDoc, displayUrlFor(sourceDocId, source));
+    backlinks.push({
+      ...packet,
+      property_snippet: bodyPlainText(linkedDoc.blocks),
+      relation: bl.type
+    });
+  }
+  let forwardLinkRows;
+  try {
+    forwardLinkRows = listForwardLinks(
+      vault,
+      path7,
+      /* includeBroken */
+      false
+    );
+  } catch {
+    throw new DocNotFoundError(args2.doc_id);
+  }
+  const forward_links = [];
+  for (const fl of forwardLinkRows) {
+    const targetDocId = formatDocId(anchorScheme, vaultName, fl.targetPath);
+    let linkedDoc;
+    try {
+      linkedDoc = await source.readDocument(targetDocId);
+    } catch {
+      continue;
+    }
+    const packet = toCitationPacket(linkedDoc, displayUrlFor(targetDocId, source));
+    forward_links.push({
+      ...packet,
+      property_snippet: bodyPlainText(linkedDoc.blocks),
+      // PHASE-4-WIDEN — see backlinks loop above. COMPLETED Phase 4 / 04-01.
+      relation: fl.type
+    });
+  }
+  const auditEntries = getAuditLog({
+    vault,
+    notePath: path7,
+    limit: RECENT_EDITS_LIMIT
+  });
+  const recent_edits = auditEntries.map((e) => {
+    const out = {
+      at: e.at,
+      op: e.op,
+      client_id: e.clientId
+    };
+    if (e.is_memory_sink_write) out.is_memory_sink_write = true;
+    return out;
+  });
+  return {
+    anchor: anchorPacket,
+    outline,
+    backlinks,
+    forward_links,
+    recent_edits
+  };
+}
+var RECENT_EDITS_LIMIT, PROPERTY_SNIPPET_MAX;
+var init_bundle = __esm({
+  "src/assembly/bundle.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_registry();
+    init_audit3();
+    init_graph();
+    init_citation_packet();
+    init_outline();
+    init_outline();
+    RECENT_EDITS_LIMIT = 10;
+    PROPERTY_SNIPPET_MAX = 200;
+  }
+});
+
+// src/assembly/index.ts
+var init_assembly = __esm({
+  "src/assembly/index.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_dossier();
+    init_bundle();
+    init_outline();
+  }
+});
+
+// src/server/handlers/assembly.ts
+function makeAssemblyHandlers(deps) {
+  const { manager, ollama, defaultModel, adapterRegistry } = deps;
+  return {
+    // ── Phase 3 assembly tools (Plan 03-02 / ASM-02) ───────────────────────
+    get_outline: async (a) => {
+      const p = a;
+      return getOutline(
+        {
+          manager,
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`))
+        },
+        p
+      );
+    },
+    // ── Phase 3 assembly tools (Plan 03-03) ──────────────────────────────────
+    search_sections: async (a) => {
+      const p = a;
+      const allVaults = manager.list();
+      const targetVaults = p.vaults ? p.vaults.map((name) => manager.require(name)) : allVaults;
+      const results = await searchSections(
+        {
+          searchHybrid: async (input) => hybridSearch({
+            query: input.query,
+            embeddingModel: defaultModel,
+            ollama,
+            vaults: input.vaults ? input.vaults.map((name) => manager.require(name)) : targetVaults,
+            topK: input.topK,
+            rrfK: 60,
+            includeBreakdown: false
+          }),
+          sectionForHit: (vaultName, notePath, chunkIdx) => {
+            let vault;
+            try {
+              vault = manager.require(vaultName);
+            } catch {
+              return null;
+            }
+            const note = vault.db.notes.getByPath(notePath);
+            if (!note) return null;
+            const chunks = vault.db.chunks.getByNote(note.id);
+            const chunk = chunks.find((c) => c.idx === chunkIdx);
+            if (!chunk) return null;
+            const section = vault.db.sections.findContainingChunk(note.id, chunk.id);
+            if (!section) return null;
+            let headingPath;
+            try {
+              const parsed = JSON.parse(section.heading_path);
+              headingPath = Array.isArray(parsed) ? parsed : [];
+            } catch {
+              headingPath = [];
+            }
+            return {
+              noteId: note.id,
+              anchor: section.anchor,
+              headingPath,
+              // Sections with a NULL chunk_id_first have been filtered out
+              // by findContainingChunk (it requires non-NULL bounds), so
+              // chunk_id_first is guaranteed non-null here. Fall back to
+              // MAX_SAFE_INTEGER defensively for the tie-break sort.
+              chunkIdFirst: section.chunk_id_first ?? Number.MAX_SAFE_INTEGER
+            };
+          },
+          readDocument: async (vaultName, notePath) => {
+            const docId = formatDocId("obsidian-fs", vaultName, notePath);
+            return adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)).readDocument(docId);
+          },
+          displayUrlFor: (docId, vaultName) => {
+            const source = adapterRegistry.resolveSource(
+              parseSourceHandle(`obsidian-fs://${vaultName}`)
+            );
+            return source.formatDisplayUrl?.(docId) ?? docId;
+          }
+        },
+        {
+          query: p.query,
+          limit: p.limit ?? 10,
+          ...p.vaults !== void 0 ? { vaults: p.vaults } : {},
+          ...p.recency_weight !== void 0 ? { recency_weight: p.recency_weight } : {},
+          ...p.authority_weight !== void 0 ? { authority_weight: p.authority_weight } : {},
+          ...p.include_superseded !== void 0 ? { include_superseded: p.include_superseded } : {}
+        }
+      );
+      return { results, count: results.length };
+    },
+    // ── Phase 3 assembly tools (Plan 03-06) ────────────────────────────────
+    assemble_dossier: async (a) => {
+      const p = a;
+      return assembleDossier(
+        {
+          manager,
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`))
+        },
+        p
+      );
+    },
+    // ── Phase 3 assembly tools (Plan 03-04 / ASM-01) ───────────────────────
+    get_document_bundle: async (a) => {
+      const p = a;
+      return getDocumentBundle(
+        {
+          manager,
+          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`))
+        },
+        p
+      );
+    }
+  };
+}
+var init_assembly2 = __esm({
+  "src/server/handlers/assembly.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_registry();
+    init_outline();
+    init_search_sections();
+    init_assembly();
+    init_search();
+  }
+});
+
+// src/server/handlers/contracts.ts
+function makeContractsHandlers(deps, helpers) {
+  const { manager, server, config, contractRegistries } = deps;
+  const { resolveContractVault, instantiateHandler, buildInstantiateDeps } = helpers;
+  return {
+    // ── Phase 6 task-contract DSL (Plan 06-02 / D-A1 escape valve) ─────────
+    //
+    // Scans the per-vault contract registries and forces a sync of the
+    // dynamic MCP tool list — regardless of [contracts.auto_register_tools]
+    // (which is what makes this the explicit-control escape valve).
+    // Returns per-vault diffs so the caller can confirm what landed.
+    register_contracts_as_tools: async (a) => {
+      const p = a;
+      const targetVaults = p.vault !== void 0 ? [p.vault] : manager.list().map((v) => v.config.name);
+      if (p.vault !== void 0) {
+        const v = manager.list().find((vault) => vault.config.name === p.vault);
+        if (v === void 0) {
+          return { ok: false, reason: "unknown_vault", vault: p.vault };
+        }
+      }
+      const results = [];
+      const prefix = config.contracts.tool_prefix;
+      for (const vname of targetVaults) {
+        const state = contractRegistries.get(vname);
+        if (state === void 0) continue;
+        const v = manager.list().find((vault) => vault.config.name === vname);
+        if (v === void 0) continue;
+        const before = new Set(state.registered.keys());
+        syncAutoRegistered(server, state.started.registry, prefix, state.registered, {
+          enabled: true,
+          instantiateHandler
+        });
+        const after = new Set(state.registered.keys());
+        results.push({
+          vault: vname,
+          registered: Array.from(after).filter((n) => !before.has(n)),
+          unregistered: Array.from(before).filter((n) => !after.has(n))
+        });
+      }
+      if (p.vault !== void 0) {
+        const single = results[0] ?? {
+          vault: p.vault,
+          registered: [],
+          unregistered: []
+        };
+        return { ok: true, ...single };
+      }
+      return { ok: true, vaults: results };
+    },
+    // ── Phase 6 task-contract DSL (Plan 06-03 / CON-05, Q-DESCRIBE) ────────
+    //
+    // Pure function over the per-vault ContractRegistry. Returns
+    // {ok:true, json_schema, summary} or one of the sealed
+    // InstantiateError reasons (`unknown_contract`, `ambiguous_vault`,
+    // `unknown_vault`). NO LLM, NO side effects.
+    describe_contract: async (a) => {
+      const p = a;
+      const resolved = resolveContractVault(p.vault);
+      if (!resolved.ok) return resolved;
+      const state = contractRegistries.get(resolved.vault.config.name);
+      if (state === void 0) {
+        return { ok: false, reason: "unknown_contract", name: p.name };
+      }
+      return describeContract({ registry: state.started.registry }, { name: p.name });
+    },
+    // ── Phase 6 task-contract DSL (Plan 06-03 / CON-06) ────────────────────
+    //
+    // Replaces the Plan 06-02 stub. Routes through the per-vault deps
+    // built by `buildInstantiateDeps`. On multi-vault setups, the caller
+    // MUST pass `vault` — otherwise we return the WARNING-6
+    // `ambiguous_vault` envelope (12th reason in the closed
+    // InstantiateError union).
+    instantiate_contract: async (a) => {
+      const p = a;
+      const resolved = resolveContractVault(p.vault);
+      if (!resolved.ok) return resolved;
+      return instantiateContract(buildInstantiateDeps(resolved.vault), {
+        name: p.name,
+        inputs: p.inputs,
+        ...p.source_overrides !== void 0 ? { source_overrides: p.source_overrides } : {},
+        ...p.sink_overrides !== void 0 ? { sink_overrides: p.sink_overrides } : {}
+      });
+    }
+  };
+}
+var init_contracts2 = __esm({
+  "src/server/handlers/contracts.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_contracts();
   }
 });
 
@@ -14614,7 +15819,7 @@ async function serve(options = {}) {
           );
         }
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = errorMessage(err);
         process.stderr.write(
           `[catchup:${vault.config.name}] failed: ${message} (watcher will still start)
 `
@@ -14642,7 +15847,7 @@ async function serve(options = {}) {
           });
           briefDaemons.set(vault.config.name, daemon);
         } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
+          const message = errorMessage(err);
           process.stderr.write(`[brief-daemon:${vault.config.name}] start failed: ${message}
 `);
         }
@@ -14654,7 +15859,7 @@ async function serve(options = {}) {
       try {
         state.started.dispose();
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = errorMessage(err);
         process.stderr.write(`[contract-registry] dispose error: ${message}
 `);
       }
@@ -14662,7 +15867,7 @@ async function serve(options = {}) {
     try {
       await peerMcpRegistry.shutdown();
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       process.stderr.write(`[peer-mcp-registry] shutdown error: ${message}
 `);
     }
@@ -14670,7 +15875,7 @@ async function serve(options = {}) {
       try {
         await d.shutdown();
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = errorMessage(err);
         process.stderr.write(`[brief-daemon] shutdown error: ${message}
 `);
       }
@@ -14987,533 +16192,44 @@ async function serve(options = {}) {
       inputs
     });
   };
+  const deps = {
+    manager,
+    ollama,
+    defaultModel,
+    reranker,
+    adapterRegistry,
+    suppression,
+    memorySinkRegistry,
+    server,
+    contractRegistries,
+    peerMcpRegistry,
+    config,
+    activeVault
+  };
   const handlers = {
-    list_vaults: async () => handleListVaults(manager),
-    read_note: async (a) => {
-      const p = a;
-      return handleReadNote(adapterRegistry, p.vault, p.path);
-    },
-    search_semantic: async (a) => {
-      const p = a;
-      return handleSearchSemantic(
-        manager,
-        ollama,
-        defaultModel,
-        activeVault,
-        p.query,
-        p.vaults,
-        p.top_k,
-        p.exclude_paths
-      );
-    },
-    search_text: async (a) => {
-      const p = a;
-      return handleSearchText(manager, activeVault, p.query, p.vaults, p.top_k, p.exclude_paths);
-    },
-    search_hybrid: async (a) => {
-      const p = a;
-      return handleSearchHybrid(
-        manager,
-        ollama,
-        defaultModel,
-        activeVault,
-        p.query,
-        p.vaults,
-        p.top_k,
-        p.rrf_k,
-        p.exclude_paths,
-        p.rerank ? reranker : void 0,
-        p.recency_weight,
-        p.authority_weight,
-        p.half_life_days,
-        p.include_superseded,
-        // 03-05: display-URL resolver — delegates to the obsidian-fs source
-        // adapter (or whichever adapter owns the vault) so hybrid.ts never
-        // mints adapter URL strings (ADR-002 §I-5b).
-        (vaultName, notePath) => displayUrl(adapterRegistry, vaultName, notePath),
-        // Phase 4 / 04-04 (D-15): pass the optional expand object + its
-        // injected deps (manager + sourceConnectorFor) so hybridSearch
-        // can compose Plan 04-03's `expand()` over the rescored top-K.
-        p.expand,
-        {
-          manager,
-          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`))
-        }
-      );
-    },
-    list_backlinks: async (a) => {
-      const p = a;
-      const vault = manager.require(p.vault);
-      return { backlinks: listBacklinks(vault, p.path) };
-    },
-    list_forward_links: async (a) => {
-      const p = a;
-      const vault = manager.require(p.vault);
-      return { links: listForwardLinks(vault, p.path, p.include_broken) };
-    },
-    find_broken_links: async (a) => {
-      const p = a;
-      const vault = manager.require(p.vault);
-      return { broken: findBrokenLinks(vault) };
-    },
-    query_frontmatter: async (a) => {
-      const p = a;
-      const vault = manager.require(p.vault);
-      const hits = queryFrontmatter(vault, {
-        where: p.where,
-        limit: p.limit
-      });
-      return {
-        notes: hits.map((n) => ({
-          path: n.path,
-          title: n.title,
-          frontmatter: n.frontmatter ? JSON.parse(n.frontmatter) : null,
-          mtime: n.mtime
-        })),
-        count: hits.length
-      };
-    },
-    write_note: async (a) => {
-      const p = a;
-      const vault = manager.require(p.vault);
-      suppression.add(p.path);
-      return handleWriteNote(adapterRegistry, vault, p);
-    },
-    update_frontmatter: async (a) => {
-      const p = a;
-      const vault = manager.require(p.vault);
-      return updateFrontmatter({
-        vault,
-        registry: adapterRegistry,
-        memorySinkRegistry,
-        relativePath: p.path,
-        merge: p.merge,
-        ...p.expected_hash !== void 0 ? { expectedHash: p.expected_hash } : {},
-        ...p.client_id !== void 0 ? { clientId: p.client_id } : {},
-        onBeforeFsWrite: () => suppression.add(p.path)
-      });
-    },
-    delete_note: async (a) => {
-      const p = a;
-      const vault = manager.require(p.vault);
-      suppression.add(p.path);
-      return handleDeleteNote(adapterRegistry, vault, p);
-    },
-    audit_log: async (a) => {
-      const p = a;
-      const vault = manager.require(p.vault);
-      const entries = getAuditLog({
-        vault,
-        notePath: p.note_path,
-        op: p.op,
-        since: p.since,
-        limit: p.limit,
-        ...p.is_memory_sink_write !== void 0 ? { is_memory_sink_write: p.is_memory_sink_write } : {}
-      });
-      return { entries, count: entries.length };
-    },
-    list_models: async (a) => {
-      const p = a;
-      const vault = manager.require(p.vault);
-      const models = listModels(vault);
-      return { models, count: models.length };
-    },
-    start_shadow_index: async (a) => {
-      const p = a;
-      const vault = manager.require(p.vault);
-      return startShadowIndex({
-        vault,
-        model: p.model,
-        ollama,
-        batchSize: p.batch_size,
-        log: (m) => process.stderr.write(`[shadow:${vault.config.name}] ${m}
-`)
-      });
-    },
-    switch_active_model: async (a) => {
-      const p = a;
-      const vault = manager.require(p.vault);
-      return switchActiveModel(vault, p.model_name);
-    },
-    vacuum_embeddings: async (a) => {
-      const p = a;
-      const vault = manager.require(p.vault);
-      return vacuumEmbeddings(vault);
-    },
-    index_runs: async (a) => {
-      const p = a;
-      const vault = manager.require(p.vault);
-      const runs = getIndexRuns({ vault, limit: p.limit });
-      return { runs, count: runs.length };
-    },
-    search: async (a) => {
-      const p = a;
-      return handleSearchCompat(
-        manager,
-        adapterRegistry,
-        ollama,
-        defaultModel,
-        activeVault,
-        p.query,
-        p.limit,
-        reranker
-      );
-    },
-    fetch: async (a) => {
-      const p = a;
-      return handleFetchCompat(manager, adapterRegistry, p.id);
-    },
-    vault_stats: async (a) => {
-      const p = a;
-      return handleVaultStats(manager, p.vault);
-    },
-    recent_notes: async (a) => {
-      const p = a;
-      return handleRecentNotes(manager, p.vault, p.limit, p.since);
-    },
-    suggest_frontmatter: async (a) => {
-      const p = a;
-      return handleSuggestFrontmatter(manager, p);
-    },
-    // ── Phase 2 memory tools (Plan 02-04) ──────────────────────────────────
-    record_observation: async (a) => {
-      const p = a;
-      const result = await handleRecordObservation(
-        {
-          memorySinkRegistry,
-          manager,
-          deliveryAdapterFor: (vaultName) => adapterRegistry.resolveDelivery(parseSourceHandle(`obsidian-fs://${vaultName}`)),
-          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`))
-        },
-        p
-      );
-      if (result.ok) {
-        const resource = result.doc_id.replace(`obsidian-fs://${p.vault}/`, "");
-        suppression.add(resource);
-      }
-      return result;
-    },
-    supersede: async (a) => {
-      const p = a;
-      const result = await handleSupersede(
-        {
-          memorySinkRegistry,
-          manager,
-          deliveryAdapterFor: (vaultName) => adapterRegistry.resolveDelivery(parseSourceHandle(`obsidian-fs://${vaultName}`)),
-          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`))
-        },
-        p
-      );
-      if (result.ok) {
-        const resource = result.doc_id.replace(/^obsidian-fs:\/\/[^/]+\//, "");
-        suppression.add(resource);
-      }
-      return result;
-    },
-    // ── Phase 2 memory tools (Plan 02-05) ──────────────────────────────────
-    recall: async (a) => {
-      const p = a;
-      const packets = await handleRecall(
-        {
-          memorySinkRegistry,
-          manager,
-          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)),
-          searchHybrid: async (input) => hybridSearch({
-            query: input.query,
-            embeddingModel: defaultModel,
-            ollama,
-            vaults: input.vaults,
-            topK: input.topK,
-            rrfK: 60,
-            includeBreakdown: false
-          })
-        },
-        p
-      );
-      return { packets, count: packets.length };
-    },
-    // ── Phase 5 brief tools (Plan 05-02 / BRF-03, BRF-04) ──────────────────
-    compile_brief: async (a) => {
-      const p = a;
-      const result = await handleCompileBrief(
-        {
-          memorySinkRegistry,
-          manager,
-          deliveryAdapterFor: (vaultName) => adapterRegistry.resolveDelivery(parseSourceHandle(`obsidian-fs://${vaultName}`)),
-          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)),
-          server,
-          ollama,
-          briefConfig: config.brief
-        },
-        p
-      );
-      if (result.ok) {
-        const resource = result.doc_id.replace(`obsidian-fs://${p.vault}/`, "");
-        suppression.add(resource);
-        if (result.supersededPrior) {
-          const oldResource = result.supersededPrior.replace(/^obsidian-fs:\/\/[^/]+\//, "");
-          suppression.add(oldResource);
-        }
-      }
-      return result;
-    },
-    get_brief: async (a) => {
-      const p = a;
-      return handleGetBrief(
-        {
-          memorySinkRegistry,
-          manager,
-          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`))
-        },
-        p
-      );
-    },
-    // ── Phase 3 assembly tools (Plan 03-02 / ASM-02) ───────────────────────
-    get_outline: async (a) => {
-      const p = a;
-      return getOutline(
-        {
-          manager,
-          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`))
-        },
-        p
-      );
-    },
-    // ── Phase 3 assembly tools (Plan 03-03) ──────────────────────────────────
-    search_sections: async (a) => {
-      const p = a;
-      const allVaults = manager.list();
-      const targetVaults = p.vaults ? p.vaults.map((name) => manager.require(name)) : allVaults;
-      const results = await searchSections(
-        {
-          searchHybrid: async (input) => hybridSearch({
-            query: input.query,
-            embeddingModel: defaultModel,
-            ollama,
-            vaults: input.vaults ? input.vaults.map((name) => manager.require(name)) : targetVaults,
-            topK: input.topK,
-            rrfK: 60,
-            includeBreakdown: false
-          }),
-          sectionForHit: (vaultName, notePath, chunkIdx) => {
-            let vault;
-            try {
-              vault = manager.require(vaultName);
-            } catch {
-              return null;
-            }
-            const note = vault.db.notes.getByPath(notePath);
-            if (!note) return null;
-            const chunks = vault.db.chunks.getByNote(note.id);
-            const chunk = chunks.find((c) => c.idx === chunkIdx);
-            if (!chunk) return null;
-            const section = vault.db.sections.findContainingChunk(note.id, chunk.id);
-            if (!section) return null;
-            let headingPath;
-            try {
-              const parsed = JSON.parse(section.heading_path);
-              headingPath = Array.isArray(parsed) ? parsed : [];
-            } catch {
-              headingPath = [];
-            }
-            return {
-              noteId: note.id,
-              anchor: section.anchor,
-              headingPath,
-              // Sections with a NULL chunk_id_first have been filtered out
-              // by findContainingChunk (it requires non-NULL bounds), so
-              // chunk_id_first is guaranteed non-null here. Fall back to
-              // MAX_SAFE_INTEGER defensively for the tie-break sort.
-              chunkIdFirst: section.chunk_id_first ?? Number.MAX_SAFE_INTEGER
-            };
-          },
-          readDocument: async (vaultName, notePath) => {
-            const docId = formatDocId("obsidian-fs", vaultName, notePath);
-            return adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)).readDocument(docId);
-          },
-          displayUrlFor: (docId, vaultName) => {
-            const source = adapterRegistry.resolveSource(
-              parseSourceHandle(`obsidian-fs://${vaultName}`)
-            );
-            return source.formatDisplayUrl?.(docId) ?? docId;
-          }
-        },
-        {
-          query: p.query,
-          limit: p.limit ?? 10,
-          ...p.vaults !== void 0 ? { vaults: p.vaults } : {},
-          ...p.recency_weight !== void 0 ? { recency_weight: p.recency_weight } : {},
-          ...p.authority_weight !== void 0 ? { authority_weight: p.authority_weight } : {},
-          ...p.include_superseded !== void 0 ? { include_superseded: p.include_superseded } : {}
-        }
-      );
-      return { results, count: results.length };
-    },
-    // ── Phase 3 assembly tools (Plan 03-06) ────────────────────────────────
-    assemble_dossier: async (a) => {
-      const p = a;
-      return assembleDossier(
-        {
-          manager,
-          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`))
-        },
-        p
-      );
-    },
-    // ── Phase 4 graph tools (Plan 04-03 / GRA-01) ─────────────────────────
-    expand: async (a) => {
-      const p = a;
-      const seeds = p.seed_doc_ids.map((s) => parseDocId(s));
-      return expand(
-        {
-          manager,
-          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`))
-        },
-        {
-          seed_doc_ids: seeds,
-          hops: p.hops,
-          direction: p.direction,
-          ...p.edge_types !== void 0 ? { edge_types: p.edge_types } : {},
-          ...p.filter_properties !== void 0 ? { filter_properties: p.filter_properties } : {},
-          include_superseded: p.include_superseded
-        }
-      );
-    },
-    // ── Phase 4 graph tools (Plan 04-05 / GRA-02) ─────────────────────────
-    cluster: async (a) => {
-      const p = a;
-      let opts;
-      if (p.query !== void 0) {
-        opts = {
-          query: p.query,
-          method: "edge-community",
-          ...p.vault !== void 0 ? { vault: p.vault } : {},
-          ...p.query_top_k !== void 0 ? { query_top_k: p.query_top_k } : {},
-          ...p.force !== void 0 ? { force: p.force } : {}
-        };
-      } else {
-        const seeds = (p.seed_doc_ids ?? []).map((s) => parseDocId(s));
-        opts = {
-          seed_doc_ids: seeds,
-          method: "edge-community",
-          ...p.force !== void 0 ? { force: p.force } : {}
-        };
-      }
-      return cluster(
-        {
-          manager,
-          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)),
-          // Bind hybridSearch at call time — avoids the
-          // src/graph/cluster.ts → src/search/hybrid.ts circular
-          // import. The injected callback returns SearchHit[]; the
-          // dispatcher already has `ollama` + `defaultModel` in scope.
-          hybridSearch: async (vault, query, limit) => hybridSearch({
-            query,
-            embeddingModel: defaultModel,
-            ollama,
-            vaults: [vault],
-            topK: limit,
-            includeBreakdown: false,
-            ...reranker ? { reranker } : {},
-            displayUrlFor: (vaultName, notePath) => displayUrl(adapterRegistry, vaultName, notePath)
-          })
-        },
-        opts
-      );
-    },
-    // ── Phase 3 assembly tools (Plan 03-04 / ASM-01) ───────────────────────
-    get_document_bundle: async (a) => {
-      const p = a;
-      return getDocumentBundle(
-        {
-          manager,
-          sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`))
-        },
-        p
-      );
-    },
-    // ── Phase 6 task-contract DSL (Plan 06-02 / D-A1 escape valve) ─────────
-    //
-    // Scans the per-vault contract registries and forces a sync of the
-    // dynamic MCP tool list — regardless of [contracts.auto_register_tools]
-    // (which is what makes this the explicit-control escape valve).
-    // Returns per-vault diffs so the caller can confirm what landed.
-    register_contracts_as_tools: async (a) => {
-      const p = a;
-      const targetVaults = p.vault !== void 0 ? [p.vault] : manager.list().map((v) => v.config.name);
-      if (p.vault !== void 0) {
-        const v = manager.list().find((vault) => vault.config.name === p.vault);
-        if (v === void 0) {
-          return { ok: false, reason: "unknown_vault", vault: p.vault };
-        }
-      }
-      const results = [];
-      const prefix = config.contracts.tool_prefix;
-      for (const vname of targetVaults) {
-        const state = contractRegistries.get(vname);
-        if (state === void 0) continue;
-        const v = manager.list().find((vault) => vault.config.name === vname);
-        if (v === void 0) continue;
-        const before = new Set(state.registered.keys());
-        syncAutoRegistered(server, state.started.registry, prefix, state.registered, {
-          enabled: true,
-          instantiateHandler
-        });
-        const after = new Set(state.registered.keys());
-        results.push({
-          vault: vname,
-          registered: Array.from(after).filter((n) => !before.has(n)),
-          unregistered: Array.from(before).filter((n) => !after.has(n))
-        });
-      }
-      if (p.vault !== void 0) {
-        const single = results[0] ?? {
-          vault: p.vault,
-          registered: [],
-          unregistered: []
-        };
-        return { ok: true, ...single };
-      }
-      return { ok: true, vaults: results };
-    },
-    // ── Phase 6 task-contract DSL (Plan 06-03 / CON-05, Q-DESCRIBE) ────────
-    //
-    // Pure function over the per-vault ContractRegistry. Returns
-    // {ok:true, json_schema, summary} or one of the sealed
-    // InstantiateError reasons (`unknown_contract`, `ambiguous_vault`,
-    // `unknown_vault`). NO LLM, NO side effects.
-    describe_contract: async (a) => {
-      const p = a;
-      const resolved = resolveContractVault(p.vault);
-      if (!resolved.ok) return resolved;
-      const state = contractRegistries.get(resolved.vault.config.name);
-      if (state === void 0) {
-        return { ok: false, reason: "unknown_contract", name: p.name };
-      }
-      return describeContract({ registry: state.started.registry }, { name: p.name });
-    },
-    // ── Phase 6 task-contract DSL (Plan 06-03 / CON-06) ────────────────────
-    //
-    // Replaces the Plan 06-02 stub. Routes through the per-vault deps
-    // built by `buildInstantiateDeps`. On multi-vault setups, the caller
-    // MUST pass `vault` — otherwise we return the WARNING-6
-    // `ambiguous_vault` envelope (12th reason in the closed
-    // InstantiateError union).
-    instantiate_contract: async (a) => {
-      const p = a;
-      const resolved = resolveContractVault(p.vault);
-      if (!resolved.ok) return resolved;
-      return instantiateContract(buildInstantiateDeps(resolved.vault), {
-        name: p.name,
-        inputs: p.inputs,
-        ...p.source_overrides !== void 0 ? { source_overrides: p.source_overrides } : {},
-        ...p.sink_overrides !== void 0 ? { sink_overrides: p.sink_overrides } : {}
-      });
-    }
+    ...makeVaultHandlers(deps),
+    ...makeNotesHandlers(deps),
+    ...makeSearchHandlers(deps),
+    ...makeGraphHandlers(deps),
+    ...makeMemoryHandlers(deps),
+    ...makeBriefHandlers(deps),
+    ...makeAssemblyHandlers(deps),
+    ...makeContractsHandlers(deps, {
+      resolveContractVault,
+      instantiateHandler,
+      buildInstantiateDeps
+    })
   };
   for (const tool of TOOLS) {
     const name = tool.name;
-    const handler7 = handlers[name];
+    if (handlers[name] === void 0) {
+      throw new Error(`Internal error: no handler registered for tool "${name}".`);
+    }
+  }
+  const completeHandlers = handlers;
+  for (const tool of TOOLS) {
+    const name = tool.name;
+    const handler7 = completeHandlers[name];
     const schema = TOOL_SCHEMAS[name];
     const needsRefinementCheck = name === "suggest_frontmatter" || name === "cluster";
     server.registerTool(
@@ -15531,7 +16247,7 @@ async function serve(options = {}) {
           if (err instanceof DocNotFoundError) {
             return errorResponseJson({ error: "doc_not_found", doc_id: err.doc_id });
           }
-          const message = err instanceof Error ? err.message : String(err);
+          const message = errorMessage(err);
           return errorResponse2(message);
         }
       }
@@ -15804,7 +16520,7 @@ async function serve(options = {}) {
           ]
         };
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = errorMessage(err);
         return {
           contents: [
             {
@@ -15844,7 +16560,7 @@ async function serve(options = {}) {
           ]
         };
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = errorMessage(err);
         return {
           contents: [
             {
@@ -15880,7 +16596,7 @@ async function serve(options = {}) {
           ]
         };
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = errorMessage(err);
         return {
           contents: [
             {
@@ -15920,7 +16636,7 @@ async function serve(options = {}) {
           ]
         };
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = errorMessage(err);
         return {
           contents: [
             {
@@ -15937,7 +16653,7 @@ async function serve(options = {}) {
   try {
     await peerMcpRegistry.start(config.contracts.mcp_clients);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     process.stderr.write(`[peer-mcp-registry] start failed: ${message}
 `);
   }
@@ -15979,7 +16695,7 @@ async function serve(options = {}) {
               }
             });
           } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
+            const msg = errorMessage(err);
             process.stderr.write(`[contracts-reloaded-notify] ${vault.config.name}: ${msg}
 `);
           }
@@ -15997,7 +16713,7 @@ async function serve(options = {}) {
         }
       });
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       process.stderr.write(`[contract-registry:${vault.config.name}] start failed: ${message}
 `);
       continue;
@@ -16073,531 +16789,10 @@ async function serve(options = {}) {
   await server.connect(transport);
   onPhase("start_catchup");
   startCatchupAndWatchers().catch((err) => {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     process.stderr.write(`[catchup] unexpected failure: ${message}
 `);
   });
-}
-function handleListVaults(manager) {
-  const vaults = manager.list().map((v) => {
-    const noteCount = v.db.notes.countAll();
-    const runs = v.db.audit.listRuns(1);
-    const lastRun = runs[0];
-    return {
-      name: v.config.name,
-      path: v.config.path,
-      embedding_model: v.config.embedding_model ?? null,
-      note_count: noteCount,
-      write_enabled: v.config.write_enabled ?? false,
-      last_run: lastRun ? {
-        run_id: lastRun.run_id,
-        started_at: lastRun.started_at,
-        finished_at: lastRun.finished_at,
-        error: lastRun.error
-      } : null
-    };
-  });
-  return { vaults, count: vaults.length };
-}
-async function handleReadNote(registry, vaultName, path7) {
-  const handle = parseSourceHandle(`obsidian-fs://${vaultName}`);
-  let source;
-  try {
-    source = registry.resolveSource(handle);
-  } catch {
-    throw new Error(`Note not found: ${vaultName}/${path7}`);
-  }
-  const id = formatDocId("obsidian-fs", vaultName, path7);
-  let doc;
-  try {
-    doc = await source.readDocument(id);
-  } catch {
-    throw new Error(`Note not found: ${vaultName}/${path7}`);
-  }
-  const { wikilinks: _wikilinks, ...frontmatterOnly } = doc.properties;
-  const hasFrontmatter = Object.keys(frontmatterOnly).length > 0;
-  const content = doc.blocks[0]?.kind === "paragraph" ? doc.blocks[0].text : "";
-  return {
-    path: path7,
-    title: doc.title,
-    content,
-    frontmatter: hasFrontmatter ? frontmatterOnly : null,
-    hash: doc.hash,
-    mtime: doc.mtime,
-    word_count: countWords3(content)
-  };
-}
-async function handleWriteNote(registry, vault, parsed) {
-  const handle = parseSourceHandle(`obsidian-fs://${parsed.vault}`);
-  const delivery = registry.resolveDelivery(handle);
-  const docId = formatDocId("obsidian-fs", parsed.vault, parsed.path);
-  const partial = {
-    blocks: [{ kind: "paragraph", text: parsed.content }],
-    properties: parsed.frontmatter ?? {}
-  };
-  const opts = {};
-  if (parsed.expected_hash !== void 0) opts.expectedHash = parsed.expected_hash;
-  if (parsed.client_id !== void 0) opts.clientId = parsed.client_id;
-  const res = await delivery.write(docId, partial, opts);
-  if (!res.ok) {
-    const out = {
-      ok: false,
-      reason: res.reason === "not_found" ? "hash_mismatch" : res.reason
-    };
-    if (res.currentHash !== void 0) out.currentHash = res.currentHash;
-    if (res.message !== void 0) out.message = res.message;
-    if (res.sinkName !== void 0) out.sinkName = res.sinkName;
-    if (res.suggestion !== void 0) out.suggestion = res.suggestion;
-    if (res.key !== void 0) out.key = res.key;
-    if (res.observedValue !== void 0) out.observedValue = res.observedValue;
-    return out;
-  }
-  const noteRow = vault.db.notes.getByPath(parsed.path);
-  return {
-    ok: true,
-    newHash: res.newHash,
-    noteId: noteRow?.id ?? 0,
-    created: res.created
-  };
-}
-async function handleDeleteNote(registry, vault, parsed) {
-  const noteRow = vault.db.notes.getByPath(parsed.path);
-  const preDeleteHash = noteRow?.hash ?? parsed.expected_hash;
-  const handle = parseSourceHandle(`obsidian-fs://${parsed.vault}`);
-  const delivery = registry.resolveDelivery(handle);
-  const docId = formatDocId("obsidian-fs", parsed.vault, parsed.path);
-  const opts = {
-    expectedHash: parsed.expected_hash
-  };
-  if (parsed.client_id !== void 0) opts.clientId = parsed.client_id;
-  const res = await delivery.delete(docId, opts);
-  if (!res.ok) {
-    const out = {
-      ok: false,
-      reason: res.reason === "not_found" ? "hash_mismatch" : res.reason
-    };
-    if (res.currentHash !== void 0) out.currentHash = res.currentHash;
-    if (res.message !== void 0) out.message = res.message;
-    if (res.sinkName !== void 0) out.sinkName = res.sinkName;
-    if (res.suggestion !== void 0) out.suggestion = res.suggestion;
-    return out;
-  }
-  return {
-    ok: true,
-    newHash: preDeleteHash,
-    noteId: noteRow?.id ?? 0,
-    created: false
-  };
-}
-function countWords3(content) {
-  if (content.length === 0) return 0;
-  return content.split(/\s+/).filter((s) => s.length > 0).length;
-}
-function resolveVaultTargets(manager, vaultFilter, activeVault) {
-  if (vaultFilter) {
-    return { targets: vaultFilter.map((n) => manager.require(n)), skipped: [] };
-  }
-  const candidates = activeVault ? [manager.require(activeVault)] : manager.list();
-  const targets = [];
-  const skipped = [];
-  for (const v of candidates) {
-    if (v.db.audit.isIndexing()) {
-      skipped.push(v.config.name);
-    } else {
-      targets.push(v);
-    }
-  }
-  return { targets, skipped };
-}
-async function handleSearchSemantic(manager, ollama, defaultModel, activeVault, query, vaultFilter, topK, excludePaths) {
-  const { targets, skipped } = resolveVaultTargets(manager, vaultFilter, activeVault);
-  if (targets.length === 0) {
-    return {
-      hits: [],
-      note: skipped.length > 0 ? `All eligible vaults are indexing; skipped: ${skipped.join(", ")}.` : "No vaults configured."
-    };
-  }
-  const hasExclude = excludePaths !== void 0 && excludePaths.length > 0;
-  const fanK = hasExclude ? topK * 3 : topK;
-  const embedCache = /* @__PURE__ */ new Map();
-  const allHits = [];
-  for (const vault of targets) {
-    const model = vault.db.models.getActive();
-    if (!model) continue;
-    const modelName = model.name;
-    let queryVec = embedCache.get(modelName);
-    if (!queryVec) {
-      const embedResp = await ollama.embed({ model: modelName, texts: [query] });
-      queryVec = embedResp.vectors[0];
-      if (!queryVec) continue;
-      embedCache.set(modelName, queryVec);
-    }
-    const semanticHits = vault.db.embeddings.searchSemantic(model.id, queryVec, fanK);
-    for (const hit of semanticHits) {
-      const chunk = vault.db.chunks.getById(hit.chunkId);
-      if (!chunk) continue;
-      const note = vault.db.notes.getById(chunk.note_id);
-      if (!note) continue;
-      if (hasExclude && matchesAnyGlob(note.path, excludePaths)) continue;
-      const score = 1 / (1 + hit.distance);
-      allHits.push({
-        vault: vault.config.name,
-        notePath: note.path,
-        noteTitle: note.title,
-        chunkText: chunk.text,
-        chunkIdx: chunk.idx,
-        headingPath: chunk.heading_path,
-        score,
-        scoreBreakdown: { semantic: score }
-      });
-    }
-  }
-  allHits.sort((a, b) => b.score - a.score);
-  const out = {
-    hits: allHits.slice(0, topK),
-    count: allHits.length
-  };
-  if (skipped.length > 0) {
-    out.note = `Skipped vault(s) currently indexing: ${skipped.join(", ")}.`;
-  }
-  return out;
-}
-function handleSearchText(manager, activeVault, query, vaultFilter, topK, excludePaths) {
-  const { targets, skipped } = resolveVaultTargets(manager, vaultFilter, activeVault);
-  if (targets.length === 0) {
-    return {
-      hits: [],
-      note: skipped.length > 0 ? `All eligible vaults are indexing; skipped: ${skipped.join(", ")}.` : "No vaults configured."
-    };
-  }
-  const hasExclude = excludePaths !== void 0 && excludePaths.length > 0;
-  const fanK = hasExclude ? topK * 3 : topK;
-  const sanitized = FtsQueries.sanitize(query);
-  const allHits = [];
-  for (const vault of targets) {
-    const ftsHits = vault.db.fts.search(sanitized, fanK, true);
-    for (const hit of ftsHits) {
-      const chunk = vault.db.chunks.getById(hit.chunkId);
-      if (!chunk) continue;
-      const note = vault.db.notes.getById(chunk.note_id);
-      if (!note) continue;
-      if (hasExclude && matchesAnyGlob(note.path, excludePaths)) continue;
-      allHits.push({
-        vault: vault.config.name,
-        notePath: note.path,
-        noteTitle: note.title,
-        chunkText: hit.snippet ?? chunk.text,
-        chunkIdx: chunk.idx,
-        headingPath: chunk.heading_path,
-        score: hit.score,
-        scoreBreakdown: { text: hit.score }
-      });
-    }
-  }
-  allHits.sort((a, b) => b.score - a.score);
-  const out = {
-    hits: allHits.slice(0, topK),
-    count: allHits.length
-  };
-  if (skipped.length > 0) {
-    out.note = `Skipped vault(s) currently indexing: ${skipped.join(", ")}.`;
-  }
-  return out;
-}
-async function handleSearchHybrid(manager, ollama, defaultModel, activeVault, query, vaultFilter, topK, rrfK, excludePaths, reranker, recencyWeight = 0, authorityWeight = 0, halfLifeDays = 30, includeSuperseded = false, displayUrlFor2, expandOpts, expandDeps) {
-  const { targets, skipped } = resolveVaultTargets(manager, vaultFilter, activeVault);
-  if (targets.length === 0) {
-    return {
-      hits: [],
-      note: skipped.length > 0 ? `All eligible vaults are indexing; skipped: ${skipped.join(", ")}.` : "No vaults configured."
-    };
-  }
-  const hasExclude = excludePaths !== void 0 && excludePaths.length > 0;
-  const innerTopK = hasExclude ? topK * 3 : topK;
-  const hits = await hybridSearch({
-    query,
-    embeddingModel: defaultModel,
-    ollama,
-    vaults: targets,
-    topK: innerTopK,
-    rrfK,
-    includeBreakdown: true,
-    reranker,
-    recencyWeight,
-    authorityWeight,
-    halfLifeDays,
-    includeSuperseded,
-    ...displayUrlFor2 ? { displayUrlFor: displayUrlFor2 } : {},
-    // Phase 4 / 04-04 (D-15): forward optional expand + deps. When
-    // `expandOpts` is undefined, hybridSearch short-circuits the
-    // expand block (zero new DB reads — v1-baseline byte-identical).
-    ...expandOpts ? { expand: expandOpts } : {},
-    ...expandDeps ? { expandDeps } : {}
-  });
-  const filtered = hasExclude ? hits.filter((h) => !matchesAnyGlob(h.notePath, excludePaths)) : hits;
-  const out = {
-    hits: filtered.slice(0, topK),
-    count: filtered.length
-  };
-  if (skipped.length > 0) {
-    out.note = `Skipped vault(s) currently indexing: ${skipped.join(", ")}.`;
-  }
-  return out;
-}
-function encodeNoteId(vault, path7) {
-  return `${vault}:${path7}`;
-}
-function decodeNoteId(id) {
-  const idx = id.indexOf(":");
-  if (idx <= 0 || idx === id.length - 1) {
-    throw new Error(`Invalid id: ${id}. Expected format <vault>:<vault-relative-path>.`);
-  }
-  return { vault: id.slice(0, idx), path: id.slice(idx + 1) };
-}
-function displayUrl(registry, vaultName, notePath) {
-  const source = registry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`));
-  const docId = formatDocId("obsidian-fs", vaultName, notePath);
-  return source.formatDisplayUrl?.(docId) ?? `obsidian-fs://${vaultName}/${notePath}`;
-}
-async function handleSearchCompat(manager, registry, ollama, defaultModel, activeVault, query, limit, reranker) {
-  const { targets, skipped } = resolveVaultTargets(manager, void 0, activeVault);
-  if (targets.length === 0) {
-    return {
-      results: [],
-      note: skipped.length > 0 ? `All eligible vaults are indexing; skipped: ${skipped.join(", ")}.` : "No vaults configured."
-    };
-  }
-  const hits = await hybridSearch({
-    query,
-    embeddingModel: defaultModel,
-    ollama,
-    vaults: targets,
-    topK: limit,
-    rrfK: 60,
-    includeBreakdown: false,
-    reranker
-  });
-  const seen = /* @__PURE__ */ new Set();
-  const results = [];
-  for (const h of hits) {
-    const noteKey = `${h.vault}:${h.notePath}`;
-    if (seen.has(noteKey)) continue;
-    seen.add(noteKey);
-    results.push({
-      id: encodeNoteId(h.vault, h.notePath),
-      title: h.noteTitle ?? h.notePath,
-      url: displayUrl(registry, h.vault, h.notePath),
-      snippet: truncateSnippet(h.chunkText, 280)
-    });
-    if (results.length >= limit) break;
-  }
-  const out = { results };
-  if (skipped.length > 0) {
-    out.note = `Skipped vault(s) currently indexing: ${skipped.join(", ")}.`;
-  }
-  return out;
-}
-function truncateSnippet(text, max) {
-  const collapsed = text.replace(/\s+/g, " ").trim();
-  if (collapsed.length <= max) return collapsed;
-  return collapsed.slice(0, max - 1).trimEnd() + "\u2026";
-}
-function handleFetchCompat(manager, registry, id) {
-  const { vault: vaultName, path: path7 } = decodeNoteId(id);
-  const vault = manager.require(vaultName);
-  const note = vault.db.notes.getByPath(path7);
-  if (!note) {
-    throw new Error(`Note not found: ${vaultName}/${path7}`);
-  }
-  const metadata = {
-    vault: vaultName,
-    path: note.path,
-    mtime: note.mtime,
-    hash: note.hash,
-    word_count: note.word_count
-  };
-  if (note.frontmatter) {
-    try {
-      metadata.frontmatter = JSON.parse(note.frontmatter);
-    } catch {
-    }
-  }
-  return {
-    id,
-    title: note.title ?? note.path,
-    text: note.content,
-    url: displayUrl(registry, vaultName, note.path),
-    metadata
-  };
-}
-function handleVaultStats(manager, vaultFilter) {
-  const targets = vaultFilter ? [manager.require(vaultFilter)] : manager.list();
-  const stats = targets.map((v) => {
-    const total_notes = v.db.notes.countAll();
-    const wordRow = v.db.handle.prepare("SELECT SUM(word_count) AS total FROM notes").get();
-    const lastRun = v.db.audit.listRuns(1)[0];
-    const activeModel = v.db.models.getActive();
-    return {
-      vault: v.config.name,
-      vault_path: v.config.path,
-      total_notes,
-      total_words: wordRow?.total ?? 0,
-      embedding_model: activeModel?.name ?? v.config.embedding_model ?? null,
-      indexed_at: lastRun?.finished_at ?? null,
-      top_tags: aggregateTopTags(v.db.handle, 10),
-      top_frontmatter_keys: aggregateTopFrontmatterKeys(v.db.handle, 10)
-    };
-  });
-  if (vaultFilter) {
-    return stats[0];
-  }
-  return { vaults: stats, count: stats.length };
-}
-function aggregateTopTags(db, limit) {
-  const rows = db.prepare(
-    `
-      SELECT je.value AS tag, COUNT(*) AS count
-      FROM notes
-      JOIN json_each(json_extract(notes.frontmatter, '$.tags')) AS je
-      WHERE notes.frontmatter IS NOT NULL
-        AND json_type(notes.frontmatter, '$.tags') = 'array'
-        AND typeof(je.value) = 'text'
-      GROUP BY je.value
-      ORDER BY count DESC, tag ASC
-      LIMIT ?
-    `
-  ).all(limit);
-  return rows;
-}
-function aggregateTopFrontmatterKeys(db, limit) {
-  const rows = db.prepare(
-    `
-      SELECT je.key AS key, COUNT(*) AS count
-      FROM notes
-      JOIN json_each(notes.frontmatter) AS je
-      WHERE notes.frontmatter IS NOT NULL
-        AND json_type(notes.frontmatter) = 'object'
-      GROUP BY je.key
-      ORDER BY count DESC, key ASC
-      LIMIT ?
-    `
-  ).all(limit);
-  return rows;
-}
-function handleRecentNotes(manager, vaultFilter, limit, since) {
-  const targets = vaultFilter ? [manager.require(vaultFilter)] : manager.list();
-  const all = [];
-  for (const v of targets) {
-    const rows = since !== void 0 ? v.db.handle.prepare(
-      "SELECT path, title, mtime, word_count, frontmatter FROM notes WHERE mtime > ? ORDER BY mtime DESC LIMIT ?"
-    ).all(since, limit) : v.db.handle.prepare(
-      "SELECT path, title, mtime, word_count, frontmatter FROM notes ORDER BY mtime DESC LIMIT ?"
-    ).all(limit);
-    for (const r of rows) {
-      let tags = null;
-      if (r.frontmatter) {
-        try {
-          const fm = JSON.parse(r.frontmatter);
-          if (Array.isArray(fm.tags)) {
-            tags = fm.tags.filter((t) => typeof t === "string");
-          }
-        } catch {
-        }
-      }
-      all.push({
-        vault: v.config.name,
-        path: r.path,
-        title: r.title,
-        mtime: r.mtime,
-        word_count: r.word_count,
-        tags
-      });
-    }
-  }
-  all.sort((a, b) => b.mtime - a.mtime);
-  return { notes: all.slice(0, limit), count: Math.min(all.length, limit) };
-}
-function handleSuggestFrontmatter(manager, parsed) {
-  const vault = manager.require(parsed.vault);
-  if (parsed.path) {
-    const note = vault.db.notes.getByPath(parsed.path);
-    if (!note) {
-      throw new Error(
-        `Note not found: ${parsed.vault}/${parsed.path}. Use draft mode ({content, folder_hint}) for unindexed notes.`
-      );
-    }
-    const existingFm = note.frontmatter ? safeParseFrontmatter(note.frontmatter) : null;
-    const result2 = suggestFrontmatter({
-      vault,
-      path: note.path,
-      existingFrontmatter: existingFm,
-      content: parsed.content ?? note.content,
-      title: parsed.title ?? note.title ?? defaultBasename(note.path),
-      excludePath: note.path
-    });
-    return {
-      mode: "existing",
-      path: note.path,
-      ...result2
-    };
-  }
-  const folderHint = normalizeFolderHint(parsed.folder_hint);
-  const probePath = `${folderHint}__draft__${Date.now()}.md`;
-  const result = suggestFrontmatter({
-    vault,
-    path: probePath,
-    existingFrontmatter: null,
-    content: parsed.content,
-    title: parsed.title ?? "Draft",
-    // Exclude the synthetic path explicitly — though it won't match any
-    // existing note, this future-proofs against collisions.
-    excludePath: probePath
-  });
-  return {
-    mode: "draft",
-    folder_hint: folderHint,
-    note: "Draft mode: no backlinks contributed. Provide `path` (and index the note first) for richer neighbor-inference.",
-    ...result
-  };
-}
-function safeParseFrontmatter(s) {
-  try {
-    const parsed = JSON.parse(s);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed;
-    }
-    return null;
-  } catch {
-    return null;
-  }
-}
-function defaultBasename(path7) {
-  const base = path7.split("/").pop() ?? path7;
-  return base.replace(/\.md$/i, "");
-}
-function normalizeFolderHint(hint) {
-  if (!hint) return "";
-  let h = hint.trim();
-  if (h.startsWith("/")) h = h.slice(1);
-  if (h.length > 0 && !h.endsWith("/")) h = `${h}/`;
-  return h;
-}
-function ok2(data) {
-  return {
-    content: [{ type: "text", text: JSON.stringify(data, null, 2) }]
-  };
-}
-function errorResponse2(message) {
-  return {
-    isError: true,
-    content: [{ type: "text", text: message }]
-  };
-}
-function errorResponseJson(payload) {
-  return {
-    isError: true,
-    content: [{ type: "text", text: JSON.stringify(payload) }]
-  };
 }
 var VERSION, MEMORY_AUTO_DISCOVERY_FOLDER;
 var init_server = __esm({
@@ -16608,12 +16803,14 @@ var init_server = __esm({
     init_plugin_tools();
     init_vault();
     init_ollama();
-    init_db();
     init_search();
     init_rerank();
+    init_format();
+    init_responses();
+    init_utils();
+    init_utils();
     init_graph2();
     init_frontmatter();
-    init_schema3();
     init_obsidian_fs2();
     init_sentinel();
     init_memory();
@@ -16622,14 +16819,20 @@ var init_server = __esm({
     init_brief();
     init_search_sections();
     init_outline();
-    init_assembly();
-    init_audit3();
     init_obsidian_fs3();
     init_indexer2();
     init_tool_registry();
     init_registry();
     init_obsidian_fs();
     init_contracts();
+    init_vault2();
+    init_notes2();
+    init_search2();
+    init_graph3();
+    init_memory2();
+    init_brief2();
+    init_assembly2();
+    init_contracts2();
     VERSION = "1.0.0";
     MEMORY_AUTO_DISCOVERY_FOLDER = "_memory";
   }

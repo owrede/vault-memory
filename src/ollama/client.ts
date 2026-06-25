@@ -12,6 +12,7 @@
 import { z } from "zod";
 import type { EmbedRequest, EmbedResponse, OllamaClientOptions } from "../types.js";
 import { withRetry } from "./retry.js";
+import { errorMessage } from "../errors/format.js";
 
 const DEFAULT_ENDPOINT = "http://localhost:11434";
 const DEFAULT_BATCH_SIZE = 10;
@@ -250,7 +251,7 @@ export class OllamaClient {
       const parsed = TagsResponseSchema.parse(json);
       return { ok: true, models: parsed.models.map((m) => m.name) };
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorMessage(err);
       return { ok: false, error: message };
     }
   }

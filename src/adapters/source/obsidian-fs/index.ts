@@ -49,6 +49,7 @@ import { formatDocId, parseSourceHandle } from "../../registry.js";
 import { scanVault, scanContractFiles } from "./scanner.js";
 import { parseNote } from "./parser.js";
 import { computeBodyHash } from "./hash.js";
+import { errorMessage } from "../../../errors/format.js";
 
 /**
  * Phase 6 / Plan 06-04 — task-contract YAML path matcher. Mirrors
@@ -122,7 +123,7 @@ export class ObsidianFsSource implements SourceConnector {
       } catch (err) {
         console.error(
           `[obsidian-fs:${this.vault.name}] skipping un-addressable file ` +
-            `${JSON.stringify(rel)}: ${err instanceof Error ? err.message : String(err)}`,
+            `${JSON.stringify(rel)}: ${errorMessage(err)}`,
         );
         continue;
       }

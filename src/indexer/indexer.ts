@@ -26,6 +26,7 @@ import { WikilinkResolver } from "./resolver.js";
 import { extractAllEdges } from "./extract-edges.js";
 import { extractSections, markdownToSectionBlocks } from "../sections/index.js";
 import { extractHeadings } from "../chunker/headings.js";
+import { errorMessage } from "../errors/format.js";
 
 export interface IndexerOptions {
   mode?: "full" | "incremental";
@@ -387,7 +388,7 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
       durationMs: Date.now() - startedAt,
     };
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errorMessage(err);
     vault.db.audit.finishRun(runId, {
       notesIndexed,
       chunksCreated,

@@ -62,6 +62,30 @@ export interface CitationPacket {
 }
 
 /**
+ * Attach the denormalized `status` / `superseded_by` extras to a base
+ * `CitationPacket` (or any subtype). Reads from the packet's REQUIRED
+ * `properties` bag (`Record<string, unknown>`, always populated) — no
+ * null guards needed for `properties` itself, only for the inner keys.
+ *
+ * Generic so callers that pass a `CitationPacket` subtype (e.g. a packet
+ * already carrying `relation`) keep their extra fields. Returns a fresh
+ * object; does not mutate the input packet.
+ *
+ * Shared by `assembleDossier` (anchor + linked docs) and `assembleBundle`
+ * (anchor) — both denormalize the same two property keys identically.
+ */
+export function withPropertyExtras<T extends CitationPacket>(
+  packet: T,
+): T & { status?: string; superseded_by?: string } {
+  const out: T & { status?: string; superseded_by?: string } = { ...packet };
+  const status = packet.properties.status;
+  if (typeof status === "string") out.status = status;
+  const supersededBy = packet.properties.superseded_by;
+  if (typeof supersededBy === "string") out.superseded_by = supersededBy;
+  return out;
+}
+
+/**
  * Map a `Document` (or its read-side fields) into a `CitationPacket`.
  *
  * Field transcription:

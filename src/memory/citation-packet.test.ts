@@ -10,7 +10,12 @@
 
 import { describe, it, expect } from "vitest";
 import { formatDocId, parseSourceHandle } from "../adapters/registry.js";
-import { type CitationPacket, displayUrlFor, toCitationPacket } from "./citation-packet.js";
+import {
+  type CitationPacket,
+  displayUrlFor,
+  toCitationPacket,
+  withPropertyExtras,
+} from "./citation-packet.js";
 import type { Document } from "../types.js";
 
 function makeDoc(overrides: Partial<Document> & { heading_path?: string[] } = {}): Document & {
@@ -111,5 +116,54 @@ describe("displayUrlFor — adapter seam delegation", () => {
       formatDisplayUrl: (_d: typeof id): string | null => null,
     };
     expect(displayUrlFor(id, fakeSource)).toBe(id);
+  });
+});
+
+describe("withPropertyExtras — shared status/superseded_by denormalization", () => {
+  it("attaches status when properties.status is a string", () => {
+    const packet = toCitationPacket(makeDoc({ properties: { status: "active" } }), "obsidian://x");
+    const out = withPropertyExtras(packet);
+    expect(out.status).toBe("active");
+  });
+
+  it("attaches superseded_by when properties.superseded_by is a string", () => {
+    const packet = toCitationPacket(
+      makeDoc({ properties: { superseded_by: "obsidian://atlas/newer.md" } }),
+      "obsidian://x",
+    );
+    const out = withPropertyExtras(packet);
+    expect(out.superseded_by).toBe("obsidian://atlas/newer.md");
+  });
+
+  it("omits status/superseded_by when the property is not a string", () => {
+    const packet = toCitationPacket(
+      makeDoc({ properties: { status: 42, superseded_by: ["a"] } }),
+      "obsidian://x",
+    );
+    const out = withPropertyExtras(packet);
+    expect(out.status).toBeUndefined();
+    expect(out.superseded_by).toBeUndefined();
+  });
+
+  it("omits both when the property keys are absent", () => {
+    const packet = toCitationPacket(makeDoc({ properties: { type: "note" } }), "obsidian://x");
+    const out = withPropertyExtras(packet);
+    expect(out.status).toBeUndefined();
+    expect(out.superseded_by).toBeUndefined();
+  });
+
+  it("returns a fresh object; does not mutate the input packet", () => {
+    const packet = toCitationPacket(makeDoc({ properties: { status: "active" } }), "obsidian://x");
+    const out = withPropertyExtras(packet);
+    expect(out).not.toBe(packet);
+    expect((packet as Record<string, unknown>).status).toBeUndefined();
+  });
+
+  it("preserves a subtype's extra fields (generic T passthrough)", () => {
+    const base = toCitationPacket(makeDoc({ properties: { status: "active" } }), "obsidian://x");
+    const withRelation = { ...base, relation: "wikilink" as const };
+    const out = withPropertyExtras(withRelation);
+    expect(out.relation).toBe("wikilink");
+    expect(out.status).toBe("active");
   });
 });
