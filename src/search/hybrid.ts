@@ -132,6 +132,18 @@ export interface HybridSearchOptions {
    *  `sourceConnectorFor`. Required whenever `expand` is set; ignored
    *  otherwise. */
   expandDeps?: ExpandDeps;
+  // ── Alias-aware query expansion (ISSUE-aliases-not-in-fulltext-retrieval) ──
+  //
+  // A note's frontmatter alias (e.g. `JHE` → "Jörg Herbers") lives in
+  // `note_aliases`, NOT in `chunks_fts`. So `search_hybrid("JHE")` ranks
+  // notes whose BODY contains the token "JHE" and never surfaces the
+  // person note the alias points to. When the trimmed query EXACTLY
+  // matches a known alias in a searched vault, inject/promote that
+  // target note to the top of the result list. Surgical by design:
+  // only fires on an exact alias match, never touches BM25/semantic
+  // scoring, so non-alias queries are byte-identical to before (no FTS
+  // re-baseline). Default ON; set false to restore pre-fix behavior.
+  aliasExpansion?: boolean;
 }
 
 const DEFAULT_TOP_K = 10;
@@ -543,6 +555,83 @@ export async function hybridSearch(opts: HybridSearchOptions): Promise<SearchHit
         // matches the defensive posture of the reranker fallback
         // (lines 342–347 above).
       }
+    }
+  }
+
+  // ── Alias-aware query expansion (ISSUE-aliases-not-in-fulltext-retrieval) ──
+  //
+  // If the exact query string is a known alias in one of the searched
+  // vaults, ensure that alias's target note is in the result set, at the
+  // top. This runs LAST (after rescore, rerank, hydration, expand) so it
+  // never perturbs scoring of the organically-retrieved hits. Guard: only
+  // fires when aliasExpansion !== false AND the query exactly matches an
+  // alias — so non-alias queries do zero extra DB work and are unchanged.
+  if ((opts.aliasExpansion ?? true) === true) {
+    for (const vault of opts.vaults) {
+      let resolved;
+      try {
+        resolved = vault.db.aliases.resolve(query);
+      } catch {
+        continue; // alias table missing / malformed → skip this vault
+      }
+      if (!resolved) continue;
+      const note = vault.db.notes.getById(resolved.note_id);
+      if (!note) continue;
+      // Already surfaced organically? Promote it to the front instead of
+      // duplicating, so the alias target is the top hit either way.
+      const existingIdx = hits.findIndex(
+        (h) => h.vault === vault.config.name && h.notePath === note.path,
+      );
+      if (existingIdx >= 0) {
+        const [existing] = hits.splice(existingIdx, 1);
+        if (existing) hits.unshift(existing);
+        continue;
+      }
+      // Build a hit from the note's first chunk (person/stub notes may have
+      // exactly one). If the note has no chunks, synthesize a minimal hit
+      // from the note row so the alias still resolves to something useful.
+      const firstChunk = vault.db.chunks.getByNote(note.id)[0];
+      const aliasHit: SearchHit = {
+        vault: vault.config.name,
+        notePath: note.path,
+        noteTitle: note.title,
+        chunkText: firstChunk?.text ?? note.title,
+        chunkIdx: firstChunk?.idx ?? 0,
+        headingPath: firstChunk?.heading_path ?? null,
+        // Alias matches are exact metadata hits — rank above fuzzy results.
+        score: 1,
+      };
+      if (includeBreakdown) {
+        aliasHit.scoreBreakdown = { rrf: 1, alias: resolved.alias };
+      }
+      try {
+        aliasHit.doc_id = formatDocId("obsidian-fs", vault.config.name, note.path);
+        aliasHit.source_handle = parseSourceHandle(`obsidian-fs://${vault.config.name}`);
+      } catch {
+        // keep doc_id/source_handle undefined on malformed name/path
+      }
+      aliasHit.mtime = note.mtime;
+      aliasHit.hash = note.hash;
+      if (opts.displayUrlFor !== undefined) {
+        try {
+          aliasHit.display_url = opts.displayUrlFor(vault.config.name, note.path);
+        } catch {
+          // leave display_url unset on resolver throw
+        }
+      }
+      if (note.frontmatter) {
+        try {
+          aliasHit.properties = JSON.parse(note.frontmatter) as Record<string, unknown>;
+        } catch {
+          // malformed frontmatter → no properties
+        }
+      }
+      const status = vault.db.notes.getStatus(note.id);
+      if (typeof status === "string") aliasHit.status = status;
+      hits.unshift(aliasHit);
+      // One exact-alias match is enough; the shortest-path winner already
+      // won inside resolve(). Stop after the first vault that resolves it.
+      break;
     }
   }
 

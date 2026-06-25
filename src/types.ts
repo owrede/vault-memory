@@ -293,6 +293,10 @@ export interface SearchHit {
     /** Cross-encoder rerank score (higher = more relevant). Only set
      *  when a reranker was applied. */
     rerank?: number;
+    /** The frontmatter alias that triggered alias-aware query expansion
+     *  (ISSUE-aliases-not-in-fulltext-retrieval). Only set when this hit
+     *  was injected/promoted because the query exactly matched this alias. */
+    alias?: string;
   };
   // ── Phase 3 / 03-05 (ASM-06): nine optional citation-shaped fields ──
   //
