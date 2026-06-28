@@ -92,6 +92,26 @@ describe("indexer section hook + status maintenance (03-01 Task 7)", () => {
     expect(rows).toHaveLength(2);
   });
 
+  it("buildSectionsForNote: byte-identical sections in DIFFERENT contexts stay distinct (ADR-032)", () => {
+    // Two `## Risks\nTBD` sections under different H1 parents have the SAME
+    // content-hash anchor but different heading_path (`Q1>Risks` vs `Q2>Risks`).
+    // The old (note_id, anchor) identity collapsed them into one row, losing the
+    // Q2 risk. With (note_id, heading_path, anchor) both persist — a section's
+    // identity includes its location/context.
+    const content = "# Q1\n## Risks\nTBD\n## Plan\na\n# Q2\n## Risks\nTBD\n## Plan\nb\n";
+    const nid = seedNote("ctx.md", content);
+    buildSectionsForNote(vault, nid, content, []);
+    const rows = db.sections.getByNote(nid);
+    const risks = rows.filter((r) => r.heading_text === "Risks");
+    // Both Risks sections survive...
+    expect(risks).toHaveLength(2);
+    // ...with identical anchors (content-hash, H-7 intact) but distinct rows
+    // distinguished by heading_path.
+    expect(risks[0]!.anchor).toBe(risks[1]!.anchor);
+    expect(risks[0]!.heading_path).not.toBe(risks[1]!.heading_path);
+    expect(risks[0]!.id).not.toBe(risks[1]!.id);
+  });
+
   it("buildSectionsForNote: preamble + H1 produces two sections, preamble at top level", () => {
     const content = "preamble.\n\n# H1\nbody.\n";
     const nid = seedNote("p.md", content);

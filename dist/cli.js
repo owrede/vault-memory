@@ -9,11 +9,11 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
-// ../../../../../../../Users/wrede/Documents/GitHub/vault-memory/node_modules/tsup/assets/esm_shims.js
+// node_modules/tsup/assets/esm_shims.js
 import path from "path";
 import { fileURLToPath } from "url";
 var init_esm_shims = __esm({
-  "../../../../../../../Users/wrede/Documents/GitHub/vault-memory/node_modules/tsup/assets/esm_shims.js"() {
+  "node_modules/tsup/assets/esm_shims.js"() {
     "use strict";
   }
 });
@@ -1303,7 +1303,7 @@ function backfillSectionsFromChunks(db) {
        @parent_id, @ord, @chunk_id_first, @chunk_id_last, @created_at)
   `);
   const lookupExistingSection = db.prepare(
-    "SELECT id FROM sections WHERE note_id = ? AND anchor = ?"
+    "SELECT id FROM sections WHERE note_id = ? AND heading_path = ? AND anchor = ?"
   );
   let backfilled = 0;
   const now = Date.now();
@@ -1339,7 +1339,11 @@ function backfillSectionsFromChunks(db) {
       if (info.changes > 0) {
         insertedIds.push(Number(info.lastInsertRowid));
       } else {
-        const existing2 = lookupExistingSection.get(note.id, s.anchor);
+        const existing2 = lookupExistingSection.get(
+          note.id,
+          JSON.stringify(s.heading_path),
+          s.anchor
+        );
         insertedIds.push(existing2 ? Number(existing2.id) : null);
       }
     }
@@ -1671,6 +1675,11 @@ function runMigration014(db, _ctx) {
       ON contract_audit(verb);
   `);
 }
+function runMigration015(db, _ctx) {
+  db.exec(
+    "DROP INDEX IF EXISTS sections_note_anchor; CREATE UNIQUE INDEX IF NOT EXISTS sections_note_headingpath_anchor ON sections(note_id, heading_path, anchor);"
+  );
+}
 var INITIAL_SCHEMA, MIGRATION_002_ALIASES, MIGRATION_003_FIX_DELETE_FKS, MIGRATION_004_VARIABLE_DIMS, MIGRATION_006_BODY_HASH, MIGRATION_007_DOC_URI_ADD, MIGRATIONS;
 var init_schema = __esm({
   "src/db/schema.ts"() {
@@ -1946,6 +1955,11 @@ CREATE INDEX IF NOT EXISTS idx_notes_doc_uri ON notes(doc_uri);
         version: 14,
         description: "contract_audit table \u2014 Phase 6 / CON-* / Q-AUD",
         run: runMigration014
+      },
+      {
+        version: 15,
+        description: "section identity = (note_id, heading_path, anchor) \u2014 context-aware, no longer collapse byte-identical siblings in different contexts (ADR-032 revised)",
+        run: runMigration015
       }
     ];
   }
@@ -3050,6 +3064,9 @@ var init_sections = __esm({
         this._getByAnchor = db.prepare(
           "SELECT * FROM sections WHERE note_id = ? AND anchor = ?"
         );
+        this._getByIdentity = db.prepare(
+          "SELECT * FROM sections WHERE note_id = ? AND heading_path = ? AND anchor = ?"
+        );
         this._findContainingChunk = db.prepare(
           // `chunk_id` is monotonically increasing per note; chunk_id_first
           // and chunk_id_last carve disjoint ranges (or both NULL for a
@@ -3073,6 +3090,7 @@ var init_sections = __esm({
       _deleteByNote;
       _getByNote;
       _getByAnchor;
+      _getByIdentity;
       _findContainingChunk;
       _countByNote;
       /**
@@ -3105,14 +3123,15 @@ var init_sections = __esm({
         return ids;
       }
       /**
-       * Insert one section, collision-safe. Returns the id of the row that
-       * now owns (note_id, anchor): the freshly inserted row, or — when a
-       * same-anchor sibling already won the unique slot — that surviving
-       * row's id (so callers can resolve parent_id linkage). Mirrors the
-       * backfill behavior in src/sections/backfill.ts. The live indexer
-       * uses this instead of `insertMany` so duplicate-anchor sibling
-       * headings can't abort the whole index run
-       * (see ISSUE-indexer-duplicate-anchor.md).
+       * Insert one section, collision-safe. Returns the id of the row that now
+       * owns the identity (note_id, heading_path, anchor): the freshly inserted
+       * row, or — when a same-context byte-identical sibling already won the
+       * unique slot — that surviving row's id (so callers can resolve parent_id
+       * linkage). Per ADR-032 (revised), a collision now requires BOTH same anchor
+       * AND same heading_path, so differently-placed identical sections persist as
+       * distinct rows. Mirrors src/sections/backfill.ts. The live indexer uses
+       * this instead of `insertMany` so duplicate sibling headings can't abort the
+       * whole index run (see ISSUE-indexer-duplicate-anchor.md).
        */
       insertOneResolving(r) {
         const info = this._insert.run({
@@ -3128,7 +3147,7 @@ var init_sections = __esm({
           created_at: Date.now()
         });
         if (info.changes > 0) return Number(info.lastInsertRowid);
-        const existing = this._getByAnchor.get(r.note_id, r.anchor);
+        const existing = this._getByIdentity.get(r.note_id, r.heading_path, r.anchor);
         return existing ? Number(existing.id) : null;
       }
       deleteByNote(noteId) {
@@ -10415,7 +10434,7 @@ async function searchSections(deps, args2) {
     const resolution = deps.sectionForHit(hit.vault, hit.notePath, hit.chunkIdx);
     if (!resolution) continue;
     if (resolution.headingPath.length === 0) continue;
-    const key = `${resolution.noteId}#${resolution.anchor}`;
+    const key = `${resolution.noteId}#${resolution.headingPath.join("\0")}#${resolution.anchor}`;
     const existing = sectionMap.get(key);
     if (!existing) {
       sectionMap.set(key, {

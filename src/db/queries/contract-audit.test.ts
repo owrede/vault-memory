@@ -49,9 +49,9 @@ describe("ContractAuditQueries (Phase 6 / Q-AUD)", () => {
     const m14 = MIGRATIONS.find((m) => m.version === 14);
     expect(m14).toBeDefined();
     expect(m14?.description).toMatch(/contract_audit/);
-    // Confirm it's the head — version 14 is the highest.
+    // Head moved to 15 (section identity = note_id, heading_path, anchor; ADR-032).
     const maxVersion = Math.max(...MIGRATIONS.map((m) => m.version));
-    expect(maxVersion).toBe(14);
+    expect(maxVersion).toBe(15);
   });
 
   it("migration 014 is idempotent — a second migrate() does not throw", () => {

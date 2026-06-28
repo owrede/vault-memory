@@ -165,18 +165,43 @@ describe("SectionsQueries", () => {
     expect(db.sections.countByNote(nid)).toBe(0);
   });
 
-  it("insertMany is collision-safe (INSERT OR IGNORE): a duplicate anchor does not throw", () => {
+  it("insertMany is collision-safe (INSERT OR IGNORE): a same-identity duplicate does not throw", () => {
     // Regression for ISSUE-indexer-duplicate-anchor.md: a note with two
-    // sibling sections that GitHub-slugify to the same anchor must not abort
-    // the index run. The first sibling wins the UNIQUE(note_id, anchor) slot;
-    // the second is silently ignored rather than throwing.
+    // byte-identical sibling sections in the SAME context must not abort the
+    // index run. Same anchor AND same heading_path → the first wins the
+    // UNIQUE(note_id, heading_path, anchor) slot; the second is ignored.
     const nid = seedNote("a.md");
-    db.sections.insertMany([row(nid, { anchor: "dup", heading_text: "A" })]);
+    const hp = JSON.stringify(["X"]);
+    db.sections.insertMany([row(nid, { anchor: "dup", heading_text: "A", heading_path: hp })]);
     expect(() =>
-      db.sections.insertMany([row(nid, { anchor: "dup", heading_text: "B" })]),
+      db.sections.insertMany([row(nid, { anchor: "dup", heading_text: "B", heading_path: hp })]),
     ).not.toThrow();
     expect(db.sections.countByNote(nid)).toBe(1);
-    expect(db.sections.getByAnchor(nid, "dup")!.heading_text).toBe("A");
+  });
+
+  it("ADR-032: same anchor but DIFFERENT heading_path → two distinct rows (not collapsed)", () => {
+    // The core of the context-aware identity. Two byte-identical sections
+    // (same content-hash anchor) under different parents (`Q1 > Risks` vs
+    // `Q2 > Risks`) are distinct sections and must both persist.
+    const nid = seedNote("a.md");
+    const a = db.sections.insertOneResolving(
+      row(nid, {
+        anchor: "same",
+        heading_text: "Risks",
+        heading_path: JSON.stringify(["Q1", "Risks"]),
+      }),
+    );
+    const b = db.sections.insertOneResolving(
+      row(nid, {
+        anchor: "same",
+        heading_text: "Risks",
+        heading_path: JSON.stringify(["Q2", "Risks"]),
+      }),
+    );
+    expect(a).not.toBeNull();
+    expect(b).not.toBeNull();
+    expect(b).not.toBe(a); // distinct rows — context differentiates them
+    expect(db.sections.countByNote(nid)).toBe(2);
   });
 
   describe("insertOneResolving (collision-safe single insert)", () => {
@@ -188,17 +213,19 @@ describe("SectionsQueries", () => {
       expect(db.sections.countByNote(nid)).toBe(1);
     });
 
-    it("returns the SURVIVING row id on a duplicate-anchor collision (parent linkage)", () => {
+    it("returns the SURVIVING row id on a same-identity collision (parent linkage)", () => {
+      // Same anchor AND same heading_path = a true same-context collision.
       const nid = seedNote("a.md");
+      const hp = JSON.stringify(["Notes"]);
       const first = db.sections.insertOneResolving(
-        row(nid, { anchor: "dup", heading_text: "First" }),
+        row(nid, { anchor: "dup", heading_text: "Notes", heading_path: hp }),
       );
       const second = db.sections.insertOneResolving(
-        row(nid, { anchor: "dup", heading_text: "Second" }),
+        row(nid, { anchor: "dup", heading_text: "Notes", heading_path: hp }),
       );
-      expect(second).toBe(first);
+      expect(second).toBe(first); // collapsed: identical content, identical context
       expect(db.sections.countByNote(nid)).toBe(1);
-      expect(db.sections.getByAnchor(nid, "dup")!.heading_text).toBe("First");
+      // A child pointing at the resolved id links to a real surviving row.
       db.sections.insertOneResolving(
         row(nid, { anchor: "child", heading_text: "Child", parent_id: second!, level: 2 }),
       );
