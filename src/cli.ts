@@ -69,6 +69,42 @@ async function runIndex(rest: string[]): Promise<void> {
   const targets = vaultName ? [manager.require(vaultName)] : manager.list();
 
   for (const vault of targets) {
+    // ADR-008: ContextFit-backed vaults use the CPU-only token-native engine.
+    // Two-part index: (1) build the full SQLite content layer WITHOUT embeddings
+    // (powers graph/sections/frontmatter/stats tools, the watcher, catchup, and
+    // write re-index) and (2) build the ContextFit search KB. No Ollama, no GPU.
+    if (vault.config.backend === "contextfit") {
+      const { indexVaultWithContextFit } = await import("./adapters/retrieval/contextfit/index.js");
+      console.error(
+        `\n→ Indexing "${vault.config.name}" with ContextFit (CPU-only, no embeddings)`,
+      );
+      // (1) SQLite content layer — embeddings:"none" skips Ollama entirely.
+      const sqlite = await indexVault(vault, {
+        mode,
+        embeddingModel: "contextfit",
+        embeddings: "none",
+        onProgress: (msg) => console.error(`  ${msg}`),
+      });
+      if (sqlite.status !== "completed") {
+        console.error(`✗ ${vault.config.name}: SQLite layer failed — ${sqlite.error}`);
+        process.exitCode = 1;
+        continue;
+      }
+      // (2) ContextFit search KB.
+      const cfResult = await indexVaultWithContextFit(vault.config, {
+        onProgress: (msg) => console.error(`  ${msg}`),
+      });
+      if (cfResult.status === "completed") {
+        console.error(
+          `✓ ${vault.config.name}: ${sqlite.notesIndexed} notes (SQLite) + ContextFit KB · ${sqlite.durationMs + cfResult.durationMs}ms`,
+        );
+      } else {
+        console.error(`✗ ${vault.config.name}: ContextFit KB failed — ${cfResult.error}`);
+        process.exitCode = 1;
+      }
+      continue;
+    }
+
     const model =
       vault.config.embedding_model ?? config.server.default_embedding_model ?? "qwen3-embedding";
 
@@ -114,6 +150,11 @@ async function runAddVault(rest: string[]): Promise<void> {
   let name: string | undefined;
   let writeEnabled = false;
   let skipIndex = false;
+  let backend: "ollama" | "contextfit" | undefined;
+
+  const USAGE =
+    "Usage: vault-memory add-vault <path> [--name <name>] [--write] " +
+    "[--backend ollama|contextfit] [--no-index]";
 
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i];
@@ -122,13 +163,26 @@ async function runAddVault(rest: string[]): Promise<void> {
       i++;
     } else if (arg === "--write" || arg === "--write-enabled") {
       writeEnabled = true;
+    } else if (arg === "--backend") {
+      const v = rest[i + 1];
+      i++;
+      if (v !== "ollama" && v !== "contextfit") {
+        console.error(`--backend must be "ollama" or "contextfit" (got: ${v ?? "<missing>"})`);
+        process.exit(2);
+      }
+      backend = v;
     } else if (arg === "--no-index") {
       skipIndex = true;
     } else if (arg === "--help" || arg === "-h") {
-      console.error(`Usage: vault-memory add-vault <path> [--name <name>] [--write] [--no-index]
+      console.error(`${USAGE}
 
 Registers a vault in ~/.vault-memory/config.toml, writes a .mcp.json
-into the vault root, and runs an initial index. Idempotent.`);
+into the vault root, and runs an initial index. Idempotent.
+
+--backend contextfit  Use the CPU-only, token-native ContextFit engine
+                      (no Ollama / embeddings / GPU). Requires the
+                      \`contextfit\` CLI (pipx install contextfit). Ideal for
+                      resource-limited / non-GPU hosts (e.g. a Synology NAS).`);
       return;
     } else if (arg && !arg.startsWith("--") && path === null) {
       path = arg;
@@ -136,12 +190,12 @@ into the vault root, and runs an initial index. Idempotent.`);
   }
 
   if (path === null) {
-    console.error("Usage: vault-memory add-vault <path> [--name <name>] [--write] [--no-index]");
+    console.error(USAGE);
     process.exit(2);
   }
 
-  console.error(`→ Registering vault: ${path}`);
-  const result = await addVault({ path, name, writeEnabled });
+  console.error(`→ Registering vault: ${path}${backend ? ` (backend: ${backend})` : ""}`);
+  const result = await addVault({ path, name, writeEnabled, ...(backend ? { backend } : {}) });
 
   // Render the per-step transcript so users see exactly what changed.
   for (const step of result.steps) {

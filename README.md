@@ -177,32 +177,56 @@ phase plan and the v3/v4 deferred sections.
 
 ## Install and docs
 
+### Guided install (recommended)
+
+Ask your agent to **"install vault-memory"** (or run `/vmem:install`). The
+installer asks two questions — which retrieval engine, and which vault(s) — then
+installs every missing dependency for the chosen path, registers the vault(s),
+builds the index, and wires the MCP server. See
+[`docs/v2/CONTEXTFIT-BACKEND.md`](docs/v2/CONTEXTFIT-BACKEND.md) for the engine
+comparison.
+
+### Choose a retrieval engine
+
+vault-memory supports two engines, selectable **per vault**:
+
+- **Ollama (vector / embeddings)** — best semantic search; needs Ollama + an
+  embedding model resident (GPU recommended).
+- **ContextFit (CPU-only)** — token-native BM25 + Semantic-IDs; **no GPU, no
+  model**, ~41 MB deps. Ideal for resource-limited / non-GPU hosts (e.g. a
+  Synology NAS). Requires the `contextfit` CLI (`pipx install contextfit`).
+
 ### Prerequisites
 
 - **Node.js >= 22** — runtime for the MCP server (`brew install node@22`).
-- **[Ollama](https://ollama.com)** on `localhost:11434` — local embedding host
-  (`brew install ollama && brew services start ollama`).
-- **`bge-m3`** embedding model (~1.1 GB) — vectors for semantic search
-  (`ollama pull bge-m3`).
-- One or more Obsidian vaults — what you index.
-- An MCP-aware client — the agent that consumes the tools.
+- One or more Obsidian vaults; an MCP-aware client.
+- **Ollama engine only:** [Ollama](https://ollama.com) on `localhost:11434`
+  (`brew install ollama && brew services start ollama`) + the `bge-m3` model
+  (~1.1 GB, `ollama pull bge-m3`). Optional ONNX reranker
+  (`bge-reranker-v2-m3`, ~570 MB) via `bash scripts/download-reranker.sh`.
+- **ContextFit engine only:** Python 3.10+ and `pipx install contextfit`.
 
-Tested on macOS. Linux should work; Windows untested. Optional ONNX reranker
-(`bge-reranker-v2-m3`, ~570 MB) via `bash scripts/download-reranker.sh`.
+Tested on macOS. Linux should work; Windows untested.
 
-### Install
+### Manual install
 
 ```bash
 npm install -g @owrede/vault-memory
+
+# Ollama (default) vault:
 vault-memory add-vault "/path/to/your/obsidian/vault"
+
+# OR a CPU-only ContextFit vault (no Ollama/GPU):
+vault-memory add-vault "/path/to/your/obsidian/vault" --backend contextfit
+
 vault-memory serve
 ```
 
 The `add-vault` command appends a `[[vaults]]` block to
 `~/.vault-memory/config.toml`, writes a `.mcp.json` into the vault root, and runs
 the initial index. Idempotent — re-running on a known path fills in whatever is
-missing. Flags: `--name <slug>`, `--write` (enable MCP writes; default read-only),
-`--no-index` (skip the initial index).
+missing. Flags: `--name <slug>`, `--backend ollama|contextfit`, `--write`
+(enable MCP writes; default read-only), `--no-index` (skip the initial index).
 
 ### Documentation
 
