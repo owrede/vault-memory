@@ -1,72 +1,80 @@
-# ADR-032 — Duplicate section anchors: collapse, do not suffix
+# ADR-032 — Section identity is content + context (note_id, heading_path, anchor)
 
-**Status:** Accepted
-**Date:** 2026-06-25
+**Status:** Accepted (revised 2026-06-28)
+**Date:** 2026-06-25 (original), 2026-06-28 (revised)
 **Phase:** v2.x
 **Supersedes:** —
 **Superseded by:** —
 **Related:** ADR-003 (Document shape — H-7 anchor contract), ADR-004 (Memory sink / D-05 source_hashes).
-External: `ISSUE-indexer-duplicate-anchor.md`, `ISSUE-migration-010-duplicate-anchor.md` (both archived).
+External: `ISSUE-indexer-duplicate-anchor.md`, `ISSUE-migration-010-duplicate-anchor.md` (both archived). Implemented by migration 015.
 
 ---
 
 ## Context
 
 Two notes-with-repeated-headings issues (migration backfill + live indexer) were
-fixed with a minimal `INSERT OR IGNORE` + `insertOneResolving()` approach: when a
-note contains two sibling sections that produce the **same** `(note_id, anchor)`,
-the first sibling wins the `UNIQUE` slot and later identical siblings collapse into
-it for `parent_id` linkage.
+first fixed with `INSERT OR IGNORE` against a `UNIQUE(note_id, anchor)` index:
+when two sibling sections produced the same content-hash anchor, the first won and
+later ones collapsed into it.
 
-Both issues flagged a "better fix": dedupe anchors at the source in
-`extractSections()` by suffixing repeated slugs GitHub-style (`notes`, `notes-1`,
-`notes-2`) so every sibling persists as a distinct row.
+**The original version of this ADR ratified that collapse.** That was wrong. The
+anchor is `sha256(heading_text + "\n" + body)` and deliberately **excludes the
+`heading_path`** (the ancestor chain). So two sections collapsed even when their
+context differed entirely:
 
-This ADR decides whether to pursue that suffixing fix.
+```
+# Q1 Planning  →  ## Risks  →  "TBD"
+# Q2 Planning  →  ## Risks  →  "TBD"
+```
+
+Same heading + same body → same anchor → **the Q2 risk was silently dropped**,
+even though it is a different risk in a different quarter. Identity was being
+computed from *less context than the data actually carries* (`heading_path` is
+stored on every row but was not part of the key).
 
 ## Decision
 
-**We keep content-hash anchors and reject positional suffixing.** The
-`INSERT OR IGNORE` collapse is the canonical, design-consistent behavior.
+**A section's identity is its content AND its location/context.** The unique key
+becomes `(note_id, heading_path, anchor)` (migration 015). `anchor` stays a pure
+content hash — ADR-003 H-7 and the D-05 `source_hashes` contract are unchanged.
+
+Two byte-identical sections in **different contexts** (different `heading_path`)
+now persist as **distinct rows**. Two byte-identical sections in the **same
+context** (same `heading_path` — a verbatim block repeated under the same parent)
+still collapse; that is genuinely duplicated content in one place.
 
 ## Rationale
 
-1. **Suffixing violates ADR-003 H-7.** H-7 defines `anchor` as exactly
-   `sha256(NFC(heading_text) || "\n" || render_blocks_to_plain_text(blocks))` — a
-   pure **content** hash. A positional `-1`/`-2` suffix makes the anchor depend on
-   document *position*, not content, breaking the H-7 contract.
+1. **Different context = different section.** A repeated heading under a different
+   parent is a different thing. Treating `Q1 > Risks` and `Q2 > Risks` as one
+   citation loses real information. This is the user-facing correctness fix.
 
-2. **H-7 anchors double as `source_hashes` (D-05).** Phase 5 briefs consume section
-   anchors directly as content-addressable source hashes. Two byte-identical
-   sections SHOULD share one hash — that is the point of content addressing. Forcing
-   them apart with a positional suffix would mint two distinct "sources" for
-   identical content.
+2. **H-7 stays intact.** We did NOT change `anchor` (rejected the
+   `notes-1`/`notes-2` positional-suffix idea, which *would* have broken H-7 by
+   making the anchor position-dependent). `anchor` remains the content hash that
+   briefs consume as `source_hashes`; we only widened the DB row's UNIQUE key.
 
-3. **Collapse is semantically correct.** Two sibling sections with identical heading
-   AND identical body are, for retrieval/citation purposes, the same content. A note
-   that repeats `## Anti-Patterns\n- don't do X` twice has one piece of information,
-   not two. Surfacing it once is the right answer; the first-sibling-wins rule is a
-   stable, deterministic choice of which row carries it.
+3. **`heading_path` over `ord`.** Context is captured by the ancestor chain
+   (semantic) rather than positional ordinal. This is stable under section
+   reordering/insertion, whereas `ord` would churn identity on edits.
 
-4. **The crash — the only real defect — is already fixed.** `INSERT OR IGNORE`
-   removes the `SQLITE_CONSTRAINT_UNIQUE` abort. Suffixing buys only the (rarely
-   useful) ability to address the second identical sibling separately, at the cost of
-   the ripples below.
+4. **The crash is still fixed.** `INSERT OR IGNORE` + `insertOneResolving()`
+   (now keyed on the full identity) keeps the index run from aborting on a true
+   same-context collision.
 
 ## Consequences
 
 ### Positive
-- ADR-003 H-7 stays intact; no identity-scheme change; no eval/snapshot re-baseline.
-- `search-sections.ts` dedup keyed on `(noteId, anchor)` remains correct.
-- The `mentions` edge resolving `[[Note#anchor]]` keeps a stable content target.
+- Differently-placed identical sections are retained and separately citable.
+- `anchor` unchanged → no eval/snapshot re-baseline for content hashing; briefs’ `source_hashes` unaffected.
+- `search-sections.ts` dedup key widened to `(note_id, heading_path, anchor)` so identical-but-differently-placed sections don't merge in search results either.
 
 ### Negative / accepted
-- A note with two byte-identical sibling sections exposes only the first via
-  sections. Acceptable: identical content is one citation. (Note: sections that
-  share a heading but differ in body already get distinct anchors and are
-  unaffected — only byte-identical siblings collapse.)
+- A verbatim block repeated under the *same* parent still collapses to one row. Acceptable — that is duplicated content in one context.
+- Existing DBs migrated before a full re-index may still carry rows collapsed under the old key; migration 015 swaps the index but cannot resurrect siblings dropped earlier. The next `index --full` regenerates them correctly.
 
-### If this is ever revisited
-Reopening suffixing requires amending H-7 (anchor = content-hash) and auditing the
-`source_hashes`/brief consumers, `search-sections` dedup, and the `mentions` edge
-resolver. That is a deliberate, breaking identity change and must be its own ADR.
+### Implementation
+- Migration 015: drop `sections_note_anchor`, create unique `sections_note_headingpath_anchor` on `(note_id, heading_path, anchor)`.
+- `SectionsQueries.insertOneResolving` + `backfill.ts` resolve collisions by the full identity.
+- `search-sections.ts` dedup key includes `heading_path`.
+- The `mentions` edge resolving `[[Note#anchor]]` does NOT look sections up by anchor (`extract-edges.ts` only strips the `#anchor` text suffix), so it is unaffected.

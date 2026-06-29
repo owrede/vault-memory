@@ -976,6 +976,36 @@ function runMigration014(db: BetterSqlite3Database, _ctx: MigrationContext): voi
   `);
 }
 
+/**
+ * Migration 015 — section identity becomes (note_id, heading_path, anchor).
+ *
+ * Per ADR-032 (revised): a section's identity is its content PLUS its
+ * location/context, not content alone. The original UNIQUE(note_id, anchor)
+ * collapsed two byte-identical sibling sections into one row even when they
+ * sat under different parent headings (e.g. `# Q1 > ## Risks "TBD"` and
+ * `# Q2 > ## Risks "TBD"`) — discarding the context that distinguishes them.
+ *
+ * `anchor` stays a pure content hash (ADR-003 H-7 unchanged; brief
+ * `source_hashes` per D-05 unaffected). We only widen the UNIQUE key to add
+ * `heading_path` (the ancestor chain), so differently-placed sections persist
+ * as distinct rows. Genuinely-duplicated content in the SAME context
+ * (verbatim repeat under the same parent) still collapses — acceptable.
+ *
+ * Migration is index-only: drop the old unique index, create the new one.
+ * Existing DBs may have already-collapsed rows from the old behavior; this
+ * migration cannot resurrect siblings dropped before it ran, but the next
+ * `index --full` regenerates them correctly. No data is lost or rewritten.
+ *
+ * Adapter-seam discipline: no fs/path/gray-matter/chokidar imports.
+ */
+function runMigration015(db: BetterSqlite3Database, _ctx: MigrationContext): void {
+  db.exec(
+    "DROP INDEX IF EXISTS sections_note_anchor; " +
+      "CREATE UNIQUE INDEX IF NOT EXISTS sections_note_headingpath_anchor " +
+      "ON sections(note_id, heading_path, anchor);",
+  );
+}
+
 export const MIGRATIONS: readonly Migration[] = [
   {
     version: 1,
@@ -1050,5 +1080,11 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 14,
     description: "contract_audit table — Phase 6 / CON-* / Q-AUD",
     run: runMigration014,
+  },
+  {
+    version: 15,
+    description:
+      "section identity = (note_id, heading_path, anchor) — context-aware, no longer collapse byte-identical siblings in different contexts (ADR-032 revised)",
+    run: runMigration015,
   },
 ];

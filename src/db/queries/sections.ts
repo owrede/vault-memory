@@ -21,6 +21,7 @@ export class SectionsQueries {
   private readonly _deleteByNote: BetterSqlite3.Statement<[number]>;
   private readonly _getByNote: BetterSqlite3.Statement<[number], SectionRow>;
   private readonly _getByAnchor: BetterSqlite3.Statement<[number, string], SectionRow>;
+  private readonly _getByIdentity: BetterSqlite3.Statement<[number, string, string], SectionRow>;
   private readonly _findContainingChunk: BetterSqlite3.Statement<
     [number, number, number],
     SectionRow
@@ -28,13 +29,15 @@ export class SectionsQueries {
   private readonly _countByNote: BetterSqlite3.Statement<[number], { c: number }>;
 
   constructor(private readonly db: BetterSqlite3.Database) {
-    // INSERT OR IGNORE: a note can contain sibling sections that GitHub-slugify
-    // to the same anchor (e.g. two H2s both titled "Anti-Patterns"). The table
-    // has UNIQUE(note_id, anchor); a plain INSERT crashes the whole index run on
-    // the second sibling (see ISSUE-indexer-duplicate-anchor.md). `OR IGNORE`
-    // makes the first sibling win the unique slot; callers that need the surviving
-    // id for parent linkage use `insertOneResolving`. Mirrors the backfill path
-    // in src/sections/backfill.ts.
+    // INSERT OR IGNORE: section identity is (note_id, heading_path, anchor)
+    // per ADR-032 (revised). Two sibling sections only collide when they are
+    // byte-identical (same anchor) AND in the same context (same heading_path)
+    // — i.e. genuinely duplicated content in one place. Differently-placed
+    // byte-identical sections (e.g. `Q1 > Risks` vs `Q2 > Risks` with the same
+    // body) have different heading_path → distinct rows. `OR IGNORE` makes the
+    // first sibling win on a true same-context collision; callers needing the
+    // surviving id for parent linkage use `insertOneResolving`. Mirrors
+    // src/sections/backfill.ts.
     this._insert = db.prepare(`
       INSERT OR IGNORE INTO sections
         (note_id, anchor, heading_path, heading_text, level,
@@ -51,6 +54,12 @@ export class SectionsQueries {
     );
     this._getByAnchor = db.prepare<[number, string], SectionRow>(
       "SELECT * FROM sections WHERE note_id = ? AND anchor = ?",
+    );
+    // Collision resolution keys on the FULL identity (note_id, heading_path,
+    // anchor) so insertOneResolving finds the exact surviving row, not just
+    // any same-anchor sibling in a different context.
+    this._getByIdentity = db.prepare<[number, string, string], SectionRow>(
+      "SELECT * FROM sections WHERE note_id = ? AND heading_path = ? AND anchor = ?",
     );
     this._findContainingChunk = db.prepare<[number, number], SectionRow>(
       // `chunk_id` is monotonically increasing per note; chunk_id_first
@@ -102,14 +111,15 @@ export class SectionsQueries {
   }
 
   /**
-   * Insert one section, collision-safe. Returns the id of the row that
-   * now owns (note_id, anchor): the freshly inserted row, or — when a
-   * same-anchor sibling already won the unique slot — that surviving
-   * row's id (so callers can resolve parent_id linkage). Mirrors the
-   * backfill behavior in src/sections/backfill.ts. The live indexer
-   * uses this instead of `insertMany` so duplicate-anchor sibling
-   * headings can't abort the whole index run
-   * (see ISSUE-indexer-duplicate-anchor.md).
+   * Insert one section, collision-safe. Returns the id of the row that now
+   * owns the identity (note_id, heading_path, anchor): the freshly inserted
+   * row, or — when a same-context byte-identical sibling already won the
+   * unique slot — that surviving row's id (so callers can resolve parent_id
+   * linkage). Per ADR-032 (revised), a collision now requires BOTH same anchor
+   * AND same heading_path, so differently-placed identical sections persist as
+   * distinct rows. Mirrors src/sections/backfill.ts. The live indexer uses
+   * this instead of `insertMany` so duplicate sibling headings can't abort the
+   * whole index run (see ISSUE-indexer-duplicate-anchor.md).
    */
   insertOneResolving(r: InsertSectionRow): number | null {
     const info = this._insert.run({
@@ -125,8 +135,10 @@ export class SectionsQueries {
       created_at: Date.now(),
     });
     if (info.changes > 0) return Number(info.lastInsertRowid);
-    // Collision on UNIQUE(note_id, anchor): reuse the surviving row's id.
-    const existing = this._getByAnchor.get(r.note_id, r.anchor);
+    // Collision on UNIQUE(note_id, heading_path, anchor): reuse the surviving
+    // row's id. Look up by the full identity so we get the exact row, not a
+    // same-anchor sibling that lives under a different heading_path.
+    const existing = this._getByIdentity.get(r.note_id, r.heading_path, r.anchor);
     return existing ? Number(existing.id) : null;
   }
 

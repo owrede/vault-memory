@@ -24,10 +24,7 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { Database } from "../../src/db/database.js";
 import { MIGRATIONS } from "../../src/db/schema.js";
-import {
-  extractSections,
-  markdownToSectionBlocks,
-} from "../../src/sections/index.js";
+import { extractSections, markdownToSectionBlocks } from "../../src/sections/index.js";
 
 describe("migration 010 smoke (Phase 3 / 03-01)", () => {
   let db: Database;
@@ -48,9 +45,10 @@ describe("migration 010 smoke (Phase 3 / 03-01)", () => {
 
   it("(1) DDL applies: sections table + 3 indexes + notes.status column + partial index", () => {
     const tableRow = db.handle
-      .prepare<[], { name: string }>(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='sections'",
-      )
+      .prepare<
+        [],
+        { name: string }
+      >("SELECT name FROM sqlite_master WHERE type='table' AND name='sections'")
       .get();
     expect(tableRow?.name).toBe("sections");
 
@@ -60,10 +58,13 @@ describe("migration 010 smoke (Phase 3 / 03-01)", () => {
       )
       .all()
       .map((r) => r.name);
-    // Three explicit indexes plus an auto-generated PK index.
+    // Three explicit indexes plus an auto-generated PK index. The unique
+    // identity index was renamed by migration 015 (sections_note_anchor →
+    // sections_note_headingpath_anchor) when section identity gained
+    // heading_path context — ADR-032.
     expect(indexes).toEqual(
       expect.arrayContaining([
-        "sections_note_anchor",
+        "sections_note_headingpath_anchor",
         "sections_note_parent_ord",
         "sections_chunk_range",
       ]),
@@ -76,9 +77,10 @@ describe("migration 010 smoke (Phase 3 / 03-01)", () => {
     expect(notesCols).toContain("status");
 
     const notesStatusIdx = db.handle
-      .prepare<[], { name: string; sql: string }>(
-        "SELECT name, sql FROM sqlite_master WHERE type='index' AND name='notes_status'",
-      )
+      .prepare<
+        [],
+        { name: string; sql: string }
+      >("SELECT name, sql FROM sqlite_master WHERE type='index' AND name='notes_status'")
       .get();
     expect(notesStatusIdx?.name).toBe("notes_status");
     // The index MUST be partial (WHERE status IS NOT NULL).
@@ -100,8 +102,7 @@ describe("migration 010 smoke (Phase 3 / 03-01)", () => {
     // Insert a v1-shaped note + a chunk row, then wipe sections (simulating
     // the cohort of existing-rows-at-upgrade), and re-run the backfill
     // helper inline. Migration 010 step C calls this same helper.
-    const content =
-      "preamble.\n\n# H1\nbody1.\n\n## H2\nbody2 inside H2.\n\n# H1b\nbody3.\n";
+    const content = "preamble.\n\n# H1\nbody1.\n\n## H2\nbody2 inside H2.\n\n# H1b\nbody3.\n";
     const noteUpsert = db.notes.upsertByPath({
       path: "doc.md",
       content,
@@ -118,17 +119,13 @@ describe("migration 010 smoke (Phase 3 / 03-01)", () => {
     expect(db.sections.countByNote(noteUpsert.id)).toBe(0);
 
     // Run the backfill helper (the exact code migration 010 step C runs).
-    const { backfillSectionsFromChunks } = await import(
-      "../../src/sections/backfill.js"
-    );
+    const { backfillSectionsFromChunks } = await import("../../src/sections/backfill.js");
     const n = backfillSectionsFromChunks(db.handle);
     expect(n).toBe(1);
 
     const rows = db.sections.getByNote(noteUpsert.id);
     const expected = extractSections(markdownToSectionBlocks(content));
-    expect(rows.map((r) => r.anchor).sort()).toEqual(
-      expected.map((s) => s.anchor).sort(),
-    );
+    expect(rows.map((r) => r.anchor).sort()).toEqual(expected.map((s) => s.anchor).sort());
     // Specifically: 4 sections (preamble + H1 + H2 + H1b).
     expect(rows).toHaveLength(4);
   });

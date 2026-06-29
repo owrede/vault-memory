@@ -45,15 +45,14 @@ export function backfillSectionsFromChunks(db: BetterSqlite3.Database): number {
   const getChunks = db.prepare<[number], ChunkRow>(
     "SELECT * FROM chunks WHERE note_id = ? ORDER BY id ASC",
   );
-  // INSERT OR IGNORE: real-world v1 vaults contain notes with sibling sections
-  // that GitHub-slugify to the same anchor (e.g. two H2s both titled "Notes").
-  // The sections table has UNIQUE(note_id, anchor); a plain INSERT collides on
-  // the second sibling, the migration transaction rolls back, every CLI command
-  // crashes (see ISSUE-migration-010-duplicate-anchor.md). `OR IGNORE` is the
-  // minimal safe response — first sibling wins the unique slot, later siblings
-  // collapse into that row for parent-linkage purposes via lookupExistingSection.
-  // Proper anchor de-duplication (notes-1, notes-2 …) is the better fix; that's
-  // tracked separately and requires changes to extractSections + chunk linkage.
+  // INSERT OR IGNORE: section identity is (note_id, heading_path, anchor) per
+  // ADR-032 (revised). A collision needs same anchor AND same heading_path —
+  // i.e. byte-identical content in the same context. A plain INSERT on a true
+  // collision would roll back the whole migration transaction and crash every
+  // CLI command (see ISSUE-migration-010-duplicate-anchor.md). `OR IGNORE`
+  // makes the first sibling win; later same-identity siblings collapse into it
+  // for parent-linkage via lookupExistingSection. Differently-placed
+  // byte-identical sections (different heading_path) persist as distinct rows.
   const insertSection = db.prepare(`
     INSERT OR IGNORE INTO sections
       (note_id, anchor, heading_path, heading_text, level,
@@ -63,8 +62,8 @@ export function backfillSectionsFromChunks(db: BetterSqlite3.Database): number {
        @parent_id, @ord, @chunk_id_first, @chunk_id_last, @created_at)
   `);
 
-  const lookupExistingSection = db.prepare<[number, string], { id: number }>(
-    "SELECT id FROM sections WHERE note_id = ? AND anchor = ?",
+  const lookupExistingSection = db.prepare<[number, string, string], { id: number }>(
+    "SELECT id FROM sections WHERE note_id = ? AND heading_path = ? AND anchor = ?",
   );
 
   let backfilled = 0;
@@ -117,14 +116,16 @@ export function backfillSectionsFromChunks(db: BetterSqlite3.Database): number {
         // Row inserted normally.
         insertedIds.push(Number(info.lastInsertRowid));
       } else {
-        // Collision on UNIQUE(note_id, anchor). A sibling with the same
-        // GitHub-slugified anchor already won the slot. Look up the
-        // surviving row's id so any later child still has a parent_id to
-        // resolve against. The chunk range on the surviving row reflects
-        // the first sibling's content; chunks belonging to this dropped
-        // sibling will read under the surviving anchor until a fresh
-        // re-index. That's acceptable for a one-time migration backfill.
-        const existing = lookupExistingSection.get(note.id, s.anchor);
+        // Collision on UNIQUE(note_id, heading_path, anchor): a byte-identical
+        // sibling in the SAME context already won the slot. Look up by the full
+        // identity (heading_path stored JSON-stringified, matching the row) so
+        // any later child still has a parent_id to resolve against. Acceptable
+        // for a one-time migration backfill; the next full re-index rebuilds.
+        const existing = lookupExistingSection.get(
+          note.id,
+          JSON.stringify(s.heading_path),
+          s.anchor,
+        );
         insertedIds.push(existing ? Number(existing.id) : null);
       }
     }

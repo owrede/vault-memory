@@ -15,7 +15,8 @@
  *      `findContainingChunk`. A chunk that does NOT map to any section
  *      (legacy pre-migration-010 row, or a chunk whose section has
  *      NULL `chunk_id_first`/`chunk_id_last`) is silently dropped.
- *   3. De-duplicate by `(note_id, anchor)`. When multiple chunk hits
+ *   3. De-duplicate by `(note_id, heading_path, anchor)` — the section
+ *      identity per ADR-032. When multiple chunk hits
  *      land in the same section, the section's score is the MAX of
  *      the constituent chunk scores — the natural reading of
  *      "how relevant is this section". RRF rank-position scores would
@@ -197,7 +198,11 @@ export async function searchSections(
     // heading, which is precisely what the acceptance excludes.
     if (resolution.headingPath.length === 0) continue;
 
-    const key = `${resolution.noteId}#${resolution.anchor}`;
+    // Dedup key matches the section identity (note_id, heading_path, anchor)
+    // per ADR-032: two byte-identical sections in DIFFERENT contexts are
+    // distinct citations and must not merge here. heading_path is joined with
+    // a separator that cannot appear in a heading slug segment.
+    const key = `${resolution.noteId}#${resolution.headingPath.join(" ")}#${resolution.anchor}`;
     const existing = sectionMap.get(key);
     if (!existing) {
       sectionMap.set(key, {
