@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [2.2.1] — 2026-06-29
+
 ### Fixed
 
 - **Section identity is now content + context, not content alone (ADR-032, migration 015).** Two byte-identical sibling sections in *different* contexts (e.g. `# Q1 > ## Risks "TBD"` and `# Q2 > ## Risks "TBD"`) previously collapsed into one row under `UNIQUE(note_id, anchor)` — silently dropping the second — because the content-hash anchor excludes the ancestor chain. Section identity is now `(note_id, heading_path, anchor)`, so differently-placed identical sections persist as distinct rows. `anchor` stays a pure content hash (ADR-003 H-7 and the D-05 `source_hashes` contract are unchanged); `search-sections` dedup widened to match. Migration 015 swaps the unique index; a verbatim block repeated under the *same* parent still collapses (one citation). Existing DBs reconcile on the next `index --full`.
