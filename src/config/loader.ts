@@ -22,9 +22,23 @@ const ServerConfigSchema = z.object({
   reranker_model_dir: z.string().optional(),
 });
 
+/**
+ * ADR-008: per-vault ContextFit settings. Only consulted when
+ * `backend = "contextfit"`. All optional — a bare `backend = "contextfit"`
+ * uses ContextFit on PATH with the cl100k_base tokenizer + hybrid method.
+ */
+const ContextFitConfigSchema = z.object({
+  command: z.string().min(1).optional(),
+  tokenizer: z.string().min(1).optional(),
+  method: z.enum(["exact", "bm25", "sid", "graph", "hierarchy", "hybrid"]).optional(),
+});
+
 const VaultConfigSchema = z.object({
   name: z.string().min(1),
   path: z.string().min(1),
+  // ADR-008: retrieval engine. Omitted ⇒ "ollama" (back-compat default).
+  backend: z.enum(["ollama", "contextfit"]).optional(),
+  contextfit: ContextFitConfigSchema.optional(),
   embedding_model: z.string().optional(),
   secondary_embedding_model: z.string().optional(),
   write_enabled: z.boolean().optional(),

@@ -12,7 +12,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **ContextFit — a CPU-only, second retrieval engine (ADR-008).** vault-memory now supports a `RetrievalBackend` seam with two engines selectable **per vault**: the default `ollama` (embeddings + sqlite-vec + FTS5 hybrid) and a new `contextfit` ([ContextFit](https://www.context.fit/)) — a token-native, CPU-only engine (BM25 + Semantic-IDs; no embeddings, no GPU). Enable with `vault-memory add-vault <path> --backend contextfit` or `backend = "contextfit"` in `config.toml`. A ContextFit vault skips Ollama entirely (ingest + query run via the `contextfit` CLI), making vault-memory runnable on resource-limited, non-GPU hosts such as a Synology NAS. `search_hybrid` / `search_semantic` dispatch automatically; results use the canonical `SearchHit` shape (`scoreBreakdown.contextfit` carries the raw score). Requires `pipx install contextfit`. See `docs/v2/CONTEXTFIT-BACKEND.md`. Ollama vaults are byte-identical — no behavior change when `backend` is omitted.
 
 ## [2.1.0] — 2026-06-25
 

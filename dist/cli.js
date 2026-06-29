@@ -9,11 +9,11 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
-// ../../../../../../../Users/wrede/Documents/GitHub/vault-memory/node_modules/tsup/assets/esm_shims.js
+// node_modules/tsup/assets/esm_shims.js
 import path from "path";
 import { fileURLToPath } from "url";
 var init_esm_shims = __esm({
-  "../../../../../../../Users/wrede/Documents/GitHub/vault-memory/node_modules/tsup/assets/esm_shims.js"() {
+  "node_modules/tsup/assets/esm_shims.js"() {
     "use strict";
   }
 });
@@ -89,7 +89,7 @@ function extractResourceLength(handle) {
   if (firstSlash === -1) return 0;
   return afterScheme.length - (firstSlash + 1);
 }
-var ServerConfigSchema, VaultConfigSchema, BriefOllamaConfigSchema, BriefConfigSchema, ContractsMcpClientConfigSchema, ContractsConfigSchema, DEFAULT_CONTRACTS_CONFIG, PluginConfigSchema, DEFAULT_PLUGIN_CONFIG, MemorySinkConfigSchema, MemoryConfigSchema, AppConfigSchema, DEFAULT_CONFIG;
+var ServerConfigSchema, ContextFitConfigSchema, VaultConfigSchema, BriefOllamaConfigSchema, BriefConfigSchema, ContractsMcpClientConfigSchema, ContractsConfigSchema, DEFAULT_CONTRACTS_CONFIG, PluginConfigSchema, DEFAULT_PLUGIN_CONFIG, MemorySinkConfigSchema, MemoryConfigSchema, AppConfigSchema, DEFAULT_CONFIG;
 var init_loader = __esm({
   "src/config/loader.ts"() {
     "use strict";
@@ -102,9 +102,17 @@ var init_loader = __esm({
       reranker_backend: z.enum(["onnx", "ollama"]).optional(),
       reranker_model_dir: z.string().optional()
     });
+    ContextFitConfigSchema = z.object({
+      command: z.string().min(1).optional(),
+      tokenizer: z.string().min(1).optional(),
+      method: z.enum(["exact", "bm25", "sid", "graph", "hierarchy", "hybrid"]).optional()
+    });
     VaultConfigSchema = z.object({
       name: z.string().min(1),
       path: z.string().min(1),
+      // ADR-008: retrieval engine. Omitted ⇒ "ollama" (back-compat default).
+      backend: z.enum(["ollama", "contextfit"]).optional(),
+      contextfit: ContextFitConfigSchema.optional(),
       embedding_model: z.string().optional(),
       secondary_embedding_model: z.string().optional(),
       write_enabled: z.boolean().optional(),
@@ -228,7 +236,8 @@ async function addVault(opts) {
       name: proposedName,
       path: resolvedPath,
       writeEnabled: opts.writeEnabled ?? false,
-      excludeGlobs: opts.excludeGlobs ?? DEFAULT_EXCLUDE_GLOBS
+      excludeGlobs: opts.excludeGlobs ?? DEFAULT_EXCLUDE_GLOBS,
+      ...opts.backend ? { backend: opts.backend } : {}
     });
     await ensureFileExists(cfgFile);
     await appendToFile(cfgFile, block);
@@ -252,13 +261,21 @@ function renderVaultBlock(input) {
     `# Added by vault-memory add-vault on ${(/* @__PURE__ */ new Date()).toISOString()}`,
     "[[vaults]]",
     `name = ${JSON.stringify(input.name)}`,
-    `path = ${JSON.stringify(input.path)}`,
+    `path = ${JSON.stringify(input.path)}`
+  ];
+  if (input.backend === "contextfit") {
+    lines.push(
+      `# ADR-008: CPU-only, token-native engine (no Ollama/embeddings/GPU).`,
+      `backend = "contextfit"`
+    );
+  }
+  lines.push(
     `write_enabled = ${input.writeEnabled}`,
     `exclude_globs = [`,
     ...input.excludeGlobs.map((g) => `  ${JSON.stringify(g)},`),
     `]`,
     ""
-  ];
+  );
   return lines.join("\n");
 }
 async function ensureFileExists(path7) {
@@ -4922,6 +4939,288 @@ var init_hybrid = __esm({
   }
 });
 
+// src/adapters/retrieval/contextfit/cli.ts
+import spawn from "cross-spawn";
+function runContextFit(cfg, subcommandArgs, timeoutMs) {
+  const globalArgs = ["--kb", cfg.kbPath];
+  if (cfg.tokenizer) globalArgs.push("--tokenizer", cfg.tokenizer);
+  const args2 = [...globalArgs, ...subcommandArgs];
+  return new Promise((resolve7, reject) => {
+    let child;
+    try {
+      child = spawn(cfg.command, args2, { stdio: ["pipe", "pipe", "pipe"] });
+    } catch (err) {
+      const e = err;
+      reject(
+        new ContextFitError(
+          `contextfit spawn failed: ${e.message}`,
+          e.code === "ENOENT" ? "ENOENT" : "NONZERO_EXIT"
+        )
+      );
+      return;
+    }
+    child.stdin?.end();
+    let stdout = "";
+    let stderr = "";
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      child.kill("SIGKILL");
+      reject(new ContextFitError(`contextfit timed out after ${timeoutMs}ms`, "TIMEOUT"));
+    }, timeoutMs);
+    child.stdout?.on("data", (d) => {
+      stdout += d.toString();
+    });
+    child.stderr?.on("data", (d) => {
+      stderr += d.toString();
+    });
+    child.on("error", (err) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (err.code === "ENOENT") {
+        reject(
+          new ContextFitError(
+            `contextfit not found (tried '${cfg.command}'). Install it with \`pipx install contextfit\` (or pip), or set the command path.`,
+            "ENOENT"
+          )
+        );
+      } else {
+        reject(new ContextFitError(`contextfit spawn failed: ${err.message}`));
+      }
+    });
+    child.on("close", (codeNum) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (codeNum === 0) {
+        resolve7({ stdout, stderr });
+      } else {
+        reject(
+          new ContextFitError(
+            `contextfit exited ${codeNum}: ${stderr.trim() || stdout.trim() || "(no output)"}`,
+            "NONZERO_EXIT"
+          )
+        );
+      }
+    });
+  });
+}
+async function runContextFitWithRetry(cfg, subcommandArgs, timeoutMs) {
+  try {
+    return await runContextFit(cfg, subcommandArgs, timeoutMs);
+  } catch (err) {
+    const isEbadf = err instanceof ContextFitError && /EBADF/.test(err.message);
+    if (!isEbadf) throw err;
+    await new Promise((r) => setTimeout(r, 50));
+    return runContextFit(cfg, subcommandArgs, timeoutMs);
+  }
+}
+async function contextFitIngest(cfg, source, opts = {}) {
+  const args2 = ["ingest", source, "--rebuild-index-after-ingest"];
+  if (opts.chunkSize !== void 0) args2.push("--chunk-size", String(opts.chunkSize));
+  if (opts.overlap !== void 0) args2.push("--overlap", String(opts.overlap));
+  const { stdout } = await runContextFitWithRetry(cfg, args2, cfg.timeoutMs ?? 6e5);
+  return stdout;
+}
+async function contextFitQuery(cfg, query, opts = {}) {
+  const args2 = ["query", query, "--json"];
+  if (opts.topK !== void 0) args2.push("--top-k", String(opts.topK));
+  if (opts.method !== void 0) args2.push("--method", opts.method);
+  const { stdout } = await runContextFitWithRetry(cfg, args2, cfg.timeoutMs ?? 3e4);
+  return parseQueryOutput(stdout);
+}
+function parseQueryOutput(stdout) {
+  const start = stdout.indexOf("{");
+  if (start === -1) {
+    throw new ContextFitError(
+      `contextfit query produced no JSON: ${stdout.slice(0, 200)}`,
+      "BAD_JSON"
+    );
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(stdout.slice(start));
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new ContextFitError(`contextfit query JSON parse failed: ${msg}`, "BAD_JSON");
+  }
+  const obj = parsed;
+  if (!Array.isArray(obj.chunks)) {
+    throw new ContextFitError(
+      `contextfit query JSON missing 'chunks' array (got keys: ${Object.keys(obj ?? {}).join(", ")})`,
+      "BAD_JSON"
+    );
+  }
+  return {
+    query: typeof obj.query === "string" ? obj.query : "",
+    method: typeof obj.method === "string" ? obj.method : "hybrid",
+    retrieved_chunks: typeof obj.retrieved_chunks === "number" ? obj.retrieved_chunks : obj.chunks.length,
+    chunks: obj.chunks
+  };
+}
+async function contextFitProbe(cfg) {
+  try {
+    await new Promise((resolve7, reject) => {
+      const child = spawn(cfg.command, ["--help"], { stdio: ["pipe", "pipe", "pipe"] });
+      child.stdin?.end();
+      child.on("error", reject);
+      child.on(
+        "close",
+        (c) => c === 0 ? resolve7() : reject(new Error(`exit ${c}`))
+      );
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+var ContextFitError;
+var init_cli = __esm({
+  "src/adapters/retrieval/contextfit/cli.ts"() {
+    "use strict";
+    init_esm_shims();
+    ContextFitError = class extends Error {
+      constructor(message, code = "NONZERO_EXIT") {
+        super(message);
+        this.code = code;
+      }
+      code;
+      name = "ContextFitError";
+    };
+  }
+});
+
+// src/adapters/retrieval/contextfit/index.ts
+var contextfit_exports = {};
+__export(contextfit_exports, {
+  cliConfigForVault: () => cliConfigForVault,
+  contextFitKbDir: () => contextFitKbDir,
+  indexVaultWithContextFit: () => indexVaultWithContextFit,
+  searchVaultWithContextFit: () => searchVaultWithContextFit,
+  sourceToNotePath: () => sourceToNotePath
+});
+import { homedir as homedir4 } from "os";
+import { join as join4, relative, isAbsolute } from "path";
+function contextFitKbDir(vaultName) {
+  return join4(homedir4(), ".vault-memory", "contextfit", vaultName);
+}
+function cliConfigForVault(vault) {
+  const cfg = {
+    command: vault.contextfit?.command ?? DEFAULT_COMMAND,
+    kbPath: contextFitKbDir(vault.name)
+  };
+  if (vault.contextfit?.tokenizer) cfg.tokenizer = vault.contextfit.tokenizer;
+  return cfg;
+}
+async function indexVaultWithContextFit(vault, opts = {}) {
+  const log = opts.onProgress ?? (() => {
+  });
+  const cfg = cliConfigForVault(vault);
+  const start = Date.now();
+  log(`ContextFit: ingesting ${vault.path} \u2192 ${cfg.kbPath}`);
+  const available = await contextFitProbe({ command: cfg.command });
+  if (!available) {
+    return {
+      status: "failed",
+      stats: "",
+      durationMs: Date.now() - start,
+      error: `ContextFit CLI not runnable (tried '${cfg.command}'). Install with \`pipx install contextfit\` or set [[vaults]].contextfit.command.`
+    };
+  }
+  try {
+    const stats = await contextFitIngest(cfg, vault.path);
+    log(stats.trim().split("\n").slice(-3).join(" \xB7 "));
+    return { status: "completed", stats, durationMs: Date.now() - start };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return { status: "failed", stats: "", durationMs: Date.now() - start, error: message };
+  }
+}
+function sourceToNotePath(source, vaultPath) {
+  if (!source) return null;
+  const rel = isAbsolute(source) ? relative(vaultPath, source) : source;
+  if (rel.startsWith("..")) return null;
+  return rel.split(/[\\/]/).join("/");
+}
+function chunkToHit(chunk, vault) {
+  const notePath = sourceToNotePath(chunk.metadata?.source, vault.path);
+  if (notePath === null) return null;
+  const base = notePath.split("/").pop() ?? notePath;
+  const noteTitle = base.replace(/\.md$/i, "");
+  const hit = {
+    vault: vault.name,
+    notePath,
+    noteTitle,
+    chunkText: chunk.preview ?? "",
+    chunkIdx: chunk.chunk_id,
+    headingPath: null,
+    score: chunk.score,
+    scoreBreakdown: { contextfit: chunk.score }
+  };
+  return hit;
+}
+async function searchVaultWithContextFit(vault, query, opts = {}) {
+  const cfg = cliConfigForVault(vault);
+  const method = vault.contextfit?.method ?? "hybrid";
+  const result = await contextFitQuery(cfg, query, {
+    topK: opts.topK ?? 10,
+    method
+  });
+  const hits = [];
+  for (const chunk of result.chunks) {
+    const hit = chunkToHit(chunk, vault);
+    if (hit) hits.push(hit);
+  }
+  return hits;
+}
+var DEFAULT_COMMAND;
+var init_contextfit = __esm({
+  "src/adapters/retrieval/contextfit/index.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_cli();
+    DEFAULT_COMMAND = "contextfit";
+  }
+});
+
+// src/search/dispatch.ts
+function isContextFit(vault) {
+  return vault.config.backend === "contextfit";
+}
+async function searchVaults(opts) {
+  const topK = opts.topK ?? 10;
+  const cfVaults = opts.vaults.filter(isContextFit);
+  const ollamaVaults = opts.vaults.filter((v) => !isContextFit(v));
+  if (cfVaults.length === 0) {
+    return hybridSearch(opts);
+  }
+  const { searchVaultWithContextFit: searchVaultWithContextFit2 } = await Promise.resolve().then(() => (init_contextfit(), contextfit_exports));
+  const cfPromise = Promise.all(
+    cfVaults.map(
+      (v) => searchVaultWithContextFit2(v.config, opts.query, { topK }).catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.error(`[search:${v.config.name}] ContextFit query failed: ${msg}`);
+        return [];
+      })
+    )
+  );
+  const ollamaPromise = ollamaVaults.length > 0 ? hybridSearch({ ...opts, vaults: ollamaVaults }) : Promise.resolve([]);
+  const [cfResultsNested, ollamaResults] = await Promise.all([cfPromise, ollamaPromise]);
+  const cfResults = cfResultsNested.flat();
+  const merged = [...ollamaResults, ...cfResults];
+  merged.sort((a, b) => b.score - a.score);
+  return merged.slice(0, topK);
+}
+var init_dispatch = __esm({
+  "src/search/dispatch.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_hybrid();
+  }
+});
+
 // src/search/glob.ts
 function compile(pattern) {
   const cached = cache.get(pattern);
@@ -4969,6 +5268,7 @@ var init_search = __esm({
     "use strict";
     init_esm_shims();
     init_hybrid();
+    init_dispatch();
     init_glob();
   }
 });
@@ -5014,7 +5314,7 @@ var init_reranker = __esm({
 // src/rerank/onnx-reranker.ts
 import { readFile as readFile3 } from "fs/promises";
 import { existsSync } from "fs";
-import { join as join4 } from "path";
+import { join as join5 } from "path";
 function sigmoid(x) {
   return 1 / (1 + Math.exp(-x));
 }
@@ -5092,8 +5392,8 @@ var init_onnx_reranker = __esm({
         if (this.loaded) return this.loaded;
         if (this.loading) return this.loading;
         this.loading = (async () => {
-          const modelPath = join4(this.modelDir, "model_quantized.onnx");
-          const tokenizerPath = join4(this.modelDir, "tokenizer.json");
+          const modelPath = join5(this.modelDir, "model_quantized.onnx");
+          const tokenizerPath = join5(this.modelDir, "tokenizer.json");
           if (!existsSync(modelPath)) {
             throw new Error(
               `OnnxReranker: model file not found at ${modelPath}. Run: curl -L https://huggingface.co/onnx-community/bge-reranker-v2-m3-ONNX/resolve/main/onnx/model_quantized.onnx -o ${modelPath}`
@@ -7063,9 +7363,9 @@ async function catchupVault(options) {
     durationMs: Date.now() - started
   };
 }
-function joinAbs(root, relative5) {
-  if (root.endsWith("/")) return `${root}${relative5}`;
-  return `${root}/${relative5}`;
+function joinAbs(root, relative6) {
+  if (root.endsWith("/")) return `${root}${relative6}`;
+  return `${root}/${relative6}`;
 }
 var init_catchup = __esm({
   "src/indexer/catchup.ts"() {
@@ -7317,10 +7617,10 @@ var init_indexer2 = __esm({
 
 // src/adapters/delivery/obsidian-fs/fs.ts
 import { promises as fs5 } from "fs";
-import { dirname, isAbsolute, resolve as resolve6, sep as sep5 } from "path";
+import { dirname, isAbsolute as isAbsolute2, resolve as resolve6, sep as sep5 } from "path";
 import { randomBytes } from "crypto";
 async function atomicWriteFile(absPath, content) {
-  if (!isAbsolute(absPath)) {
+  if (!isAbsolute2(absPath)) {
     throw new Error(`atomicWriteFile requires an absolute path: ${absPath}`);
   }
   const parent = dirname(absPath);
@@ -7342,7 +7642,7 @@ async function safeJoinInsideVault(vaultRoot, relativePath) {
   if (typeof relativePath !== "string" || relativePath.length === 0) {
     throw new OutsideVaultError(relativePath, vaultRoot);
   }
-  if (isAbsolute(relativePath)) {
+  if (isAbsolute2(relativePath)) {
     throw new OutsideVaultError(relativePath, vaultRoot);
   }
   const root = resolve6(vaultRoot);
@@ -9902,14 +10202,14 @@ var init_get = __esm({
 
 // src/brief/lock.ts
 import { open, readFile as readFile5, unlink, mkdir as mkdir2 } from "fs/promises";
-import { homedir as homedir4 } from "os";
-import { join as join6 } from "path";
+import { homedir as homedir5 } from "os";
+import { join as join7 } from "path";
 function lockDir(rootOverride) {
-  if (rootOverride !== void 0) return join6(rootOverride, "locks");
-  return join6(homedir4(), ".vault-memory", "locks");
+  if (rootOverride !== void 0) return join7(rootOverride, "locks");
+  return join7(homedir5(), ".vault-memory", "locks");
 }
 function lockPath(vaultName, rootOverride) {
-  return join6(lockDir(rootOverride), `${vaultName}.lock`);
+  return join7(lockDir(rootOverride), `${vaultName}.lock`);
 }
 function isProcessAlive(pid) {
   try {
@@ -14734,7 +15034,12 @@ function handleSearchText(manager, activeVault, query, vaultFilter, topK, exclud
   const fanK = hasExclude ? topK * 3 : topK;
   const sanitized = FtsQueries.sanitize(query);
   const allHits = [];
+  const skippedContextFit = [];
   for (const vault of targets) {
+    if (vault.config.backend === "contextfit") {
+      skippedContextFit.push(vault.config.name);
+      continue;
+    }
     const ftsHits = vault.db.fts.search(sanitized, fanK, true);
     for (const hit of ftsHits) {
       const chunk = vault.db.chunks.getById(hit.chunkId);
@@ -14759,9 +15064,14 @@ function handleSearchText(manager, activeVault, query, vaultFilter, topK, exclud
     hits: allHits.slice(0, topK),
     count: allHits.length
   };
-  if (skipped.length > 0) {
-    out.note = `Skipped vault(s) currently indexing: ${skipped.join(", ")}.`;
+  const notes = [];
+  if (skipped.length > 0) notes.push(`Skipped vault(s) currently indexing: ${skipped.join(", ")}.`);
+  if (skippedContextFit.length > 0) {
+    notes.push(
+      `search_text is not supported for ContextFit vault(s): ${skippedContextFit.join(", ")} \u2014 use search_hybrid or search_semantic instead.`
+    );
   }
+  if (notes.length > 0) out.note = notes.join(" ");
   return out;
 }
 async function handleSearchHybrid(manager, ollama, defaultModel, activeVault, query, vaultFilter, topK, rrfK, excludePaths, reranker, recencyWeight = 0, authorityWeight = 0, halfLifeDays = 30, includeSuperseded = false, displayUrlFor2, expandOpts, expandDeps) {
@@ -14774,7 +15084,7 @@ async function handleSearchHybrid(manager, ollama, defaultModel, activeVault, qu
   }
   const hasExclude = excludePaths !== void 0 && excludePaths.length > 0;
   const innerTopK = hasExclude ? topK * 3 : topK;
-  const hits = await hybridSearch({
+  const hits = await searchVaults({
     query,
     embeddingModel: defaultModel,
     ollama,
@@ -14812,7 +15122,7 @@ async function handleSearchCompat(manager, registry, ollama, defaultModel, activ
       note: skipped.length > 0 ? `All eligible vaults are indexing; skipped: ${skipped.join(", ")}.` : "No vaults configured."
     };
   }
-  const hits = await hybridSearch({
+  const hits = await searchVaults({
     query,
     embeddingModel: defaultModel,
     ollama,
@@ -15729,7 +16039,7 @@ __export(server_exports, {
 });
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { homedir as homedir5 } from "os";
+import { homedir as homedir6 } from "os";
 import { join as joinPath } from "path";
 async function discoverMemorySinks(configured, vaults) {
   if (configured.length > 0) {
@@ -15796,7 +16106,7 @@ async function serve(options = {}) {
   const activeVault = process.env.VAULT_MEMORY_ACTIVE_VAULT?.trim() || void 0;
   const rerankerBackend = config.server.reranker_backend ?? (config.server.reranker_model ? "onnx" : void 0);
   const reranker = config.server.reranker_model ? rerankerBackend === "ollama" ? new OllamaReranker({ ollama, model: config.server.reranker_model }) : new OnnxReranker({
-    modelDir: config.server.reranker_model_dir ?? joinPath(homedir5(), ".vault-memory", "models", "bge-reranker-v2-m3")
+    modelDir: config.server.reranker_model_dir ?? joinPath(homedir6(), ".vault-memory", "models", "bge-reranker-v2-m3")
   }) : void 0;
   const watchers = /* @__PURE__ */ new Map();
   const briefDaemons = /* @__PURE__ */ new Map();
@@ -16891,6 +17201,23 @@ async function runIndex(rest) {
   });
   const targets = vaultName ? [manager.require(vaultName)] : manager.list();
   for (const vault of targets) {
+    if (vault.config.backend === "contextfit") {
+      const { indexVaultWithContextFit: indexVaultWithContextFit2 } = await Promise.resolve().then(() => (init_contextfit(), contextfit_exports));
+      console.error(
+        `
+\u2192 Indexing "${vault.config.name}" with ContextFit (CPU-only, no embeddings)`
+      );
+      const cfResult = await indexVaultWithContextFit2(vault.config, {
+        onProgress: (msg) => console.error(`  ${msg}`)
+      });
+      if (cfResult.status === "completed") {
+        console.error(`\u2713 ${vault.config.name}: ContextFit index built \xB7 ${cfResult.durationMs}ms`);
+      } else {
+        console.error(`\u2717 ${vault.config.name}: ${cfResult.error}`);
+        process.exitCode = 1;
+      }
+      continue;
+    }
     const model = vault.config.embedding_model ?? config.server.default_embedding_model ?? "qwen3-embedding";
     console.error(`
 \u2192 Indexing "${vault.config.name}" (${mode}) with ${model}`);
@@ -16918,6 +17245,8 @@ async function runAddVault(rest) {
   let name;
   let writeEnabled = false;
   let skipIndex = false;
+  let backend;
+  const USAGE = "Usage: vault-memory add-vault <path> [--name <name>] [--write] [--backend ollama|contextfit] [--no-index]";
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i];
     if (arg === "--name") {
@@ -16925,24 +17254,37 @@ async function runAddVault(rest) {
       i++;
     } else if (arg === "--write" || arg === "--write-enabled") {
       writeEnabled = true;
+    } else if (arg === "--backend") {
+      const v = rest[i + 1];
+      i++;
+      if (v !== "ollama" && v !== "contextfit") {
+        console.error(`--backend must be "ollama" or "contextfit" (got: ${v ?? "<missing>"})`);
+        process.exit(2);
+      }
+      backend = v;
     } else if (arg === "--no-index") {
       skipIndex = true;
     } else if (arg === "--help" || arg === "-h") {
-      console.error(`Usage: vault-memory add-vault <path> [--name <name>] [--write] [--no-index]
+      console.error(`${USAGE}
 
 Registers a vault in ~/.vault-memory/config.toml, writes a .mcp.json
-into the vault root, and runs an initial index. Idempotent.`);
+into the vault root, and runs an initial index. Idempotent.
+
+--backend contextfit  Use the CPU-only, token-native ContextFit engine
+                      (no Ollama / embeddings / GPU). Requires the
+                      \`contextfit\` CLI (pipx install contextfit). Ideal for
+                      resource-limited / non-GPU hosts (e.g. a Synology NAS).`);
       return;
     } else if (arg && !arg.startsWith("--") && path7 === null) {
       path7 = arg;
     }
   }
   if (path7 === null) {
-    console.error("Usage: vault-memory add-vault <path> [--name <name>] [--write] [--no-index]");
+    console.error(USAGE);
     process.exit(2);
   }
-  console.error(`\u2192 Registering vault: ${path7}`);
-  const result = await addVault2({ path: path7, name, writeEnabled });
+  console.error(`\u2192 Registering vault: ${path7}${backend ? ` (backend: ${backend})` : ""}`);
+  const result = await addVault2({ path: path7, name, writeEnabled, ...backend ? { backend } : {} });
   for (const step of result.steps) {
     switch (step.kind) {
       case "config-added":
