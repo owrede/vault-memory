@@ -37,7 +37,17 @@ export interface IndexerOptions {
    *  the active model are unaffected. Used by `/setup-memory-system` and
    *  the watcher to keep a shadow index live for a future model switch. */
   secondaryEmbeddingModel?: string;
-  ollama: OllamaClient;
+  /** Ollama client. Required when `embeddings !== "none"`. ContextFit-backed
+   *  vaults pass `embeddings: "none"` and may omit this (no Ollama needed). */
+  ollama?: OllamaClient;
+  /** ADR-008: embedding strategy.
+   *  - "ollama" (default): build the full SQLite layer AND embed chunks into
+   *    sqlite-vec (the classic path).
+   *  - "none": build the full SQLite content layer (notes, chunks, sections,
+   *    wikilinks, edges, audit) but SKIP embedding + model registration. Used
+   *    by ContextFit vaults, whose search runs through the ContextFit engine —
+   *    the SQLite layer still powers graph/sections/frontmatter/stats tools. */
+  embeddings?: "ollama" | "none";
   /** Called periodically with progress info. */
   onProgress?: (msg: string) => void;
 }
@@ -59,65 +69,78 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
   const runId = randomUUID();
   const mode = options.mode ?? "incremental";
   const log = options.onProgress ?? (() => {});
+  // ADR-008: "none" builds the SQLite content layer but skips embedding +
+  // model registration (ContextFit vaults). "ollama" is the classic path.
+  const embedMode = options.embeddings ?? "ollama";
+  const ollama = options.ollama;
 
-  // 1. Resolve / upsert model in DB
-  log(`Probing Ollama model: ${options.embeddingModel}`);
-  const health = await options.ollama.healthCheck();
-  if (!health.ok) {
-    throw new Error(`Ollama unreachable: ${health.error ?? "unknown error"}`);
-  }
-  const modelExists = await options.ollama.modelExists(options.embeddingModel);
-  if (!modelExists) {
-    throw new Error(
-      `Embedding model "${options.embeddingModel}" not found in Ollama. ` +
-        `Available: ${health.models?.join(", ") ?? "(none)"}. ` +
-        `Run: ollama pull ${options.embeddingModel}`,
-    );
-  }
-
-  // Probe dim with a 1-text embed (cheap)
-  const probe = await options.ollama.embed({
-    model: options.embeddingModel,
-    texts: ["probe"],
-  });
-  const dim = probe.dim;
-  const modelRow = vault.db.models.upsert({
-    name: options.embeddingModel,
-    provider: "ollama",
-    dim,
-  });
-
-  // Phase 7c: secondary (shadow) model registration. We probe + upsert with
-  // active=false so the primary stays active. Probing also fails fast if the
-  // model isn't pulled — better than discovering that mid-run on note 5000.
+  // 1. Resolve / upsert model in DB — ONLY for the Ollama embedding path.
+  // ContextFit vaults register no model and need no Ollama at all.
+  let dim = 0;
+  let modelRow: { id: number } | null = null;
   let secondaryModelRow: { id: number; dim: number } | null = null;
-  if (options.secondaryEmbeddingModel) {
-    const secName = options.secondaryEmbeddingModel;
-    log(`Probing secondary (shadow) model: ${secName}`);
-    const secExists = await options.ollama.modelExists(secName);
-    if (!secExists) {
+
+  if (embedMode === "ollama") {
+    if (!ollama) {
+      throw new Error("indexVault: embeddings='ollama' requires an OllamaClient (options.ollama).");
+    }
+    log(`Probing Ollama model: ${options.embeddingModel}`);
+    const health = await ollama.healthCheck();
+    if (!health.ok) {
+      throw new Error(`Ollama unreachable: ${health.error ?? "unknown error"}`);
+    }
+    const modelExists = await ollama.modelExists(options.embeddingModel);
+    if (!modelExists) {
       throw new Error(
-        `Secondary embedding model "${secName}" not found in Ollama. ` +
-          `Run: ollama pull ${secName}`,
+        `Embedding model "${options.embeddingModel}" not found in Ollama. ` +
+          `Available: ${health.models?.join(", ") ?? "(none)"}. ` +
+          `Run: ollama pull ${options.embeddingModel}`,
       );
     }
-    const secProbe = await options.ollama.embed({
-      model: secName,
+
+    // Probe dim with a 1-text embed (cheap)
+    const probe = await ollama.embed({
+      model: options.embeddingModel,
       texts: ["probe"],
     });
-    const row = vault.db.models.upsert({
-      name: secName,
+    dim = probe.dim;
+    modelRow = vault.db.models.upsert({
+      name: options.embeddingModel,
       provider: "ollama",
-      dim: secProbe.dim,
-      active: false,
+      dim,
     });
-    secondaryModelRow = { id: row.id, dim: row.dim };
+
+    // Phase 7c: secondary (shadow) model registration. We probe + upsert with
+    // active=false so the primary stays active. Probing also fails fast if the
+    // model isn't pulled — better than discovering that mid-run on note 5000.
+    if (options.secondaryEmbeddingModel) {
+      const secName = options.secondaryEmbeddingModel;
+      log(`Probing secondary (shadow) model: ${secName}`);
+      const secExists = await ollama.modelExists(secName);
+      if (!secExists) {
+        throw new Error(
+          `Secondary embedding model "${secName}" not found in Ollama. ` +
+            `Run: ollama pull ${secName}`,
+        );
+      }
+      const secProbe = await ollama.embed({
+        model: secName,
+        texts: ["probe"],
+      });
+      const row = vault.db.models.upsert({
+        name: secName,
+        provider: "ollama",
+        dim: secProbe.dim,
+        active: false,
+      });
+      secondaryModelRow = { id: row.id, dim: row.dim };
+    }
   }
 
   vault.db.audit.startRun({
     runId,
     vaultName: vault.config.name,
-    modelId: modelRow.id,
+    modelId: modelRow?.id ?? null,
     trigger: mode === "full" ? "manual-full" : "manual-incremental",
   });
 
@@ -280,45 +303,49 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
         );
       }
 
-      // Embed
-      const embedResult = await options.ollama.embed({
-        model: options.embeddingModel,
-        texts: chunks.map((c) => c.text),
-      });
-      if (embedResult.dim !== dim) {
-        throw new Error(`Embedding dimension mismatch: expected ${dim}, got ${embedResult.dim}`);
-      }
-
-      const embeddingInputs = chunkIds.map((chunkId, i) => ({
-        chunkId,
-        modelId: modelRow.id,
-        vector: embedResult.vectors[i]!,
-      }));
-      vault.db.embeddings.insertBatch(embeddingInputs);
-
-      // Phase 7c: shadow-index pass. Embed each chunk a second time with
-      // the secondary model and persist into its dim-specific table.
-      // Independent failure surface: if secondary embed throws, the primary
-      // index for this run still completes — the secondary will be retried
-      // on the next index run (idempotent: LEFT JOIN in start_shadow_index).
-      if (secondaryModelRow) {
-        const secEmbed = await options.ollama.embed({
-          model: options.secondaryEmbeddingModel!,
+      // Embed — ONLY in the Ollama path. ContextFit vaults (embedMode "none")
+      // skip this entirely: chunks + sections + links + edges are persisted
+      // above; search runs through the ContextFit engine, not sqlite-vec.
+      if (embedMode === "ollama") {
+        const embedResult = await ollama!.embed({
+          model: options.embeddingModel,
           texts: chunks.map((c) => c.text),
         });
-        if (secEmbed.dim !== secondaryModelRow.dim) {
-          throw new Error(
-            `Secondary embedding dimension mismatch: expected ` +
-              `${secondaryModelRow.dim}, got ${secEmbed.dim}`,
+        if (embedResult.dim !== dim) {
+          throw new Error(`Embedding dimension mismatch: expected ${dim}, got ${embedResult.dim}`);
+        }
+
+        const embeddingInputs = chunkIds.map((chunkId, i) => ({
+          chunkId,
+          modelId: modelRow!.id,
+          vector: embedResult.vectors[i]!,
+        }));
+        vault.db.embeddings.insertBatch(embeddingInputs);
+
+        // Phase 7c: shadow-index pass. Embed each chunk a second time with
+        // the secondary model and persist into its dim-specific table.
+        // Independent failure surface: if secondary embed throws, the primary
+        // index for this run still completes — the secondary will be retried
+        // on the next index run (idempotent: LEFT JOIN in start_shadow_index).
+        if (secondaryModelRow) {
+          const secEmbed = await ollama!.embed({
+            model: options.secondaryEmbeddingModel!,
+            texts: chunks.map((c) => c.text),
+          });
+          if (secEmbed.dim !== secondaryModelRow.dim) {
+            throw new Error(
+              `Secondary embedding dimension mismatch: expected ` +
+                `${secondaryModelRow.dim}, got ${secEmbed.dim}`,
+            );
+          }
+          vault.db.embeddings.insertBatch(
+            chunkIds.map((chunkId, i) => ({
+              chunkId,
+              modelId: secondaryModelRow!.id,
+              vector: secEmbed.vectors[i]!,
+            })),
           );
         }
-        vault.db.embeddings.insertBatch(
-          chunkIds.map((chunkId, i) => ({
-            chunkId,
-            modelId: secondaryModelRow!.id,
-            vector: secEmbed.vectors[i]!,
-          })),
-        );
       }
 
       // Wikilinks (v1 invariant write path — D-01)

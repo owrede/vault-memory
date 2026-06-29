@@ -57,17 +57,30 @@ ContextFit engine and return the same `SearchHit` shape as Ollama vaults
 (`scoreBreakdown.contextfit` carries the raw lexical score). You can mix
 ContextFit and Ollama vaults in one config — each uses its own engine.
 
-## What a ContextFit vault does NOT have (v1)
+## What works on a ContextFit vault
 
-ContextFit owns ingest + query; it does not populate the SQLite derived layer.
-So for a ContextFit vault:
+A ContextFit vault builds the **full SQLite content layer** (notes, chunks,
+sections, wikilinks, typed edges) — it only skips embeddings. So almost the whole
+tool surface works:
 
-- `search_text` (SQLite FTS) is not available — use `search_hybrid` /
-  `search_semantic` (they route to ContextFit). The server returns a clear note.
-- Section/graph features that depend on the embeddings-derived SQLite layer are
-  reduced. Note/frontmatter retrieval via ContextFit works.
+- **Search** (`search_hybrid`, `search_semantic`) → routed to the ContextFit engine.
+- **Graph** — `expand`, `cluster`, `list_backlinks`, `list_forward_links`, `find_broken_links` (backed by the `edges` table, built without embeddings).
+- **Sections / assembly** — `get_outline`, `search_sections`, `get_document_bundle`, `assemble_dossier`.
+- **Frontmatter / metadata** — `query_frontmatter`, `suggest_frontmatter`, `recent_notes`, `vault_stats`.
+- **Writes** — `write_note` / `update_frontmatter` / memory tools; the ContextFit KB is refreshed after each write.
+- **Live re-indexing** — the file watcher re-indexes changed notes and refreshes the KB (debounced). 
+- **Reconciliation** — catch-up on server start brings a changed vault back in sync.
+- **Incremental** — unchanged notes are hash-skipped on re-index.
 
-The KB is stored at `~/.vault-memory/contextfit/<vault-name>/`.
+### The one exception
+- `search_text` (raw SQLite FTS5) is Ollama-path-only and returns a note telling
+  you to use `search_hybrid` / `search_semantic` for a ContextFit vault.
+
+Semantic-vector features (sqlite-vec ANN, embedding-model switching, shadow
+indexing) don't apply — ContextFit is lexical/SID by design, not vector-based.
+
+The search KB is stored at `~/.vault-memory/contextfit/<vault-name>/`; the SQLite
+content layer lives in `~/.vault-memory/vaults/<vault-name>.db` like any vault.
 
 ## Troubleshooting
 

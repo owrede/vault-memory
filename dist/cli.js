@@ -5102,6 +5102,7 @@ __export(contextfit_exports, {
   sourceToNotePath: () => sourceToNotePath
 });
 import { homedir as homedir4 } from "os";
+import { rm } from "fs/promises";
 import { join as join4, relative, isAbsolute } from "path";
 function contextFitKbDir(vaultName) {
   return join4(homedir4(), ".vault-memory", "contextfit", vaultName);
@@ -5130,6 +5131,7 @@ async function indexVaultWithContextFit(vault, opts = {}) {
     };
   }
   try {
+    await rm(cfg.kbPath, { recursive: true, force: true });
     const stats = await contextFitIngest(cfg, vault.path);
     log(stats.trim().split("\n").slice(-3).join(" \xB7 "));
     return { status: "completed", stats, durationMs: Date.now() - start };
@@ -6719,53 +6721,62 @@ async function indexVault(vault, options) {
   const mode = options.mode ?? "incremental";
   const log = options.onProgress ?? (() => {
   });
-  log(`Probing Ollama model: ${options.embeddingModel}`);
-  const health = await options.ollama.healthCheck();
-  if (!health.ok) {
-    throw new Error(`Ollama unreachable: ${health.error ?? "unknown error"}`);
-  }
-  const modelExists = await options.ollama.modelExists(options.embeddingModel);
-  if (!modelExists) {
-    throw new Error(
-      `Embedding model "${options.embeddingModel}" not found in Ollama. Available: ${health.models?.join(", ") ?? "(none)"}. Run: ollama pull ${options.embeddingModel}`
-    );
-  }
-  const probe = await options.ollama.embed({
-    model: options.embeddingModel,
-    texts: ["probe"]
-  });
-  const dim = probe.dim;
-  const modelRow = vault.db.models.upsert({
-    name: options.embeddingModel,
-    provider: "ollama",
-    dim
-  });
+  const embedMode = options.embeddings ?? "ollama";
+  const ollama = options.ollama;
+  let dim = 0;
+  let modelRow = null;
   let secondaryModelRow = null;
-  if (options.secondaryEmbeddingModel) {
-    const secName = options.secondaryEmbeddingModel;
-    log(`Probing secondary (shadow) model: ${secName}`);
-    const secExists = await options.ollama.modelExists(secName);
-    if (!secExists) {
+  if (embedMode === "ollama") {
+    if (!ollama) {
+      throw new Error("indexVault: embeddings='ollama' requires an OllamaClient (options.ollama).");
+    }
+    log(`Probing Ollama model: ${options.embeddingModel}`);
+    const health = await ollama.healthCheck();
+    if (!health.ok) {
+      throw new Error(`Ollama unreachable: ${health.error ?? "unknown error"}`);
+    }
+    const modelExists = await ollama.modelExists(options.embeddingModel);
+    if (!modelExists) {
       throw new Error(
-        `Secondary embedding model "${secName}" not found in Ollama. Run: ollama pull ${secName}`
+        `Embedding model "${options.embeddingModel}" not found in Ollama. Available: ${health.models?.join(", ") ?? "(none)"}. Run: ollama pull ${options.embeddingModel}`
       );
     }
-    const secProbe = await options.ollama.embed({
-      model: secName,
+    const probe = await ollama.embed({
+      model: options.embeddingModel,
       texts: ["probe"]
     });
-    const row = vault.db.models.upsert({
-      name: secName,
+    dim = probe.dim;
+    modelRow = vault.db.models.upsert({
+      name: options.embeddingModel,
       provider: "ollama",
-      dim: secProbe.dim,
-      active: false
+      dim
     });
-    secondaryModelRow = { id: row.id, dim: row.dim };
+    if (options.secondaryEmbeddingModel) {
+      const secName = options.secondaryEmbeddingModel;
+      log(`Probing secondary (shadow) model: ${secName}`);
+      const secExists = await ollama.modelExists(secName);
+      if (!secExists) {
+        throw new Error(
+          `Secondary embedding model "${secName}" not found in Ollama. Run: ollama pull ${secName}`
+        );
+      }
+      const secProbe = await ollama.embed({
+        model: secName,
+        texts: ["probe"]
+      });
+      const row = vault.db.models.upsert({
+        name: secName,
+        provider: "ollama",
+        dim: secProbe.dim,
+        active: false
+      });
+      secondaryModelRow = { id: row.id, dim: row.dim };
+    }
   }
   vault.db.audit.startRun({
     runId,
     vaultName: vault.config.name,
-    modelId: modelRow.id,
+    modelId: modelRow?.id ?? null,
     trigger: mode === "full" ? "manual-full" : "manual-incremental"
   });
   let notesIndexed = 0;
@@ -6856,36 +6867,38 @@ async function indexVault(vault, options) {
           `[indexer:${vault.config.name}] section build failed for ${parsed.relativePath}: ${message} \u2014 skipping sections for this note`
         );
       }
-      const embedResult = await options.ollama.embed({
-        model: options.embeddingModel,
-        texts: chunks.map((c) => c.text)
-      });
-      if (embedResult.dim !== dim) {
-        throw new Error(`Embedding dimension mismatch: expected ${dim}, got ${embedResult.dim}`);
-      }
-      const embeddingInputs = chunkIds.map((chunkId, i) => ({
-        chunkId,
-        modelId: modelRow.id,
-        vector: embedResult.vectors[i]
-      }));
-      vault.db.embeddings.insertBatch(embeddingInputs);
-      if (secondaryModelRow) {
-        const secEmbed = await options.ollama.embed({
-          model: options.secondaryEmbeddingModel,
+      if (embedMode === "ollama") {
+        const embedResult = await ollama.embed({
+          model: options.embeddingModel,
           texts: chunks.map((c) => c.text)
         });
-        if (secEmbed.dim !== secondaryModelRow.dim) {
-          throw new Error(
-            `Secondary embedding dimension mismatch: expected ${secondaryModelRow.dim}, got ${secEmbed.dim}`
+        if (embedResult.dim !== dim) {
+          throw new Error(`Embedding dimension mismatch: expected ${dim}, got ${embedResult.dim}`);
+        }
+        const embeddingInputs = chunkIds.map((chunkId, i) => ({
+          chunkId,
+          modelId: modelRow.id,
+          vector: embedResult.vectors[i]
+        }));
+        vault.db.embeddings.insertBatch(embeddingInputs);
+        if (secondaryModelRow) {
+          const secEmbed = await ollama.embed({
+            model: options.secondaryEmbeddingModel,
+            texts: chunks.map((c) => c.text)
+          });
+          if (secEmbed.dim !== secondaryModelRow.dim) {
+            throw new Error(
+              `Secondary embedding dimension mismatch: expected ${secondaryModelRow.dim}, got ${secEmbed.dim}`
+            );
+          }
+          vault.db.embeddings.insertBatch(
+            chunkIds.map((chunkId, i) => ({
+              chunkId,
+              modelId: secondaryModelRow.id,
+              vector: secEmbed.vectors[i]
+            }))
           );
         }
-        vault.db.embeddings.insertBatch(
-          chunkIds.map((chunkId, i) => ({
-            chunkId,
-            modelId: secondaryModelRow.id,
-            vector: secEmbed.vectors[i]
-          }))
-        );
       }
       insertWikilinks(vault, noteId, parsed.wikilinks, firstPassResolver);
       writeAllEdges(vault, noteId, parsed, firstPassResolver);
@@ -7150,16 +7163,24 @@ async function indexNote(options) {
       isNew: false
     };
   }
-  const activeModel = vault.db.models.getActive();
-  if (!activeModel) {
-    throw new Error(
-      `single-indexer: no active embedding model in DB. Run a full index first to register "${embeddingModel}".`
-    );
-  }
-  if (activeModel.name !== embeddingModel) {
-    throw new Error(
-      `single-indexer: active model "${activeModel.name}" does not match requested "${embeddingModel}". Run a full re-index to switch models.`
-    );
+  const embedMode = options.embeddings ?? "ollama";
+  let activeModel = null;
+  if (embedMode === "ollama") {
+    if (!ollama) {
+      throw new Error("single-indexer: embeddings='ollama' requires an OllamaClient.");
+    }
+    const am = vault.db.models.getActive();
+    if (!am) {
+      throw new Error(
+        `single-indexer: no active embedding model in DB. Run a full index first to register "${embeddingModel}".`
+      );
+    }
+    if (am.name !== embeddingModel) {
+      throw new Error(
+        `single-indexer: active model "${am.name}" does not match requested "${embeddingModel}". Run a full re-index to switch models.`
+      );
+    }
+    activeModel = am;
   }
   const upsert = vault.db.notes.upsertByPath({
     path: parsed.relativePath,
@@ -7172,6 +7193,7 @@ async function indexNote(options) {
     wordCount: parsed.wordCount
   });
   vault.db.aliases.setForNote(upsert.id, extractAliases(parsed.frontmatter));
+  vault.db.sections.deleteByNote(upsert.id);
   vault.db.chunks.deleteByNote(upsert.id);
   vault.db.wikilinks.deleteByNote(upsert.id);
   vault.db.edges.deleteByNote(upsert.id);
@@ -7201,41 +7223,52 @@ async function indexNote(options) {
       chunkIdFragment: computeChunkIdFragment(c.text)
     }))
   );
-  const embedResult = await ollama.embed({
-    model: embeddingModel,
-    texts: chunks.map((c) => c.text)
-  });
-  if (embedResult.dim !== activeModel.dim) {
-    throw new Error(
-      `single-indexer: embedding dim ${embedResult.dim} does not match registered dim ${activeModel.dim} for model "${embeddingModel}".`
+  try {
+    buildSectionsForNote(vault, upsert.id, parsed.content, chunkIds);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    process.stderr.write(
+      `[single-indexer:${vault.config.name}] section build failed for ${parsed.relativePath}: ${message}
+`
     );
   }
-  vault.db.embeddings.insertBatch(
-    chunkIds.map((chunkId, i) => ({
-      chunkId,
-      modelId: activeModel.id,
-      vector: embedResult.vectors[i]
-    }))
-  );
-  if (secondaryName) {
-    const secondaryModel = vault.db.models.getByName(secondaryName);
-    if (secondaryModel && secondaryModel.id !== activeModel.id) {
-      const secEmbed = await ollama.embed({
-        model: secondaryName,
-        texts: chunks.map((c) => c.text)
-      });
-      if (secEmbed.dim !== secondaryModel.dim) {
-        throw new Error(
-          `single-indexer: shadow embedding dim ${secEmbed.dim} does not match registered dim ${secondaryModel.dim} for "${secondaryName}".`
+  if (embedMode === "ollama") {
+    const embedResult = await ollama.embed({
+      model: embeddingModel,
+      texts: chunks.map((c) => c.text)
+    });
+    if (embedResult.dim !== activeModel.dim) {
+      throw new Error(
+        `single-indexer: embedding dim ${embedResult.dim} does not match registered dim ${activeModel.dim} for model "${embeddingModel}".`
+      );
+    }
+    vault.db.embeddings.insertBatch(
+      chunkIds.map((chunkId, i) => ({
+        chunkId,
+        modelId: activeModel.id,
+        vector: embedResult.vectors[i]
+      }))
+    );
+    if (secondaryName) {
+      const secondaryModel = vault.db.models.getByName(secondaryName);
+      if (secondaryModel && secondaryModel.id !== activeModel.id) {
+        const secEmbed = await ollama.embed({
+          model: secondaryName,
+          texts: chunks.map((c) => c.text)
+        });
+        if (secEmbed.dim !== secondaryModel.dim) {
+          throw new Error(
+            `single-indexer: shadow embedding dim ${secEmbed.dim} does not match registered dim ${secondaryModel.dim} for "${secondaryName}".`
+          );
+        }
+        vault.db.embeddings.insertBatch(
+          chunkIds.map((chunkId, i) => ({
+            chunkId,
+            modelId: secondaryModel.id,
+            vector: secEmbed.vectors[i]
+          }))
         );
       }
-      vault.db.embeddings.insertBatch(
-        chunkIds.map((chunkId, i) => ({
-          chunkId,
-          modelId: secondaryModel.id,
-          vector: secEmbed.vectors[i]
-        }))
-      );
     }
   }
   insertWikilinks2(vault, upsert.id, parsed.wikilinks);
@@ -7327,6 +7360,7 @@ async function catchupVault(options) {
   });
   let reindexed = 0;
   const knownPaths = /* @__PURE__ */ new Set();
+  const isContextFit2 = vault.config.backend === "contextfit";
   for (const file of files) {
     const parsed = await parseNote(file, vault.config.path).catch(() => null);
     if (!parsed) continue;
@@ -7339,7 +7373,7 @@ async function catchupVault(options) {
       vault,
       absolutePath: file,
       embeddingModel: options.embeddingModel,
-      ollama: options.ollama
+      ...isContextFit2 ? { embeddings: "none" } : { ollama: options.ollama }
     });
     if (result.status === "indexed") {
       reindexed++;
@@ -7355,6 +7389,13 @@ async function catchupVault(options) {
         log(`catch-up removed ${row.path}`);
       }
     }
+  }
+  if (isContextFit2 && (reindexed > 0 || removed > 0)) {
+    const { indexVaultWithContextFit: indexVaultWithContextFit2 } = await Promise.resolve().then(() => (init_contextfit(), contextfit_exports));
+    const r = await indexVaultWithContextFit2(vault.config, { onProgress: log });
+    log(
+      r.status === "completed" ? `catch-up: ContextFit KB rebuilt (${r.durationMs}ms)` : `catch-up: ContextFit KB rebuild failed: ${r.error}`
+    );
   }
   return {
     scanned: files.length,
@@ -11046,6 +11087,9 @@ var init_watcher = __esm({
       queue;
       opts;
       started = false;
+      /** ADR-008: debounce timer for ContextFit KB re-ingest (coalesces bursts). */
+      cfReingestTimer = null;
+      cfReingestInFlight = false;
       constructor(options) {
         this.opts = {
           vault: options.vault,
@@ -11093,12 +11137,51 @@ var init_watcher = __esm({
         if (!this.started) return;
         this.started = false;
         this.queue.shutdown();
+        if (this.cfReingestTimer) {
+          clearTimeout(this.cfReingestTimer);
+          this.cfReingestTimer = null;
+        }
         if (this.fsWatcher) {
           await this.fsWatcher.close();
           this.fsWatcher = null;
         }
       }
       // ─── internal ──────────────────────────────────────────────────────────
+      /**
+       * ADR-008: schedule a debounced full ContextFit KB re-ingest. Per-note
+       * changes update the SQLite layer immediately (via indexNote); the ContextFit
+       * search KB is rebuilt in one coalesced pass ~1.5s after the last change so a
+       * burst of edits triggers a single re-ingest. CPU-only and fast.
+       */
+      scheduleContextFitReingest() {
+        if (this.cfReingestTimer) clearTimeout(this.cfReingestTimer);
+        this.cfReingestTimer = setTimeout(() => {
+          this.cfReingestTimer = null;
+          void this.runContextFitReingest();
+        }, 1500);
+      }
+      async runContextFitReingest() {
+        if (this.cfReingestInFlight) {
+          this.scheduleContextFitReingest();
+          return;
+        }
+        this.cfReingestInFlight = true;
+        try {
+          const { indexVaultWithContextFit: indexVaultWithContextFit2 } = await Promise.resolve().then(() => (init_contextfit(), contextfit_exports));
+          const r = await indexVaultWithContextFit2(this.opts.vault.config, {});
+          if (r.status === "completed") {
+            this.opts.log(`ContextFit KB refreshed (${r.durationMs}ms)`);
+          } else {
+            this.opts.log(`ContextFit KB refresh failed: ${r.error}`);
+          }
+        } catch (err) {
+          this.opts.log(
+            `ContextFit KB refresh error: ${err instanceof Error ? err.message : String(err)}`
+          );
+        } finally {
+          this.cfReingestInFlight = false;
+        }
+      }
       onFsEvent(absolutePath, kind) {
         if (!absolutePath.endsWith(".md")) return;
         const relativePath = this.toRelative(absolutePath);
@@ -11117,10 +11200,12 @@ var init_watcher = __esm({
       }
       async handleFlush(event) {
         const relativePath = this.toRelative(event.path);
+        const isContextFit2 = this.opts.vault.config.backend === "contextfit";
         if (event.kind === "delete") {
           const result2 = removeNote(this.opts.vault, event.path);
           if (result2.removed) {
             this.opts.log(`removed ${relativePath}`);
+            if (isContextFit2) this.scheduleContextFitReingest();
           } else {
             this.opts.log(`delete event for unknown ${relativePath} (skip)`);
           }
@@ -11131,13 +11216,16 @@ var init_watcher = __esm({
           absolutePath: event.path,
           embeddingModel: this.opts.embeddingModel,
           secondaryEmbeddingModel: this.opts.secondaryEmbeddingModel,
-          ollama: this.opts.ollama
+          // ADR-008: ContextFit vaults build the SQLite layer without embeddings;
+          // their search KB is refreshed by the debounced re-ingest below.
+          ...isContextFit2 ? { embeddings: "none" } : { ollama: this.opts.ollama }
         });
         switch (result.status) {
           case "indexed":
             this.opts.log(
               `indexed ${relativePath} (${result.isNew ? "new" : "updated"}, ${result.chunksCreated} chunks)`
             );
+            if (isContextFit2) this.scheduleContextFitReingest();
             break;
           case "unchanged":
             break;
@@ -14821,6 +14909,13 @@ async function handleWriteNote(registry, vault, parsed) {
     if (res.observedValue !== void 0) out.observedValue = res.observedValue;
     return out;
   }
+  if (vault.config.backend === "contextfit") {
+    try {
+      const { indexVaultWithContextFit: indexVaultWithContextFit2 } = await Promise.resolve().then(() => (init_contextfit(), contextfit_exports));
+      await indexVaultWithContextFit2(vault.config, {});
+    } catch {
+    }
+  }
   const noteRow = vault.db.notes.getByPath(parsed.path);
   return {
     ok: true,
@@ -16112,13 +16207,14 @@ async function serve(options = {}) {
   const briefDaemons = /* @__PURE__ */ new Map();
   const startCatchupAndWatchers = async () => {
     for (const vault of manager.list()) {
-      if (!vault.config.embedding_model && !vault.db.models.getActive()) continue;
+      const isContextFit2 = vault.config.backend === "contextfit";
+      if (!isContextFit2 && !vault.config.embedding_model && !vault.db.models.getActive()) continue;
       const modelName = vault.config.embedding_model ?? defaultModel;
       try {
         const result = await catchupVault({
           vault,
           embeddingModel: modelName,
-          ollama,
+          ...isContextFit2 ? {} : { ollama },
           log: (m) => process.stderr.write(`[catchup:${vault.config.name}] ${m}
 `)
         });
@@ -17207,13 +17303,26 @@ async function runIndex(rest) {
         `
 \u2192 Indexing "${vault.config.name}" with ContextFit (CPU-only, no embeddings)`
       );
+      const sqlite = await indexVault2(vault, {
+        mode,
+        embeddingModel: "contextfit",
+        embeddings: "none",
+        onProgress: (msg) => console.error(`  ${msg}`)
+      });
+      if (sqlite.status !== "completed") {
+        console.error(`\u2717 ${vault.config.name}: SQLite layer failed \u2014 ${sqlite.error}`);
+        process.exitCode = 1;
+        continue;
+      }
       const cfResult = await indexVaultWithContextFit2(vault.config, {
         onProgress: (msg) => console.error(`  ${msg}`)
       });
       if (cfResult.status === "completed") {
-        console.error(`\u2713 ${vault.config.name}: ContextFit index built \xB7 ${cfResult.durationMs}ms`);
+        console.error(
+          `\u2713 ${vault.config.name}: ${sqlite.notesIndexed} notes (SQLite) + ContextFit KB \xB7 ${sqlite.durationMs + cfResult.durationMs}ms`
+        );
       } else {
-        console.error(`\u2717 ${vault.config.name}: ${cfResult.error}`);
+        console.error(`\u2717 ${vault.config.name}: ContextFit KB failed \u2014 ${cfResult.error}`);
         process.exitCode = 1;
       }
       continue;

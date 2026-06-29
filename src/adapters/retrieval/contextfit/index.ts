@@ -15,6 +15,7 @@
  */
 
 import { homedir } from "node:os";
+import { rm } from "node:fs/promises";
 import { join, relative, isAbsolute } from "node:path";
 import type { VaultConfig, SearchHit } from "../../../types.js";
 import {
@@ -78,6 +79,11 @@ export async function indexVaultWithContextFit(
   }
 
   try {
+    // ContextFit refuses to ingest into an existing KB (it finds the manifest
+    // and exits non-zero, demanding --resume or a clean dir). Our index
+    // semantics are always a FULL rebuild, so clear the KB dir first — this
+    // makes re-index / live-reindex / write-refresh / catchup idempotent.
+    await rm(cfg.kbPath, { recursive: true, force: true });
     const stats = await contextFitIngest(cfg, vault.path);
     log(stats.trim().split("\n").slice(-3).join(" · "));
     return { status: "completed", stats, durationMs: Date.now() - start };

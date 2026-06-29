@@ -49,6 +49,9 @@ export class VaultWatcher {
     secondaryEmbeddingModel: string | undefined;
   };
   private started = false;
+  /** ADR-008: debounce timer for ContextFit KB re-ingest (coalesces bursts). */
+  private cfReingestTimer: ReturnType<typeof setTimeout> | null = null;
+  private cfReingestInFlight = false;
 
   constructor(options: VaultWatcherOptions) {
     this.opts = {
@@ -104,6 +107,10 @@ export class VaultWatcher {
     if (!this.started) return;
     this.started = false;
     this.queue.shutdown();
+    if (this.cfReingestTimer) {
+      clearTimeout(this.cfReingestTimer);
+      this.cfReingestTimer = null;
+    }
     if (this.fsWatcher) {
       await this.fsWatcher.close();
       this.fsWatcher = null;
@@ -111,6 +118,45 @@ export class VaultWatcher {
   }
 
   // ─── internal ──────────────────────────────────────────────────────────
+
+  /**
+   * ADR-008: schedule a debounced full ContextFit KB re-ingest. Per-note
+   * changes update the SQLite layer immediately (via indexNote); the ContextFit
+   * search KB is rebuilt in one coalesced pass ~1.5s after the last change so a
+   * burst of edits triggers a single re-ingest. CPU-only and fast.
+   */
+  private scheduleContextFitReingest(): void {
+    if (this.cfReingestTimer) clearTimeout(this.cfReingestTimer);
+    this.cfReingestTimer = setTimeout(() => {
+      this.cfReingestTimer = null;
+      void this.runContextFitReingest();
+    }, 1500);
+  }
+
+  private async runContextFitReingest(): Promise<void> {
+    if (this.cfReingestInFlight) {
+      // A re-ingest is already running; schedule another pass after it so the
+      // latest changes are captured.
+      this.scheduleContextFitReingest();
+      return;
+    }
+    this.cfReingestInFlight = true;
+    try {
+      const { indexVaultWithContextFit } = await import("../../retrieval/contextfit/index.js");
+      const r = await indexVaultWithContextFit(this.opts.vault.config, {});
+      if (r.status === "completed") {
+        this.opts.log(`ContextFit KB refreshed (${r.durationMs}ms)`);
+      } else {
+        this.opts.log(`ContextFit KB refresh failed: ${r.error}`);
+      }
+    } catch (err) {
+      this.opts.log(
+        `ContextFit KB refresh error: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    } finally {
+      this.cfReingestInFlight = false;
+    }
+  }
 
   private onFsEvent(absolutePath: string, kind: "change" | "delete"): void {
     // Filter to .md only — Obsidian writes other artifacts (.obsidian/*) that
@@ -139,10 +185,14 @@ export class VaultWatcher {
   private async handleFlush(event: QueueEvent): Promise<void> {
     const relativePath = this.toRelative(event.path);
 
+    const isContextFit = this.opts.vault.config.backend === "contextfit";
+
     if (event.kind === "delete") {
       const result = removeNote(this.opts.vault, event.path);
       if (result.removed) {
         this.opts.log(`removed ${relativePath}`);
+        // ADR-008: a deleted note must drop out of the ContextFit KB too.
+        if (isContextFit) this.scheduleContextFitReingest();
       } else {
         this.opts.log(`delete event for unknown ${relativePath} (skip)`);
       }
@@ -154,7 +204,9 @@ export class VaultWatcher {
       absolutePath: event.path,
       embeddingModel: this.opts.embeddingModel,
       secondaryEmbeddingModel: this.opts.secondaryEmbeddingModel,
-      ollama: this.opts.ollama,
+      // ADR-008: ContextFit vaults build the SQLite layer without embeddings;
+      // their search KB is refreshed by the debounced re-ingest below.
+      ...(isContextFit ? { embeddings: "none" as const } : { ollama: this.opts.ollama }),
     });
 
     switch (result.status) {
@@ -162,6 +214,8 @@ export class VaultWatcher {
         this.opts.log(
           `indexed ${relativePath} (${result.isNew ? "new" : "updated"}, ${result.chunksCreated} chunks)`,
         );
+        // ADR-008: refresh the ContextFit search KB (debounced full re-ingest).
+        if (isContextFit) this.scheduleContextFitReingest();
         break;
       case "unchanged":
         // Common when chokidar fires for a re-save with no content delta —

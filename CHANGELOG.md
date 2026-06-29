@@ -14,7 +14,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **ContextFit — a CPU-only, second retrieval engine (ADR-008).** vault-memory now supports a `RetrievalBackend` seam with two engines selectable **per vault**: the default `ollama` (embeddings + sqlite-vec + FTS5 hybrid) and a new `contextfit` ([ContextFit](https://www.context.fit/)) — a token-native, CPU-only engine (BM25 + Semantic-IDs; no embeddings, no GPU). Enable with `vault-memory add-vault <path> --backend contextfit` or `backend = "contextfit"` in `config.toml`. A ContextFit vault skips Ollama entirely (ingest + query run via the `contextfit` CLI), making vault-memory runnable on resource-limited, non-GPU hosts such as a Synology NAS. `search_hybrid` / `search_semantic` dispatch automatically; results use the canonical `SearchHit` shape (`scoreBreakdown.contextfit` carries the raw score). Requires `pipx install contextfit`. See `docs/v2/CONTEXTFIT-BACKEND.md`. Ollama vaults are byte-identical — no behavior change when `backend` is omitted.
+- **ContextFit — a CPU-only, full-featured second retrieval engine (ADR-008).** vault-memory now supports a `RetrievalBackend` seam with two engines selectable **per vault**: the default `ollama` (embeddings + sqlite-vec + FTS5 hybrid) and a new `contextfit` ([ContextFit](https://www.context.fit/)) — a token-native, CPU-only engine (BM25 + Semantic-IDs; no embeddings, no GPU). Enable with `vault-memory add-vault <path> --backend contextfit` or `backend = "contextfit"` in `config.toml`. Makes vault-memory runnable on resource-limited, non-GPU hosts such as a Synology NAS. Requires `pipx install contextfit`. See `docs/v2/CONTEXTFIT-BACKEND.md`.
+
+  A ContextFit vault builds the **full SQLite content layer without embeddings** (`indexVault`/`indexNote` gain an `embeddings: "none"` mode), so the whole tool surface works — search (via the ContextFit engine), graph (`expand`/`cluster`/backlinks/forward-links/broken-links), sections/assembly (`get_outline`/`search_sections`/`get_document_bundle`/`assemble_dossier`), frontmatter/stats, **live re-indexing** (watcher refreshes SQLite + the KB, debounced), **catch-up reconciliation** on start, **incremental** hash-skip, and **write→KB refresh**. The only exception is `search_text` (Ollama-path FTS5), which returns a note pointing to `search_hybrid`/`search_semantic`.
+
+  Results use the canonical `SearchHit` shape (`scoreBreakdown.contextfit` carries the raw score). Ollama vaults are byte-identical — no behavior change when `backend` is omitted.
+
+### Fixed
+
+- **Live re-index now maintains sections.** The single-note indexer (`indexNote`, used by the watcher + catch-up) previously deleted chunks without first deleting the sections that reference them (FK violation) and never rebuilt sections — so live-edited notes silently lost their section rows. It now deletes sections before chunks and rebuilds them, for **both** the Ollama and ContextFit paths.
 
 ## [2.1.0] — 2026-06-25
 
