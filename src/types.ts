@@ -12,6 +12,20 @@
 export interface VaultConfig {
   name: string;
   path: string;
+  /** Retrieval engine for this vault (ADR-008). `"ollama"` (default) uses the
+   *  Ollama-embeddings + sqlite-vec + FTS5 hybrid path. `"contextfit"` uses the
+   *  CPU-only, token-native ContextFit engine via its CLI — no GPU/embeddings.
+   *  Omitted ⇒ "ollama" (existing vaults are byte-identical). */
+  backend?: "ollama" | "contextfit";
+  /** ContextFit settings (only consulted when `backend === "contextfit"`). */
+  contextfit?: {
+    /** `contextfit` executable: bare name on PATH or absolute path. Default "contextfit". */
+    command?: string;
+    /** BPE tokenizer name (ContextFit `--tokenizer`). Default "cl100k_base". */
+    tokenizer?: string;
+    /** Default retrieval method for `query`. Default "hybrid". */
+    method?: "exact" | "bm25" | "sid" | "graph" | "hierarchy" | "hybrid";
+  };
   embedding_model?: string;
   /** Phase 7c: optional secondary model embedded in parallel (shadow index)
    *  so a user can evaluate a new model side-by-side without destroying
@@ -297,6 +311,9 @@ export interface SearchHit {
      *  (ISSUE-aliases-not-in-fulltext-retrieval). Only set when this hit
      *  was injected/promoted because the query exactly matched this alias. */
     alias?: string;
+    /** Raw ContextFit relevance score (lexical/SID; unbounded, NOT cosine).
+     *  Only set for hits from a `backend = "contextfit"` vault (ADR-008). */
+    contextfit?: number;
   };
   // ── Phase 3 / 03-05 (ASM-06): nine optional citation-shaped fields ──
   //

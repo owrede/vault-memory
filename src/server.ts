@@ -332,14 +332,17 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
   // for the handshake. Watchers start per-vault as each catch-up finishes.
   const startCatchupAndWatchers = async (): Promise<void> => {
     for (const vault of manager.list()) {
-      if (!vault.config.embedding_model && !vault.db.models.getActive()) continue;
+      // ADR-008: ContextFit vaults have no embedding model by design, but still
+      // need catchup + a watcher (they build the SQLite layer + refresh the KB).
+      const isContextFit = vault.config.backend === "contextfit";
+      if (!isContextFit && !vault.config.embedding_model && !vault.db.models.getActive()) continue;
       const modelName = vault.config.embedding_model ?? defaultModel;
 
       try {
         const result = await catchupVault({
           vault,
           embeddingModel: modelName,
-          ollama,
+          ...(isContextFit ? {} : { ollama }),
           log: (m) => process.stderr.write(`[catchup:${vault.config.name}] ${m}\n`),
         });
         if (result.reindexed > 0 || result.removed > 0) {

@@ -14,7 +14,7 @@ import type { OllamaClient } from "../ollama/index.js";
 import { parseNote } from "../adapters/source/obsidian-fs/parser.js";
 import { chunkNote } from "../chunker/index.js";
 import { computeChunkIdFragment } from "../chunker/chunk-id.js";
-import { extractAliases } from "./indexer.js";
+import { extractAliases, buildSectionsForNote } from "./indexer.js";
 import { WikilinkResolver } from "./resolver.js";
 import { extractAllEdges } from "./extract-edges.js";
 import type { ParsedNote, ParsedWikilink } from "../types.js";
@@ -30,7 +30,11 @@ export interface IndexNoteOptions {
    *  current with the primary. Unregistered names are ignored silently —
    *  registration only happens via a full `indexVault` run. */
   secondaryEmbeddingModel?: string;
-  ollama: OllamaClient;
+  /** Required when `embeddings !== "none"`. ContextFit vaults omit it. */
+  ollama?: OllamaClient;
+  /** ADR-008: "none" builds the SQLite content layer for this note but skips
+   *  embedding (ContextFit vaults). Default "ollama". */
+  embeddings?: "ollama" | "none";
 }
 
 export interface IndexNoteResult {
@@ -138,21 +142,31 @@ export async function indexNote(options: IndexNoteOptions): Promise<IndexNoteRes
     };
   }
 
-  // 5. Active model lookup + dimension contract check. The full indexer
-  //    upserts the model row; here we require it to already exist (caller
-  //    should run a full index first if not).
-  const activeModel = vault.db.models.getActive();
-  if (!activeModel) {
-    throw new Error(
-      `single-indexer: no active embedding model in DB. ` +
-        `Run a full index first to register "${embeddingModel}".`,
-    );
-  }
-  if (activeModel.name !== embeddingModel) {
-    throw new Error(
-      `single-indexer: active model "${activeModel.name}" does not match ` +
-        `requested "${embeddingModel}". Run a full re-index to switch models.`,
-    );
+  // ADR-008: ContextFit vaults skip embedding (embedMode "none") — no model,
+  // no Ollama. The classic path requires a registered active model.
+  const embedMode = options.embeddings ?? "ollama";
+  let activeModel: { id: number; name: string; dim: number } | null = null;
+  if (embedMode === "ollama") {
+    if (!ollama) {
+      throw new Error("single-indexer: embeddings='ollama' requires an OllamaClient.");
+    }
+    // 5. Active model lookup + dimension contract check. The full indexer
+    //    upserts the model row; here we require it to already exist (caller
+    //    should run a full index first if not).
+    const am = vault.db.models.getActive();
+    if (!am) {
+      throw new Error(
+        `single-indexer: no active embedding model in DB. ` +
+          `Run a full index first to register "${embeddingModel}".`,
+      );
+    }
+    if (am.name !== embeddingModel) {
+      throw new Error(
+        `single-indexer: active model "${am.name}" does not match ` +
+          `requested "${embeddingModel}". Run a full re-index to switch models.`,
+      );
+    }
+    activeModel = am;
   }
 
   // 6. Upsert note row + aliases.
@@ -168,7 +182,12 @@ export async function indexNote(options: IndexNoteOptions): Promise<IndexNoteRes
   });
   vault.db.aliases.setForNote(upsert.id, extractAliases(parsed.frontmatter));
 
-  // 7. Wipe derived layer for this note.
+  // 7. Wipe derived layer for this note. Sections FIRST — sections reference
+  // chunks via chunk_id_first/last (no ON DELETE cascade), so deleting chunks
+  // while sections still point at them trips a FOREIGN KEY constraint. (This
+  // ordering matches the full indexer; single-indexer historically skipped
+  // section maintenance — now fixed so live re-index keeps sections correct.)
+  vault.db.sections.deleteByNote(upsert.id);
   vault.db.chunks.deleteByNote(upsert.id);
   vault.db.wikilinks.deleteByNote(upsert.id);
   // ── Phase 4 / 04-02 / GRA-04 / D-02 ──
@@ -213,50 +232,69 @@ export async function indexNote(options: IndexNoteOptions): Promise<IndexNoteRes
     })),
   );
 
-  const embedResult = await ollama.embed({
-    model: embeddingModel,
-    texts: chunks.map((c) => c.text),
-  });
-  if (embedResult.dim !== activeModel.dim) {
-    throw new Error(
-      `single-indexer: embedding dim ${embedResult.dim} does not match ` +
-        `registered dim ${activeModel.dim} for model "${embeddingModel}".`,
+  // Rebuild this note's sections (was previously skipped by the single-indexer,
+  // so live-reindexed notes silently lost their section rows). Runs for BOTH
+  // backends — sections power outline/search_sections/bundle and need no
+  // embeddings. Defensive try/catch: one pathological note must not break the
+  // watcher (mirrors the full indexer).
+  try {
+    buildSectionsForNote(vault, upsert.id, parsed.content, chunkIds);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    process.stderr.write(
+      `[single-indexer:${vault.config.name}] section build failed for ${parsed.relativePath}: ${message}\n`,
     );
   }
 
-  vault.db.embeddings.insertBatch(
-    chunkIds.map((chunkId, i) => ({
-      chunkId,
-      modelId: activeModel.id,
-      vector: embedResult.vectors[i]!,
-    })),
-  );
+  // Embed — Ollama path only. ContextFit vaults skip; the chunks + links +
+  // edges persisted here power the SQLite-backed tools, and search runs via
+  // the ContextFit engine (KB re-ingested by the watcher/write path).
+  if (embedMode === "ollama") {
+    const embedResult = await ollama!.embed({
+      model: embeddingModel,
+      texts: chunks.map((c) => c.text),
+    });
+    if (embedResult.dim !== activeModel!.dim) {
+      throw new Error(
+        `single-indexer: embedding dim ${embedResult.dim} does not match ` +
+          `registered dim ${activeModel!.dim} for model "${embeddingModel}".`,
+      );
+    }
 
-  // Phase 7c: keep the shadow index live. Only embed if the secondary model
-  // is already registered (i.e. a full indexVault run has set it up). We
-  // never register a new model from a single-note path — the dim probe is
-  // a full-indexer responsibility.
-  if (secondaryName) {
-    const secondaryModel = vault.db.models.getByName(secondaryName);
-    if (secondaryModel && secondaryModel.id !== activeModel.id) {
-      const secEmbed = await ollama.embed({
-        model: secondaryName,
-        texts: chunks.map((c) => c.text),
-      });
-      if (secEmbed.dim !== secondaryModel.dim) {
-        throw new Error(
-          `single-indexer: shadow embedding dim ${secEmbed.dim} ` +
-            `does not match registered dim ${secondaryModel.dim} for ` +
-            `"${secondaryName}".`,
+    vault.db.embeddings.insertBatch(
+      chunkIds.map((chunkId, i) => ({
+        chunkId,
+        modelId: activeModel!.id,
+        vector: embedResult.vectors[i]!,
+      })),
+    );
+
+    // Phase 7c: keep the shadow index live. Only embed if the secondary model
+    // is already registered (i.e. a full indexVault run has set it up). We
+    // never register a new model from a single-note path — the dim probe is
+    // a full-indexer responsibility.
+    if (secondaryName) {
+      const secondaryModel = vault.db.models.getByName(secondaryName);
+      if (secondaryModel && secondaryModel.id !== activeModel!.id) {
+        const secEmbed = await ollama!.embed({
+          model: secondaryName,
+          texts: chunks.map((c) => c.text),
+        });
+        if (secEmbed.dim !== secondaryModel.dim) {
+          throw new Error(
+            `single-indexer: shadow embedding dim ${secEmbed.dim} ` +
+              `does not match registered dim ${secondaryModel.dim} for ` +
+              `"${secondaryName}".`,
+          );
+        }
+        vault.db.embeddings.insertBatch(
+          chunkIds.map((chunkId, i) => ({
+            chunkId,
+            modelId: secondaryModel.id,
+            vector: secEmbed.vectors[i]!,
+          })),
         );
       }
-      vault.db.embeddings.insertBatch(
-        chunkIds.map((chunkId, i) => ({
-          chunkId,
-          modelId: secondaryModel.id,
-          vector: secEmbed.vectors[i]!,
-        })),
-      );
     }
   }
 

@@ -20,7 +20,7 @@ import type { Reranker } from "../../rerank/index.js";
 import type { AdapterRegistry } from "../../adapters/registry.js";
 import { parseSourceHandle } from "../../adapters/registry.js";
 import { FtsQueries } from "../../db/index.js";
-import { hybridSearch, matchesAnyGlob } from "../../search/index.js";
+import { hybridSearch, searchVaults, matchesAnyGlob } from "../../search/index.js";
 import type { ExpandDeps, ExpandDirection } from "../../graph/index.js";
 import type { EdgeType } from "../../db/queries/edges.js";
 import type { SearchHit } from "../../types.js";
@@ -140,8 +140,16 @@ function handleSearchText(
 
   const sanitized = FtsQueries.sanitize(query);
   const allHits: SearchHit[] = [];
+  const skippedContextFit: string[] = [];
 
   for (const vault of targets) {
+    // ADR-008: contextfit-backed vaults have no SQLite FTS table. `search_text`
+    // is an Ollama-path BM25 surface; ContextFit users should use search_hybrid
+    // / search_semantic (which dispatch to the ContextFit engine). Skip + note.
+    if (vault.config.backend === "contextfit") {
+      skippedContextFit.push(vault.config.name);
+      continue;
+    }
     const ftsHits = vault.db.fts.search(sanitized, fanK, true);
     for (const hit of ftsHits) {
       const chunk = vault.db.chunks.getById(hit.chunkId);
@@ -168,9 +176,15 @@ function handleSearchText(
     hits: allHits.slice(0, topK),
     count: allHits.length,
   };
-  if (skipped.length > 0) {
-    out.note = `Skipped vault(s) currently indexing: ${skipped.join(", ")}.`;
+  const notes: string[] = [];
+  if (skipped.length > 0) notes.push(`Skipped vault(s) currently indexing: ${skipped.join(", ")}.`);
+  if (skippedContextFit.length > 0) {
+    notes.push(
+      `search_text is not supported for ContextFit vault(s): ${skippedContextFit.join(", ")} — ` +
+        `use search_hybrid or search_semantic instead.`,
+    );
   }
+  if (notes.length > 0) out.note = notes.join(" ");
   return out;
 }
 
@@ -222,7 +236,11 @@ export async function handleSearchHybrid(
   // semantic/BM25 each retrieve ~9×topK chunks — plenty of headroom.
   const innerTopK = hasExclude ? topK * 3 : topK;
 
-  const hits = await hybridSearch({
+  // ADR-008: searchVaults routes contextfit-backed vaults to the CPU-only
+  // engine and ollama vaults to the embeddings hybrid, then merges. For an
+  // all-ollama target set (the common case) it delegates straight to
+  // hybridSearch with no behavior change.
+  const hits = await searchVaults({
     query,
     embeddingModel: defaultModel,
     ollama,
@@ -294,8 +312,9 @@ async function handleSearchCompat(
 
   // We delegate to the hybrid pipeline so OB1-style search benefits from
   // both BM25 and vector retrieval — this is the differentiator vs. OB1's
-  // pure-embedding implementation.
-  const hits = await hybridSearch({
+  // pure-embedding implementation. searchVaults additionally routes
+  // contextfit-backed vaults to the CPU-only engine (ADR-008).
+  const hits = await searchVaults({
     query,
     embeddingModel: defaultModel,
     ollama,

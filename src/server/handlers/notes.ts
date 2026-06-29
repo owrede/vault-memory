@@ -144,6 +144,21 @@ async function handleWriteNote(
     return out;
   }
 
+  // ADR-008: a write to a ContextFit vault must refresh its search KB so the
+  // new/edited content is retrievable. The SQLite note row is already updated
+  // inline by writeNote; here we rebuild the ContextFit KB (full re-ingest —
+  // CPU-only, fast). Best-effort: a KB-refresh failure does not fail the write
+  // (the note is on disk + in SQLite; the next index/catchup reconciles).
+  if (vault.config.backend === "contextfit") {
+    try {
+      const { indexVaultWithContextFit } =
+        await import("../../adapters/retrieval/contextfit/index.js");
+      await indexVaultWithContextFit(vault.config, {});
+    } catch {
+      // swallow — write succeeded; KB will catch up on next index/restart
+    }
+  }
+
   // Derive v1 noteId from the DB. The write went through writeNote
   // internally which upserts the note; getByPath returns the row.
   const noteRow = vault.db.notes.getByPath(parsed.path);

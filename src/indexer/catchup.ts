@@ -22,7 +22,8 @@ import type { OllamaClient } from "../ollama/index.js";
 export interface CatchupOptions {
   vault: Vault;
   embeddingModel: string;
-  ollama: OllamaClient;
+  /** Required for Ollama vaults; omitted for ContextFit vaults (ADR-008). */
+  ollama?: OllamaClient;
   log?: (msg: string) => void;
 }
 
@@ -44,6 +45,8 @@ export async function catchupVault(options: CatchupOptions): Promise<CatchupResu
 
   let reindexed = 0;
   const knownPaths = new Set<string>();
+  // ADR-008: ContextFit vaults reconcile the SQLite layer without embeddings.
+  const isContextFit = vault.config.backend === "contextfit";
 
   for (const file of files) {
     // Cheap path-relative computation — duplicates the reader's logic but
@@ -61,7 +64,7 @@ export async function catchupVault(options: CatchupOptions): Promise<CatchupResu
       vault,
       absolutePath: file,
       embeddingModel: options.embeddingModel,
-      ollama: options.ollama,
+      ...(isContextFit ? { embeddings: "none" as const } : { ollama: options.ollama }),
     });
     if (result.status === "indexed") {
       reindexed++;
@@ -78,6 +81,18 @@ export async function catchupVault(options: CatchupOptions): Promise<CatchupResu
         log(`catch-up removed ${row.path}`);
       }
     }
+  }
+
+  // ADR-008: if a ContextFit vault changed during catch-up, rebuild its search
+  // KB once so retrieval matches the reconciled SQLite layer.
+  if (isContextFit && (reindexed > 0 || removed > 0)) {
+    const { indexVaultWithContextFit } = await import("../adapters/retrieval/contextfit/index.js");
+    const r = await indexVaultWithContextFit(vault.config, { onProgress: log });
+    log(
+      r.status === "completed"
+        ? `catch-up: ContextFit KB rebuilt (${r.durationMs}ms)`
+        : `catch-up: ContextFit KB rebuild failed: ${r.error}`,
+    );
   }
 
   return {

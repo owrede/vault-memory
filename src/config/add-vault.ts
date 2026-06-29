@@ -29,6 +29,9 @@ export interface AddVaultOptions {
   name?: string;
   /** Whether the MCP server may write to this vault. Default false (safer). */
   writeEnabled?: boolean;
+  /** ADR-008: retrieval engine. "contextfit" = CPU-only token-native engine
+   *  (no Ollama/GPU). Omitted/"ollama" = the embeddings+sqlite-vec default. */
+  backend?: "ollama" | "contextfit";
   /** Custom exclude_globs. Default = sensible Obsidian-system folders. */
   excludeGlobs?: string[];
   /** Custom config.toml path (testing). */
@@ -138,6 +141,7 @@ export async function addVault(opts: AddVaultOptions): Promise<AddVaultResult> {
       path: resolvedPath,
       writeEnabled: opts.writeEnabled ?? false,
       excludeGlobs: opts.excludeGlobs ?? DEFAULT_EXCLUDE_GLOBS,
+      ...(opts.backend ? { backend: opts.backend } : {}),
     });
     await ensureFileExists(cfgFile);
     await appendToFile(cfgFile, block);
@@ -165,6 +169,9 @@ interface VaultBlockInput {
   path: string;
   writeEnabled: boolean;
   excludeGlobs: string[];
+  /** ADR-008: retrieval engine. Only emitted when "contextfit" (ollama is the
+   *  implicit default and is left out for back-compat clean configs). */
+  backend?: "ollama" | "contextfit";
 }
 
 function renderVaultBlock(input: VaultBlockInput): string {
@@ -175,12 +182,20 @@ function renderVaultBlock(input: VaultBlockInput): string {
     "[[vaults]]",
     `name = ${JSON.stringify(input.name)}`,
     `path = ${JSON.stringify(input.path)}`,
+  ];
+  if (input.backend === "contextfit") {
+    lines.push(
+      `# ADR-008: CPU-only, token-native engine (no Ollama/embeddings/GPU).`,
+      `backend = "contextfit"`,
+    );
+  }
+  lines.push(
     `write_enabled = ${input.writeEnabled}`,
     `exclude_globs = [`,
     ...input.excludeGlobs.map((g) => `  ${JSON.stringify(g)},`),
     `]`,
     "",
-  ];
+  );
   return lines.join("\n");
 }
 
