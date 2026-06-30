@@ -255,7 +255,7 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
       // (re-index produces a fresh section partition).
       vault.db.sections.deleteByNote(noteId);
 
-      const chunks = chunkNote(parsed.content);
+      const chunks = chunkNote(parsed.indexedContent);
 
       if (chunks.length === 0) {
         // empty note — record wikilinks anyway, but no chunks/embeddings
@@ -295,7 +295,7 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
       // any other unexpected failure — log and continue with the rest of the
       // vault (see ISSUE-indexer-duplicate-anchor.md "Notes for the agent").
       try {
-        buildSectionsForNote(vault, noteId, parsed.content, chunkIds);
+        buildSectionsForNote(vault, noteId, parsed.indexedContent, chunkIds);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error(

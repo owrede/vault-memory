@@ -5892,6 +5892,73 @@ var init_wikilinks2 = __esm({
   }
 });
 
+// src/reader/datacore.ts
+function stripDynamicViewBlocks(body) {
+  if (!body.includes("```") && !body.includes("~~~")) {
+    return { content: body, replaced: 0 };
+  }
+  const lines = body.split("\n");
+  const out = [];
+  let replaced = 0;
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    const open2 = FENCE_OPEN_RE.exec(line);
+    if (open2) {
+      const indent = open2[1] ?? "";
+      const marker = open2[2] ?? "";
+      const lang = (open2[3] ?? "").toLowerCase();
+      const markerChar = marker[0];
+      const isDynamic = DYNAMIC_VIEW_LANGS.has(lang);
+      let j = i + 1;
+      let closed = false;
+      while (j < lines.length) {
+        const close = FENCE_OPEN_RE.exec(lines[j]);
+        if (close && (close[2] ?? "")[0] === markerChar && (close[2] ?? "").length >= marker.length && (close[3] ?? "") === "") {
+          closed = true;
+          break;
+        }
+        j++;
+      }
+      if (isDynamic) {
+        out.push(`${indent}${DATACORE_PLACEHOLDER}`);
+        replaced++;
+        i = closed ? j + 1 : lines.length;
+      } else {
+        out.push(line);
+        if (closed) {
+          for (let k = i + 1; k <= j; k++) out.push(lines[k]);
+          i = j + 1;
+        } else {
+          for (let k = i + 1; k < lines.length; k++) out.push(lines[k]);
+          i = lines.length;
+        }
+      }
+    } else {
+      out.push(line);
+      i++;
+    }
+  }
+  if (replaced === 0) return { content: body, replaced: 0 };
+  return { content: out.join("\n"), replaced };
+}
+var DYNAMIC_VIEW_LANGS, DATACORE_PLACEHOLDER, FENCE_OPEN_RE;
+var init_datacore = __esm({
+  "src/reader/datacore.ts"() {
+    "use strict";
+    init_esm_shims();
+    DYNAMIC_VIEW_LANGS = /* @__PURE__ */ new Set([
+      "datacore",
+      "datacorejsx",
+      "datacorejs",
+      "dataview",
+      "dataviewjs"
+    ]);
+    DATACORE_PLACEHOLDER = "[Datacore view]";
+    FENCE_OPEN_RE = /^(\s*)(`{3,}|~{3,})\s*([A-Za-z0-9_-]*)\s*$/;
+  }
+});
+
 // src/adapters/source/obsidian-fs/hash.ts
 import { createHash as createHash3 } from "crypto";
 function sha256(input) {
@@ -5944,9 +6011,11 @@ async function parseNote(absolutePath, vaultRoot) {
   const wikilinks = frontmatterLinks.length === 0 ? bodyLinks : mergeFrontmatterIntoBody(bodyLinks, frontmatterLinks);
   const wordCount = countWords2(content);
   const relativePath = toPosix2(path3.relative(path3.resolve(vaultRoot), path3.resolve(absolutePath)));
+  const indexedContent = stripDynamicViewBlocks(content).content;
   return {
     relativePath,
     content,
+    indexedContent,
     frontmatter,
     title,
     hash,
@@ -5990,6 +6059,7 @@ var init_parser = __esm({
     "use strict";
     init_esm_shims();
     init_wikilinks2();
+    init_datacore();
     init_hash();
   }
 });
@@ -6862,7 +6932,7 @@ async function indexVault(vault, options) {
       vault.db.wikilinks.deleteByNote(noteId);
       vault.db.edges.deleteByNote(noteId);
       vault.db.sections.deleteByNote(noteId);
-      const chunks = chunkNote(parsed.content);
+      const chunks = chunkNote(parsed.indexedContent);
       if (chunks.length === 0) {
         insertWikilinks(vault, noteId, parsed.wikilinks, firstPassResolver);
         writeAllEdges(vault, noteId, parsed, firstPassResolver);
@@ -6879,7 +6949,7 @@ async function indexVault(vault, options) {
       }));
       const chunkIds = vault.db.chunks.insertBatch(noteId, chunkInputs);
       try {
-        buildSectionsForNote(vault, noteId, parsed.content, chunkIds);
+        buildSectionsForNote(vault, noteId, parsed.indexedContent, chunkIds);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error(
@@ -7216,7 +7286,7 @@ async function indexNote(options) {
   vault.db.chunks.deleteByNote(upsert.id);
   vault.db.wikilinks.deleteByNote(upsert.id);
   vault.db.edges.deleteByNote(upsert.id);
-  const chunks = chunkNote(parsed.content);
+  const chunks = chunkNote(parsed.indexedContent);
   if (chunks.length === 0) {
     insertWikilinks2(vault, upsert.id, parsed.wikilinks);
     writeAllEdges2(vault, upsert.id, parsed);
@@ -7243,7 +7313,7 @@ async function indexNote(options) {
     }))
   );
   try {
-    buildSectionsForNote(vault, upsert.id, parsed.content, chunkIds);
+    buildSectionsForNote(vault, upsert.id, parsed.indexedContent, chunkIds);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     process.stderr.write(

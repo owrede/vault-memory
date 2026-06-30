@@ -199,7 +199,7 @@ export async function indexNote(options: IndexNoteOptions): Promise<IndexNoteRes
   vault.db.edges.deleteByNote(upsert.id);
 
   // 8. Chunk + embed + persist.
-  const chunks = chunkNote(parsed.content);
+  const chunks = chunkNote(parsed.indexedContent);
 
   if (chunks.length === 0) {
     insertWikilinks(vault, upsert.id, parsed.wikilinks);
@@ -238,7 +238,7 @@ export async function indexNote(options: IndexNoteOptions): Promise<IndexNoteRes
   // embeddings. Defensive try/catch: one pathological note must not break the
   // watcher (mirrors the full indexer).
   try {
-    buildSectionsForNote(vault, upsert.id, parsed.content, chunkIds);
+    buildSectionsForNote(vault, upsert.id, parsed.indexedContent, chunkIds);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     process.stderr.write(
