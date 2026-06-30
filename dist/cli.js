@@ -1697,6 +1697,12 @@ function runMigration015(db, _ctx) {
     "DROP INDEX IF EXISTS sections_note_anchor; CREATE UNIQUE INDEX IF NOT EXISTS sections_note_headingpath_anchor ON sections(note_id, heading_path, anchor);"
   );
 }
+function runMigration016(db, _ctx) {
+  const cols = db.prepare("PRAGMA table_info(notes)").all();
+  if (!cols.some((c) => c.name === "rendered_source_hash")) {
+    db.exec("ALTER TABLE notes ADD COLUMN rendered_source_hash TEXT");
+  }
+}
 var INITIAL_SCHEMA, MIGRATION_002_ALIASES, MIGRATION_003_FIX_DELETE_FKS, MIGRATION_004_VARIABLE_DIMS, MIGRATION_006_BODY_HASH, MIGRATION_007_DOC_URI_ADD, MIGRATIONS;
 var init_schema = __esm({
   "src/db/schema.ts"() {
@@ -1977,6 +1983,11 @@ CREATE INDEX IF NOT EXISTS idx_notes_doc_uri ON notes(doc_uri);
         version: 15,
         description: "section identity = (note_id, heading_path, anchor) \u2014 context-aware, no longer collapse byte-identical siblings in different contexts (ADR-032 revised)",
         run: runMigration015
+      },
+      {
+        version: 16,
+        description: "notes.rendered_source_hash \u2014 overlay marker for plugin-rendered Datacore content (ADR-033)",
+        run: runMigration016
       }
     ];
   }
