@@ -198,6 +198,21 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
         log(`  skipped (parse error): ${rel} — ${msg}`);
         continue;
       }
+      // Issue #14 / P1: read the PRE-upsert state so we can make a correct
+      // re-index decision. `upsertByPath` mutates notes.hash/content in place,
+      // so we must capture the previous hashes BEFORE it runs — otherwise a
+      // changed body keeps stale chunks/embeddings/sections/edges (the bug).
+      // Mirrors the 3-way decision in `src/indexer/single.ts`:
+      //   - hash unchanged            → no re-embed (metadata maintenance only)
+      //   - body_hash unchanged       → frontmatter-only edit: keep chunks
+      //   - body changed / NULL body_hash → full re-embed
+      const previous = vault.db.notes.getByPath(parsed.relativePath);
+      const hashUnchanged = previous != null && previous.hash === parsed.hash;
+      const bodyUnchanged =
+        previous != null &&
+        previous.body_hash != null &&
+        previous.body_hash === parsed.bodyHash;
+
       const upsert = vault.db.notes.upsertByPath({
         path: parsed.relativePath,
         content: parsed.content,
@@ -222,38 +237,53 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
       // is unchanged. The set is idempotent: setForNote does delete+insert.
       vault.db.aliases.setForNote(upsert.id, extractAliases(parsed.frontmatter));
 
-      const noteExisted = !upsert.isNew;
-      const existing = noteExisted ? vault.db.notes.getById(upsert.id) : null;
-      // After upsert the DB row reflects the new state; we need to know if the hash
-      // actually changed. The NotesQueries.upsertByPath returns isNew, but we also
-      // need "isModified". Workaround: check chunks count — if a note has no chunks,
-      // it needs (re-)indexing.
+      // A note with zero chunks still needs (re-)indexing even if its hash
+      // matched — e.g. a previous run inserted the row but crashed before
+      // chunking, or a legacy row predates the chunk layer.
       const chunkCount = vault.db.chunks.getByNote(upsert.id).length;
-      const needsReindex = mode === "full" || upsert.isNew || chunkCount === 0;
+
+      // Full re-embed when: full mode, brand-new note, no chunks yet, OR the
+      // body actually changed (hash differs AND body_hash differs / is NULL).
+      const bodyChanged = !hashUnchanged && !bodyUnchanged;
+      const needsReindex =
+        mode === "full" || upsert.isNew || chunkCount === 0 || bodyChanged;
+
+      // Frontmatter-only edit (hash changed, body identical): the note row +
+      // status + aliases are already updated above. We must ALSO refresh
+      // wikilinks + typed edges (frontmatter can hold wikilink-shaped refs
+      // like `owner: "[[X]]"`), but we KEEP chunks/embeddings/sections —
+      // no Ollama roundtrip. Mirrors single.ts step 4b.
+      const frontmatterOnly = !upsert.isNew && !needsReindex && !hashUnchanged;
 
       if (upsert.isNew) notesIndexed++;
-      else if (needsReindex) notesUpdated++;
+      else if (needsReindex || frontmatterOnly) notesUpdated++;
 
       if (needsReindex) {
         parsedNotes.push({ parsed, noteId: upsert.id, needsReindex: true });
+      } else if (frontmatterOnly) {
+        vault.db.wikilinks.deleteByNote(upsert.id);
+        vault.db.edges.deleteByNote(upsert.id);
+        insertWikilinks(vault, upsert.id, parsed.wikilinks, firstPassResolver);
+        writeAllEdges(vault, upsert.id, parsed, firstPassResolver);
       }
-
-      // Suppress unused-var warning for `existing` — kept for clarity above
-      void existing;
     }
 
     log(`${parsedNotes.length} notes need (re-)indexing`);
 
     // 5. Chunk + embed + persist
     for (const { parsed, noteId } of parsedNotes) {
-      // Clear old chunks (handles re-index)
+      // Clear derived layer for this note. Sections FIRST — sections
+      // reference chunks via chunk_id_first/last with no ON DELETE cascade,
+      // so deleting chunks while sections still point at them trips a
+      // FOREIGN KEY constraint. Ordering matches single.ts step 7. (Before
+      // Issue #14's P1 fix this path only ran for brand-new notes, which
+      // have no sections yet — so the wrong order never surfaced. It does
+      // now that changed notes are correctly re-indexed.)
+      vault.db.sections.deleteByNote(noteId);
       vault.db.chunks.deleteByNote(noteId);
       vault.db.wikilinks.deleteByNote(noteId);
       // Phase 4 / 04-01 (D-01): dual-write mirror.
       vault.db.edges.deleteByNote(noteId);
-      // Phase 3 / 03-01: also clear sections for the same reason
-      // (re-index produces a fresh section partition).
-      vault.db.sections.deleteByNote(noteId);
 
       const chunks = chunkNote(parsed.indexedContent);
 
