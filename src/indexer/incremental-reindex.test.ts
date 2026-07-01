@@ -90,7 +90,11 @@ describe("indexVault incremental reindex decision (Issue #14 / P1)", () => {
 
     // Repoint the link to Gamma.
     await fs.writeFile(path.join(vaultRoot, "a.md"), "# Alpha\n\nLinks to [[Gamma]] now.\n");
-    await indexVault(vault, { mode: "incremental", embeddingModel: "contextfit", embeddings: "none" });
+    await indexVault(vault, {
+      mode: "incremental",
+      embeddingModel: "contextfit",
+      embeddings: "none",
+    });
 
     fwd = vault.db.wikilinks.getForwardLinks(aId).map((w) => w.targetPath);
     expect(fwd).toContain("Gamma");

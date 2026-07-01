@@ -209,9 +209,7 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
       const previous = vault.db.notes.getByPath(parsed.relativePath);
       const hashUnchanged = previous != null && previous.hash === parsed.hash;
       const bodyUnchanged =
-        previous != null &&
-        previous.body_hash != null &&
-        previous.body_hash === parsed.bodyHash;
+        previous != null && previous.body_hash != null && previous.body_hash === parsed.bodyHash;
 
       const upsert = vault.db.notes.upsertByPath({
         path: parsed.relativePath,
@@ -245,8 +243,7 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
       // Full re-embed when: full mode, brand-new note, no chunks yet, OR the
       // body actually changed (hash differs AND body_hash differs / is NULL).
       const bodyChanged = !hashUnchanged && !bodyUnchanged;
-      const needsReindex =
-        mode === "full" || upsert.isNew || chunkCount === 0 || bodyChanged;
+      const needsReindex = mode === "full" || upsert.isNew || chunkCount === 0 || bodyChanged;
 
       // Frontmatter-only edit (hash changed, body identical): the note row +
       // status + aliases are already updated above. We must ALSO refresh

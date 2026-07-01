@@ -260,9 +260,16 @@ export async function writeNote(input: WriteNoteInput): Promise<WriteResult> {
 
   // Serialize new content. gray-matter.stringify writes a `---` block only
   // when the data object is non-empty; we mirror that behavior explicitly.
+  // Issue #14: pass lineWidth: -1 so js-yaml does NOT fold long string values
+  // into a `>-` block scalar (its default is lineWidth: 80). Obsidian's
+  // Properties editor mishandles block scalars; single-line values round-trip
+  // cleanly. gray-matter forwards this option verbatim to js-yaml's dump()
+  // (see gray-matter/lib/stringify.js), but @types/gray-matter's option type
+  // doesn't list the js-yaml keys — hence the narrow cast.
+  const yamlDumpOptions = { lineWidth: -1 } as Parameters<typeof matter.stringify>[2];
   const fileText =
     frontmatter !== null && Object.keys(frontmatter).length > 0
-      ? matter.stringify(content, frontmatter)
+      ? matter.stringify(content, frontmatter, yamlDumpOptions)
       : content;
 
   input.onBeforeFsWrite?.();
