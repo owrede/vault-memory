@@ -14,6 +14,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [2.3.0] — 2026-07-01
+
+### Added
+
+- **Datacore/Dataview rendered indexing — foundation** (ADR-033). Phase 1 strips
+  Datacore/Dataview query source from indexed text so raw query blocks no longer
+  pollute search (`src/reader/datacore.ts`). Phase 2 adds migration 016
+  (`notes.rendered_source_hash`) as the schema foundation for indexing rendered
+  content supplied by the Obsidian plugin. _Note: later phases of ADR-033 are not
+  yet complete; this release ships the foundation only._
+
+### Fixed
+
+- **Incremental full-vault indexer now re-indexes changed notes** (#14). `indexVault`
+  in `incremental` mode decided whether to re-index from chunk count alone, so a note
+  whose body changed but already had chunks kept stale chunks/embeddings/sections/edges
+  while its `hash`/`content` were updated in place. The reindex decision now mirrors the
+  single-note indexer's three-way logic (hash-unchanged / frontmatter-only / body-changed),
+  and a latent foreign-key ordering bug (sections must be deleted before chunks) is fixed.
+- **MCP server version is derived from `package.json`** (#14). `server.ts` hardcoded
+  `VERSION = "1.0.0"`, so the server advertised the wrong version and sink provisioning
+  stamped a stale sentinel. A new `src/version.ts` is the single source of truth.
+- **Frontmatter long-string serialization** (#14). Long string values are written
+  single-line instead of being folded into a `>-` YAML block scalar that Obsidian's
+  Properties editor mishandles.
+
+### Changed
+
+- **`engines.node` narrowed to `>=22 <26`** (#14). Node 26+ has no `better-sqlite3`
+  prebuild for the new ABI and building from source currently fails. README prerequisites
+  updated accordingly.
+- **Release versions reconciled to 2.3.0** across `package.json`, `plugin/package.json`,
+  `plugin/manifest.json`, and README (#14).
+
 ## [2.2.1] — 2026-06-29
 
 ### Fixed

@@ -1006,6 +1006,28 @@ function runMigration015(db: BetterSqlite3Database, _ctx: MigrationContext): voi
   );
 }
 
+/**
+ * Migration 016 — notes.rendered_source_hash (ADR-033).
+ *
+ * Marks a note whose indexed content came from the Obsidian plugin's RENDERED
+ * Datacore/Dataview output rather than the raw file. The value is the source
+ * file's hash at render time, so the watcher/CLI can detect when a rendered
+ * overlay has gone stale (source changed since the render) and fall back to
+ * raw re-indexing. NULL (the default for every existing + raw-indexed row)
+ * means "raw-indexed" — fully backwards-compatible, no row rewrite.
+ *
+ * Idempotent: PRAGMA-guard the column-add so a replay against a DB that
+ * already has the column is a no-op.
+ *
+ * Adapter-seam discipline: no fs/path/gray-matter/chokidar imports.
+ */
+function runMigration016(db: BetterSqlite3Database, _ctx: MigrationContext): void {
+  const cols = db.prepare("PRAGMA table_info(notes)").all() as Array<{ name: string }>;
+  if (!cols.some((c) => c.name === "rendered_source_hash")) {
+    db.exec("ALTER TABLE notes ADD COLUMN rendered_source_hash TEXT");
+  }
+}
+
 export const MIGRATIONS: readonly Migration[] = [
   {
     version: 1,
@@ -1086,5 +1108,11 @@ export const MIGRATIONS: readonly Migration[] = [
     description:
       "section identity = (note_id, heading_path, anchor) — context-aware, no longer collapse byte-identical siblings in different contexts (ADR-032 revised)",
     run: runMigration015,
+  },
+  {
+    version: 16,
+    description:
+      "notes.rendered_source_hash — overlay marker for plugin-rendered Datacore content (ADR-033)",
+    run: runMigration016,
   },
 ];

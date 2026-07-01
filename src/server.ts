@@ -112,8 +112,9 @@ import { makeMemoryHandlers } from "./server/handlers/memory.js";
 import { makeBriefHandlers } from "./server/handlers/brief.js";
 import { makeAssemblyHandlers } from "./server/handlers/assembly.js";
 import { makeContractsHandlers } from "./server/handlers/contracts.js";
-
-const VERSION = "1.0.0";
+// Issue #14 / P2: version comes from package.json via a single source of
+// truth — never hardcode it here (it drifted to "1.0.0" for years).
+import { VERSION } from "./version.js";
 
 /**
  * Bootstrap phase names — surfaced via the optional `onPhase` callback on

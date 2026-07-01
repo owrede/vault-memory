@@ -3,7 +3,7 @@
 **Local-first, source-agnostic-ready agentic knowledge layer over your Obsidian notes,
 exposed to any MCP-aware agent.**
 
-> See [CHANGELOG.md](./CHANGELOG.md) for release history. Latest: **v2.0.0** — additive
+> See [CHANGELOG.md](./CHANGELOG.md) for release history. Latest: **v2.3.0** — additive
 > over v1.x; the 23 v1 tool names + input schemas are preserved byte-identical.
 
 ## 30-second example
@@ -198,7 +198,9 @@ vault-memory supports two engines, selectable **per vault**:
 
 ### Prerequisites
 
-- **Node.js >= 22** — runtime for the MCP server (`brew install node@22`).
+- **Node.js 22–25** (`>=22 <26`) — runtime for the MCP server (`brew install node@22`).
+  Node 26+ is not yet supported: the native `better-sqlite3` dependency has no
+  prebuild for the new ABI and building from source currently fails.
 - One or more Obsidian vaults; an MCP-aware client.
 - **Ollama engine only:** [Ollama](https://ollama.com) on `localhost:11434`
   (`brew install ollama && brew services start ollama`) + the `bge-m3` model

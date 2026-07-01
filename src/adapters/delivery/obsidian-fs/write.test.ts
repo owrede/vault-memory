@@ -694,3 +694,37 @@ describe("deleteNote — MEM-07 entry-point Guard (Plan 02-03b)", () => {
     await fs.access(join(vaultDir, "_memory", "observations", "del-me.md"));
   });
 });
+
+describe("writeNote frontmatter serialization (Issue #14)", () => {
+  let vaultDir: string;
+  let vault: Vault;
+
+  beforeEach(async () => {
+    vaultDir = await mkdtemp(join(tmpdir(), "vm-write-fm-"));
+    vault = makeVault(vaultDir);
+  });
+  afterEach(async () => {
+    vault.db.close();
+    await rm(vaultDir, { recursive: true, force: true });
+  });
+
+  it("serializes long string values single-line, not as a >- block scalar", async () => {
+    const longValue =
+      "This is a very long frontmatter string value that would normally be " +
+      "folded by js-yaml at column eighty into a block scalar which Obsidian's " +
+      "Properties editor mishandles.";
+    const res = await writeNote({
+      vault,
+      relativePath: "note.md",
+      content: "# Note\n\nbody.",
+      frontmatter: { title: "Note", summary: longValue },
+    });
+    expect(res.ok).toBe(true);
+
+    const onDisk = await fs.readFile(join(vaultDir, "note.md"), "utf-8");
+    // No block-scalar folding markers in the frontmatter.
+    expect(onDisk).not.toContain(">-");
+    // The value survives intact on a single line.
+    expect(onDisk).toContain(`summary: ${longValue}`);
+  });
+});

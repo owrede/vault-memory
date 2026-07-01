@@ -157,8 +157,16 @@ export interface AppConfig {
 export interface ParsedNote {
   /** Path relative to vault root, forward-slashes. */
   relativePath: string;
-  /** Markdown body without YAML frontmatter. */
+  /** Markdown body without YAML frontmatter. The CANONICAL body — used for the
+   *  change-detection hash and wikilink extraction. Never altered. */
   content: string;
+  /** ADR-033: the body PROJECTED FOR INDEXING — identical to `content` except
+   *  Datacore/Dataview dynamic-view fence bodies are replaced with a neutral
+   *  placeholder so query source doesn't pollute the index. The chunker +
+   *  section builder consume THIS; hashing + wikilinks use `content`. Equals
+   *  `content` when the note has no dynamic-view blocks. The Obsidian plugin
+   *  (ADR-033 phase 3) supplies actually-rendered content via a separate path. */
+  indexedContent: string;
   /** Raw YAML frontmatter object (or null if none). */
   frontmatter: Record<string, unknown> | null;
   /** Title — H1 heading if present, else basename without .md. */

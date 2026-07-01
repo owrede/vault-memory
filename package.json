@@ -1,6 +1,6 @@
 {
   "name": "@owrede/vault-memory",
-  "version": "2.2.1",
+  "version": "2.3.0",
   "description": "Local-first semantic memory MCP server for Obsidian vaults",
   "type": "module",
   "license": "MIT",
@@ -21,7 +21,7 @@
     "CHANGELOG.md"
   ],
   "engines": {
-    "node": ">=22"
+    "node": ">=22 <26"
   },
   "scripts": {
     "build": "tsup",
