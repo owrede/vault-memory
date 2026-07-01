@@ -14,18 +14,25 @@ concurrency:
 
 jobs:
   lint-and-test:
-    name: Lint, type-check, test
+    name: Lint, type-check, test (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Supported runtime range is engines.node ">=22 <26" (#14). Test the
+        # floor (22) and one upper supported version (24). Node 26+ has no
+        # better-sqlite3 prebuild for the new ABI — intentionally excluded.
+        node: ['22', '24']
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0  # full history — needed for check-fixture-privacy.sh
 
-      - name: Setup Node 22
+      - name: Setup Node ${{ matrix.node }}
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version: ${{ matrix.node }}
           cache: 'npm'
 
       - name: Install dependencies

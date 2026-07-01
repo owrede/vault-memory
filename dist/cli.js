@@ -6914,6 +6914,9 @@ async function indexVault(vault, options) {
         log(`  skipped (parse error): ${rel} \u2014 ${msg}`);
         continue;
       }
+      const previous = vault.db.notes.getByPath(parsed.relativePath);
+      const hashUnchanged = previous != null && previous.hash === parsed.hash;
+      const bodyUnchanged = previous != null && previous.body_hash != null && previous.body_hash === parsed.bodyHash;
       const upsert = vault.db.notes.upsertByPath({
         path: parsed.relativePath,
         content: parsed.content,
@@ -6926,23 +6929,27 @@ async function indexVault(vault, options) {
       });
       vault.db.notes.setStatus(upsert.id, extractStatus(parsed.frontmatter));
       vault.db.aliases.setForNote(upsert.id, extractAliases(parsed.frontmatter));
-      const noteExisted = !upsert.isNew;
-      const existing = noteExisted ? vault.db.notes.getById(upsert.id) : null;
       const chunkCount = vault.db.chunks.getByNote(upsert.id).length;
-      const needsReindex = mode === "full" || upsert.isNew || chunkCount === 0;
+      const bodyChanged = !hashUnchanged && !bodyUnchanged;
+      const needsReindex = mode === "full" || upsert.isNew || chunkCount === 0 || bodyChanged;
+      const frontmatterOnly = !upsert.isNew && !needsReindex && !hashUnchanged;
       if (upsert.isNew) notesIndexed++;
-      else if (needsReindex) notesUpdated++;
+      else if (needsReindex || frontmatterOnly) notesUpdated++;
       if (needsReindex) {
         parsedNotes.push({ parsed, noteId: upsert.id, needsReindex: true });
+      } else if (frontmatterOnly) {
+        vault.db.wikilinks.deleteByNote(upsert.id);
+        vault.db.edges.deleteByNote(upsert.id);
+        insertWikilinks(vault, upsert.id, parsed.wikilinks, firstPassResolver);
+        writeAllEdges(vault, upsert.id, parsed, firstPassResolver);
       }
-      void existing;
     }
     log(`${parsedNotes.length} notes need (re-)indexing`);
     for (const { parsed, noteId } of parsedNotes) {
+      vault.db.sections.deleteByNote(noteId);
       vault.db.chunks.deleteByNote(noteId);
       vault.db.wikilinks.deleteByNote(noteId);
       vault.db.edges.deleteByNote(noteId);
-      vault.db.sections.deleteByNote(noteId);
       const chunks = chunkNote(parsed.indexedContent);
       if (chunks.length === 0) {
         insertWikilinks(vault, noteId, parsed.wikilinks, firstPassResolver);
@@ -7929,7 +7936,8 @@ async function writeNote(input) {
       };
     }
   }
-  const fileText = frontmatter !== null && Object.keys(frontmatter).length > 0 ? matter2.stringify(content, frontmatter) : content;
+  const yamlDumpOptions = { lineWidth: -1 };
+  const fileText = frontmatter !== null && Object.keys(frontmatter).length > 0 ? matter2.stringify(content, frontmatter, yamlDumpOptions) : content;
   input.onBeforeFsWrite?.();
   await atomicWriteFile(absPath, fileText);
   const written = await readExistingFile(absPath);
@@ -16219,6 +16227,92 @@ var init_contracts2 = __esm({
   }
 });
 
+// package.json
+var package_default;
+var init_package = __esm({
+  "package.json"() {
+    package_default = {
+      name: "@owrede/vault-memory",
+      version: "2.3.0",
+      description: "Local-first semantic memory MCP server for Obsidian vaults",
+      type: "module",
+      license: "MIT",
+      workspaces: [
+        "plugin"
+      ],
+      repository: {
+        type: "git",
+        url: "git+https://github.com/owrede/vault-memory.git"
+      },
+      bin: {
+        "vault-memory": "dist/cli.js"
+      },
+      files: [
+        "dist",
+        "README.md",
+        "LICENSE",
+        "CHANGELOG.md"
+      ],
+      engines: {
+        node: ">=22 <26"
+      },
+      scripts: {
+        build: "tsup",
+        dev: "tsx watch src/cli.ts",
+        start: "node dist/cli.js",
+        test: "vitest run",
+        "test:watch": "vitest",
+        lint: "tsc --noEmit",
+        "lint:adapters": "sh scripts/lint-adapters.sh",
+        "lint:check": 'sh scripts/check-fixture-privacy.sh && sh scripts/lint-no-telemetry.sh && sh scripts/lint-adapters.sh && tsc --noEmit && prettier --check "src/**/*.ts"',
+        format: 'prettier --write "src/**/*.ts"',
+        "eval:baseline": "vitest run evals/v1-baseline/baseline.test.ts",
+        "eval:snapshot": "node evals/v1-baseline/dump-tools.mjs > evals/v1-baseline/tools-list.snapshot.json && node evals/v1-baseline/dump-resources.mjs > evals/v1-baseline/resources-list.snapshot.json",
+        "eval:smoketest": "npm run build && node scripts/smoketest-non-claude.mjs",
+        release: "node scripts/release.mjs",
+        "sync-marketplace": "node scripts/sync-marketplace.mjs"
+      },
+      dependencies: {
+        "@huggingface/tokenizers": "^0.1.3",
+        "@modelcontextprotocol/sdk": "^1.29.0",
+        "better-sqlite3": "^11.7.0",
+        chokidar: "^4.0.1",
+        "cross-spawn": "^7.0.6",
+        graphology: "^0.26.0",
+        "graphology-communities-louvain": "^2.0.2",
+        "gray-matter": "^4.0.3",
+        "onnxruntime-node": "^1.26.0",
+        seedrandom: "^3.0.5",
+        "smol-toml": "^1.3.1",
+        "sqlite-vec": "^0.1.6",
+        yaml: "^2.9.0",
+        zod: "^4.4.3"
+      },
+      devDependencies: {
+        "@types/better-sqlite3": "^7.6.12",
+        "@types/node": "^22.10.0",
+        "@types/seedrandom": "^3.0.8",
+        prettier: "^3.4.0",
+        tsup: "^8.3.5",
+        tsx: "^4.19.2",
+        typescript: "^5.7.0",
+        vitest: "^2.1.8"
+      }
+    };
+  }
+});
+
+// src/version.ts
+var VERSION;
+var init_version = __esm({
+  "src/version.ts"() {
+    "use strict";
+    init_esm_shims();
+    init_package();
+    VERSION = package_default.version;
+  }
+});
+
 // src/server.ts
 var server_exports = {};
 __export(server_exports, {
@@ -17300,7 +17394,7 @@ async function serve(options = {}) {
 `);
   });
 }
-var VERSION, MEMORY_AUTO_DISCOVERY_FOLDER;
+var MEMORY_AUTO_DISCOVERY_FOLDER;
 var init_server = __esm({
   "src/server.ts"() {
     "use strict";
@@ -17339,7 +17433,7 @@ var init_server = __esm({
     init_brief2();
     init_assembly2();
     init_contracts2();
-    VERSION = "1.0.0";
+    init_version();
     MEMORY_AUTO_DISCOVERY_FOLDER = "_memory";
   }
 });
