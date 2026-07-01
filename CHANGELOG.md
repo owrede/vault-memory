@@ -16,6 +16,15 @@ _Nothing yet._
 
 ## [2.3.0] — 2026-07-01
 
+### Added
+
+- **Datacore/Dataview rendered indexing — foundation** (ADR-033). Phase 1 strips
+  Datacore/Dataview query source from indexed text so raw query blocks no longer
+  pollute search (`src/reader/datacore.ts`). Phase 2 adds migration 016
+  (`notes.rendered_source_hash`) as the schema foundation for indexing rendered
+  content supplied by the Obsidian plugin. _Note: later phases of ADR-033 are not
+  yet complete; this release ships the foundation only._
+
 ### Fixed
 
 - **Incremental full-vault indexer now re-indexes changed notes** (#14). `indexVault`
