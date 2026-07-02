@@ -203,13 +203,13 @@ async function addVault(opts) {
   const cfgFile = opts.configFile ?? configPath();
   const binary = opts.binary ?? "vault-memory";
   const steps = [];
-  const stat = await fs.stat(resolvedPath).catch((err) => {
+  const stat2 = await fs.stat(resolvedPath).catch((err) => {
     if (err.code === "ENOENT") {
       throw new Error(`Vault path does not exist: ${resolvedPath}`);
     }
     throw err;
   });
-  if (!stat.isDirectory()) {
+  if (!stat2.isDirectory()) {
     throw new Error(`Vault path is not a directory: ${resolvedPath}`);
   }
   const proposedName = opts.name ?? slugifyVaultName(basename(resolvedPath));
@@ -5122,6 +5122,103 @@ var init_cli = __esm({
   }
 });
 
+// src/adapters/retrieval/contextfit/ingest-lock.ts
+var ingest_lock_exports = {};
+__export(ingest_lock_exports, {
+  clearIngestDirty: () => clearIngestDirty,
+  isIngestDirty: () => isIngestDirty,
+  markIngestDirty: () => markIngestDirty,
+  releaseIngestLock: () => releaseIngestLock,
+  tryAcquireIngestLock: () => tryAcquireIngestLock
+});
+import { open, readFile as readFile3, unlink, mkdir as mkdir2, writeFile as writeFile2, stat } from "fs/promises";
+import { homedir as homedir4 } from "os";
+import { join as join4 } from "path";
+function lockDir(rootOverride) {
+  if (rootOverride !== void 0) return join4(rootOverride, "locks");
+  return join4(homedir4(), ".vault-memory", "locks");
+}
+function lockPath(vaultName, rootOverride) {
+  return join4(lockDir(rootOverride), `${vaultName}.ingest.lock`);
+}
+function dirtyPath(vaultName, rootOverride) {
+  return join4(lockDir(rootOverride), `${vaultName}.ingest.dirty`);
+}
+function isProcessAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    if (err.code === "ESRCH") return false;
+    return true;
+  }
+}
+async function readOwnerPid(path7) {
+  try {
+    const buf = await readFile3(path7, "utf8");
+    const pid = parseInt(buf.trim(), 10);
+    return Number.isFinite(pid) && pid > 0 ? pid : null;
+  } catch {
+    return null;
+  }
+}
+async function tryAcquireIngestLock(vaultName, options = {}) {
+  const dir = lockDir(options.rootOverride);
+  await mkdir2(dir, { recursive: true });
+  const path7 = lockPath(vaultName, options.rootOverride);
+  const MAX_ATTEMPTS = 3;
+  const attempt = async (n) => {
+    if (n > MAX_ATTEMPTS) return { acquired: false, ownerPid: -1, path: path7 };
+    try {
+      const handle = await open(path7, "wx");
+      try {
+        await handle.writeFile(`${process.pid}
+`);
+      } finally {
+        await handle.close();
+      }
+      return { acquired: true, path: path7 };
+    } catch (err) {
+      if (err.code !== "EEXIST") throw err;
+      const ownerPid = await readOwnerPid(path7);
+      if (ownerPid === null || !isProcessAlive(ownerPid)) {
+        await unlink(path7).catch(() => void 0);
+        return attempt(n + 1);
+      }
+      return { acquired: false, ownerPid, path: path7 };
+    }
+  };
+  return attempt(1);
+}
+async function releaseIngestLock(vaultName, options = {}) {
+  await unlink(lockPath(vaultName, options.rootOverride)).catch(() => void 0);
+}
+async function markIngestDirty(vaultName, options = {}) {
+  const dir = lockDir(options.rootOverride);
+  await mkdir2(dir, { recursive: true });
+  await writeFile2(dirtyPath(vaultName, options.rootOverride), `${process.pid}
+`).catch(
+    () => void 0
+  );
+}
+async function isIngestDirty(vaultName, options = {}) {
+  try {
+    await stat(dirtyPath(vaultName, options.rootOverride));
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function clearIngestDirty(vaultName, options = {}) {
+  await unlink(dirtyPath(vaultName, options.rootOverride)).catch(() => void 0);
+}
+var init_ingest_lock = __esm({
+  "src/adapters/retrieval/contextfit/ingest-lock.ts"() {
+    "use strict";
+    init_esm_shims();
+  }
+});
+
 // src/adapters/retrieval/contextfit/index.ts
 var contextfit_exports = {};
 __export(contextfit_exports, {
@@ -5131,11 +5228,11 @@ __export(contextfit_exports, {
   searchVaultWithContextFit: () => searchVaultWithContextFit,
   sourceToNotePath: () => sourceToNotePath
 });
-import { homedir as homedir4 } from "os";
+import { homedir as homedir5 } from "os";
 import { rm } from "fs/promises";
-import { join as join4, relative, isAbsolute } from "path";
+import { join as join5, relative, isAbsolute } from "path";
 function contextFitKbDir(vaultName) {
-  return join4(homedir4(), ".vault-memory", "contextfit", vaultName);
+  return join5(homedir5(), ".vault-memory", "contextfit", vaultName);
 }
 function cliConfigForVault(vault) {
   const cfg = {
@@ -5150,8 +5247,12 @@ async function indexVaultWithContextFit(vault, opts = {}) {
   });
   const cfg = cliConfigForVault(vault);
   const start = Date.now();
+  const lockOpts = opts.lockRootOverride !== void 0 ? { rootOverride: opts.lockRootOverride } : {};
+  const probe = opts._deps?.probe ?? ((c) => contextFitProbe({ command: c.command }));
+  const ingest = opts._deps?.ingest ?? contextFitIngest;
+  const clearKb = opts._deps?.clearKb ?? ((p) => rm(p, { recursive: true, force: true }));
   log(`ContextFit: ingesting ${vault.path} \u2192 ${cfg.kbPath}`);
-  const available = await contextFitProbe({ command: cfg.command });
+  const available = await probe(cfg);
   if (!available) {
     return {
       status: "failed",
@@ -5160,14 +5261,29 @@ async function indexVaultWithContextFit(vault, opts = {}) {
       error: `ContextFit CLI not runnable (tried '${cfg.command}'). Install with \`pipx install contextfit\` or set [[vaults]].contextfit.command.`
     };
   }
+  const lock = await tryAcquireIngestLock(vault.name, lockOpts);
+  if (!lock.acquired) {
+    await markIngestDirty(vault.name, lockOpts);
+    log(`ContextFit: re-ingest already in progress (pid ${lock.ownerPid}); flagged for retry`);
+    return { status: "skipped", stats: "", durationMs: Date.now() - start };
+  }
   try {
-    await rm(cfg.kbPath, { recursive: true, force: true });
-    const stats = await contextFitIngest(cfg, vault.path);
+    const MAX_PASSES = 8;
+    let stats = "";
+    let passes = 0;
+    do {
+      await clearIngestDirty(vault.name, lockOpts);
+      await clearKb(cfg.kbPath);
+      stats = await ingest(cfg, vault.path);
+      passes += 1;
+    } while (passes < MAX_PASSES && await isIngestDirty(vault.name, lockOpts));
     log(stats.trim().split("\n").slice(-3).join(" \xB7 "));
     return { status: "completed", stats, durationMs: Date.now() - start };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     return { status: "failed", stats: "", durationMs: Date.now() - start, error: message };
+  } finally {
+    await releaseIngestLock(vault.name, lockOpts);
   }
 }
 function sourceToNotePath(source, vaultPath) {
@@ -5213,6 +5329,7 @@ var init_contextfit = __esm({
     "use strict";
     init_esm_shims();
     init_cli();
+    init_ingest_lock();
     DEFAULT_COMMAND = "contextfit";
   }
 });
@@ -5344,9 +5461,9 @@ var init_reranker = __esm({
 });
 
 // src/rerank/onnx-reranker.ts
-import { readFile as readFile3 } from "fs/promises";
+import { readFile as readFile4 } from "fs/promises";
 import { existsSync } from "fs";
-import { join as join5 } from "path";
+import { join as join6 } from "path";
 function sigmoid(x) {
   return 1 / (1 + Math.exp(-x));
 }
@@ -5424,8 +5541,8 @@ var init_onnx_reranker = __esm({
         if (this.loaded) return this.loaded;
         if (this.loading) return this.loading;
         this.loading = (async () => {
-          const modelPath = join5(this.modelDir, "model_quantized.onnx");
-          const tokenizerPath = join5(this.modelDir, "tokenizer.json");
+          const modelPath = join6(this.modelDir, "model_quantized.onnx");
+          const tokenizerPath = join6(this.modelDir, "tokenizer.json");
           if (!existsSync(modelPath)) {
             throw new Error(
               `OnnxReranker: model file not found at ${modelPath}. Run: curl -L https://huggingface.co/onnx-community/bge-reranker-v2-m3-ONNX/resolve/main/onnx/model_quantized.onnx -o ${modelPath}`
@@ -5439,7 +5556,7 @@ var init_onnx_reranker = __esm({
           const [ort, tokMod, tokJson] = await Promise.all([
             import("onnxruntime-node"),
             import("@huggingface/tokenizers"),
-            readFile3(tokenizerPath, "utf-8")
+            readFile4(tokenizerPath, "utf-8")
           ]);
           const tokenizerJson = JSON.parse(tokJson);
           const config = deriveTokenizerConfig(tokenizerJson);
@@ -5914,11 +6031,11 @@ function stripDynamicViewBlocks(body) {
   let i = 0;
   while (i < lines.length) {
     const line = lines[i];
-    const open2 = FENCE_OPEN_RE.exec(line);
-    if (open2) {
-      const indent = open2[1] ?? "";
-      const marker = open2[2] ?? "";
-      const lang = (open2[3] ?? "").toLowerCase();
+    const open3 = FENCE_OPEN_RE.exec(line);
+    if (open3) {
+      const indent = open3[1] ?? "";
+      const marker = open3[2] ?? "";
+      const lang = (open3[3] ?? "").toLowerCase();
       const markerChar = marker[0];
       const isDynamic = DYNAMIC_VIEW_LANGS.has(lang);
       let j = i + 1;
@@ -6008,7 +6125,7 @@ import * as path3 from "path";
 import matter from "gray-matter";
 async function parseNote(absolutePath, vaultRoot) {
   const raw = await fs3.readFile(absolutePath, "utf-8");
-  const stat = await fs3.stat(absolutePath);
+  const stat2 = await fs3.stat(absolutePath);
   const parsed = matter(raw);
   const content = parsed.content;
   const fmData = parsed.data;
@@ -6016,7 +6133,7 @@ async function parseNote(absolutePath, vaultRoot) {
   const title = extractTitle(content) ?? path3.basename(absolutePath, ".md");
   const hash = computeNoteHash(content, frontmatter);
   const bodyHash = computeBodyHash(content);
-  const mtime = Math.floor(stat.mtimeMs);
+  const mtime = Math.floor(stat2.mtimeMs);
   const bodyLinks = extractWikilinks(content);
   const frontmatterLinks = extractFrontmatterWikilinks(frontmatter);
   const wikilinks = frontmatterLinks.length === 0 ? bodyLinks : mergeFrontmatterIntoBody(bodyLinks, frontmatterLinks);
@@ -6126,8 +6243,8 @@ var init_obsidian_fs = __esm({
         for (const abs of files) {
           if (limit !== void 0 && yielded >= limit) break;
           const rel = this.toPosix(path4.relative(path4.resolve(this.vault.path), abs));
-          const stat = await fs4.stat(abs);
-          const mtime = Math.floor(stat.mtimeMs);
+          const stat2 = await fs4.stat(abs);
+          const mtime = Math.floor(stat2.mtimeMs);
           if (since !== void 0 && mtime < since) continue;
           const body = await fs4.readFile(abs, "utf-8");
           const hash = computeBodyHash(body);
@@ -6150,7 +6267,7 @@ var init_obsidian_fs = __esm({
         const abs = this.absPath(rel);
         if (CONTRACT_PATH_RE.test(rel)) {
           const body = await fs4.readFile(abs, "utf-8");
-          const stat = await fs4.stat(abs);
+          const stat2 = await fs4.stat(abs);
           const hash = computeBodyHash(body);
           return {
             id,
@@ -6159,7 +6276,7 @@ var init_obsidian_fs = __esm({
             blocks: [{ kind: "paragraph", text: body }],
             properties: {},
             links: [],
-            mtime: Math.floor(stat.mtimeMs),
+            mtime: Math.floor(stat2.mtimeMs),
             hash,
             display_url: this.formatDisplayUrl(id)
           };
@@ -6891,6 +7008,7 @@ async function indexVault(vault, options) {
       vault.db.transaction(() => {
         const allNotes = vault.db.notes.listAll();
         for (const n of allNotes) {
+          vault.db.sections.deleteByNote(n.id);
           vault.db.chunks.deleteByNote(n.id);
           vault.db.wikilinks.deleteByNote(n.id);
           vault.db.edges.deleteByNote(n.id);
@@ -7497,12 +7615,15 @@ async function catchupVault(options) {
       }
     }
   }
-  if (isContextFit2 && (reindexed > 0 || removed > 0)) {
-    const { indexVaultWithContextFit: indexVaultWithContextFit2 } = await Promise.resolve().then(() => (init_contextfit(), contextfit_exports));
-    const r = await indexVaultWithContextFit2(vault.config, { onProgress: log });
-    log(
-      r.status === "completed" ? `catch-up: ContextFit KB rebuilt (${r.durationMs}ms)` : `catch-up: ContextFit KB rebuild failed: ${r.error}`
-    );
+  if (isContextFit2) {
+    const cf = await Promise.resolve().then(() => (init_contextfit(), contextfit_exports));
+    const dirty = await (await Promise.resolve().then(() => (init_ingest_lock(), ingest_lock_exports))).isIngestDirty(vault.config.name);
+    if (reindexed > 0 || removed > 0 || dirty) {
+      const r = await cf.indexVaultWithContextFit(vault.config, { onProgress: log });
+      log(
+        r.status === "completed" ? `catch-up: ContextFit KB rebuilt (${r.durationMs}ms)` : r.status === "skipped" ? `catch-up: ContextFit KB re-ingest already in progress; skipping` : `catch-up: ContextFit KB rebuild failed: ${r.error}`
+      );
+    }
   }
   return {
     scanned: files.length,
@@ -7944,7 +8065,7 @@ async function writeNote(input) {
   if (written === null) {
     throw new Error(`Internal error: file disappeared after write: ${relativePath}`);
   }
-  const stat = await fs6.stat(absPath);
+  const stat2 = await fs6.stat(absPath);
   const previousNote = vault.db.notes.getByPath(relativePath);
   const previousHash = previousNote?.hash ?? null;
   const title = extractTitle2(written.content, relativePath);
@@ -7958,7 +8079,7 @@ async function writeNote(input) {
         title,
         hash: written.hash,
         bodyHash: computeBodyHash(written.content),
-        mtime: Math.floor(stat.mtimeMs),
+        mtime: Math.floor(stat2.mtimeMs),
         wordCount: countWords3(written.content)
       });
       vault.db.aliases.setForNote(up.id, extractAliases(written.frontmatter));
@@ -8330,7 +8451,7 @@ var init_path = __esm({
 });
 
 // src/adapters/delivery/obsidian-fs/contract-yaml-read.ts
-import { readFile as readFile4 } from "fs/promises";
+import { readFile as readFile5 } from "fs/promises";
 var init_contract_yaml_read = __esm({
   "src/adapters/delivery/obsidian-fs/contract-yaml-read.ts"() {
     "use strict";
@@ -10350,17 +10471,17 @@ var init_get = __esm({
 });
 
 // src/brief/lock.ts
-import { open, readFile as readFile5, unlink, mkdir as mkdir2 } from "fs/promises";
-import { homedir as homedir5 } from "os";
-import { join as join7 } from "path";
-function lockDir(rootOverride) {
-  if (rootOverride !== void 0) return join7(rootOverride, "locks");
-  return join7(homedir5(), ".vault-memory", "locks");
+import { open as open2, readFile as readFile6, unlink as unlink2, mkdir as mkdir3 } from "fs/promises";
+import { homedir as homedir6 } from "os";
+import { join as join8 } from "path";
+function lockDir2(rootOverride) {
+  if (rootOverride !== void 0) return join8(rootOverride, "locks");
+  return join8(homedir6(), ".vault-memory", "locks");
 }
-function lockPath(vaultName, rootOverride) {
-  return join7(lockDir(rootOverride), `${vaultName}.lock`);
+function lockPath2(vaultName, rootOverride) {
+  return join8(lockDir2(rootOverride), `${vaultName}.lock`);
 }
-function isProcessAlive(pid) {
+function isProcessAlive2(pid) {
   try {
     process.kill(pid, 0);
     return true;
@@ -10369,9 +10490,9 @@ function isProcessAlive(pid) {
     return true;
   }
 }
-async function readOwnerPid(path7) {
+async function readOwnerPid2(path7) {
   try {
-    const buf = await readFile5(path7, "utf8");
+    const buf = await readFile6(path7, "utf8");
     const pid = parseInt(buf.trim(), 10);
     return Number.isFinite(pid) && pid > 0 ? pid : null;
   } catch {
@@ -10379,16 +10500,16 @@ async function readOwnerPid(path7) {
   }
 }
 async function tryAcquireLock(vaultName, options = {}) {
-  const dir = lockDir(options.rootOverride);
-  await mkdir2(dir, { recursive: true });
-  const path7 = lockPath(vaultName, options.rootOverride);
+  const dir = lockDir2(options.rootOverride);
+  await mkdir3(dir, { recursive: true });
+  const path7 = lockPath2(vaultName, options.rootOverride);
   const MAX_ATTEMPTS = 3;
   const attempt = async (n, stolenFromPid) => {
     if (n > MAX_ATTEMPTS) {
       return { acquired: false, ownerPid: stolenFromPid ?? -1, path: path7 };
     }
     try {
-      const handle = await open(path7, "wx");
+      const handle = await open2(path7, "wx");
       try {
         await handle.writeFile(`${process.pid}
 `);
@@ -10400,9 +10521,9 @@ async function tryAcquireLock(vaultName, options = {}) {
       return result;
     } catch (err) {
       if (err.code !== "EEXIST") throw err;
-      const ownerPid = await readOwnerPid(path7);
-      if (ownerPid === null || !isProcessAlive(ownerPid)) {
-        await unlink(path7).catch(() => void 0);
+      const ownerPid = await readOwnerPid2(path7);
+      if (ownerPid === null || !isProcessAlive2(ownerPid)) {
+        await unlink2(path7).catch(() => void 0);
         return attempt(n + 1, ownerPid ?? -1);
       }
       return { acquired: false, ownerPid, path: path7 };
@@ -10411,7 +10532,7 @@ async function tryAcquireLock(vaultName, options = {}) {
   return attempt(1);
 }
 async function releaseLock(vaultName, options = {}) {
-  await unlink(lockPath(vaultName, options.rootOverride)).catch(() => void 0);
+  await unlink2(lockPath2(vaultName, options.rootOverride)).catch(() => void 0);
 }
 var init_lock = __esm({
   "src/brief/lock.ts"() {
@@ -11279,6 +11400,8 @@ var init_watcher = __esm({
           const r = await indexVaultWithContextFit2(this.opts.vault.config, {});
           if (r.status === "completed") {
             this.opts.log(`ContextFit KB refreshed (${r.durationMs}ms)`);
+          } else if (r.status === "skipped") {
+            this.opts.log(`ContextFit KB refresh skipped (another ingest in progress; flagged)`);
           } else {
             this.opts.log(`ContextFit KB refresh failed: ${r.error}`);
           }
@@ -16328,7 +16451,7 @@ __export(server_exports, {
 });
 import { McpServer, ResourceTemplate } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
-import { homedir as homedir6 } from "os";
+import { homedir as homedir7 } from "os";
 import { join as joinPath } from "path";
 async function discoverMemorySinks(configured, vaults) {
   if (configured.length > 0) {
@@ -16395,7 +16518,7 @@ async function serve(options = {}) {
   const activeVault = process.env.VAULT_MEMORY_ACTIVE_VAULT?.trim() || void 0;
   const rerankerBackend = config.server.reranker_backend ?? (config.server.reranker_model ? "onnx" : void 0);
   const reranker = config.server.reranker_model ? rerankerBackend === "ollama" ? new OllamaReranker({ ollama, model: config.server.reranker_model }) : new OnnxReranker({
-    modelDir: config.server.reranker_model_dir ?? joinPath(homedir6(), ".vault-memory", "models", "bge-reranker-v2-m3")
+    modelDir: config.server.reranker_model_dir ?? joinPath(homedir7(), ".vault-memory", "models", "bge-reranker-v2-m3")
   }) : void 0;
   const watchers = /* @__PURE__ */ new Map();
   const briefDaemons = /* @__PURE__ */ new Map();
@@ -17514,6 +17637,10 @@ async function runIndex(rest) {
       if (cfResult.status === "completed") {
         console.error(
           `\u2713 ${vault.config.name}: ${sqlite.notesIndexed} notes (SQLite) + ContextFit KB \xB7 ${sqlite.durationMs + cfResult.durationMs}ms`
+        );
+      } else if (cfResult.status === "skipped") {
+        console.error(
+          `\u21B7 ${vault.config.name}: ${sqlite.notesIndexed} notes (SQLite); ContextFit KB re-ingest already in progress in another process \u2014 flagged for retry, skipping`
         );
       } else {
         console.error(`\u2717 ${vault.config.name}: ContextFit KB failed \u2014 ${cfResult.error}`);
