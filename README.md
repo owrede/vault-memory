@@ -3,7 +3,7 @@
 **Local-first, source-agnostic-ready agentic knowledge layer over your Obsidian notes,
 exposed to any MCP-aware agent.**
 
-> See [CHANGELOG.md](./CHANGELOG.md) for release history. Latest: **v2.3.0** — additive
+> See [CHANGELOG.md](./CHANGELOG.md) for release history. Latest: **v2.3.1** — additive
 > over v1.x; the 23 v1 tool names + input schemas are preserved byte-identical.
 
 ## 30-second example
