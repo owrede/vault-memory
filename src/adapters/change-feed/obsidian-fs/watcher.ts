@@ -146,6 +146,9 @@ export class VaultWatcher {
       const r = await indexVaultWithContextFit(this.opts.vault.config, {});
       if (r.status === "completed") {
         this.opts.log(`ContextFit KB refreshed (${r.durationMs}ms)`);
+      } else if (r.status === "skipped") {
+        // Issue #17: another process is mid-ingest; it will do a trailing pass.
+        this.opts.log(`ContextFit KB refresh skipped (another ingest in progress; flagged)`);
       } else {
         this.opts.log(`ContextFit KB refresh failed: ${r.error}`);
       }

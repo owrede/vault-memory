@@ -98,6 +98,12 @@ async function runIndex(rest: string[]): Promise<void> {
         console.error(
           `✓ ${vault.config.name}: ${sqlite.notesIndexed} notes (SQLite) + ContextFit KB · ${sqlite.durationMs + cfResult.durationMs}ms`,
         );
+      } else if (cfResult.status === "skipped") {
+        // Issue #17: another process held the ingest lock. Not an error — the
+        // holder will do a trailing re-ingest that captures our changes.
+        console.error(
+          `↷ ${vault.config.name}: ${sqlite.notesIndexed} notes (SQLite); ContextFit KB re-ingest already in progress in another process — flagged for retry, skipping`,
+        );
       } else {
         console.error(`✗ ${vault.config.name}: ContextFit KB failed — ${cfResult.error}`);
         process.exitCode = 1;

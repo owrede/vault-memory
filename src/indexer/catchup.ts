@@ -84,15 +84,25 @@ export async function catchupVault(options: CatchupOptions): Promise<CatchupResu
   }
 
   // ADR-008: if a ContextFit vault changed during catch-up, rebuild its search
-  // KB once so retrieval matches the reconciled SQLite layer.
-  if (isContextFit && (reindexed > 0 || removed > 0)) {
-    const { indexVaultWithContextFit } = await import("../adapters/retrieval/contextfit/index.js");
-    const r = await indexVaultWithContextFit(vault.config, { onProgress: log });
-    log(
-      r.status === "completed"
-        ? `catch-up: ContextFit KB rebuilt (${r.durationMs}ms)`
-        : `catch-up: ContextFit KB rebuild failed: ${r.error}`,
-    );
+  // KB once so retrieval matches the reconciled SQLite layer. Issue #17: also
+  // rebuild when a dirty flag was left behind (e.g. an ingest was skipped and
+  // its holder crashed before the trailing pass) so a stranded flag is honored
+  // at the latest on the next server start.
+  if (isContextFit) {
+    const cf = await import("../adapters/retrieval/contextfit/index.js");
+    const dirty = await (
+      await import("../adapters/retrieval/contextfit/ingest-lock.js")
+    ).isIngestDirty(vault.config.name);
+    if (reindexed > 0 || removed > 0 || dirty) {
+      const r = await cf.indexVaultWithContextFit(vault.config, { onProgress: log });
+      log(
+        r.status === "completed"
+          ? `catch-up: ContextFit KB rebuilt (${r.durationMs}ms)`
+          : r.status === "skipped"
+            ? `catch-up: ContextFit KB re-ingest already in progress; skipping`
+            : `catch-up: ContextFit KB rebuild failed: ${r.error}`,
+      );
+    }
   }
 
   return {
