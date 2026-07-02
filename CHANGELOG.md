@@ -12,7 +12,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_Nothing yet._
+### Fixed
+
+- **`index --full` no longer crashes with `FOREIGN KEY constraint failed`** (#16).
+  The full-mode wipe loop deleted chunks while `sections.chunk_id_first/last`
+  (`REFERENCES chunks(id)`, no `ON DELETE`) still pointed at them, so any vault
+  with a populated `sections` table failed to full-index. Sections are now
+  deleted before chunks in the wipe loop, matching the per-note re-index path.
+- **Concurrent ContextFit ingests no longer corrupt the KB** (#17). A CLI
+  `index` running alongside a serve-side debounced re-ingest (or a second stale
+  `serve`) had both `contextfit ingest` calls clear and rewrite the same KB
+  directory; the loser crashed mid-write and could leave a half-written KB. A
+  dedicated per-vault ingest mutex (`locks/<vault>.ingest.lock`, separate from
+  the staleness daemon's lifetime-held `<vault>.lock`) now serializes all four
+  ingest call sites. A second-comer marks the vault dirty and returns
+  immediately (no wait, no wasted double-rebuild); the in-flight holder does one
+  trailing re-ingest so the latest change is never lost across processes, and a
+  crash-stranded dirty flag is honored on the next server start.
 
 ## [2.3.0] — 2026-07-01
 
