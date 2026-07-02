@@ -139,6 +139,47 @@ describe("indexer section hook + status maintenance (03-01 Task 7)", () => {
     expect(second).toEqual(first);
   });
 
+  it("full-mode wipe order deletes sections before chunks (Issue #16 FK regression)", () => {
+    // Reproduce the exact failure: a note with a chunk AND a section whose
+    // chunk_id_first/last reference that chunk. sections→chunks is a FK with
+    // no ON DELETE, so deleting the chunk while the section still points at it
+    // trips FOREIGN KEY constraint failed. The full-mode wipe loop in
+    // indexer.ts must delete sections first (mirroring the per-note path).
+    const content = "# Top\n\nbody bytes.\n";
+    const nid = seedNote("wipe.md", content);
+    const [cid] = db.chunks.insertBatch(nid, [
+      {
+        idx: 0,
+        text: "body bytes.",
+        headingPath: "# Top",
+        startOffset: content.indexOf("body bytes."),
+        endOffset: content.indexOf("body bytes.") + "body bytes.".length,
+        tokenCount: 2,
+      },
+    ]);
+    buildSectionsForNote(vault, nid, content, [cid!]);
+    // Precondition: a section actually references the chunk.
+    const before = db.sections.getByNote(nid);
+    expect(before.some((r) => r.chunk_id_first === cid)).toBe(true);
+
+    // WRONG order (chunks before sections) must trip the FK — this is what
+    // the bug did. Guards against a future refactor "simplifying" the order.
+    expect(() =>
+      db.transaction(() => {
+        db.chunks.deleteByNote(nid);
+      }),
+    ).toThrow(/FOREIGN KEY/i);
+
+    // CORRECT order (sections first, as the fix does) must succeed.
+    expect(() =>
+      db.transaction(() => {
+        db.sections.deleteByNote(nid);
+        db.chunks.deleteByNote(nid);
+      }),
+    ).not.toThrow();
+    expect(db.sections.getByNote(nid)).toHaveLength(0);
+  });
+
   it("mapChunksToSections bins chunks into the innermost containing section", () => {
     // 3 ranges: outer covers [0, 100), middle covers [10, 50), inner covers [20, 40).
     const ranges = [

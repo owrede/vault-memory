@@ -165,6 +165,14 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
       vault.db.transaction(() => {
         const allNotes = vault.db.notes.listAll();
         for (const n of allNotes) {
+          // Sections FIRST — sections reference chunks via
+          // chunk_id_first/last with no ON DELETE cascade, so deleting
+          // chunks while sections still point at them trips a FOREIGN KEY
+          // constraint. Mirrors the per-note re-index path below and
+          // single.ts step 7. (Issue #16: this full-wipe loop omitted the
+          // sections delete, so `index --full` failed on any vault with a
+          // populated sections table.)
+          vault.db.sections.deleteByNote(n.id);
           vault.db.chunks.deleteByNote(n.id);
           vault.db.wikilinks.deleteByNote(n.id);
           // Phase 4 / 04-01 (D-01): dual-write mirror.
