@@ -12,7 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_Nothing yet._
+### Changed
+
+- **Release tooling: `scripts/release.mjs` now syncs all version declarations.**
+  `npm version` bumps `package.json` only; the release cut now also mirrors the
+  new version into `plugin/package.json`, `plugin/manifest.json`, and the README
+  `Latest: **vX.Y.Z**` badge, which `version-consistency.test.ts` requires. This
+  prevents the post-tag publish failure hit on the 2.3.1 cut. No runtime change.
 
 ## [2.3.1] — 2026-07-02
 
