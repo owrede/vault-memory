@@ -12,6 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [2.3.2] — 2026-07-03
+
 ### Changed
 
 - **Release tooling: `scripts/release.mjs` now syncs all version declarations.**
