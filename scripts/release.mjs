@@ -21,7 +21,11 @@
  * Phases:
  *   1. Pre-flight   — validate args, clean tree, on main, non-empty Unreleased.
  *   2. Test gate    — `npm test` (fail-fast via stdio: "inherit").
- *   3. Version bump — `npm version X.Y.Z --no-git-tag-version`.
+ *   3. Version bump — `npm version X.Y.Z --no-git-tag-version` (package.json).
+ *   3b. Sync        — mirror the version into plugin/package.json,
+ *                     plugin/manifest.json, and the README `Latest: **vX.Y.Z**`
+ *                     badge so src/version-consistency.test.ts stays green (a
+ *                     drift here previously failed publish.yml AFTER tagging).
  *   4. CHANGELOG    — stable releases rename `## [Unreleased]` → `## [X.Y.Z]`.
  *                     Prereleases INSERT a `## [X.Y.Z-pre] — YYYY-MM-DD`
  *                     snapshot above Unreleased without renaming it, so
@@ -52,6 +56,12 @@ import { argv, exit, stderr, stdout } from "node:process";
 const SEMVER_RE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/;
 const SEMVER_PRERELEASE_RE = /^\d+\.\d+\.\d+-[0-9A-Za-z.-]+$/;
 const CHANGELOG_PATH = "CHANGELOG.md";
+const PLUGIN_PKG_PATH = "plugin/package.json";
+const PLUGIN_MANIFEST_PATH = "plugin/manifest.json";
+const README_PATH = "README.md";
+// The README carries a `Latest: **vX.Y.Z**` marker that
+// src/version-consistency.test.ts asserts equals the CLI version.
+const README_LATEST_RE = /(Latest:\s*\*\*v)\d+\.\d+\.\d+(\*\*)/;
 const UNRELEASED_HEADING = "## [Unreleased]";
 const NOTHING_YET = "_Nothing yet._";
 const EM_DASH = "—"; // U+2014 — must match existing CHANGELOG entries
@@ -93,6 +103,19 @@ function run(cmd) {
   execSync(cmd, { stdio: "inherit" });
 }
 
+/**
+ * Set the `version` field in a JSON file, preserving 2-space indentation and a
+ * trailing newline (matches prettier + how `npm version` writes package.json).
+ * @param {string} path
+ * @param {string} version
+ */
+async function setJsonVersion(path, version) {
+  const raw = await readFile(path, "utf8");
+  const json = JSON.parse(raw);
+  json.version = version;
+  await writeFile(path, JSON.stringify(json, null, 2) + "\n");
+}
+
 // ─── Phase 1 — Pre-flight validations ────────────────────────────────────────
 
 const VERSION = argv[2];
@@ -116,11 +139,7 @@ if (!SEMVER_RE.test(VERSION)) {
 // 1a — Working tree must be clean
 const dirty = capture("git status --porcelain");
 if (dirty) {
-  fail(
-    "working tree is dirty — commit or stash first.\n" +
-      "uncommitted changes:\n" +
-      dirty,
-  );
+  fail("working tree is dirty — commit or stash first.\n" + "uncommitted changes:\n" + dirty);
 }
 
 // 1b — Must be on main
@@ -141,9 +160,7 @@ if (unreleasedIdx === -1) {
 }
 
 // 1d — Unreleased block must be non-empty (more than whitespace / `_Nothing yet._`)
-const nextHeadingIdx = lines.findIndex(
-  (l, i) => i > unreleasedIdx && l.startsWith("## ["),
-);
+const nextHeadingIdx = lines.findIndex((l, i) => i > unreleasedIdx && l.startsWith("## ["));
 const unreleasedEnd = nextHeadingIdx === -1 ? lines.length : nextHeadingIdx;
 const unreleasedBody = lines
   .slice(unreleasedIdx + 1, unreleasedEnd)
@@ -176,6 +193,35 @@ try {
   run(`npm version ${VERSION} --no-git-tag-version`);
 } catch {
   fail(`npm version ${VERSION} failed — check that ${VERSION} is greater than current version.`);
+}
+
+// ─── Phase 3b — Sync sibling version declarations ────────────────────────────
+//
+// `npm version` bumps package.json only. But src/version-consistency.test.ts
+// (Issue #14 / P4) requires plugin/package.json, plugin/manifest.json, and the
+// README `Latest: **vX.Y.Z**` badge to all equal the CLI version — otherwise
+// publish.yml's Test step fails AFTER the tag is already pushed (as happened
+// on the 2.3.1 cut). Sync all three here so the release commit is internally
+// consistent and CI stays green.
+
+stderr.write(
+  `\n→ Phase 3b: syncing ${PLUGIN_PKG_PATH}, ${PLUGIN_MANIFEST_PATH}, ${README_PATH} to ${VERSION}…\n`,
+);
+try {
+  await setJsonVersion(PLUGIN_PKG_PATH, VERSION);
+  await setJsonVersion(PLUGIN_MANIFEST_PATH, VERSION);
+
+  const readme = await readFile(README_PATH, "utf8");
+  if (!README_LATEST_RE.test(readme)) {
+    fail(
+      `${README_PATH} has no \`Latest: **vX.Y.Z**\` marker to update.\n` +
+        "src/version-consistency.test.ts expects one — restore it before releasing.",
+    );
+  }
+  await writeFile(README_PATH, readme.replace(README_LATEST_RE, `$1${VERSION}$2`));
+  stderr.write(`  synced plugin package + manifest + README badge.\n`);
+} catch (err) {
+  fail(`version sync failed: ${err instanceof Error ? err.message : String(err)}`);
 }
 
 // ─── Phase 4 — CHANGELOG section ─────────────────────────────────────────────
@@ -214,9 +260,7 @@ if (PRERELEASE) {
   // Snapshot the current Unreleased body, then insert a new dated heading
   // ABOVE Unreleased with that snapshot as its body. Unreleased itself is
   // untouched.
-  const nextHeadingIdxV2 = linesV2.findIndex(
-    (l, i) => i > unreleasedIdxV2 && l.startsWith("## ["),
-  );
+  const nextHeadingIdxV2 = linesV2.findIndex((l, i) => i > unreleasedIdxV2 && l.startsWith("## ["));
   const unreleasedEndV2 = nextHeadingIdxV2 === -1 ? linesV2.length : nextHeadingIdxV2;
   // Snapshot the body between the Unreleased heading and the next heading,
   // EXCLUDING any blank line trailing into the next section.
@@ -226,14 +270,7 @@ if (PRERELEASE) {
     .replace(/\n+$/, ""); // trim trailing blank lines
 
   // The Unreleased block stays intact. Insert the snapshot section ABOVE it.
-  linesV2.splice(
-    unreleasedIdxV2,
-    0,
-    renamedHeading,
-    "",
-    snapshotBody,
-    "",
-  );
+  linesV2.splice(unreleasedIdxV2, 0, renamedHeading, "", snapshotBody, "");
   await writeFile(CHANGELOG_PATH, linesV2.join("\n"));
   stderr.write(`  wrote ${CHANGELOG_PATH} — inserted prerelease snapshot: ${renamedHeading}\n`);
   stderr.write(`  ${UNRELEASED_HEADING} kept intact for the next prerelease or the stable cut\n`);
@@ -247,15 +284,7 @@ if (PRERELEASE) {
   //
   //   ## [X.Y.Z] — YYYY-MM-DD
   //   (existing entries that were under Unreleased follow…)
-  linesV2.splice(
-    unreleasedIdxV2,
-    1,
-    UNRELEASED_HEADING,
-    "",
-    NOTHING_YET,
-    "",
-    renamedHeading,
-  );
+  linesV2.splice(unreleasedIdxV2, 1, UNRELEASED_HEADING, "", NOTHING_YET, "", renamedHeading);
   await writeFile(CHANGELOG_PATH, linesV2.join("\n"));
   stderr.write(`  wrote ${CHANGELOG_PATH} — new heading: ${renamedHeading}\n`);
 }
@@ -265,7 +294,9 @@ if (PRERELEASE) {
 stderr.write(`\n→ Phase 5: commit, tag v${VERSION}, push --follow-tags…\n`);
 
 try {
-  run("git add package.json package-lock.json CHANGELOG.md");
+  run(
+    `git add package.json package-lock.json CHANGELOG.md ${PLUGIN_PKG_PATH} ${PLUGIN_MANIFEST_PATH} ${README_PATH}`,
+  );
   run(`git commit -m "release: v${VERSION}"`);
   run(`git tag -a v${VERSION} -m "v${VERSION}"`);
 } catch {
@@ -310,7 +341,9 @@ stderr.write(
     "    3. Build the plugin tarball + manifest.sha256.\n" +
     "    4. Create the GitHub Release with tarball + checksum attached.\n" +
     (PRERELEASE
-      ? "       (GitHub treats the v" + VERSION + " release as a Pre-release\n" +
+      ? "       (GitHub treats the v" +
+        VERSION +
+        " release as a Pre-release\n" +
         "       automatically because the tag carries a -prerelease suffix.)\n"
       : "") +
     "\nNext steps (manual):\n" +
