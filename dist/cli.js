@@ -11884,6 +11884,31 @@ var init_tool_registry = __esm({
               default: false,
               description: "Phase 3 (D-08, ASM-08): when false (default), docs whose frontmatter has `status: superseded` are excluded at SQL level via the notes_status partial index. Set true to reveal them."
             },
+            frontmatter_boosts: {
+              type: "array",
+              description: 'Additive frontmatter rescore: each hit whose note frontmatter[key] equals `value` (array-valued fields match by membership; values compared via String()) gets `weight` added to its score before the final ranking. Lets the CALLER express query intent \u2014 e.g. [{"key": "class", "value": "Person", "weight": 0.05}] when searching for a person. Scores are engine-relative (Ollama RRF \u2248 0.01\u20130.05; ContextFit bm25 \u2248 5\u201315) \u2014 size weights against the scores the same query returns un-boosted: a weight around 1\u20132% of the top score reorders gently, one above the score spread pins matching notes to the top. Default: no boost (v1 behavior).',
+              items: {
+                type: "object",
+                required: ["key", "value", "weight"],
+                properties: {
+                  key: { type: "string", description: "Top-level frontmatter field name." },
+                  value: { type: "string" },
+                  weight: { type: "number" }
+                }
+              }
+            },
+            frontmatter_filter: {
+              type: "array",
+              description: "Keep only hits whose note frontmatter matches ALL {key, value} conditions (same matching rules as frontmatter_boosts). Applied before the top_k cut with candidate oversampling. Default: no filter (v1 behavior).",
+              items: {
+                type: "object",
+                required: ["key", "value"],
+                properties: {
+                  key: { type: "string", description: "Top-level frontmatter field name." },
+                  value: { type: "string" }
+                }
+              }
+            },
             // ── Phase 4 / 04-04 / GRA-03 (D-15): additive auto-expansion ──
             // When omitted, search_hybrid behavior is byte-identical to v1.
             expand: {
@@ -12668,6 +12693,11 @@ var init_tool_registry = __esm({
         authority_weight: z14.number().optional().default(0),
         half_life_days: z14.number().positive().optional().default(30),
         include_superseded: z14.boolean().optional().default(false),
+        // Frontmatter-aware rescore/filter — additive, caller-expressed
+        // intent ("searching for a person → boost class: Person"). Both
+        // `.optional()` with no default: omitted = v1-identical behavior.
+        frontmatter_boosts: z14.array(z14.object({ key: z14.string().min(1), value: z14.string(), weight: z14.number() })).optional(),
+        frontmatter_filter: z14.array(z14.object({ key: z14.string().min(1), value: z14.string() })).optional(),
         // ── Phase 4 / 04-04 / GRA-03 (D-15): additive auto-expansion ──
         // Nested under a single optional `expand` object per D-15. When
         // omitted, hybridSearch behavior is byte-identical to v1 (the
@@ -15337,6 +15367,31 @@ var init_notes2 = __esm({
 });
 
 // src/server/handlers/search.ts
+function matchesFrontmatterCondition(fm, cond) {
+  const v = fm?.[cond.key];
+  if (v === null || v === void 0) return false;
+  if (Array.isArray(v)) return v.some((x) => String(x) === cond.value);
+  return String(v) === cond.value;
+}
+function applyFrontmatterRescore(hits, opts) {
+  let out = hits;
+  if (opts.filter !== void 0 && opts.filter.length > 0) {
+    const filter = opts.filter;
+    out = out.filter((h) => filter.every((c) => matchesFrontmatterCondition(opts.fmFor(h), c)));
+  }
+  if (opts.boosts !== void 0 && opts.boosts.length > 0) {
+    const boosts = opts.boosts;
+    out = out.map((h) => {
+      let score = h.score;
+      for (const b of boosts) {
+        if (matchesFrontmatterCondition(opts.fmFor(h), b)) score += b.weight;
+      }
+      return score === h.score ? h : { ...h, score };
+    });
+    out = [...out].sort((a, b) => b.score - a.score);
+  }
+  return out;
+}
 async function handleSearchSemantic(manager, ollama, defaultModel, activeVault, query, vaultFilter, topK, excludePaths) {
   const { targets, skipped } = resolveVaultTargets(manager, vaultFilter, activeVault);
   if (targets.length === 0) {
@@ -15442,7 +15497,7 @@ function handleSearchText(manager, activeVault, query, vaultFilter, topK, exclud
   if (notes.length > 0) out.note = notes.join(" ");
   return out;
 }
-async function handleSearchHybrid(manager, ollama, defaultModel, activeVault, query, vaultFilter, topK, rrfK, excludePaths, reranker, recencyWeight = 0, authorityWeight = 0, halfLifeDays = 30, includeSuperseded = false, displayUrlFor2, expandOpts, expandDeps) {
+async function handleSearchHybrid(manager, ollama, defaultModel, activeVault, query, vaultFilter, topK, rrfK, excludePaths, reranker, recencyWeight = 0, authorityWeight = 0, halfLifeDays = 30, includeSuperseded = false, displayUrlFor2, expandOpts, expandDeps, frontmatterBoosts, frontmatterFilter) {
   const { targets, skipped } = resolveVaultTargets(manager, vaultFilter, activeVault);
   if (targets.length === 0) {
     return {
@@ -15451,7 +15506,9 @@ async function handleSearchHybrid(manager, ollama, defaultModel, activeVault, qu
     };
   }
   const hasExclude = excludePaths !== void 0 && excludePaths.length > 0;
-  const innerTopK = hasExclude ? topK * 3 : topK;
+  const hasFmBoost = frontmatterBoosts !== void 0 && frontmatterBoosts.length > 0;
+  const hasFmFilter = frontmatterFilter !== void 0 && frontmatterFilter.length > 0;
+  const innerTopK = hasExclude || hasFmBoost || hasFmFilter ? topK * 3 : topK;
   const hits = await searchVaults({
     query,
     embeddingModel: defaultModel,
@@ -15472,7 +15529,33 @@ async function handleSearchHybrid(manager, ollama, defaultModel, activeVault, qu
     ...expandOpts ? { expand: expandOpts } : {},
     ...expandDeps ? { expandDeps } : {}
   });
-  const filtered = hasExclude ? hits.filter((h) => !matchesAnyGlob(h.notePath, excludePaths)) : hits;
+  let filtered = hasExclude ? hits.filter((h) => !matchesAnyGlob(h.notePath, excludePaths)) : hits;
+  if (hasFmBoost || hasFmFilter) {
+    const targetByName = new Map(targets.map((t) => [t.config.name, t]));
+    const fmCache = /* @__PURE__ */ new Map();
+    const fmFor = (h) => {
+      const cacheKey = `${h.vault}\0${h.notePath}`;
+      let fm = fmCache.get(cacheKey);
+      if (fm === void 0) {
+        fm = null;
+        const row = targetByName.get(h.vault)?.db.notes.getByPath(h.notePath);
+        if (row?.frontmatter) {
+          try {
+            fm = JSON.parse(row.frontmatter);
+          } catch {
+            fm = null;
+          }
+        }
+        fmCache.set(cacheKey, fm);
+      }
+      return fm;
+    };
+    filtered = applyFrontmatterRescore(filtered, {
+      ...hasFmFilter ? { filter: frontmatterFilter } : {},
+      ...hasFmBoost ? { boosts: frontmatterBoosts } : {},
+      fmFor
+    });
+  }
   const out = {
     hits: filtered.slice(0, topK),
     count: filtered.length
@@ -15596,7 +15679,9 @@ function makeSearchHandlers(deps) {
         {
           manager,
           sourceConnectorFor: (vaultName) => adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`))
-        }
+        },
+        p.frontmatter_boosts,
+        p.frontmatter_filter
       );
     },
     search: async (a) => {

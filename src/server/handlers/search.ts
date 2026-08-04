@@ -34,6 +34,66 @@ import {
 import type { ToolName } from "../../tool-registry.js";
 import type { Handler, HandlerDeps } from "../deps.js";
 
+/** One frontmatter condition: matches when `frontmatter[key]` equals `value`. */
+export interface FrontmatterCondition {
+  key: string;
+  value: string;
+}
+
+/** A condition plus the additive score weight applied when it matches. */
+export interface FrontmatterBoost extends FrontmatterCondition {
+  weight: number;
+}
+
+/**
+ * Does `fm[key]` match `value`? Scalars compare via String() (so booleans
+ * and numbers match their string form); array-valued fields (tags, aliases,
+ * cluster) match by membership. null/undefined/missing never match.
+ */
+export function matchesFrontmatterCondition(
+  fm: Record<string, unknown> | null,
+  cond: FrontmatterCondition,
+): boolean {
+  const v = fm?.[cond.key];
+  if (v === null || v === undefined) return false;
+  if (Array.isArray(v)) return v.some((x) => String(x) === cond.value);
+  return String(v) === cond.value;
+}
+
+/**
+ * Apply frontmatter filter + boosts to a hit list (caller-expressed query
+ * intent — e.g. boost `class: Person` when searching for a person).
+ * Filter drops non-matching hits (ALL conditions must hold); boosts add
+ * their weight per matching condition, then the list is re-sorted. Pure
+ * except for `fmFor`, which the caller backs with a DB lookup (memoized).
+ */
+export function applyFrontmatterRescore(
+  hits: SearchHit[],
+  opts: {
+    filter?: FrontmatterCondition[];
+    boosts?: FrontmatterBoost[];
+    fmFor: (hit: SearchHit) => Record<string, unknown> | null;
+  },
+): SearchHit[] {
+  let out = hits;
+  if (opts.filter !== undefined && opts.filter.length > 0) {
+    const filter = opts.filter;
+    out = out.filter((h) => filter.every((c) => matchesFrontmatterCondition(opts.fmFor(h), c)));
+  }
+  if (opts.boosts !== undefined && opts.boosts.length > 0) {
+    const boosts = opts.boosts;
+    out = out.map((h) => {
+      let score = h.score;
+      for (const b of boosts) {
+        if (matchesFrontmatterCondition(opts.fmFor(h), b)) score += b.weight;
+      }
+      return score === h.score ? h : { ...h, score };
+    });
+    out = [...out].sort((a, b) => b.score - a.score);
+  }
+  return out;
+}
+
 async function handleSearchSemantic(
   manager: VaultManager,
   ollama: OllamaClient,
@@ -217,6 +277,10 @@ export async function handleSearchHybrid(
     edge_types?: EdgeType[];
   },
   expandDeps?: ExpandDeps,
+  // Frontmatter-aware rescore/filter — additive, caller-expressed intent.
+  // Both omitted (the v1 call shape) → zero extra DB reads, v1 behavior.
+  frontmatterBoosts?: FrontmatterBoost[],
+  frontmatterFilter?: FrontmatterCondition[],
 ): Promise<object> {
   const { targets, skipped } = resolveVaultTargets(manager, vaultFilter, activeVault);
 
@@ -231,10 +295,14 @@ export async function handleSearchHybrid(
   }
 
   const hasExclude = excludePaths !== undefined && excludePaths.length > 0;
+  const hasFmBoost = frontmatterBoosts !== undefined && frontmatterBoosts.length > 0;
+  const hasFmFilter = frontmatterFilter !== undefined && frontmatterFilter.length > 0;
   // Request 3× the final topK when filtering so the post-filter list is
   // well-stocked. hybridSearch internally fans 3× again per ranking, so
   // semantic/BM25 each retrieve ~9×topK chunks — plenty of headroom.
-  const innerTopK = hasExclude ? topK * 3 : topK;
+  // Boosts oversample too: a boosted note may sit just below the un-boosted
+  // cut and must be in the candidate pool to be lifted into the top-k.
+  const innerTopK = hasExclude || hasFmBoost || hasFmFilter ? topK * 3 : topK;
 
   // ADR-008: searchVaults routes contextfit-backed vaults to the CPU-only
   // engine and ollama vaults to the embeddings hybrid, then merges. For an
@@ -261,9 +329,40 @@ export async function handleSearchHybrid(
     ...(expandDeps ? { expandDeps } : {}),
   });
 
-  const filtered = hasExclude
+  let filtered = hasExclude
     ? hits.filter((h) => !matchesAnyGlob(h.notePath, excludePaths!))
     : hits;
+
+  if (hasFmBoost || hasFmFilter) {
+    // Memoized per-note frontmatter lookup: `notes.path` uses the same
+    // vault-relative POSIX convention as `SearchHit.notePath` for both
+    // engines, so `getByPath` is a direct PK-style lookup. At most one
+    // DB read + JSON.parse per distinct note in the candidate pool.
+    const targetByName = new Map(targets.map((t) => [t.config.name, t]));
+    const fmCache = new Map<string, Record<string, unknown> | null>();
+    const fmFor = (h: SearchHit): Record<string, unknown> | null => {
+      const cacheKey = `${h.vault} ${h.notePath}`;
+      let fm = fmCache.get(cacheKey);
+      if (fm === undefined) {
+        fm = null;
+        const row = targetByName.get(h.vault)?.db.notes.getByPath(h.notePath);
+        if (row?.frontmatter) {
+          try {
+            fm = JSON.parse(row.frontmatter) as Record<string, unknown>;
+          } catch {
+            fm = null; // malformed frontmatter JSON never matches, never throws
+          }
+        }
+        fmCache.set(cacheKey, fm);
+      }
+      return fm;
+    };
+    filtered = applyFrontmatterRescore(filtered, {
+      ...(hasFmFilter ? { filter: frontmatterFilter } : {}),
+      ...(hasFmBoost ? { boosts: frontmatterBoosts } : {}),
+      fmFor,
+    });
+  }
 
   const out: Record<string, unknown> = {
     hits: filtered.slice(0, topK),
@@ -438,6 +537,9 @@ export function makeSearchHandlers(deps: HandlerDeps): Partial<Record<ToolName, 
           direction?: ExpandDirection;
           edge_types?: EdgeType[];
         };
+        // Frontmatter-aware rescore/filter — caller-expressed intent.
+        frontmatter_boosts?: FrontmatterBoost[];
+        frontmatter_filter?: FrontmatterCondition[];
       };
       return handleSearchHybrid(
         manager,
@@ -467,6 +569,8 @@ export function makeSearchHandlers(deps: HandlerDeps): Partial<Record<ToolName, 
           sourceConnectorFor: (vaultName) =>
             adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${vaultName}`)),
         },
+        p.frontmatter_boosts,
+        p.frontmatter_filter,
       );
     },
     search: async (a) => {

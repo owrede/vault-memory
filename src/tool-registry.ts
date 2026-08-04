@@ -171,6 +171,42 @@ export const TOOLS = [
           description:
             "Phase 3 (D-08, ASM-08): when false (default), docs whose frontmatter has `status: superseded` are excluded at SQL level via the notes_status partial index. Set true to reveal them.",
         },
+        frontmatter_boosts: {
+          type: "array",
+          description:
+            "Additive frontmatter rescore: each hit whose note frontmatter[key] equals `value` " +
+            "(array-valued fields match by membership; values compared via String()) gets `weight` " +
+            "added to its score before the final ranking. Lets the CALLER express query intent — " +
+            'e.g. [{"key": "class", "value": "Person", "weight": 0.05}] when searching for a ' +
+            "person. Scores are engine-relative (Ollama RRF ≈ 0.01–0.05; ContextFit bm25 ≈ 5–15) — " +
+            "size weights against the scores the same query returns un-boosted: a weight around " +
+            "1–2% of the top score reorders gently, one above the score spread pins matching " +
+            "notes to the top. Default: no boost (v1 behavior).",
+          items: {
+            type: "object",
+            required: ["key", "value", "weight"],
+            properties: {
+              key: { type: "string", description: "Top-level frontmatter field name." },
+              value: { type: "string" },
+              weight: { type: "number" },
+            },
+          },
+        },
+        frontmatter_filter: {
+          type: "array",
+          description:
+            "Keep only hits whose note frontmatter matches ALL {key, value} conditions " +
+            "(same matching rules as frontmatter_boosts). Applied before the top_k cut with " +
+            "candidate oversampling. Default: no filter (v1 behavior).",
+          items: {
+            type: "object",
+            required: ["key", "value"],
+            properties: {
+              key: { type: "string", description: "Top-level frontmatter field name." },
+              value: { type: "string" },
+            },
+          },
+        },
         // ── Phase 4 / 04-04 / GRA-03 (D-15): additive auto-expansion ──
         // When omitted, search_hybrid behavior is byte-identical to v1.
         expand: {
@@ -1168,6 +1204,15 @@ export const TOOL_SCHEMAS = {
     authority_weight: z.number().optional().default(0),
     half_life_days: z.number().positive().optional().default(30),
     include_superseded: z.boolean().optional().default(false),
+    // Frontmatter-aware rescore/filter — additive, caller-expressed
+    // intent ("searching for a person → boost class: Person"). Both
+    // `.optional()` with no default: omitted = v1-identical behavior.
+    frontmatter_boosts: z
+      .array(z.object({ key: z.string().min(1), value: z.string(), weight: z.number() }))
+      .optional(),
+    frontmatter_filter: z
+      .array(z.object({ key: z.string().min(1), value: z.string() }))
+      .optional(),
     // ── Phase 4 / 04-04 / GRA-03 (D-15): additive auto-expansion ──
     // Nested under a single optional `expand` object per D-15. When
     // omitted, hybridSearch behavior is byte-identical to v1 (the
