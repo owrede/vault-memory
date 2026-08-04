@@ -12,7 +12,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- **`search_hybrid`: frontmatter-aware `frontmatter_boosts` + `frontmatter_filter`.**
+  Frontmatter is metadata, not prose — a query for a person can now rank
+  `class: Person` notes above chunk-rich meeting minutes that merely mention the
+  name. `frontmatter_boosts: [{key, value, weight}]` adds `weight` to every hit
+  whose note frontmatter matches (array fields by membership, scalars via
+  String()); `frontmatter_filter: [{key, value}]` keeps only hits matching ALL
+  conditions. Both apply before the top-k cut with 3× candidate oversampling and
+  express the CALLER's query intent — no server-side intent heuristics. Omitted
+  params (the v1 call shape) take the untouched path: zero extra DB reads,
+  v1-identical behavior.
+
+### Fixed
+
+- **ContextFit backend honors `exclude_globs` (privacy + scope fix).**
+  `contextfit ingest` has no exclude option, so passing the vault root ingested
+  everything text-like under it — including `.cognee/` session dumps (1,100+
+  files on a real vault), `.obsidian/` plugin sources, and `.claude/` skills.
+  Ingest now runs on a hardlink staging tree built from the same scanner (and
+  excludes) as the SQLite layer; query-time `notePath` mapping resolves staging
+  paths (legacy vault-rooted KBs still work). Verified: 0 dotfolder paths in KB
+  metadata, KB payload 11.9 MB (was 136+ MB and climbing).
+- **Note-level dedup for ContextFit hits before the top-k cut.** ContextFit
+  ranks chunks, not notes: a transcript could occupy every top-k slot and push
+  the actually-relevant note out entirely. `searchVaults` now oversamples (4×
+  topK, capped at 100), keeps the best-scoring chunk per (vault, notePath), and
+  re-sorts. Ollama fast path untouched.
 
 ## [2.3.2] — 2026-07-03
 
