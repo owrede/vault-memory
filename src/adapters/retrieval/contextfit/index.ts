@@ -15,9 +15,10 @@
  */
 
 import { homedir } from "node:os";
-import { rm } from "node:fs/promises";
-import { join, relative, isAbsolute } from "node:path";
+import { rm, mkdir, link, copyFile } from "node:fs/promises";
+import { join, relative, isAbsolute, dirname, resolve } from "node:path";
 import type { VaultConfig, SearchHit } from "../../../types.js";
+import { scanVault } from "../../source/obsidian-fs/scanner.js";
 import {
   contextFitIngest,
   contextFitQuery,
@@ -38,6 +39,48 @@ const DEFAULT_COMMAND = "contextfit";
 /** Per-vault ContextFit KB directory: ~/.vault-memory/contextfit/<name>/. */
 export function contextFitKbDir(vaultName: string): string {
   return join(homedir(), ".vault-memory", "contextfit", vaultName);
+}
+
+/**
+ * Per-vault ingest staging directory: ~/.vault-memory/contextfit/<name>.staging/.
+ * Deterministic (not mkdtemp) so `sourceToNotePath` can map `metadata.source`
+ * paths from an existing KB back to vault-relative paths at query time.
+ */
+export function contextFitStagingDir(vaultName: string): string {
+  return join(homedir(), ".vault-memory", "contextfit", `${vaultName}.staging`);
+}
+
+/**
+ * Build a staging tree containing exactly the files the SQLite content layer
+ * indexes: `.md` files with the vault's `exclude_globs` applied (same scanner,
+ * same defaults). `contextfit ingest` has no exclude option (ContextFit/cf,
+ * checked 0.1.x), so pointing it at the vault root would ingest `.obsidian/`,
+ * `.cognee/`, plugin sources, etc. — breaking the invariant that excludes
+ * apply identically across backends, and leaking private session data into
+ * the KB. Hardlinks where possible (same-volume, zero copy), copy as fallback.
+ */
+export async function buildIngestStaging(
+  vault: VaultConfig,
+  opts: {
+    /** Test-only: staging dir override (defaults to contextFitStagingDir). */
+    stagingDirOverride?: string;
+  } = {},
+): Promise<{ stagingDir: string; fileCount: number }> {
+  const stagingDir = opts.stagingDirOverride ?? contextFitStagingDir(vault.name);
+  await rm(stagingDir, { recursive: true, force: true });
+  await mkdir(stagingDir, { recursive: true });
+  const files = await scanVault(vault.path, { excludeGlobs: vault.exclude_globs });
+  const root = resolve(vault.path);
+  for (const abs of files) {
+    const dest = join(stagingDir, relative(root, abs));
+    await mkdir(dirname(dest), { recursive: true });
+    try {
+      await link(abs, dest);
+    } catch {
+      await copyFile(abs, dest); // cross-device or FS without hardlinks
+    }
+  }
+  return { stagingDir, fileCount: files.length };
 }
 
 /** Build the CLI config for a vault from its VaultConfig. */
@@ -86,6 +129,7 @@ export async function indexVaultWithContextFit(
       probe?: (cfg: ContextFitCliConfig) => Promise<boolean>;
       ingest?: (cfg: ContextFitCliConfig, source: string) => Promise<string>;
       clearKb?: (kbPath: string) => Promise<void>;
+      stage?: (vault: VaultConfig) => Promise<{ stagingDir: string; fileCount: number }>;
     };
   } = {},
 ): Promise<ContextFitIndexResult> {
@@ -98,6 +142,7 @@ export async function indexVaultWithContextFit(
     opts._deps?.probe ?? ((c: ContextFitCliConfig) => contextFitProbe({ command: c.command }));
   const ingest = opts._deps?.ingest ?? contextFitIngest;
   const clearKb = opts._deps?.clearKb ?? ((p: string) => rm(p, { recursive: true, force: true }));
+  const stage = opts._deps?.stage ?? buildIngestStaging;
 
   log(`ContextFit: ingesting ${vault.path} → ${cfg.kbPath}`);
   const available = await probe(cfg);
@@ -140,7 +185,15 @@ export async function indexVaultWithContextFit(
       // semantics are always a FULL rebuild, so clear the KB dir first — this
       // makes re-index / live-reindex / write-refresh / catchup idempotent.
       await clearKb(cfg.kbPath);
-      stats = await ingest(cfg, vault.path);
+      // Re-stage every pass so a trailing pass captures the writes that
+      // earned it. Staging is hardlinks over the scan set — cheap.
+      const { stagingDir, fileCount } = await stage(vault);
+      try {
+        log(`ContextFit: staged ${fileCount} notes (excludes applied)`);
+        stats = await ingest(cfg, stagingDir);
+      } finally {
+        await rm(stagingDir, { recursive: true, force: true });
+      }
       passes += 1;
     } while (passes < MAX_PASSES && (await isIngestDirty(vault.name, lockOpts)));
     log(stats.trim().split("\n").slice(-3).join(" · "));
@@ -167,7 +220,11 @@ export function sourceToNotePath(source: string | undefined, vaultPath: string):
 
 /** Map one ContextFit chunk → SearchHit. Returns null for un-addressable hits. */
 function chunkToHit(chunk: ContextFitChunk, vault: VaultConfig): SearchHit | null {
-  const notePath = sourceToNotePath(chunk.metadata?.source, vault.path);
+  // KBs built via the staging tree carry staging-absolute sources; KBs built
+  // before the staging fix carry vault-absolute sources. Try both roots.
+  const notePath =
+    sourceToNotePath(chunk.metadata?.source, contextFitStagingDir(vault.name)) ??
+    sourceToNotePath(chunk.metadata?.source, vault.path);
   if (notePath === null) return null;
   // Derive a display title from the path basename (ContextFit doesn't return
   // a note title); downstream callers that need the real title re-read the note.

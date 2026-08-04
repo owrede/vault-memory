@@ -3635,7 +3635,7 @@ var init_vault = __esm({
 
 // src/ollama/retry.ts
 function sleep(ms) {
-  return new Promise((resolve7) => setTimeout(resolve7, ms));
+  return new Promise((resolve8) => setTimeout(resolve8, ms));
 }
 function computeDelay(attempt, baseDelayMs, maxDelayMs) {
   const exp = baseDelayMs * Math.pow(2, attempt);
@@ -4969,13 +4969,112 @@ var init_hybrid = __esm({
   }
 });
 
+// src/adapters/source/obsidian-fs/scanner.ts
+import { promises as fs2 } from "fs";
+import * as path2 from "path";
+async function scanVault(rootPath, options) {
+  const root = path2.resolve(rootPath);
+  const excludes = options?.excludeGlobs ?? DEFAULT_EXCLUDES;
+  const matchers = excludes.map(compileGlob);
+  const results = [];
+  await walk(root, root, matchers, results);
+  results.sort();
+  return results;
+}
+async function scanContractFiles(rootPath) {
+  const root = path2.resolve(rootPath);
+  const contractsDir = path2.join(root, "_contracts");
+  let entries;
+  try {
+    entries = await fs2.readdir(contractsDir, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+  const results = [];
+  for (const entry of entries) {
+    if (!entry.isFile()) continue;
+    if (!entry.name.toLowerCase().endsWith(".yaml")) continue;
+    results.push(path2.join(contractsDir, entry.name));
+  }
+  results.sort();
+  return results;
+}
+async function walk(root, dir, matchers, out) {
+  let entries;
+  try {
+    entries = await fs2.readdir(dir, { withFileTypes: true });
+  } catch {
+    return;
+  }
+  for (const entry of entries) {
+    const abs = path2.join(dir, entry.name);
+    const rel = toPosix(path2.relative(root, abs));
+    if (rel.length === 0) continue;
+    if (isExcluded(rel, matchers)) continue;
+    if (entry.isSymbolicLink()) {
+      continue;
+    }
+    if (entry.isDirectory()) {
+      await walk(root, abs, matchers, out);
+    } else if (entry.isFile() && abs.toLowerCase().endsWith(".md")) {
+      out.push(abs);
+    }
+  }
+}
+function isExcluded(relPath, matchers) {
+  for (const re of matchers) {
+    if (re.test(relPath)) return true;
+  }
+  return false;
+}
+function toPosix(p) {
+  return p.split(path2.sep).join("/");
+}
+function compileGlob(glob) {
+  const trimmed = glob.replace(/^\.\//, "");
+  const altDir = trimmed.endsWith("/**") ? trimmed.slice(0, -3) : null;
+  const toRe = (g) => {
+    let re = "";
+    for (let i = 0; i < g.length; i++) {
+      const c = g[i];
+      if (c === void 0) continue;
+      if (c === "*") {
+        if (g[i + 1] === "*") {
+          re += ".*";
+          i++;
+        } else {
+          re += "[^/]*";
+        }
+      } else if (c === "?") {
+        re += "[^/]";
+      } else if (/[.+^${}()|[\]\\]/.test(c)) {
+        re += "\\" + c;
+      } else {
+        re += c;
+      }
+    }
+    return re;
+  };
+  const parts = [toRe(trimmed)];
+  if (altDir !== null) parts.push(toRe(altDir));
+  return new RegExp("^(?:" + parts.join("|") + ")$");
+}
+var DEFAULT_EXCLUDES;
+var init_scanner = __esm({
+  "src/adapters/source/obsidian-fs/scanner.ts"() {
+    "use strict";
+    init_esm_shims();
+    DEFAULT_EXCLUDES = [".obsidian/**", ".trash/**", "node_modules/**"];
+  }
+});
+
 // src/adapters/retrieval/contextfit/cli.ts
 import spawn from "cross-spawn";
 function runContextFit(cfg, subcommandArgs, timeoutMs) {
   const globalArgs = ["--kb", cfg.kbPath];
   if (cfg.tokenizer) globalArgs.push("--tokenizer", cfg.tokenizer);
   const args2 = [...globalArgs, ...subcommandArgs];
-  return new Promise((resolve7, reject) => {
+  return new Promise((resolve8, reject) => {
     let child;
     try {
       child = spawn(cfg.command, args2, { stdio: ["pipe", "pipe", "pipe"] });
@@ -5025,7 +5124,7 @@ function runContextFit(cfg, subcommandArgs, timeoutMs) {
       settled = true;
       clearTimeout(timer);
       if (codeNum === 0) {
-        resolve7({ stdout, stderr });
+        resolve8({ stdout, stderr });
       } else {
         reject(
           new ContextFitError(
@@ -5092,13 +5191,13 @@ function parseQueryOutput(stdout) {
 }
 async function contextFitProbe(cfg) {
   try {
-    await new Promise((resolve7, reject) => {
+    await new Promise((resolve8, reject) => {
       const child = spawn(cfg.command, ["--help"], { stdio: ["pipe", "pipe", "pipe"] });
       child.stdin?.end();
       child.on("error", reject);
       child.on(
         "close",
-        (c) => c === 0 ? resolve7() : reject(new Error(`exit ${c}`))
+        (c) => c === 0 ? resolve8() : reject(new Error(`exit ${c}`))
       );
     });
     return true;
@@ -5133,16 +5232,16 @@ __export(ingest_lock_exports, {
 });
 import { open, readFile as readFile3, unlink, mkdir as mkdir2, writeFile as writeFile2, stat } from "fs/promises";
 import { homedir as homedir4 } from "os";
-import { join as join4 } from "path";
+import { join as join5 } from "path";
 function lockDir(rootOverride) {
-  if (rootOverride !== void 0) return join4(rootOverride, "locks");
-  return join4(homedir4(), ".vault-memory", "locks");
+  if (rootOverride !== void 0) return join5(rootOverride, "locks");
+  return join5(homedir4(), ".vault-memory", "locks");
 }
 function lockPath(vaultName, rootOverride) {
-  return join4(lockDir(rootOverride), `${vaultName}.ingest.lock`);
+  return join5(lockDir(rootOverride), `${vaultName}.ingest.lock`);
 }
 function dirtyPath(vaultName, rootOverride) {
-  return join4(lockDir(rootOverride), `${vaultName}.ingest.dirty`);
+  return join5(lockDir(rootOverride), `${vaultName}.ingest.dirty`);
 }
 function isProcessAlive(pid) {
   try {
@@ -5222,17 +5321,39 @@ var init_ingest_lock = __esm({
 // src/adapters/retrieval/contextfit/index.ts
 var contextfit_exports = {};
 __export(contextfit_exports, {
+  buildIngestStaging: () => buildIngestStaging,
   cliConfigForVault: () => cliConfigForVault,
   contextFitKbDir: () => contextFitKbDir,
+  contextFitStagingDir: () => contextFitStagingDir,
   indexVaultWithContextFit: () => indexVaultWithContextFit,
   searchVaultWithContextFit: () => searchVaultWithContextFit,
   sourceToNotePath: () => sourceToNotePath
 });
 import { homedir as homedir5 } from "os";
-import { rm } from "fs/promises";
-import { join as join5, relative, isAbsolute } from "path";
+import { rm, mkdir as mkdir3, link, copyFile } from "fs/promises";
+import { join as join6, relative as relative2, isAbsolute, dirname, resolve as resolve3 } from "path";
 function contextFitKbDir(vaultName) {
-  return join5(homedir5(), ".vault-memory", "contextfit", vaultName);
+  return join6(homedir5(), ".vault-memory", "contextfit", vaultName);
+}
+function contextFitStagingDir(vaultName) {
+  return join6(homedir5(), ".vault-memory", "contextfit", `${vaultName}.staging`);
+}
+async function buildIngestStaging(vault, opts = {}) {
+  const stagingDir = opts.stagingDirOverride ?? contextFitStagingDir(vault.name);
+  await rm(stagingDir, { recursive: true, force: true });
+  await mkdir3(stagingDir, { recursive: true });
+  const files = await scanVault(vault.path, { excludeGlobs: vault.exclude_globs });
+  const root = resolve3(vault.path);
+  for (const abs of files) {
+    const dest = join6(stagingDir, relative2(root, abs));
+    await mkdir3(dirname(dest), { recursive: true });
+    try {
+      await link(abs, dest);
+    } catch {
+      await copyFile(abs, dest);
+    }
+  }
+  return { stagingDir, fileCount: files.length };
 }
 function cliConfigForVault(vault) {
   const cfg = {
@@ -5251,6 +5372,7 @@ async function indexVaultWithContextFit(vault, opts = {}) {
   const probe = opts._deps?.probe ?? ((c) => contextFitProbe({ command: c.command }));
   const ingest = opts._deps?.ingest ?? contextFitIngest;
   const clearKb = opts._deps?.clearKb ?? ((p) => rm(p, { recursive: true, force: true }));
+  const stage = opts._deps?.stage ?? buildIngestStaging;
   log(`ContextFit: ingesting ${vault.path} \u2192 ${cfg.kbPath}`);
   const available = await probe(cfg);
   if (!available) {
@@ -5274,7 +5396,13 @@ async function indexVaultWithContextFit(vault, opts = {}) {
     do {
       await clearIngestDirty(vault.name, lockOpts);
       await clearKb(cfg.kbPath);
-      stats = await ingest(cfg, vault.path);
+      const { stagingDir, fileCount } = await stage(vault);
+      try {
+        log(`ContextFit: staged ${fileCount} notes (excludes applied)`);
+        stats = await ingest(cfg, stagingDir);
+      } finally {
+        await rm(stagingDir, { recursive: true, force: true });
+      }
       passes += 1;
     } while (passes < MAX_PASSES && await isIngestDirty(vault.name, lockOpts));
     log(stats.trim().split("\n").slice(-3).join(" \xB7 "));
@@ -5288,12 +5416,12 @@ async function indexVaultWithContextFit(vault, opts = {}) {
 }
 function sourceToNotePath(source, vaultPath) {
   if (!source) return null;
-  const rel = isAbsolute(source) ? relative(vaultPath, source) : source;
+  const rel = isAbsolute(source) ? relative2(vaultPath, source) : source;
   if (rel.startsWith("..")) return null;
   return rel.split(/[\\/]/).join("/");
 }
 function chunkToHit(chunk, vault) {
-  const notePath = sourceToNotePath(chunk.metadata?.source, vault.path);
+  const notePath = sourceToNotePath(chunk.metadata?.source, contextFitStagingDir(vault.name)) ?? sourceToNotePath(chunk.metadata?.source, vault.path);
   if (notePath === null) return null;
   const base = notePath.split("/").pop() ?? notePath;
   const noteTitle = base.replace(/\.md$/i, "");
@@ -5328,6 +5456,7 @@ var init_contextfit = __esm({
   "src/adapters/retrieval/contextfit/index.ts"() {
     "use strict";
     init_esm_shims();
+    init_scanner();
     init_cli();
     init_ingest_lock();
     DEFAULT_COMMAND = "contextfit";
@@ -5463,7 +5592,7 @@ var init_reranker = __esm({
 // src/rerank/onnx-reranker.ts
 import { readFile as readFile4 } from "fs/promises";
 import { existsSync } from "fs";
-import { join as join6 } from "path";
+import { join as join7 } from "path";
 function sigmoid(x) {
   return 1 / (1 + Math.exp(-x));
 }
@@ -5541,8 +5670,8 @@ var init_onnx_reranker = __esm({
         if (this.loaded) return this.loaded;
         if (this.loading) return this.loading;
         this.loading = (async () => {
-          const modelPath = join6(this.modelDir, "model_quantized.onnx");
-          const tokenizerPath = join6(this.modelDir, "tokenizer.json");
+          const modelPath = join7(this.modelDir, "model_quantized.onnx");
+          const tokenizerPath = join7(this.modelDir, "tokenizer.json");
           if (!existsSync(modelPath)) {
             throw new Error(
               `OnnxReranker: model file not found at ${modelPath}. Run: curl -L https://huggingface.co/onnx-community/bge-reranker-v2-m3-ONNX/resolve/main/onnx/model_quantized.onnx -o ${modelPath}`
@@ -5780,105 +5909,6 @@ var init_query = __esm({
     "use strict";
     init_esm_shims();
     MAX_FIELD_DEPTH = 5;
-  }
-});
-
-// src/adapters/source/obsidian-fs/scanner.ts
-import { promises as fs2 } from "fs";
-import * as path2 from "path";
-async function scanVault(rootPath, options) {
-  const root = path2.resolve(rootPath);
-  const excludes = options?.excludeGlobs ?? DEFAULT_EXCLUDES;
-  const matchers = excludes.map(compileGlob);
-  const results = [];
-  await walk(root, root, matchers, results);
-  results.sort();
-  return results;
-}
-async function scanContractFiles(rootPath) {
-  const root = path2.resolve(rootPath);
-  const contractsDir = path2.join(root, "_contracts");
-  let entries;
-  try {
-    entries = await fs2.readdir(contractsDir, { withFileTypes: true });
-  } catch {
-    return [];
-  }
-  const results = [];
-  for (const entry of entries) {
-    if (!entry.isFile()) continue;
-    if (!entry.name.toLowerCase().endsWith(".yaml")) continue;
-    results.push(path2.join(contractsDir, entry.name));
-  }
-  results.sort();
-  return results;
-}
-async function walk(root, dir, matchers, out) {
-  let entries;
-  try {
-    entries = await fs2.readdir(dir, { withFileTypes: true });
-  } catch {
-    return;
-  }
-  for (const entry of entries) {
-    const abs = path2.join(dir, entry.name);
-    const rel = toPosix(path2.relative(root, abs));
-    if (rel.length === 0) continue;
-    if (isExcluded(rel, matchers)) continue;
-    if (entry.isSymbolicLink()) {
-      continue;
-    }
-    if (entry.isDirectory()) {
-      await walk(root, abs, matchers, out);
-    } else if (entry.isFile() && abs.toLowerCase().endsWith(".md")) {
-      out.push(abs);
-    }
-  }
-}
-function isExcluded(relPath, matchers) {
-  for (const re of matchers) {
-    if (re.test(relPath)) return true;
-  }
-  return false;
-}
-function toPosix(p) {
-  return p.split(path2.sep).join("/");
-}
-function compileGlob(glob) {
-  const trimmed = glob.replace(/^\.\//, "");
-  const altDir = trimmed.endsWith("/**") ? trimmed.slice(0, -3) : null;
-  const toRe = (g) => {
-    let re = "";
-    for (let i = 0; i < g.length; i++) {
-      const c = g[i];
-      if (c === void 0) continue;
-      if (c === "*") {
-        if (g[i + 1] === "*") {
-          re += ".*";
-          i++;
-        } else {
-          re += "[^/]*";
-        }
-      } else if (c === "?") {
-        re += "[^/]";
-      } else if (/[.+^${}()|[\]\\]/.test(c)) {
-        re += "\\" + c;
-      } else {
-        re += c;
-      }
-    }
-    return re;
-  };
-  const parts = [toRe(trimmed)];
-  if (altDir !== null) parts.push(toRe(altDir));
-  return new RegExp("^(?:" + parts.join("|") + ")$");
-}
-var DEFAULT_EXCLUDES;
-var init_scanner = __esm({
-  "src/adapters/source/obsidian-fs/scanner.ts"() {
-    "use strict";
-    init_esm_shims();
-    DEFAULT_EXCLUDES = [".obsidian/**", ".trash/**", "node_modules/**"];
   }
 });
 
@@ -7145,10 +7175,10 @@ async function indexVault(vault, options) {
        WHERE source_note = ? AND target_path = ? AND target_note IS NULL`
     );
     const secondPassResolver = new WikilinkResolver(vault);
-    for (const link of broken) {
-      const hit = secondPassResolver.resolve(link.targetPath);
+    for (const link2 of broken) {
+      const hit = secondPassResolver.resolve(link2.targetPath);
       if (hit) {
-        updateStmt.run(hit.id, link.sourceNoteId, link.targetPath);
+        updateStmt.run(hit.id, link2.sourceNoteId, link2.targetPath);
         resolved++;
       }
     }
@@ -7886,13 +7916,13 @@ var init_indexer2 = __esm({
 
 // src/adapters/delivery/obsidian-fs/fs.ts
 import { promises as fs5 } from "fs";
-import { dirname, isAbsolute as isAbsolute2, resolve as resolve6, sep as sep5 } from "path";
+import { dirname as dirname2, isAbsolute as isAbsolute2, resolve as resolve7, sep as sep5 } from "path";
 import { randomBytes } from "crypto";
 async function atomicWriteFile(absPath, content) {
   if (!isAbsolute2(absPath)) {
     throw new Error(`atomicWriteFile requires an absolute path: ${absPath}`);
   }
-  const parent = dirname(absPath);
+  const parent = dirname2(absPath);
   await fs5.mkdir(parent, { recursive: true });
   const suffix = randomBytes(8).toString("hex");
   const tmpPath = `${absPath}.tmp.${suffix}`;
@@ -7914,8 +7944,8 @@ async function safeJoinInsideVault(vaultRoot, relativePath) {
   if (isAbsolute2(relativePath)) {
     throw new OutsideVaultError(relativePath, vaultRoot);
   }
-  const root = resolve6(vaultRoot);
-  const target = resolve6(root, relativePath);
+  const root = resolve7(vaultRoot);
+  const target = resolve7(root, relativePath);
   const rootWithSep = root.endsWith(sep5) ? root : root + sep5;
   if (target !== root && !target.startsWith(rootWithSep)) {
     throw new OutsideVaultError(relativePath, vaultRoot);
@@ -7942,13 +7972,13 @@ async function resolveExistingAncestor(absPath) {
   while (true) {
     try {
       const real = await fs5.realpath(current);
-      return trailing.length === 0 ? real : resolve6(real, ...trailing.reverse());
+      return trailing.length === 0 ? real : resolve7(real, ...trailing.reverse());
     } catch (err) {
       const code = err?.code;
       if (code !== "ENOENT" && code !== "ENOTDIR") {
         throw err;
       }
-      const parent = dirname(current);
+      const parent = dirname2(current);
       if (parent === current) {
         return absPath;
       }
@@ -10471,7 +10501,7 @@ var init_get = __esm({
 });
 
 // src/brief/lock.ts
-import { open as open2, readFile as readFile6, unlink as unlink2, mkdir as mkdir3 } from "fs/promises";
+import { open as open2, readFile as readFile6, unlink as unlink2, mkdir as mkdir4 } from "fs/promises";
 import { homedir as homedir6 } from "os";
 import { join as join8 } from "path";
 function lockDir2(rootOverride) {
@@ -10501,7 +10531,7 @@ async function readOwnerPid2(path7) {
 }
 async function tryAcquireLock(vaultName, options = {}) {
   const dir = lockDir2(options.rootOverride);
-  await mkdir3(dir, { recursive: true });
+  await mkdir4(dir, { recursive: true });
   const path7 = lockPath2(vaultName, options.rootOverride);
   const MAX_ATTEMPTS = 3;
   const attempt = async (n, stolenFromPid) => {
@@ -11352,8 +11382,8 @@ var init_watcher = __esm({
           const message = errorMessage(err);
           this.opts.log(`fs watcher error: ${message}`);
         });
-        await new Promise((resolve7) => {
-          this.fsWatcher.once("ready", () => resolve7());
+        await new Promise((resolve8) => {
+          this.fsWatcher.once("ready", () => resolve8());
         });
         this.started = true;
         this.opts.log(`watching ${vaultPath}`);
@@ -11652,8 +11682,8 @@ var init_change_feed = __esm({
           const message = errorMessage(err);
           this.log(`fs watcher error: ${message}`);
         });
-        await new Promise((resolve7) => {
-          watcher.once("ready", () => resolve7());
+        await new Promise((resolve8) => {
+          watcher.once("ready", () => resolve8());
         });
       }
       onFsEvent(absolutePath, kind) {
@@ -16356,7 +16386,7 @@ var init_package = __esm({
   "package.json"() {
     package_default = {
       name: "@owrede/vault-memory",
-      version: "2.3.0",
+      version: "2.3.2",
       description: "Local-first semantic memory MCP server for Obsidian vaults",
       type: "module",
       license: "MIT",

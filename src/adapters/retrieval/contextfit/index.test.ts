@@ -11,6 +11,8 @@ import { homedir } from "node:os";
 import {
   sourceToNotePath,
   contextFitKbDir,
+  contextFitStagingDir,
+  buildIngestStaging,
   cliConfigForVault,
   indexVaultWithContextFit,
   searchVaultWithContextFit,
@@ -33,6 +35,50 @@ describe("sourceToNotePath", () => {
   it("normalizes backslashes to forward slashes", () => {
     // already-relative input is normalized as-is
     expect(sourceToNotePath("sub\\note.md", "/vault")).toBe("sub/note.md");
+  });
+});
+
+describe("buildIngestStaging", () => {
+  it("stages only .md files with exclude_globs applied; staged paths map back to notePaths", async () => {
+    const base = await fs.mkdtemp(join(tmpdir(), "vm-cf-staging-"));
+    const vaultDir = join(base, "vault");
+    const stagingDir = join(base, "staging");
+    // In scope: two .md notes (one nested).
+    await fs.mkdir(join(vaultDir, "Projekte"), { recursive: true });
+    await fs.writeFile(join(vaultDir, "root-note.md"), "# Root\n");
+    await fs.writeFile(join(vaultDir, "Projekte", "nested.md"), "# Nested\n");
+    // Out of scope: excluded dir (.cognee), non-.md file, excluded .md.
+    await fs.mkdir(join(vaultDir, ".cognee", "data"), { recursive: true });
+    await fs.writeFile(join(vaultDir, ".cognee", "data", "session.txt"), "private\n");
+    await fs.writeFile(join(vaultDir, ".cognee", "data", "note.md"), "# excluded\n");
+    await fs.writeFile(join(vaultDir, "script.mjs"), "export {}\n");
+
+    const vault: VaultConfig = {
+      name: "staging-test",
+      path: vaultDir,
+      backend: "contextfit",
+      exclude_globs: [".cognee/**"],
+    };
+    const res = await buildIngestStaging(vault, { stagingDirOverride: stagingDir });
+    expect(res.stagingDir).toBe(stagingDir);
+    expect(res.fileCount).toBe(2);
+
+    const staged: string[] = [];
+    const walk = async (d: string, prefix: string): Promise<void> => {
+      for (const e of await fs.readdir(d, { withFileTypes: true })) {
+        const rel = prefix ? `${prefix}/${e.name}` : e.name;
+        if (e.isDirectory()) await walk(join(d, e.name), rel);
+        else staged.push(rel);
+      }
+    };
+    await walk(stagingDir, "");
+    expect(staged.sort()).toEqual(["Projekte/nested.md", "root-note.md"]);
+
+    // Query-time mapping: a staging-absolute source resolves via the staging root.
+    const stagingAbs = join(contextFitStagingDir("v"), "Projekte", "nested.md");
+    expect(sourceToNotePath(stagingAbs, contextFitStagingDir("v"))).toBe("Projekte/nested.md");
+
+    await fs.rm(base, { recursive: true, force: true });
   });
 });
 
