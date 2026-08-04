@@ -5467,6 +5467,15 @@ var init_contextfit = __esm({
 function isContextFit(vault) {
   return vault.config.backend === "contextfit";
 }
+function dedupeByNote(hits) {
+  const best = /* @__PURE__ */ new Map();
+  for (const hit of hits) {
+    const key = `${hit.vault}\0${hit.notePath}`;
+    const current = best.get(key);
+    if (current === void 0 || hit.score > current.score) best.set(key, hit);
+  }
+  return [...best.values()].sort((a, b) => b.score - a.score);
+}
 async function searchVaults(opts) {
   const topK = opts.topK ?? 10;
   const cfVaults = opts.vaults.filter(isContextFit);
@@ -5475,9 +5484,10 @@ async function searchVaults(opts) {
     return hybridSearch(opts);
   }
   const { searchVaultWithContextFit: searchVaultWithContextFit2 } = await Promise.resolve().then(() => (init_contextfit(), contextfit_exports));
+  const cfTopK = Math.min(topK * CF_CHUNK_OVERSAMPLE, 100);
   const cfPromise = Promise.all(
     cfVaults.map(
-      (v) => searchVaultWithContextFit2(v.config, opts.query, { topK }).catch((err) => {
+      (v) => searchVaultWithContextFit2(v.config, opts.query, { topK: cfTopK }).catch((err) => {
         const msg = err instanceof Error ? err.message : String(err);
         console.error(`[search:${v.config.name}] ContextFit query failed: ${msg}`);
         return [];
@@ -5486,16 +5496,18 @@ async function searchVaults(opts) {
   );
   const ollamaPromise = ollamaVaults.length > 0 ? hybridSearch({ ...opts, vaults: ollamaVaults }) : Promise.resolve([]);
   const [cfResultsNested, ollamaResults] = await Promise.all([cfPromise, ollamaPromise]);
-  const cfResults = cfResultsNested.flat();
+  const cfResults = dedupeByNote(cfResultsNested.flat());
   const merged = [...ollamaResults, ...cfResults];
   merged.sort((a, b) => b.score - a.score);
   return merged.slice(0, topK);
 }
+var CF_CHUNK_OVERSAMPLE;
 var init_dispatch = __esm({
   "src/search/dispatch.ts"() {
     "use strict";
     init_esm_shims();
     init_hybrid();
+    CF_CHUNK_OVERSAMPLE = 4;
   }
 });
 
