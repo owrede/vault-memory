@@ -1,4 +1,10 @@
 node_modules/
+# Build output. Never committed: nothing reads the checked-in bundle
+# (npm publish, CI smoketest and the release workflow each rebuild it),
+# so a committed copy only drifts silently — v2.3.2 and v2.4.0 both
+# shipped a tag whose dist/ was one version stale. `prepublishOnly`
+# guarantees a fresh build for the npm tarball instead.
+dist/
 *.log
 .DS_Store
 **/.DS_Store
