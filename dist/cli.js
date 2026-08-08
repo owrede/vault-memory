@@ -16483,7 +16483,7 @@ var init_package = __esm({
   "package.json"() {
     package_default = {
       name: "@owrede/vault-memory",
-      version: "2.3.2",
+      version: "2.4.0",
       description: "Local-first semantic memory MCP server for Obsidian vaults",
       type: "module",
       license: "MIT",
