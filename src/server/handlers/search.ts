@@ -329,9 +329,7 @@ export async function handleSearchHybrid(
     ...(expandDeps ? { expandDeps } : {}),
   });
 
-  let filtered = hasExclude
-    ? hits.filter((h) => !matchesAnyGlob(h.notePath, excludePaths!))
-    : hits;
+  let filtered = hasExclude ? hits.filter((h) => !matchesAnyGlob(h.notePath, excludePaths!)) : hits;
 
   if (hasFmBoost || hasFmFilter) {
     // Memoized per-note frontmatter lookup: `notes.path` uses the same

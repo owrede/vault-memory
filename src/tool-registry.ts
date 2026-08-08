@@ -1210,9 +1210,7 @@ export const TOOL_SCHEMAS = {
     frontmatter_boosts: z
       .array(z.object({ key: z.string().min(1), value: z.string(), weight: z.number() }))
       .optional(),
-    frontmatter_filter: z
-      .array(z.object({ key: z.string().min(1), value: z.string() }))
-      .optional(),
+    frontmatter_filter: z.array(z.object({ key: z.string().min(1), value: z.string() })).optional(),
     // ── Phase 4 / 04-04 / GRA-03 (D-15): additive auto-expansion ──
     // Nested under a single optional `expand` object per D-15. When
     // omitted, hybridSearch behavior is byte-identical to v1 (the

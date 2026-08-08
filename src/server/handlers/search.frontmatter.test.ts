@@ -5,10 +5,7 @@
  */
 
 import { describe, it, expect } from "vitest";
-import {
-  matchesFrontmatterCondition,
-  applyFrontmatterRescore,
-} from "./search.js";
+import { matchesFrontmatterCondition, applyFrontmatterRescore } from "./search.js";
 import type { SearchHit } from "../../types.js";
 
 function hit(notePath: string, score: number): SearchHit {
@@ -26,19 +23,31 @@ function hit(notePath: string, score: number): SearchHit {
 
 describe("matchesFrontmatterCondition", () => {
   it("matches scalar values via String()", () => {
-    expect(matchesFrontmatterCondition({ class: "Person" }, { key: "class", value: "Person" })).toBe(true);
-    expect(matchesFrontmatterCondition({ class: "Sync" }, { key: "class", value: "Person" })).toBe(false);
-    expect(matchesFrontmatterCondition({ authoritative: true }, { key: "authoritative", value: "true" })).toBe(true);
+    expect(
+      matchesFrontmatterCondition({ class: "Person" }, { key: "class", value: "Person" }),
+    ).toBe(true);
+    expect(matchesFrontmatterCondition({ class: "Sync" }, { key: "class", value: "Person" })).toBe(
+      false,
+    );
+    expect(
+      matchesFrontmatterCondition({ authoritative: true }, { key: "authoritative", value: "true" }),
+    ).toBe(true);
     expect(matchesFrontmatterCondition({ year: 2026 }, { key: "year", value: "2026" })).toBe(true);
   });
   it("matches array-valued fields by membership", () => {
-    expect(matchesFrontmatterCondition({ tags: ["a", "b"] }, { key: "tags", value: "b" })).toBe(true);
-    expect(matchesFrontmatterCondition({ tags: ["a", "b"] }, { key: "tags", value: "c" })).toBe(false);
+    expect(matchesFrontmatterCondition({ tags: ["a", "b"] }, { key: "tags", value: "b" })).toBe(
+      true,
+    );
+    expect(matchesFrontmatterCondition({ tags: ["a", "b"] }, { key: "tags", value: "c" })).toBe(
+      false,
+    );
   });
   it("never matches null/undefined/missing", () => {
     expect(matchesFrontmatterCondition(null, { key: "class", value: "Person" })).toBe(false);
     expect(matchesFrontmatterCondition({}, { key: "class", value: "Person" })).toBe(false);
-    expect(matchesFrontmatterCondition({ class: null }, { key: "class", value: "null" })).toBe(false);
+    expect(matchesFrontmatterCondition({ class: null }, { key: "class", value: "null" })).toBe(
+      false,
+    );
   });
 });
 
