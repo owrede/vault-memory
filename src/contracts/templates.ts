@@ -62,8 +62,7 @@ export interface TemplateBindings {
  * `InstantiateError.unresolved_template.expression` field).
  */
 export type TemplateResolveResult<T = unknown> =
-  | { ok: true; value: T }
-  | { ok: false; reason: "unresolved_template"; expression: string };
+  { ok: true; value: T } | { ok: false; reason: "unresolved_template"; expression: string };
 
 /** Matches a single `{{<path>}}` token. */
 const TOKEN_RE = /\{\{([^}]+)\}\}/g;

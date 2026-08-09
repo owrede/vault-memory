@@ -106,10 +106,9 @@ describe("vacuumEmbeddings", () => {
     expect(result.per_model[0]?.kept).toBe(2);
 
     const remaining = vault.db.handle
-      .prepare<
-        [],
-        { chunk_id: number }
-      >(`SELECT chunk_id FROM embeddings_m${model.id}_d1024 ORDER BY chunk_id`)
+      .prepare<[], { chunk_id: number }>(
+        `SELECT chunk_id FROM embeddings_m${model.id}_d1024 ORDER BY chunk_id`,
+      )
       .all();
     expect(remaining.map((r) => r.chunk_id)).toEqual(
       chunkIds.filter((id) => id !== orphanedChunkId),

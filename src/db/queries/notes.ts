@@ -166,10 +166,9 @@ export class NotesQueries {
    */
   countByPathPrefix(prefix: string): number {
     const row = this.db
-      .prepare<
-        [string],
-        { c: number }
-      >("SELECT COUNT(*) AS c FROM notes WHERE path LIKE ? ESCAPE '\\'")
+      .prepare<[string], { c: number }>(
+        "SELECT COUNT(*) AS c FROM notes WHERE path LIKE ? ESCAPE '\\'",
+      )
       .get(escapeLikePrefix(prefix) + "%");
     return row?.c ?? 0;
   }
@@ -186,10 +185,9 @@ export class NotesQueries {
    */
   listByPathPrefix(prefix: string, limit = LIST_BY_PATH_PREFIX_DEFAULT_LIMIT): NoteRow[] {
     return this.db
-      .prepare<
-        [string, number],
-        NoteRow
-      >("SELECT * FROM notes WHERE path LIKE ? ESCAPE '\\' ORDER BY path LIMIT ?")
+      .prepare<[string, number], NoteRow>(
+        "SELECT * FROM notes WHERE path LIKE ? ESCAPE '\\' ORDER BY path LIMIT ?",
+      )
       .all(escapeLikePrefix(prefix) + "%", limit);
   }
 

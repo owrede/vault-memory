@@ -26,13 +26,11 @@ function makeOllama(): {
   client: OllamaClient;
   embed: ReturnType<typeof vi.fn>;
 } {
-  const embed = vi.fn(
-    async (req: EmbedRequest): Promise<EmbedResponse> => ({
-      vectors: req.texts.map((_, i) => unitVector(DIM, i)),
-      dim: DIM,
-      model: req.model,
-    }),
-  );
+  const embed = vi.fn(async (req: EmbedRequest): Promise<EmbedResponse> => ({
+    vectors: req.texts.map((_, i) => unitVector(DIM, i)),
+    dim: DIM,
+    model: req.model,
+  }));
   // We only use `.embed`; cast through unknown to satisfy the structural
   // OllamaClient contract without instantiating the real HTTP client.
   const client = { embed } as unknown as OllamaClient;

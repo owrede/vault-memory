@@ -96,18 +96,16 @@ function countSiblings(vault: Vault, folder: string, excludePath: string | null)
   if (folder === "") {
     // Vault root: notes with no `/` in path. The simplest reliable filter.
     const row = handle
-      .prepare<
-        [string | null],
-        { c: number }
-      >("SELECT COUNT(*) AS c FROM notes WHERE instr(path, '/') = 0 AND path != COALESCE(?, '')")
+      .prepare<[string | null], { c: number }>(
+        "SELECT COUNT(*) AS c FROM notes WHERE instr(path, '/') = 0 AND path != COALESCE(?, '')",
+      )
       .get(excludePath);
     return row?.c ?? 0;
   }
   const row = handle
-    .prepare<
-      [string, string | null],
-      { c: number }
-    >("SELECT COUNT(*) AS c FROM notes WHERE path LIKE ? || '%' AND path != COALESCE(?, '')")
+    .prepare<[string, string | null], { c: number }>(
+      "SELECT COUNT(*) AS c FROM notes WHERE path LIKE ? || '%' AND path != COALESCE(?, '')",
+    )
     .get(folder, excludePath);
   return row?.c ?? 0;
 }
@@ -116,17 +114,15 @@ function fetchSiblings(vault: Vault, folder: string, excludePath: string | null)
   const handle = vault.db.handle;
   if (folder === "") {
     return handle
-      .prepare<
-        [string | null],
-        SiblingRow
-      >("SELECT path, frontmatter FROM notes WHERE instr(path, '/') = 0 AND path != COALESCE(?, '')")
+      .prepare<[string | null], SiblingRow>(
+        "SELECT path, frontmatter FROM notes WHERE instr(path, '/') = 0 AND path != COALESCE(?, '')",
+      )
       .all(excludePath);
   }
   return handle
-    .prepare<
-      [string, string | null],
-      SiblingRow
-    >("SELECT path, frontmatter FROM notes WHERE path LIKE ? || '%' AND path != COALESCE(?, '')")
+    .prepare<[string, string | null], SiblingRow>(
+      "SELECT path, frontmatter FROM notes WHERE path LIKE ? || '%' AND path != COALESCE(?, '')",
+    )
     .all(folder, excludePath);
 }
 

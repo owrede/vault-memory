@@ -80,8 +80,7 @@ async function readOwnerPid(path: string): Promise<number | null> {
 }
 
 export type IngestLockResult =
-  | { acquired: true; path: string }
-  | { acquired: false; ownerPid: number; path: string };
+  { acquired: true; path: string } | { acquired: false; ownerPid: number; path: string };
 
 /**
  * Try to acquire the ingest lock for a vault. Atomic exclusive create via

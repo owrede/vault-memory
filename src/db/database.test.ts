@@ -89,10 +89,9 @@ describe("MIGRATION_007 + 008 (doc_uri)", () => {
 
   it("Test 2: v7 creates idx_notes_doc_uri", () => {
     const row = db.handle
-      .prepare<
-        [],
-        { name: string }
-      >("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_notes_doc_uri'")
+      .prepare<[], { name: string }>(
+        "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_notes_doc_uri'",
+      )
       .get();
     expect(row?.name).toBe("idx_notes_doc_uri");
   });
@@ -107,10 +106,9 @@ describe("MIGRATION_007 + 008 (doc_uri)", () => {
     runBackfill("test-vault");
 
     const rows = db.handle
-      .prepare<
-        [],
-        { path: string; doc_uri: string | null }
-      >("SELECT path, doc_uri FROM notes ORDER BY id")
+      .prepare<[], { path: string; doc_uri: string | null }>(
+        "SELECT path, doc_uri FROM notes ORDER BY id",
+      )
       .all();
     expect(rows).toEqual([
       { path: "foo.md", doc_uri: "obsidian-fs://test-vault/foo.md" },

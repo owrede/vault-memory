@@ -138,10 +138,9 @@ describe("EmbeddingsQueries — variable dims", () => {
     // Table was created lazily — per-model naming in v5.
     const expectedTable = `embeddings_m${m384.id}_d384`;
     const row = db.handle
-      .prepare<
-        [string],
-        { name: string }
-      >("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+      .prepare<[string], { name: string }>(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      )
       .get(expectedTable);
     expect(row?.name).toBe(expectedTable);
 
@@ -254,10 +253,9 @@ describe("migration 004→005 — legacy embeddings → per-model tables", () =>
     // and the row was moved into the per-model table.
     for (const oldName of ["embeddings", "embeddings_1024"]) {
       const legacy = db.handle
-        .prepare<
-          [string],
-          { name: string }
-        >("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+        .prepare<[string], { name: string }>(
+          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+        )
         .get(oldName);
       expect(legacy).toBeUndefined();
     }
@@ -269,10 +267,9 @@ describe("migration 004→005 — legacy embeddings → per-model tables", () =>
     expect(moved?.c).toBe(1);
 
     const row = db.handle
-      .prepare<
-        [bigint],
-        { chunk_id: number }
-      >(`SELECT chunk_id FROM ${newTable} WHERE chunk_id = ?`)
+      .prepare<[bigint], { chunk_id: number }>(
+        `SELECT chunk_id FROM ${newTable} WHERE chunk_id = ?`,
+      )
       .get(BigInt(chunkId!));
     expect(row?.chunk_id).toBe(chunkId);
 

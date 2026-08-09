@@ -140,15 +140,13 @@ export function readListContractVerbs(deps: ListContractVerbsDeps): ListContract
 
   const custom = usage
     .filter((u) => u.verb.startsWith("mcp://"))
-    .map(
-      (u): ListContractVerbsEntry => ({
-        verb: u.verb,
-        declared_in: extractDeclaredIn(u.verb),
-        used_by_contracts: Array.from(verbToContracts.get(u.verb) ?? []).sort(),
-        invocation_count: u.invocation_count,
-        last_seen: u.last_seen,
-      }),
-    );
+    .map((u): ListContractVerbsEntry => ({
+      verb: u.verb,
+      declared_in: extractDeclaredIn(u.verb),
+      used_by_contracts: Array.from(verbToContracts.get(u.verb) ?? []).sort(),
+      invocation_count: u.invocation_count,
+      last_seen: u.last_seen,
+    }));
 
   return { baseline: BASELINE_VERBS, custom };
 }

@@ -86,8 +86,7 @@ export interface SuppressContractWriteDeps {
 }
 
 export type SuppressContractWriteResult =
-  | { ok: true }
-  | { ok: false; reason: "invalid_path"; path: string };
+  { ok: true } | { ok: false; reason: "invalid_path"; path: string };
 
 async function handler(
   args: SuppressContractWriteInput,

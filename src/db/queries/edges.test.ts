@@ -328,10 +328,9 @@ describe("EdgesQueries / migration 011", () => {
         },
       ]);
       const rows = db.handle
-        .prepare<
-          [],
-          { rel: string | null }
-        >(`SELECT rel FROM edges WHERE source_doc = ? AND target_doc = ? AND type = 'frontmatter-ref' ORDER BY rel`)
+        .prepare<[], { rel: string | null }>(
+          `SELECT rel FROM edges WHERE source_doc = ? AND target_doc = ? AND type = 'frontmatter-ref' ORDER BY rel`,
+        )
         .all(a, b);
       expect(rows).toHaveLength(2);
       expect(rows.map((r) => r.rel)).toEqual(["assignee", "owner"]);
@@ -360,10 +359,9 @@ describe("EdgesQueries / migration 011", () => {
         },
       ]);
       const rows = db.handle
-        .prepare<
-          [],
-          { line_number: number | null }
-        >(`SELECT line_number FROM edges WHERE source_doc = ? AND target_doc = ? AND type = 'mention' ORDER BY line_number`)
+        .prepare<[], { line_number: number | null }>(
+          `SELECT line_number FROM edges WHERE source_doc = ? AND target_doc = ? AND type = 'mention' ORDER BY line_number`,
+        )
         .all(a, b);
       expect(rows).toHaveLength(2);
       expect(rows.map((r) => r.line_number)).toEqual([5, 12]);
@@ -392,10 +390,9 @@ describe("EdgesQueries / migration 011", () => {
         },
       ]);
       const rows = db.handle
-        .prepare<
-          [],
-          { target_path: string | null }
-        >(`SELECT target_path FROM edges WHERE source_doc = ? AND type = 'hyperlink' ORDER BY target_path`)
+        .prepare<[], { target_path: string | null }>(
+          `SELECT target_path FROM edges WHERE source_doc = ? AND type = 'hyperlink' ORDER BY target_path`,
+        )
         .all(a);
       expect(rows).toHaveLength(2);
       expect(rows.map((r) => r.target_path)).toEqual([

@@ -41,10 +41,9 @@ describe("schema", () => {
   // chunks_fts is created up-front by the schema.
   it.each(["chunks_fts"])("creates virtual table %s", (table) => {
     const row = db.handle
-      .prepare<
-        [string],
-        { name: string }
-      >("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+      .prepare<[string], { name: string }>(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?",
+      )
       .get(table);
     expect(row?.name).toBe(table);
   });

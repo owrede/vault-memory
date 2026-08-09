@@ -326,10 +326,9 @@ function runMigration005(db: BetterSqlite3Database, _ctx: MigrationContext): voi
   //   3) For each model_id with rows, CREATE `embeddings_m<modelId>_d<dim>`
   //      and copy that model's rows back.
   const rows = db
-    .prepare<
-      [],
-      { name: string }
-    >("SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'embeddings\\_%' ESCAPE '\\'")
+    .prepare<[], { name: string }>(
+      "SELECT name FROM sqlite_master WHERE type='table' AND name LIKE 'embeddings\\_%' ESCAPE '\\'",
+    )
     .all();
   const legacyTables: { name: string; dim: number }[] = [];
   for (const r of rows) {
@@ -341,10 +340,9 @@ function runMigration005(db: BetterSqlite3Database, _ctx: MigrationContext): voi
 
   for (const { name, dim } of legacyTables) {
     const rows = db
-      .prepare<
-        [],
-        { chunk_id: number; model_id: number; vector: Buffer }
-      >(`SELECT chunk_id, model_id, vector FROM ${name}`)
+      .prepare<[], { chunk_id: number; model_id: number; vector: Buffer }>(
+        `SELECT chunk_id, model_id, vector FROM ${name}`,
+      )
       .all();
 
     db.exec(`DROP TABLE ${name}`);

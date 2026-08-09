@@ -61,10 +61,9 @@ describe("runMigration013 (Phase 5)", () => {
       },
     ]);
     const rows = db.handle
-      .prepare<
-        [],
-        { text: string; chunk_id_fragment: string }
-      >("SELECT text, chunk_id_fragment FROM chunks")
+      .prepare<[], { text: string; chunk_id_fragment: string }>(
+        "SELECT text, chunk_id_fragment FROM chunks",
+      )
       .all();
     expect(rows).toHaveLength(1);
     const expected = computeChunkIdFragment(text);
@@ -117,10 +116,9 @@ describe("runMigration013 (Phase 5)", () => {
       },
     ]);
     const fragments = db.handle
-      .prepare<
-        [],
-        { chunk_id_fragment: string }
-      >("SELECT chunk_id_fragment FROM chunks ORDER BY id")
+      .prepare<[], { chunk_id_fragment: string }>(
+        "SELECT chunk_id_fragment FROM chunks ORDER BY id",
+      )
       .all();
     expect(fragments).toHaveLength(2);
     // Worked example from CONTEXT.md §"specifics": two byte-identical
