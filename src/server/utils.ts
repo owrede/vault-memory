@@ -80,7 +80,8 @@ export function decodeNoteId(id: string): { vault: string; path: string } {
  * — the obsidian-fs source mints the same deep-link URL string byte-for-byte
  * (the Obsidian `open` URL scheme; verified same `encodeURIComponent`-per-
  * segment encoding scheme; documented in
- * `.planning/phases/01-…/01-04-SUMMARY.md` §"URL encoding parity"). Future
+ * `.planning/phases/01-…/01-04-SUMMARY.md` §"URL encoding parity" — that
+ * tree is no longer tracked; reach it via `git log -- .planning/`). Future
  * adapters (notion-api etc.) can publish their own display URLs without
  * changing core code.
  *

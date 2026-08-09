@@ -30,5 +30,11 @@ docs/dev/
 # the repo or npm tarball.
 .pi/
 
+# GSD planning artifacts (roadmap, phase plans, research notes). Maintainer
+# working material, never part of the npm tarball. Tracked until 2026-08-09;
+# `git log -- .planning/` still reaches the history, and the last committed
+# state is at 410c723.
+.planning/
+
 # Working-issue notes (paper trail, not part of release)
 ISSUE-*.md
