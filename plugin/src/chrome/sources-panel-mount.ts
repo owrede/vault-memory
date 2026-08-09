@@ -20,7 +20,13 @@ export class SourcesPanelMount {
   private unmountFn: ((app: unknown) => Promise<void>) | null = null;
 
   constructor(host: HTMLElement, props: SourcesPanelMountProps) {
-    void this.mountAsync(host, props);
+    // Fire-and-forget, but never unhandled: a failing dynamic import of the
+    // Svelte component would otherwise surface as an unhandled rejection
+    // (silently in the app, as a test-run error under vitest 4).
+    void this.mountAsync(host, props).catch((err: unknown) => {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(`[vault-memory] sources panel failed to mount: ${message}`);
+    });
   }
 
   private async mountAsync(

@@ -1065,7 +1065,9 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { afterEach as briefAfterEach, beforeEach as briefBeforeEach } from "vitest";
 import type { Vault as BriefVault } from "../../vault/index.js";
-import type { DocId, Document, MemorySink } from "../../types.js";
+// `Document` is already imported at the top of this file; re-importing it
+// here is a redeclaration that esbuild tolerated but oxc (vitest 4) rejects.
+import type { DocId, MemorySink } from "../../types.js";
 import { StubDelivery } from "../stub/delivery.js";
 import { StubSource as BriefStubSource } from "../stub/source.js";
 import { StubChangeFeed } from "../stub/change-feed.js";
