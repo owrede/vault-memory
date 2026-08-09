@@ -12,7 +12,67 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_Nothing yet._
+### Fixed
+
+- **`dist/` is no longer committed — the tagged bundle could not go stale.**
+  `scripts/release.mjs` stages `package.json`, `CHANGELOG.md` and the plugin
+  files, but never `dist/`, so the checked-in bundle only ever tracked whatever
+  local build happened last: both v2.3.2 and v2.4.0 tagged a `dist/cli.js`
+  reporting the *previous* version. Nothing read that copy — `npm publish`, the
+  CI smoketest and `publish.yml` each rebuild it — so the drift stayed invisible.
+  `dist/` is now gitignored (matching `plugin/`, which never committed its
+  output) and a `prepack` script guarantees a fresh build for the npm tarball.
+  `prepack` rather than `prepublishOnly` because npm skips the latter on
+  `npm pack`, which would have produced a tarball with no `dist/` at all — and
+  therefore a `bin` entry pointing at a missing file. Side effect: `release.mjs`
+  aborts on a dirty tree, so a tracked `dist/` previously made any release fail
+  after a local build.
+- **Duplicate `Document` import in `conformance.test.ts`.** The type was imported
+  at the top of the file and again mid-file at line 1068. esbuild tolerated the
+  redeclaration; the stricter oxc transformer (vitest 4) rejects it. The
+  mid-file block already aliases its other collisions (`BriefVault`,
+  `briefAfterEach`) — `Document` was simply missed.
+- **`SourcesPanelMount` swallowed mount failures as an unhandled rejection.**
+  The constructor ran `void this.mountAsync(...)` with no `catch`, so a failing
+  dynamic import of the Svelte component surfaced as an unhandled rejection —
+  silent in the app, a test-run error under vitest 4. Now caught and logged.
+
+### Changed
+
+- **CI: `actions/checkout` and `actions/setup-node` v4 → v5** in both workflows,
+  clearing the Node 20 deprecation warning on GitHub runners. Both already pin
+  `node-version` explicitly, so there is no behavior change.
+  `softprops/action-gh-release@v2` is unaffected and stays.
+- **`prettier` pinned to an exact `3.9.6`** (was `^3.4.0`). An unpinned range
+  meant `npm ci` picked up whatever minor was current; 3.9's changed defaults
+  rewrap generic type arguments, so 15 untouched files began failing
+  `lint:check` with no code change. An exact pin keeps CI from breaking on
+  someone else's release. The 15 files were reformatted in the same cut —
+  whitespace only, `tsc` and both suites verified green before and after.
+
+### Dependencies
+
+- **`npm audit`: 17 findings → 3.** No runtime dependency of the published
+  server changed behavior; suites unchanged at 1770 (root) + 161 (plugin).
+  - `vitest ^2.1.8 → ^4.1.10` in both the root and the `plugin` workspace,
+    clearing the critical advisory (GHSA-5xrq-8626-4rwp) plus the dependent
+    `vite` / `esbuild` / `@vitest/mocker` / `vite-node` chain. The critical
+    advisory concerns the Vitest UI server; `@vitest/ui` is not installed and
+    never started here, so the vector did not apply — upgrading is still
+    cleaner than a standing exception. Vitest 4's oxc transformer surfaced the
+    two latent defects listed under **Fixed** above.
+  - `@modelcontextprotocol/sdk ^1.29.0 → ^1.30.0`, plus the non-breaking
+    transitives `hono`, `js-yaml`, `ip-address`, `nanoid`, `qs`, `body-parser`,
+    `fast-uri` and `postcss` via `npm audit fix`.
+- **Not fixed, deliberately — `adm-zip` (2× high).** It reaches the tree only
+  through `onnxruntime-node`'s `postinstall` script, which unpacks CUDA
+  binaries from a Nuget feed: it never runs at runtime and never sees user
+  data, and the path does not execute at all for the local CPU reranker. npm's
+  proposed remedy is a *downgrade* to `onnxruntime-node` 1.21 (from 1.26);
+  1.27 still pins the same `adm-zip ^0.5.16`, so upstream has no patched
+  release yet. Revisit when `adm-zip >= 0.6.0` lands upstream. The residual
+  low-severity `esbuild` advisory is dev-only, inside the plugin's
+  `esbuild-svelte` build chain.
 
 ## [2.4.0] — 2026-08-04
 
