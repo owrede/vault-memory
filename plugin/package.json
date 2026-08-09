@@ -1,6 +1,6 @@
 {
   "name": "@owrede/vault-memory-plugin",
-  "version": "2.4.0",
+  "version": "2.4.1",
   "private": true,
   "description": "vault-memory Obsidian plugin — visual contract editor + chrome (Phase 7).",
   "type": "module",
