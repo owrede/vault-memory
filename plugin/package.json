@@ -29,7 +29,7 @@
     "svelte-preprocess": "^6.0.0",
     "tslib": "^2.6.0",
     "typescript": "^5.7.0",
-    "vitest": "^2.1.8",
+    "vitest": "^4.1.10",
     "yaml": "^2.9.0"
   }
 }

@@ -60,10 +60,10 @@
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.0",
     "@types/seedrandom": "^3.0.8",
-    "prettier": "^3.4.0",
+    "prettier": "3.9.6",
     "tsup": "^8.3.5",
     "tsx": "^4.19.2",
     "typescript": "^5.7.0",
-    "vitest": "^2.1.8"
+    "vitest": "^4.1.10"
   }
 }
