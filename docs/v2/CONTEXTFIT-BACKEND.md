@@ -88,7 +88,13 @@ content layer lives in `~/.vault-memory/vaults/<vault-name>.db` like any vault.
   `[vaults.contextfit].command` to its absolute path. Note: when Obsidian/your
   client launches the server from a GUI, PATH may be minimal; an absolute
   `command` is the most reliable.
-- **No hits on a host also serving several large Ollama vaults** — a known
-  `spawn EBADF` interaction under many concurrent vault watchers (see ADR-008
-  "Known operational caveat"). A ContextFit vault on a dedicated/CPU-only host
-  is unaffected.
+- **`spawn EBADF` after watcher startup** — older builds opened watchers for
+  attachments as well as notes and did not interpret exclude globs under
+  Chokidar 4. This can exhaust macOS spawn file-action limits even with only
+  ContextFit vaults. Rebuild with the watcher filtering fix and reconnect the
+  MCP server; see ADR-008 "macOS `spawn EBADF`" for the diagnosis. This failure
+  is now reported as an MCP error when no requested backend succeeds.
+- **`search_semantic` empty while `search_hybrid` works** — older builds checked
+  for an embedding model before dispatching ContextFit. Rebuild and reconnect;
+  ContextFit intentionally has no embedding model and uses its configured
+  retrieval method for both tools.

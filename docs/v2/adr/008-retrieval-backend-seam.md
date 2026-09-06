@@ -75,19 +75,30 @@ engine selectable per vault**, without disturbing the default Ollama path.
 - ContextFit vaults do not populate sqlite-vec/`chunks_fts`/sections-from-embeddings; graph/section features that depend on the SQLite derived layer are reduced for those vaults (documented). The note/chunk/wikilink layer is still built so links + frontmatter queries work.
 - Network constraint (CLAUDE.md "localhost:11434 only") is honored: ContextFit is a local subprocess, no network.
 
-### Known operational caveat — `spawn EBADF` under heavy multi-vault load
-On a host that ALSO serves several large Ollama vaults, each with a live chokidar
-recursive watcher, the server process can reach a file-descriptor state where
-`uv_spawn` fails synchronously with `EBADF` — so a ContextFit query (which spawns
-the `contextfit` CLI) returns no hits. This is an interaction between many large
-FSEvents/inotify watchers and child-process spawning, NOT a defect in the
-ContextFit adapter: verified that a ContextFit vault served in isolation (the
-intended NAS scenario — a CPU-only host with no giant Ollama vaults) works end to
-end through the live MCP server. Mitigations in place: `searchVaults` catches the
-failure and logs `[search:<vault>] ContextFit query failed: …` (the rest of the
-search result is intact), and `runContextFitWithRetry` retries a transient EBADF
-once. A host that mixes many heavy Ollama watcher vaults with ContextFit vaults
-may still see this; the durable fix (bounded/lazy watching) is tracked separately.
+### macOS `spawn EBADF` — diagnosed and mitigated (2026-09-05)
+
+A live MCP reproduction identified watcher descriptor pressure, including on
+hosts using only ContextFit vaults. The old watcher opened every attachment and
+filtered non-Markdown events only afterwards. It also passed exclude globs as
+strings to Chokidar 4, which treats them as literal paths. On the affected host
+the server held approximately 23,000 file descriptors. The first query before
+watcher startup could succeed; subsequent ContextFit spawns failed with `EBADF`.
+[libuv issue #5204](https://github.com/libuv/libuv/issues/5204) documents the macOS
+spawn file-action limit when newly allocated pipe descriptors exceed 10239.
+
+The shared watcher options now reject non-Markdown regular files before watcher
+allocation, preserve directory traversal for newly created notes, and compile
+vault-relative excludes using the scanner's glob matcher. In the reproduction,
+both vault watchers reached ready with 5,457 descriptor entries; five consecutive
+MCP searches succeeded. Very large Markdown corpora can still need narrower
+watch scopes; retrying alone cannot cure persistent descriptor pressure.
+
+`search_semantic` now dispatches ContextFit vaults before checking for vector
+models. A complete ContextFit search failure becomes an MCP error instead of an
+empty successful result. Healthy vault results survive partial failures; a
+semantic search that falls back to a healthy Ollama vault includes the ContextFit
+failure in its response note. Existing server processes need a reconnect after
+rebuilding because their loaded code does not update automatically.
 
 ### Boundaries
 - ContextFit's CLI contract is pinned in `src/adapters/retrieval/contextfit/cli.ts`; a contract-probe test asserts the `--json` shape so an upstream change fails loudly.
