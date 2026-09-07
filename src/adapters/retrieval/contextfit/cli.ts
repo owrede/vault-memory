@@ -21,10 +21,9 @@
  *   contextfit --kb <dir> stats
  */
 
-// cross-spawn (not node:child_process) — its spawn wrapper handles the fd /
-// argument edge cases that make raw `spawn` throw `EBADF` when vault-memory
-// runs as an MCP **stdio server** (the SDK transport holds the parent's
-// stdio fds). This is the same library the MCP SDK itself spawns through.
+// Match the MCP SDK's cross-platform command spawning. This wrapper cannot
+// bypass macOS descriptor limits; the watcher must avoid opening irrelevant
+// files (see ADR-008's EBADF diagnosis).
 import spawn from "cross-spawn";
 
 /** A single retrieved chunk from `contextfit query --json` → `chunks[]`. */
@@ -94,9 +93,8 @@ function runContextFit(
   const args = [...globalArgs, ...subcommandArgs];
 
   return new Promise((resolve, reject) => {
-    // Pipe all three streams (via cross-spawn) and close stdin — contextfit
-    // reads none. cross-spawn avoids the `spawn EBADF` the raw node spawn hits
-    // under the MCP stdio server's fd state.
+    // Isolate the CLI streams from MCP stdio and close its unused stdin.
+    // Piping alone does not prevent EBADF under persistent fd pressure.
     let child;
     try {
       child = spawn(cfg.command, args, { stdio: ["pipe", "pipe", "pipe"] });
@@ -263,8 +261,7 @@ export function parseQueryOutput(stdout: string): ContextFitQueryResult {
 export async function contextFitProbe(cfg: Pick<ContextFitCliConfig, "command">): Promise<boolean> {
   try {
     await new Promise<void>((resolve, reject) => {
-      // All-piped (not "ignore") to avoid `spawn EBADF` under the MCP stdio
-      // server's fd state — same rationale as runContextFit above.
+      // Keep the probe's output isolated from the MCP protocol streams.
       const child = spawn(cfg.command, ["--help"], { stdio: ["pipe", "pipe", "pipe"] });
       child.stdin?.end();
       child.on("error", reject);

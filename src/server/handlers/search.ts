@@ -124,7 +124,30 @@ async function handleSearchSemantic(
   const embedCache = new Map<string, number[]>();
   const allHits: SearchHit[] = [];
 
+  // ContextFit vaults intentionally have no embedding model. Route them
+  // through their configured retrieval engine before the vector-only loop.
+  const contextFitTargets = targets.filter((v) => v.config.backend === "contextfit");
+  let contextFitFailure: Error | undefined;
+  let vectorSearchSucceeded = false;
+  if (contextFitTargets.length > 0) {
+    try {
+      const hits = await searchVaults({
+        query,
+        embeddingModel: defaultModel,
+        ollama,
+        vaults: contextFitTargets,
+        topK: fanK,
+      });
+      allHits.push(
+        ...hits.filter((h) => !hasExclude || !matchesAnyGlob(h.notePath, excludePaths!)),
+      );
+    } catch (err) {
+      contextFitFailure = err instanceof Error ? err : new Error(String(err));
+    }
+  }
+
   for (const vault of targets) {
+    if (vault.config.backend === "contextfit") continue;
     // Phase 7c follow-up (v0.7.2): the active model in the DB is the source
     // of truth — switch_active_model may have promoted a shadow model
     // that doesn't match config.embedding_model. Fall back to the config
@@ -142,6 +165,7 @@ async function handleSearchSemantic(
     }
 
     const semanticHits = vault.db.embeddings.searchSemantic(model.id, queryVec, fanK);
+    vectorSearchSucceeded = true;
 
     for (const hit of semanticHits) {
       const chunk = vault.db.chunks.getById(hit.chunkId);
@@ -164,14 +188,18 @@ async function handleSearchSemantic(
     }
   }
 
+  if (contextFitFailure && !vectorSearchSucceeded) throw contextFitFailure;
   allHits.sort((a, b) => b.score - a.score);
   const out: Record<string, unknown> = {
     hits: allHits.slice(0, topK),
     count: allHits.length,
   };
+  const notes: string[] = [];
   if (skipped.length > 0) {
-    out.note = `Skipped vault(s) currently indexing: ${skipped.join(", ")}.`;
+    notes.push(`Skipped vault(s) currently indexing: ${skipped.join(", ")}.`);
   }
+  if (contextFitFailure) notes.push(contextFitFailure.message);
+  if (notes.length > 0) out.note = notes.join(" ");
   return out;
 }
 

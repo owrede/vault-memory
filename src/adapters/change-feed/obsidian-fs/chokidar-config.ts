@@ -27,32 +27,36 @@
  * widens the favorable race for own-write suppression.
  */
 
-import { posix } from "node:path";
+import { relative, sep } from "node:path";
+import { compileGlob } from "../../source/obsidian-fs/scanner.js";
 import type { ChokidarOptions } from "chokidar";
 
 /**
  * Build chokidar options for a vault root.
  *
- * The caller-provided `excludes` are joined with `vaultPath` (absolute
- * glob patterns) and pre-pended to the v1 baseline filters (`hidden
- * files at any level` regex + `**\/*.tmp.*` atomic-write artifacts).
+ * Apply caller excludes to vault-relative paths, skip hidden/temporary
+ * files, and avoid opening watchers for files outside the markdown corpus.
  */
 export function buildChokidarOptions(
   vaultPath: string,
   excludes: ReadonlyArray<string>,
 ): ChokidarOptions {
+  // Chokidar 4 treats strings as literal paths, not globs. Match the same
+  // vault-relative patterns as the scanner, before allocating file watchers.
+  const matchers = excludes.map(compileGlob);
   return {
     persistent: true,
-    ignoreInitial: true, // we expect initial state via indexVault
-    ignored: [
-      // chokidar handles glob-like patterns. Provide both raw and absolute.
-      ...excludes.map((g) => posix.join(vaultPath, g)),
-      /(^|[\\/])\../, // hidden files at any level
-      "**/*.tmp.*", // our atomic-write artifacts
-    ],
-    // Only watch markdown files — saves event volume.
-    // chokidar's `ignored` runs against absolute paths, so we filter via
-    // an after-the-fact event check (cheaper than a glob).
+    ignoreInitial: true,
+    ignored: (candidate, stats) => {
+      const rel = relative(vaultPath, candidate).split(sep).join("/");
+      if (rel.length === 0) return false;
+      if (/(^|\/)\../.test(rel) || /(^|\/)[^/]*\.tmp\.[^/]*$/.test(rel)) return true;
+      if (matchers.some((matcher) => matcher.test(rel))) return true;
+      // Keep directories so new notes remain discoverable. Filtering only
+      // after events still holds a descriptor for every image/attachment,
+      // which can make macOS posix_spawn fail with EBADF above fd 10239.
+      return stats?.isFile() === true && !candidate.toLowerCase().endsWith(".md");
+    },
     awaitWriteFinish: {
       stabilityThreshold: 400,
       pollInterval: 50,
