@@ -79,6 +79,11 @@ describe("vault watcher resource filtering", () => {
   it("still discovers notes created later in an initially empty directory", async () => {
     await mkdir(join(root, "empty"));
     const live = await start();
+    // "ready" only means the initial scan finished. On macOS the underlying
+    // fsevents stream needs a moment more before it reliably delivers changes,
+    // and a note written into that window is silently dropped. Settle first so
+    // a miss below is a real filtering bug rather than a startup race.
+    await new Promise((resolve) => setTimeout(resolve, 300));
     const added: string[] = [];
     live.on("add", (path) => added.push(path));
     await file("empty/new.md");
