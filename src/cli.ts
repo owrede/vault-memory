@@ -8,6 +8,22 @@ const args = process.argv.slice(2);
 const command = args[0] ?? "serve";
 
 switch (command) {
+  case "search":
+  case "read":
+  case "edit":
+  case "man":
+    try {
+      const { parseKnowledgeArgs } = await import("./cli/knowledge.js");
+      const parsed = parseKnowledgeArgs(args);
+      process.exitCode = await import("./adapters/source/obsidian-fs/cli-runtime.js").then((m) =>
+        m.runLocalKnowledge(parsed),
+      );
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      if (args.includes("--json")) console.log(JSON.stringify({ ok: false, error: String(error) }));
+      process.exitCode = 2;
+    }
+    break;
   case "serve":
     await import("./server.js").then((m) => m.serve());
     break;

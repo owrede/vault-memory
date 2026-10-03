@@ -1544,3 +1544,5 @@ Pre-0.6 development built the core stack in roughly this order:
 Reviewers should block merges that change behavior but don't touch this file.
 
 - F07: business validity intervals, historical v2 retrieval, inherited or explicit statement bounds, indexed pre-limit filtering and migration 18.
+
+- F08: scriptable search/read/edit CLI, isolated configuration seam, versioned MCP manual templates and operation annotations.

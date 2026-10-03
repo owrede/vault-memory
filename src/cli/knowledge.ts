@@ -69,3 +69,58 @@ export function parseKnowledgeArgs(args: string[]): KnowledgeArgs {
   if (result.as_of && timestampMillis(result.as_of) === null) throw new Error("invalid --as-of");
   return result;
 }
+
+export interface KnowledgeDeps {
+  search: (args: KnowledgeArgs) => Promise<unknown>;
+  read: (args: KnowledgeArgs) => Promise<unknown>;
+  edit: (args: KnowledgeArgs, patch: unknown) => Promise<{ ok: boolean; reason?: string }>;
+  readPatchFile: (path: string) => Promise<string>;
+  manual: (topic: string) => unknown;
+}
+export async function runKnowledgeCommand(
+  args: KnowledgeArgs,
+  deps: KnowledgeDeps,
+  io: { stdout: (s: string) => void; stderr: (s: string) => void },
+): Promise<number> {
+  try {
+    let result: unknown;
+    if (args.command === "man") result = deps.manual(args.topic!);
+    else if (args.command === "read") result = await deps.read(args);
+    else if (args.command === "search") result = await deps.search(args);
+    else {
+      let patch: unknown;
+      try {
+        patch = JSON.parse(await deps.readPatchFile(args.patch_file!));
+      } catch (error) {
+        io.stderr(`Invalid patch file: ${String(error)}\n`);
+        if (args.json) io.stdout(JSON.stringify({ ok: false, reason: "invalid_patch" }) + "\n");
+        return 2;
+      }
+      result = await deps.edit(args, patch);
+    }
+    io.stdout(
+      (args.json
+        ? JSON.stringify(result)
+        : typeof result === "string"
+          ? result
+          : JSON.stringify(result, null, 2)) + "\n",
+    );
+    const status = result as { ok?: boolean; reason?: string };
+    if (status?.ok === false) {
+      io.stderr(`${status.reason ?? "conflict"}\n`);
+      return status.reason === "not_found" ? 3 : status.reason === "invalid_patch" ? 2 : 4;
+    }
+    return 0;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const missing = message.includes("doc_not_found") || message.includes("Unknown manual topic");
+    const invalid =
+      message.includes("invalid as_of") ||
+      message.includes("invalid_validity") ||
+      message.includes("Invalid DocId");
+    const code = missing ? 3 : invalid ? 2 : 5;
+    io.stderr(message + "\n");
+    if (args.json) io.stdout(JSON.stringify({ ok: false, error: message }) + "\n");
+    return code;
+  }
+}

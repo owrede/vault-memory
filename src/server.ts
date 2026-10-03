@@ -109,6 +109,8 @@ import {
 import { makeNotesHandlers, handleReadNote } from "./server/handlers/notes.js";
 import { registerFeatureTools } from "./server/feature-tools.js";
 import { refreshEditedDocument } from "./edit/refresh.js";
+import { operationAnnotations } from "./manual/catalog.js";
+import { registerManualResources } from "./manual/resources.js";
 import { InvalidValidityError } from "./memory/valid-time.js";
 import { ProjectionError } from "./assembly/selection.js";
 import { decomposeDocId } from "./adapters/registry.js";
@@ -1002,7 +1004,11 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
     const needsRefinementCheck = name === "suggest_frontmatter" || name === "cluster";
     server.registerTool(
       name,
-      { description: tool.description, inputSchema: schema },
+      {
+        description: tool.description,
+        inputSchema: schema,
+        annotations: operationAnnotations(name),
+      },
       async (args: unknown) => {
         try {
           let validated: unknown = args;
@@ -1046,6 +1052,8 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
     },
     config.server.features ?? [],
   );
+
+  registerManualResources(server);
 
   // ─── MCP Resources (Plan 02-06 / MEM-09) ─────────────────────────────────
   //

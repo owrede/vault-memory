@@ -12,3 +12,17 @@ it("provides versioned manuals and truthful operation hints", () => {
   expect(manualTopic("index")).toMatchObject({ annotations: { readOnlyHint: false } });
   expect(() => manualTopic("absent")).toThrow("Unknown manual topic");
 });
+it("pins additive tool annotations separately from unchanged input schemas", async () => {
+  const { readFileSync } = await import("node:fs");
+  const { TOOLS } = await import("../tool-registry.js");
+  const { operationAnnotations } = await import("./catalog.js");
+  const snapshot = JSON.parse(
+    readFileSync(
+      new URL("../../evals/v1-baseline/tool-annotations.snapshot.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  expect(TOOLS.map((t) => ({ name: t.name, annotations: operationAnnotations(t.name) }))).toEqual(
+    snapshot,
+  );
+});

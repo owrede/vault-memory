@@ -24,7 +24,7 @@ export class VaultManager {
   private readonly vaults = new Map<string, Vault>();
 
   static dbDirectory(): string {
-    return join(homedir(), ".vault-memory", "vaults");
+    return join(process.env.VM_CONFIG_DIR ?? join(homedir(), ".vault-memory"), "vaults");
   }
 
   static dbPathFor(vaultName: string): string {

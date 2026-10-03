@@ -14,6 +14,8 @@ const mutations = new Set([
   "register_contracts_as_tools",
   "instantiate_contract",
   "edit_document",
+  "edit",
+  "suggest_frontmatter",
   "index",
   "add-vault",
 ]);

@@ -194,7 +194,7 @@ const DEFAULT_CONFIG: AppConfig = {
 };
 
 export function configPath(): string {
-  return join(homedir(), ".vault-memory", "config.toml");
+  return join(process.env.VM_CONFIG_DIR ?? join(homedir(), ".vault-memory"), "config.toml");
 }
 
 export async function loadConfig(path: string = configPath()): Promise<AppConfig> {
