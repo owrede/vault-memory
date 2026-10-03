@@ -15,7 +15,6 @@ const mutations = new Set([
   "instantiate_contract",
   "edit_document",
   "edit",
-  "suggest_frontmatter",
   "index",
   "add-vault",
 ]);
@@ -23,7 +22,16 @@ export function operationAnnotations(name: string) {
   const readOnlyHint = !mutations.has(name);
   return {
     readOnlyHint,
-    destructiveHint: ["delete_note", "vacuum_embeddings"].includes(name),
+    destructiveHint: [
+      "delete_note",
+      "vacuum_embeddings",
+      "write_note",
+      "update_frontmatter",
+      "edit_document",
+      "edit",
+      "supersede",
+      "compile_brief",
+    ].includes(name),
     idempotentHint: readOnlyHint,
     openWorldHint: ["register_contracts_as_tools", "instantiate_contract"].includes(name),
   };

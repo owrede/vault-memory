@@ -26,3 +26,11 @@ it("pins additive tool annotations separately from unchanged input schemas", asy
     snapshot,
   );
 });
+it("describes overwrite operations as destructive and pure suggestions as readonly", () => {
+  for (const topic of ["edit_document", "write_note", "update_frontmatter", "supersede"])
+    expect(manualTopic(topic).annotations).toMatchObject({
+      readOnlyHint: false,
+      destructiveHint: true,
+    });
+  expect(manualTopic("suggest_frontmatter").annotations).toMatchObject({ readOnlyHint: true });
+});

@@ -106,3 +106,87 @@ it("refuses locked files and invalid options and exposes the versioned manual", 
   expect(manual.code).toBe(0);
   expect(JSON.parse(manual.stdout)).toMatchObject({ schema_version: 1, topic: "edit_document" });
 });
+it("refreshes edited semantic and FTS indexes with the configured embedding client", async () => {
+  const { createServer } = await import("node:http");
+  const service = createServer((request, response) => {
+    let body = "";
+    request.on("data", (chunk) => (body += chunk));
+    request.on("end", () => {
+      const parsed = JSON.parse(body);
+      response.setHeader("Content-Type", "application/json");
+      response.end(JSON.stringify({ embeddings: parsed.input.map(() => [1, 0]) }));
+    });
+  });
+  await new Promise<void>((resolve) => service.listen(0, "127.0.0.1", resolve));
+  try {
+    const address = service.address() as { port: number };
+    await fs.writeFile(
+      join(configDir, "config.toml"),
+      `[server]\nfeatures=["document_edit"]\nollama_endpoint="http://127.0.0.1:${address.port}"\n[[vaults]]\nname="lab"\npath=${JSON.stringify(f.root)}\nwrite_enabled=true\n`,
+    );
+    const { Database } = await import("../db/database.js");
+    const db = new Database(join(configDir, "vaults", "lab.db"), "lab");
+    db.models.upsert({ name: "fixture", provider: "ollama", dim: 2 });
+    db.close();
+    const original = await f.source.readDocument(f.id("A B.md"));
+    await fs.writeFile(
+      join(f.root, "patch.json"),
+      JSON.stringify({ kind: "replace", old_text: "Original", new_text: "Updated" }),
+    );
+    // Async child lets the local fixture server answer its request.
+    const { spawn } = await import("node:child_process");
+    const result = await new Promise<{ code: number | null; stdout: string }>((resolve, reject) => {
+      const child = spawn(
+        process.execPath,
+        [
+          "dist/cli.js",
+          "edit",
+          "--doc-id",
+          original.id,
+          "--expected-hash",
+          original.hash,
+          "--patch-file",
+          join(f.root, "patch.json"),
+          "--json",
+        ],
+        { env: { ...process.env, VM_CONFIG_DIR: configDir } },
+      );
+      let stdout = "";
+      child.stdout.on("data", (data) => (stdout += data));
+      child.on("error", reject);
+      child.on("close", (code) => resolve({ code, stdout }));
+    });
+    expect(result.code).toBe(0);
+    expect(JSON.parse(result.stdout).index_refresh).toBeUndefined();
+    const updated = new Database(join(configDir, "vaults", "lab.db"), "lab");
+    try {
+      expect(updated.fts.search("Updated", 10)).toHaveLength(1);
+      expect(updated.notes.getByPath("A B.md")!.body_hash).not.toBeNull();
+    } finally {
+      updated.close();
+    }
+  } finally {
+    await new Promise<void>((resolve) => service.close(() => resolve()));
+  }
+});
+it("routes ContextFit vaults through their configured backend", async () => {
+  await fs.writeFile(
+    join(configDir, "config.toml"),
+    `[[vaults]]\nname="lab"\npath=${JSON.stringify(f.root)}\nbackend="contextfit"\n[vaults.contextfit]\ncommand="/nonexistent-contextfit-fixture"\n`,
+  );
+  const result = run("search", "--vault", "lab", "--query", "Budget", "--json");
+  expect(result.code).toBe(5);
+  expect(result.stderr).toContain("ContextFit");
+  expect(JSON.parse(result.stdout).ok).toBe(false);
+});
+it("does not provision a missing memory sink during source reads", async () => {
+  await fs.writeFile(
+    join(configDir, "config.toml"),
+    `[[vaults]]\nname="lab"\npath=${JSON.stringify(f.root)}\nwrite_enabled=false\n[[memory_sinks]]\nname="memory"\nhandle="obsidian-fs://lab/_memory/"\ncontract="default-memory-v1"\n`,
+  );
+  const result = run("read", "--doc-id", f.id("A B.md"), "--projection", "metadata", "--json");
+  expect(result.code).toBe(0);
+  await expect(fs.stat(join(f.root, "_memory", ".memory-sink"))).rejects.toMatchObject({
+    code: "ENOENT",
+  });
+});

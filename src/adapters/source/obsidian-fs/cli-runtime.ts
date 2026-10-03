@@ -4,9 +4,10 @@ import { VaultManager } from "../../../vault/index.js";
 import { AdapterRegistry, decomposeDocId, parseDocId, parseSourceHandle } from "../../registry.js";
 import { ObsidianFsSource } from "./index.js";
 import { ObsidianFsDelivery } from "../../delivery/obsidian-fs/index.js";
-import { setupMemorySinks } from "../../../server.js";
+import { MemorySinkRegistry } from "../../../memory/registry.js";
+import { discoverMemorySinks } from "../../../server.js";
 import { OllamaClient } from "../../../ollama/index.js";
-import { hybridSearch } from "../../../search/hybrid.js";
+import { searchVaults } from "../../../search/dispatch.js";
 import { inspectionBody } from "../../../schema/body.js";
 import { documentContext, takeContext } from "../../../assembly/selection.js";
 import { displayUrlFor, toCitationPacket } from "../../../memory/citation-packet.js";
@@ -32,7 +33,20 @@ export async function runLocalKnowledge(args: KnowledgeArgs): Promise<number> {
   const manager = new VaultManager();
   try {
     await manager.loadAll(config.vaults);
-    const sinks = await setupMemorySinks(config, manager);
+    const sinks = new MemorySinkRegistry();
+    if (args.command === "edit")
+      await sinks.registerMemorySinks(
+        await discoverMemorySinks(
+          config.memory_sinks,
+          manager.list().map((v) => ({ name: v.config.name, path: v.config.path })),
+        ),
+        {
+          resolveVaultAbsolutePath: (name) => manager.require(name).config.path,
+          defaultSinkName: config.memory?.default_sink,
+          provisioner: async () => {}, // CLI commands discover sinks; only explicit provisioning creates sentinels.
+        },
+      );
+    const ollama = new OllamaClient({ endpoint: config.server.ollama_endpoint });
     const registry = new AdapterRegistry();
     for (const vault of manager.list()) {
       const source = new ObsidianFsSource(vault.config);
@@ -55,11 +69,11 @@ export async function runLocalKnowledge(args: KnowledgeArgs): Promise<number> {
         readPatchFile: (path) => readFile(path, "utf8"),
         search: async (input) => {
           const vaults = input.vault ? [manager.require(input.vault)] : manager.list();
-          const results = await hybridSearch({
+          const results = await searchVaults({
             query: input.query!,
             vaults,
             embeddingModel: config.server.default_embedding_model ?? "qwen3-embedding:0.6b",
-            ollama: new OllamaClient({ endpoint: config.server.ollama_endpoint }),
+            ollama,
             asOf: input.as_of,
           });
           return { results, count: results.length };
@@ -121,6 +135,7 @@ export async function runLocalKnowledge(args: KnowledgeArgs): Promise<number> {
               await refreshEditedDocument(
                 {
                   manager,
+                  ollama,
                   defaultModel: config.server.default_embedding_model ?? "qwen3-embedding:0.6b",
                 },
                 id,
