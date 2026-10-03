@@ -33,6 +33,23 @@ const deps: SearchSectionsDeps = {
   displayUrlFor: (id) => id,
 };
 describe("section search projection", () => {
+  it.each(["empty", "orphan"])(
+    "diagnoses a missing selector for %s candidate sections",
+    async (kind) => {
+      const emptyDeps = {
+        ...deps,
+        ...(kind === "empty" ? { searchHybrid: async () => [] } : { sectionForHit: () => null }),
+      };
+      await expect(
+        searchSectionsWithContext(emptyDeps, {
+          query: "x",
+          limit: 2,
+          projection: "sections",
+          heading_paths: [["Missing"]],
+        }),
+      ).rejects.toMatchObject({ code: "target_not_found", heading_path: ["Missing"] });
+    },
+  );
   it("metadata excludes indexed snippets", async () => {
     expect(
       JSON.stringify(

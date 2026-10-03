@@ -188,11 +188,12 @@ export async function searchSectionsWithContext(
   args: SearchSectionsArgs,
 ): Promise<{ results: SectionHit[]; count: number; context?: ContextSelection }> {
   const context = contextSelection(args);
-  const response = (results: SectionHit[]) => ({
-    results,
-    count: results.length,
-    ...(context ? { context } : {}),
-  });
+  const response = (results: SectionHit[]) => {
+    if (context?.projection === "sections" && results.length === 0) {
+      throw new ProjectionError("target_not_found", args.heading_paths![0]);
+    }
+    return { results, count: results.length, ...(context ? { context } : {}) };
+  };
   // 1) Inflate topK and call the inner hybrid pipeline. A single call
   //    keeps the v1 RRF (+ optional rerank) byte-identical.
   const chunkHits = await deps.searchHybrid({
