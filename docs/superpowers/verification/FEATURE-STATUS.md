@@ -11,8 +11,8 @@ Verbindliches Ziel: alle elf Feature-Upgrades gemäß Design und Einzelplänen i
 | F05 Fachliche Relationen | abgeschlossen | `2026-10-03-f05-domain-relations.md` |
 | F06 Schemas/Drift | abgeschlossen | `2026-10-03-f06-schema-validation-drift.md` |
 | F07 Gültigkeitszeit | abgeschlossen | `2026-10-03-f07-valid-time.md` |
-| F08 CLI/Handbuch | implementiert, Review läuft | eigener Plan |
-| F09 ONNX-Embeddings | TDD in Arbeit | eigener Plan |
+| F08 CLI/Handbuch | abgeschlossen | `2026-10-03-f08-cli-manuals.md` |
+| F09 ONNX-Embeddings | implementiert, Review läuft | eigener Plan |
 | F10 Sitzungscheckpoints | geplant | eigener Plan |
 | F11 Gesprächsimporte | geplant | eigener Plan |
 

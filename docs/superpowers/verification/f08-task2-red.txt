@@ -1,0 +1,48 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/cli/knowledge.integration.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/cli/knowledge.integration.test.ts (2 tests | 2 failed) 412ms
+   × searches, reads and patches through the built CLI with isolated config and JSON stdout 241ms
+   × refuses locked files and invalid options and exposes the versioned manual 170ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/cli/knowledge.integration.test.ts > searches, reads and patches through the built CLI with isolated config and JSON stdout
+AssertionError: expected 2 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 2
+
+ ❯ src/cli/knowledge.integration.test.ts:18:106
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |unit| src/cli/knowledge.integration.test.ts > refuses locked files and invalid options and exposes the versioned manual
+AssertionError: expected 2 to be 4 // Object.is equality
+
+- Expected
++ Received
+
+- 4
++ 2
+
+ ❯ src/cli/knowledge.integration.test.ts:30:152
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed (2)
+   Start at  17:54:19
+   Duration  929ms (transform 270ms, setup 0ms, import 422ms, tests 412ms, environment 0ms)
+
