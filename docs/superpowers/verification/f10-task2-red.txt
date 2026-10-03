@@ -1,0 +1,118 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/session/lifecycle.integration.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/session/lifecycle.integration.test.ts (5 tests | 5 failed) 73ms
+   × creates one canonical agent checkpoint for repeated events and preserves explicit provenance 22ms
+   × reserves parallel events atomically and refuses changed payloads for the same key 11ms
+   × reconstructs checkpoint idempotence from canonical Markdown after dropping derived reservations 10ms
+   × rejects missing evidence, unknown sinks, sentinel removal and readonly writes without creating memories 12ms
+   × verifies fresh source hashes on session start and retains citations within the context budget 17ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/session/lifecycle.integration.test.ts > creates one canonical agent checkpoint for repeated events and preserves explicit provenance
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/session/lifecycle.integration.test.ts:14:69
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  |unit| src/session/lifecycle.integration.test.ts > reserves parallel events atomically and refuses changed payloads for the same key
+AssertionError: expected [] to have a length of 1 but got +0
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ src/session/lifecycle.integration.test.ts:23:34
+     21| it('reserves parallel events atomically and refuses changed payloads f…
+     22|  const results=await Promise.all([recordCheckpoint(input(),deps),recor…
+     23|  expect(results.filter(r=>r.ok)).toHaveLength(1); expect(results.find(…
+       |                                  ^
+     24|  expect(f.vault.db.audit.listWrites({op:'create'})).toHaveLength(1);
+     25|  expect(await recordCheckpoint({...input(),summary:'Different claim'},…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  |unit| src/session/lifecycle.integration.test.ts > reconstructs checkpoint idempotence from canonical Markdown after dropping derived reservations
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/session/lifecycle.integration.test.ts:28:69
+     26| });
+     27| it('reconstructs checkpoint idempotence from canonical Markdown after …
+     28|  const first=await recordCheckpoint(input(),deps); expect(first.ok).to…
+       |                                                                     ^
+     29|  f.vault.db.handle.exec('DELETE FROM checkpoint_reservations');
+     30|  expect(await recordCheckpoint(input(),deps)).toMatchObject({ok:true,r…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  |unit| src/session/lifecycle.integration.test.ts > rejects missing evidence, unknown sinks, sentinel removal and readonly writes without creating memories
+AssertionError: promise resolved "{ ok: false, reason: 'not_implemented' }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "ok": false,
++   "reason": "not_implemented",
+  }
+
+ ❯ src/session/lifecycle.integration.test.ts:34:87
+     32| });
+     33| it('rejects missing evidence, unknown sinks, sentinel removal and read…
+     34|  await expect(recordCheckpoint({...input(),source_doc_ids:[f.id('Missi…
+       |                                                                                       ^
+     35|  await expect(recordCheckpoint({...input(),sink:'unknown'},deps)).reje…
+     36|  await fs.unlink(join(f.root,'_memory','.memory-sink'));
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  |unit| src/session/lifecycle.integration.test.ts > verifies fresh source hashes on session start and retains citations within the context budget
+AssertionError: expected { text: '', citations: [], …(2) } to match object { text: 'Useful', stale: false, …(1) }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "stale": false,
+-   "text": "Useful",
+-   "truncated": true,
++   "text": "",
++   "truncated": false,
+  }
+
+ ❯ src/session/lifecycle.integration.test.ts:46:17
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  5 failed (5)
+   Start at  18:35:25
+   Duration  896ms (transform 480ms, setup 0ms, import 660ms, tests 73ms, environment 0ms)
+

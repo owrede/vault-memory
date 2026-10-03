@@ -1,0 +1,115 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/session
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/session/checkpoint.test.ts (7 tests | 7 failed) 8ms
+   × separates session and event components 3ms
+   × keeps explicit observation time and concrete source evidence 3ms
+   × rejects invalid checkpoint {"summary":""} 1ms
+   × rejects invalid checkpoint {"source_doc_ids":[]} 0ms
+   × rejects invalid checkpoint {"observed_at":"bad"} 0ms
+   × rejects invalid checkpoint {"source_doc_ids":["not-a-docid"]} 0ms
+   × rejects invalid checkpoint {"session_id":""} 0ms
+ ❯ |unit| src/session/context.test.ts (2 tests | 2 failed) 6ms
+   × budgets context and retains its source citation 5ms
+   × blocks stale briefs instead of presenting them as fresh 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 9 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/session/checkpoint.test.ts > separates session and event components
+AssertionError: expected '' not to be '' // Object.is equality
+ ❯ src/session/checkpoint.test.ts:4:86
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/9]⎯
+
+ FAIL  |unit| src/session/checkpoint.test.ts > keeps explicit observation time and concrete source evidence
+AssertionError: expected {} to match object { source: 'agent', …(5) }
+
+- Expected
++ Received
+
+- {
+-   "checkpoint_key": "",
+-   "confidence": "inferred",
+-   "evidence": [
+-     "obsidian-fs://lab/A.md",
+-     "session:s",
+-     "event:e",
+-   ],
+-   "observed_at": "2026-10-03T10:00:00Z",
+-   "source": "agent",
+-   "type": "summary",
+- }
++ {}
+
+ ❯ src/session/checkpoint.test.ts:5:107
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/9]⎯
+
+ FAIL  |unit| src/session/checkpoint.test.ts > rejects invalid checkpoint {"summary":""}
+ FAIL  |unit| src/session/checkpoint.test.ts > rejects invalid checkpoint {"source_doc_ids":[]}
+ FAIL  |unit| src/session/checkpoint.test.ts > rejects invalid checkpoint {"observed_at":"bad"}
+ FAIL  |unit| src/session/checkpoint.test.ts > rejects invalid checkpoint {"source_doc_ids":["not-a-docid"]}
+ FAIL  |unit| src/session/checkpoint.test.ts > rejects invalid checkpoint {"session_id":""}
+AssertionError: expected [Function] to throw an error
+ ❯ src/session/checkpoint.test.ts:6:207
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/9]⎯
+
+ FAIL  |unit| src/session/context.test.ts > budgets context and retains its source citation
+AssertionError: expected { text: '', citations: [], …(2) } to match object { text: 'Useful', …(3) }
+
+- Expected
++ Received
+
+  {
+-   "citations": [
+-     {
+-       "doc_id": "obsidian-fs://lab/brief.md",
+-       "hash": "h",
+-     },
+-   ],
++   "citations": [],
+    "stale": false,
+-   "text": "Useful",
+-   "truncated": true,
++   "text": "",
++   "truncated": false,
+  }
+
+ ❯ src/session/context.test.ts:6:133
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/9]⎯
+
+ FAIL  |unit| src/session/context.test.ts > blocks stale briefs instead of presenting them as fresh
+AssertionError: expected { text: '', citations: [], …(2) } to match object { text: '', stale: true }
+(2 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "stale": true,
++   "stale": false,
+    "text": "",
+  }
+
+ ❯ src/session/context.test.ts:7:178
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/9]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  9 failed (9)
+   Start at  18:22:41
+   Duration  160ms (transform 40ms, setup 0ms, import 58ms, tests 14ms, environment 0ms)
+

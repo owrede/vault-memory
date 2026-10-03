@@ -13,7 +13,7 @@ Verbindliches Ziel: alle elf Feature-Upgrades gemäß Design und Einzelplänen i
 | F07 Gültigkeitszeit | abgeschlossen | `2026-10-03-f07-valid-time.md` |
 | F08 CLI/Handbuch | abgeschlossen | `2026-10-03-f08-cli-manuals.md` |
 | F09 ONNX-Embeddings | abgeschlossen | `2026-10-03-f09-local-onnx-embeddings.md` |
-| F10 Sitzungscheckpoints | Integration, Abnahme läuft | eigener Plan |
-| F11 Gesprächsimporte | geplant | eigener Plan |
+| F10 Sitzungscheckpoints | abgeschlossen | `2026-10-03-f10-session-checkpoints.md` |
+| F11 Gesprächsimporte | Integration, Abnahme läuft | eigener Plan |
 
 Ausführung mit `superpowers:executing-plans` und beobachtetem RED→GREEN. Node24-PATH muss auch für npm-Childprozesse gesetzt sein; vollständige Testsuite außerhalb der Sandbox wegen nativer Watcher. Keine unbeauftragte Integration in den ursprünglichen Branch oder Veröffentlichung.

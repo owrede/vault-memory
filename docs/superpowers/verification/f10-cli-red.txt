@@ -1,0 +1,38 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/cli/knowledge.integration.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/cli/knowledge.integration.test.ts (8 tests | 1 failed) 3381ms
+   × records session checkpoints through the built opt-in CLI without embeddings and executes a neutral host hook 168ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/cli/knowledge.integration.test.ts > records session checkpoints through the built opt-in CLI without embeddings and executes a neutral host hook
+AssertionError: expected 2 to be +0 // Object.is equality
+
+- Expected
++ Received
+
+- 0
++ 2
+
+ ❯ src/cli/knowledge.integration.test.ts:221:85
+    219|  const input={session_id:'cli',event_id:'checkpoint',sink:'memory',sum…
+    220|  const path=join(f.root,'checkpoint.json');await fs.writeFile(path,JSO…
+    221|  const first=run('session','checkpoint','--input',path,'--json');expec…
+       |                                                                                     ^
+    222|  expect(JSON.parse(run('session','checkpoint','--input',path,'--json')…
+    223|  await fs.writeFile(path,JSON.stringify({schema_version:1,event:'sessi…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 7 passed (8)
+   Start at  18:39:54
+   Duration  4.02s (transform 307ms, setup 0ms, import 518ms, tests 3.38s, environment 0ms)
+
