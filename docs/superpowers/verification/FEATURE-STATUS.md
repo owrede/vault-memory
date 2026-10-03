@@ -14,6 +14,12 @@ Verbindliches Ziel: alle elf Feature-Upgrades gemäß Design und Einzelplänen i
 | F08 CLI/Handbuch | abgeschlossen | `2026-10-03-f08-cli-manuals.md` |
 | F09 ONNX-Embeddings | abgeschlossen | `2026-10-03-f09-local-onnx-embeddings.md` |
 | F10 Sitzungscheckpoints | abgeschlossen | `2026-10-03-f10-session-checkpoints.md` |
-| F11 Gesprächsimporte | Integration, Abnahme läuft | eigener Plan |
+| F11 Gesprächsimporte | abgeschlossen (neutral-v1) | `2026-10-03-f11-conversation-import.md` |
 
 Ausführung mit `superpowers:executing-plans` und beobachtetem RED→GREEN. Node24-PATH muss auch für npm-Childprozesse gesetzt sein; vollständige Testsuite außerhalb der Sandbox wegen nativer Watcher. Keine unbeauftragte Integration in den ursprünglichen Branch oder Veröffentlichung.
+
+## Abschließende gemeinsame Abnahme
+
+Bei Codecommit62176bd: **2087 Tests bestanden,17 optionale Tests übersprungen**; TypeScript, Adapterprüfung und Build erfolgreich Node24.11.1. Alle elf Features haben beobachtete RED→GREEN-Nachweise und unabhängige Reviews. 23 originale v1-Namen/Eingabeschemas bleiben eingefroren; Standardtools32 kanonisch plus5deprecated unverändert. Neue Aktionen nur per explizitem Featureflag.
+
+Betriebsgrenzen: ONNX braucht kompatible lokal gepinnte Assets; optionaler multilingualer Qualitätslauf nicht aktiviert. Sessionhooks und Gesprächsimporte unterstützen jeweils das dokumentierte neutrale v1-Profil. Ungeprüfte ChatGPT-Exportformate liefern unsupported_format. Featurebranch und Worktree sind die vollständige Lieferung; keine Veröffentlichung oder automatische Änderung von Clientkonfiguration.

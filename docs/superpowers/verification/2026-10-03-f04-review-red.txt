@@ -183,4 +183,3 @@ AssertionError: expected [ { category: 'fact', …(3) } ] to deeply equal [ { ca
       Tests  6 failed | 21 passed (27)
    Start at  16:36:54
    Duration  664ms (transform 291ms, setup 0ms, import 460ms, tests 148ms, environment 0ms)
-

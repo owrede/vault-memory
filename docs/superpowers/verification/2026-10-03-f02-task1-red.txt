@@ -358,4 +358,3 @@ AssertionError: expected { ok: false, reason: 'invalid_patch' } to deeply equal 
       Tests  14 failed | 2 passed (16)
    Start at  15:09:41
    Duration  153ms (transform 17ms, setup 0ms, import 25ms, tests 10ms, environment 0ms)
-

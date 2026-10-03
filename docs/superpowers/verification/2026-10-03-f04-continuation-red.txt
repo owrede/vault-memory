@@ -44,4 +44,3 @@ AssertionError: expected [ { category: 'preference', …(3) } ] to deeply equal 
       Tests  1 failed | 16 passed (17)
    Start at  16:44:49
    Duration  128ms (transform 22ms, setup 0ms, import 30ms, tests 8ms, environment 0ms)
-

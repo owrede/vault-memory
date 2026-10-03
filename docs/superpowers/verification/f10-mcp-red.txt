@@ -33,4 +33,3 @@ AssertionError: expected [ 'baseline' ] to deeply equal [ 'baseline', 'start_ses
       Tests  1 failed (1)
    Start at  18:43:22
    Duration  636ms (transform 283ms, setup 0ms, import 504ms, tests 34ms, environment 0ms)
-

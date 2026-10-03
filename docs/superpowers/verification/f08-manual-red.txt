@@ -45,4 +45,3 @@ AssertionError: expected {} to match object { schema_version: 1, …(4) }
       Tests  1 failed (1)
    Start at  17:51:17
    Duration  112ms (transform 14ms, setup 0ms, import 20ms, tests 5ms, environment 0ms)
-

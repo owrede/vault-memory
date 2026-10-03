@@ -71,4 +71,3 @@ AssertionError: promise resolved "OnnxEmbeddingProvider{ …(3) }" instead of re
       Tests  2 failed (2)
    Start at  18:09:18
    Duration  138ms (transform 21ms, setup 0ms, import 30ms, tests 7ms, environment 0ms)
-

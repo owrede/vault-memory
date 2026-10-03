@@ -45,4 +45,3 @@ AssertionError: expected 2 to be 4 // Object.is equality
       Tests  2 failed (2)
    Start at  17:54:19
    Duration  929ms (transform 270ms, setup 0ms, import 422ms, tests 412ms, environment 0ms)
-

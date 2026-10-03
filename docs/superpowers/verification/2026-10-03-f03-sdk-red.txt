@@ -28,4 +28,3 @@ AssertionError: expected { …(3) } to have property "projection"
       Tests  1 failed | 1 passed (2)
    Start at  15:48:42
    Duration  632ms (transform 282ms, setup 0ms, import 499ms, tests 43ms, environment 0ms)
-

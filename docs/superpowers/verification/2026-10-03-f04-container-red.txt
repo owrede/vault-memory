@@ -69,4 +69,3 @@ AssertionError: expected [] to deeply equal [ { category: 'fact', …(3) } ]
       Tests  2 failed | 14 passed (16)
    Start at  16:41:40
    Duration  120ms (transform 19ms, setup 0ms, import 27ms, tests 8ms, environment 0ms)
-

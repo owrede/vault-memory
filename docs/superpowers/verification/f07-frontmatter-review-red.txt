@@ -39,4 +39,3 @@ AssertionError: expected { ok: false, …(2) } to match object { ok: false, …(
       Tests  1 failed | 9 passed (10)
    Start at  17:53:15
    Duration  747ms (transform 343ms, setup 0ms, import 493ms, tests 166ms, environment 0ms)
-

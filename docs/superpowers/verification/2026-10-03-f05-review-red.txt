@@ -102,4 +102,3 @@ AssertionError: expected [] to deeply equal [ 'Atlas' ]
       Tests  4 failed | 8 passed (12)
    Start at  17:00:19
    Duration  791ms (transform 294ms, setup 0ms, import 528ms, tests 171ms, environment 0ms)
-

@@ -213,4 +213,3 @@ AssertionError: expected [] to deeply equal [ { key: 'own', …(3) } ]
       Tests  6 failed | 2 passed (8)
    Start at  16:54:59
    Duration  129ms (transform 31ms, setup 0ms, import 46ms, tests 13ms, environment 0ms)
-

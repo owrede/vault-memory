@@ -106,4 +106,3 @@ AssertionError: expected { readOnlyHint: false, …(3) } to match object { readO
       Tests  4 failed | 4 passed (8)
    Start at  18:06:13
    Duration  2.95s (transform 364ms, setup 0ms, import 595ms, tests 2.47s, environment 0ms)
-

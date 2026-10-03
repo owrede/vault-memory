@@ -106,4 +106,3 @@ AssertionError: expected [ { …(17) }, { …(17) } ] to match object [ { text: 
       Tests  2 failed | 9 passed (11)
    Start at  16:19:04
    Duration  530ms (transform 233ms, setup 0ms, import 340ms, tests 106ms, environment 0ms)
-

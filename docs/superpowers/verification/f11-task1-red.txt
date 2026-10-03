@@ -1,0 +1,140 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/imports/conversation.test.ts src/imports/preview.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/imports/preview.test.ts (2 tests | 2 failed) 5ms
+   × makes deterministic identity-safe destinations and content hashes without using external IDs as paths 4ms
+   × rejects traversal in the target prefix 1ms
+ ❯ |unit| src/imports/conversation.test.ts (9 tests | 9 failed) 9ms
+   × keeps role and message identity in the imported source 4ms
+   × keeps tool identity, text and absent timestamps without inventing provenance 2ms
+   × rejects malformed, ambiguous or unsupported neutral data (0) 1ms
+   × rejects malformed, ambiguous or unsupported neutral data (1) 0ms
+   × rejects malformed, ambiguous or unsupported neutral data (2) 0ms
+   × rejects malformed, ambiguous or unsupported neutral data (3) 0ms
+   × rejects malformed, ambiguous or unsupported neutral data (4) 0ms
+   × rejects malformed, ambiguous or unsupported neutral data (5) 1ms
+   × fails closed for unknown and undocumented provider-specific schemas 0ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 11 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/imports/conversation.test.ts > keeps role and message identity in the imported source
+AssertionError: expected '' to be '# Conversation c1\n\n## m1 · user\n\n…' // Object.is equality
+
+- Expected
++ Received
+
+- # Conversation c1
+-
+- ## m1 · user
+-
+- Two pilots
+-
+
+ ❯ src/imports/conversation.test.ts:4:106
+      2| import {parseConversation,renderConversation} from './conversation.js';
+      3| const conversation={provider:'neutral',external_id:'c1',messages:[{id:…
+      4| it('keeps role and message identity in the imported source',()=>expect…
+       |                                                                                                          ^
+      5| it('keeps tool identity, text and absent timestamps without inventing …
+      6|  const c={...conversation,messages:[...conversation.messages,{id:'m2',…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/11]⎯
+
+ FAIL  |unit| src/imports/conversation.test.ts > keeps tool identity, text and absent timestamps without inventing provenance
+AssertionError: expected [] to deeply equal [ { provider: 'neutral', …(2) } ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "external_id": "c1",
+-     "messages": [
+-       {
+-         "id": "m1",
+-         "role": "user",
+-         "text": "Two pilots",
+-       },
+-       {
+-         "id": "m2",
+-         "role": "tool",
+-         "text": "Tool result",
+-       },
+-     ],
+-     "provider": "neutral",
+-   },
+- ]
++ []
+
+ ❯ src/imports/conversation.test.ts:7:43
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/11]⎯
+
+ FAIL  |unit| src/imports/conversation.test.ts > rejects malformed, ambiguous or unsupported neutral data (0)
+ FAIL  |unit| src/imports/conversation.test.ts > rejects malformed, ambiguous or unsupported neutral data (1)
+ FAIL  |unit| src/imports/conversation.test.ts > rejects malformed, ambiguous or unsupported neutral data (2)
+ FAIL  |unit| src/imports/conversation.test.ts > rejects malformed, ambiguous or unsupported neutral data (3)
+ FAIL  |unit| src/imports/conversation.test.ts > rejects malformed, ambiguous or unsupported neutral data (4)
+ FAIL  |unit| src/imports/conversation.test.ts > rejects malformed, ambiguous or unsupported neutral data (5)
+AssertionError: expected [Function] to throw an error
+ ❯ src/imports/conversation.test.ts:16:122
+     14|  [{...conversation,messages:[{id:'m1',role:'user',text:'x',at:'2026-02…
+     15|  [conversation,conversation],
+     16| ])('rejects malformed, ambiguous or unsupported neutral data (%#)',inp…
+       |                                                                                                                          ^
+     17| it('fails closed for unknown and undocumented provider-specific schema…
+     18|  expect(()=>parseConversation([conversation],'unknown' as 'neutral')).…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/11]⎯
+
+ FAIL  |unit| src/imports/conversation.test.ts > fails closed for unknown and undocumented provider-specific schemas
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ src/imports/conversation.test.ts:18:71
+     16| ])('rejects malformed, ambiguous or unsupported neutral data (%#)',inp…
+     17| it('fails closed for unknown and undocumented provider-specific schema…
+     18|  expect(()=>parseConversation([conversation],'unknown' as 'neutral')).…
+       |                                                                       ^
+     19|  expect(()=>parseConversation([{id:'c',current_node:'branch',mapping:{…
+     20| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/11]⎯
+
+ FAIL  |unit| src/imports/preview.test.ts > makes deterministic identity-safe destinations and content hashes without using external IDs as paths
+AssertionError: expected [] to have a length of 1 but got +0
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ src/imports/preview.test.ts:5:76
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/11]⎯
+
+ FAIL  |unit| src/imports/preview.test.ts > rejects traversal in the target prefix
+AssertionError: expected [Function] to throw an error
+ ❯ src/imports/preview.test.ts:8:112
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/11]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  11 failed (11)
+   Start at  18:51:57
+   Duration  161ms (transform 38ms, setup 0ms, import 58ms, tests 15ms, environment 0ms)

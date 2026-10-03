@@ -134,4 +134,3 @@ AssertionError: expected function to throw an error, but it didn't
       Tests  8 failed | 3 passed (11)
    Start at  15:24:32
    Duration  128ms (transform 14ms, setup 0ms, import 22ms, tests 9ms, environment 0ms)
-

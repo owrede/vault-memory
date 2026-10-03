@@ -1,6 +1,6 @@
 # F11 Gesprächsimport mit überprüfbarer Herkunft Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Gespräche als Quellen importieren und Aussagen erst über den geprüften Agenten-Schreibweg ableiten.
 
@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-03-basic-memory-inspired-design.md`, F11; der Feature-Vertrag unten konkretisiert dessen Lieferung.
 
-**Status:** Geplant. Tests und Kommandos dieses Plans sind Abnahmevorgaben und wurden noch nicht als Implementierungsnachweis ausgeführt.
+**Status:** Abgeschlossen für neutral-v1; TDD, Integration und unabhängige Prüfung unter `../verification/2026-10-03-f11-conversation-import.md`. Bedingte Providerparser bleiben ausdrücklich unsupported, siehe Ausführungspräzisierung.
 
 **Ausführungspräzisierung:** Neutral-v1 ist das gelieferte Importprofil. ChatGPT ist gemäß der Bedingung „nur gegen dokumentierte aktuelle Referenz“ nicht aktiviert: OpenAI beschreibt den Export, veröffentlicht aber kein verbindliches JSON-Mapping-Schema/versioniertes Originalfixture. `chatgpt` liefert deshalb explizit `unsupported_format`, einschließlich branching/current_node, statt still Varianten oder Anhänge zu verlieren. Kein synthetisches Fixture wird als Originalexport ausgegeben. Die neue Quelle wird über Delivery.write erstellt; bestehende Quellen über Delivery.update mit Callerhash.
 
@@ -53,7 +53,7 @@ Importe liegen in explizit gewähltem Quellordner. Keine automatische Modellanal
 
 **Interfaces:** Produziert die im Feature-Vertrag exakt definierten Typen und Funktionen. Konsumiert vorhandene Parser/Contract-Utilities nur über deren bestehende Exporte.
 
-- [ ] **Step 1: Folgenden primären Verhaltenstest zuerst anlegen.** Exporte mit Signaturen aus dem Feature-Vertrag zunächst als minimale Stubs anlegen (z.B. leere Ergebnislisten); der beobachtete RED muss eine falsche Ergebnisaussage sein, nicht bloß ein fehlender Import.
+- [x] **Step 1: Folgenden primären Verhaltenstest zuerst anlegen.** Exporte mit Signaturen aus dem Feature-Vertrag zunächst als minimale Stubs anlegen (z.B. leere Ergebnislisten); der beobachtete RED muss eine falsche Ergebnisaussage sein, nicht bloß ein fehlender Import.
 
 ```ts
 import {expect, it} from "vitest";
@@ -64,13 +64,13 @@ it("keeps role and message identity in the imported source", () => {
 });
 ```
 
-- [ ] **Step 2: RED prüfen.**
+- [x] **Step 2: RED prüfen.**
 
 Run: `npm test -- src/imports/conversation.test.ts`
 
 Expected: mindestens der primäre Erwartungswert schlägt mit bisher fehlender/falscher Funktionalität fehl. Bei Import-/ABI-Fehler erst Umgebung korrigieren und erneut laufen lassen.
 
-- [ ] **Step 3: Kernlogik implementieren.** Folgender Kernbaustein legt das Verhalten fest; im Modul in die oben deklarierte Funktion einbetten und die genannten Fehlerfälle jeweils mit eigenem RED→GREEN bearbeiten.
+- [x] **Step 3: Kernlogik implementieren.** Folgender Kernbaustein legt das Verhalten fest; im Modul in die oben deklarierte Funktion einbetten und die genannten Fehlerfälle jeweils mit eigenem RED→GREEN bearbeiten.
 
 ```ts
 return "# Conversation " + c.external_id + "\n" + c.messages.map(m =>
@@ -81,13 +81,13 @@ return "# Conversation " + c.external_id + "\n" + c.messages.map(m =>
 
 Verbindliche Fallmatrix: Unbekanntes Format; malformed JSON; doppelte Message-ID; Werkzeugantwort keine Useraussage; fehlender Zeitstempel nicht erfinden; nichttextuelle Anhänge als explicit unsupported; externe IDs mit ../ bleiben sanitized; ChatGPT branching/current_node statt alle Varianten doppelt importieren.
 
-- [ ] **Step 4: GREEN und Refactor.**
+- [x] **Step 4: GREEN und Refactor.**
 
 Run: `npm test -- src/imports/conversation.test.ts`
 
 Expected: sämtliche positiven und negativen Kernfälle bestehen. Bei Aufteilung in mehrere Kernmodule deren Tests zusätzlich in demselben Lauf angeben.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 Run: `git add src && git commit -m "feat: add F11 conversation-import core"`
 
@@ -99,17 +99,17 @@ Expected: nur Kernmodule und zugehörige Tests, keine ungeprüften Integrations�
 
 **Interfaces:** Konsumiert genau die Task-1-Signaturen. Produziert den unten festgelegten Nutzerpfad; keine separate Umsetzung derselben Fachlogik im MCP-/CLI-Handler.
 
-- [ ] **Step 1: Integrationstest vor Verdrahtung anlegen.** Echte temporäre Quellen/SQLite, deterministische Inputs, manuell erwartete Ausgaben und unveränderte Sideeffects im Fehlerfall verwenden.
+- [x] **Step 1: Integrationstest vor Verdrahtung anlegen.** Echte temporäre Quellen/SQLite, deterministische Inputs, manuell erwartete Ausgaben und unveränderte Sideeffects im Fehlerfall verwenden.
 
 CLI import --format neutral|chatgpt --input file --target obsidian-fs://vault/imports/ --preview standardmäßig nur Vorschau; --commit mit zuvor gespeicherter Manifestdatei und erwarteten Sourcehashes. Providerexport-Formate an versionierten Originalfixtures aus offiziellen Exportbeispielen prüfen; Schemaänderung liefert unsupported_format statt stillschweigend leerem Import. Rohquelle source:imported, import_source_id, import_hash, imported_at erhalten. Contenthash + Provider + external_id macht wiederholten identischen Import idempotent; geänderter Export braucht erwarteten bestehenden DocHash, locked/OCC verhindern Änderungen. Promotion nimmt ausgewählte message_ids/claims, erstellt evidence DocId#message_id, source:agent und confidence gemäß Ableitungsart via record_observation. Tests echte Delivery/Sink: identischer Import kein zusätzlicher Auditwrite; Exportupdate conflict ohne Hash; Quelle darf nicht in MemorySink; Promotion ohne existierende Quellmessage abgelehnt.
 
-- [ ] **Step 2: RED beobachten.**
+- [x] **Step 2: RED beobachten.**
 
 Run: `npm test -- imports`
 
 Expected: neuer Integrationspfad ist noch nicht verdrahtet; konkrete Resultat-/Zustandsassertion scheitert. Bestehende Tests dürfen nicht wegen fehlender Infrastruktur ausfallen. Zusätzlich neue unter anderen Verzeichnissen angelegte Integrationstestdateien explizit angeben.
 
-- [ ] **Step 3: Verdrahten und dokumentieren.** Daten vom frisch gelesenen SourceConnector in Task-1-Kern geben, Resultat über bestehenden Controller zurückführen. Für Mutationen ausschließlich DeliveryAdapter mit echtem expectedHash. Neue SQL-Operationen verwenden gebundene Parameter/Transaktionen. Folgende gemeinsame Mutation ist verbindlich:
+- [x] **Step 3: Verdrahten und dokumentieren.** Daten vom frisch gelesenen SourceConnector in Task-1-Kern geben, Resultat über bestehenden Controller zurückführen. Für Mutationen ausschließlich DeliveryAdapter mit echtem expectedHash. Neue SQL-Operationen verwenden gebundene Parameter/Transaktionen. Folgende gemeinsame Mutation ist verbindlich:
 
 ```ts
 const original = await source.readDocument(docId);
@@ -120,13 +120,13 @@ if (!result.ok) return result; // document_locked/OCC/provenance bleiben unverä
 
 Bei reinen Abruf-/Inferenzfeatures entfällt dieser Mutationspfad vollständig. Dokumentation erklärt Aktivierung, Default, konkrete Beispielanfrage, Konfliktbehandlung und den oben beschriebenen Migrationsweg.
 
-- [ ] **Step 4: GREEN und Gesamtprüfung.**
+- [x] **Step 4: GREEN und Gesamtprüfung.**
 
 Run: `npm test && npm run lint && npm run lint:adapters && npm run build`
 
 Expected: alle lokalen Tests inklusive neuer Integrationstests und unveränderter v1-Eingabeschemas grün; keine Adapterimportverletzung; CLI-/Serverbundles erfolgreich. Migrationsfeatures zusätzlich auf frisch initialisierter und aktualisierter SQLite prüfen. ONNX-/Host-Netzwerktests dürfen die Standardtests nicht von externen Diensten abhängig machen.
 
-- [ ] **Step 5: Commit, Review und Nachweis.**
+- [x] **Step 5: Commit, Review und Nachweis.**
 
 Run: `git add src README.md CHANGELOG.md && git commit -m "feat: integrate F11 conversation-import"`
 
