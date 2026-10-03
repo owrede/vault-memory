@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Opt-in reviewed neutral-v1 conversation imports: deterministic manifests,
+  imported provenance outside MemorySinks, hash/lock protected updates and
+  separate message-evidence promotion through the existing agent write path.
+
 - Opt-in session lifecycle tools and CLI: freshly verified brief context, explicit
   agent summaries, per-sink session/event idempotence, recoverable SQLite v19
   reservations and a versioned portable hook with a bounded process deadline.

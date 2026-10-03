@@ -485,3 +485,32 @@ The optional portable host adapter is [examples/hooks/neutral-session.mjs](examp
 ```
 
 For a checkpoint, use `event:"session_checkpoint"` and place the checkpoint input above in `input`. Unknown fields, unsupported versions and transcript fields are rejected. `node examples/hooks/neutral-session.mjs event.json` invokes the built CLI with a 25-second deadline (`VM_HOOK_TIMEOUT_MS`:100–25000); `VM_CONFIG_DIR` can isolate configuration. Timeout emits `hook_timeout`: retry the same event because the process may have completed an atomic write just before termination. Only this explicitly versioned neutral payload is supported; configure host-specific event translation yourself. No Claude/Codex config is edited and no background loop is installed.
+
+### Reviewed conversation imports (F11)
+
+Enable `conversation_import` in `[server].features` for the additive `preview_conversation_import`, `commit_conversation_import` and `promote_conversation` tools, and corresponding CLI commands. The initial supported input is **neutral-v1**: an array of `{provider,external_id,messages:[{id,role,text,at?}]}`. Roles are `user`, `assistant`, `system`, `tool`; IDs must be unique, optional times explicit ISO timestamps, attachments unsupported. No timestamps or user authorship are invented. Example:
+
+```json
+[{"provider":"neutral","external_id":"chat-42","messages":[{"id":"m1","role":"user","text":"Two pilots"},{"id":"m2","role":"tool","text":"Tool result"}]}]
+```
+
+```sh
+vault-memory import --format neutral --input conversation.json --target obsidian-fs://main/imports/ --json > manifest.json
+# Inspect the saved manifest before applying it:
+vault-memory import --commit manifest.json --json
+vault-memory promote-conversation --input promotion.json --json
+```
+
+Preview is the default and writes no source or memory document. It captures each existing source's canonical expected hash (`null` for a new destination) and uses a deterministic SHA256 identity from provider/external ID for safe filenames. External IDs are never filesystem paths. The versioned manifest includes full rendered text, content hash, conversation identity, destination and explicit import time. Commit validates these fields against each other and refuses edited/inconsistent manifests. Existing exports require the captured hash; source changes or deletions after preview produce a conflict. Locks and readonly checks remain active. Identical canonical imports reuse their source without an additional audit write. An updated export retains the original `imported_at`; message timestamps remain unchanged.
+
+Imported sources carry `source:imported`, `import_source_id`, `import_hash`, `imported_at` and validated conversation metadata. They must be outside MemorySinks. Commit uses the existing DeliveryAdapter; a batch reports completed per-document results if a later write fails, so inspect the result before retrying. Normal indexing builds searchable derived data; no model inference runs during import.
+
+Promotion is a separate explicit write through `record_observation` into an existing provisioned sink:
+
+```json
+{"doc_id":"obsidian-fs://main/imports/conversation-HASH.md","expected_hash":"CANONICAL_SOURCE_HASH","message_ids":["m1"],"claim":"Two pilots","mode":"quote","sink":"memory","observed_at":"2026-10-03T12:00:00Z"}
+```
+
+The canonical source must still match its import metadata and caller hash; missing messages and fabricated quotes are rejected. `quote` requires exact selected text and records `confidence:direct`; `inference` records `confidence:inferred`. Both write `source:agent` with concrete `DocId#message-id` evidence, source hash and original roles. Tool messages remain tool messages. Repeating an explicit promotion creates another observation; promotion is not advertised as idempotent. Source imports and agent-derived claims remain separately inspectable.
+
+Provider export parsers are enabled only against a documented, verified compatibility profile. OpenAI documents [data export](https://help.openai.com/en/articles/7260999-exporting-your-chatgpt-history-and-data), but does not provide a stable JSON mapping schema or public versioned original fixture. Therefore `--format chatgpt` currently returns `unsupported_format`; branching or attachments are never silently flattened. Convert to neutral-v1 explicitly. The synthetic neutral fixture contains no private exported conversation. No existing v1 schemas, default tool catalog or global host configuration are changed. CLI exit codes:0 success,2 invalid/unsupported input,4 write conflict,5 configuration/backend error.

@@ -8,6 +8,20 @@ const args = process.argv.slice(2);
 const command = args[0] ?? "serve";
 
 switch (command) {
+  case "import":
+  case "promote-conversation":
+    try {
+      const { parseImportArgs } = await import("./cli/import.js");
+      const parsed = parseImportArgs(args);
+      process.exitCode = await import("./adapters/source/obsidian-fs/import-runtime.js").then((m) =>
+        m.runLocalImport(parsed),
+      );
+    } catch (error) {
+      console.error(String(error));
+      if (args.includes("--json")) console.log(JSON.stringify({ ok: false, error: String(error) }));
+      process.exitCode = 2;
+    }
+    break;
   case "session":
     try {
       const { parseSessionArgs } = await import("./cli/session.js");
@@ -292,6 +306,8 @@ COMMANDS:
   init                   Interactive config wizard (Phase 5 — not yet)
   session start         Read existing brief context with fresh source checks
   session checkpoint    Record explicit idempotent checkpoint from --input FILE
+  import                Preview conversations; --commit FILE applies a saved manifest
+  promote-conversation  Explicitly derive agent memory from selected messages
   help, --help           Show this message
 
 CONFIG:

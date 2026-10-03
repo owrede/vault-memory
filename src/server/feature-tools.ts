@@ -1,3 +1,10 @@
+import {
+  prepareImport,
+  commitImport,
+  ImportManifestSchema,
+  PreviewImportSchema,
+} from "../imports/commit.js";
+import { promoteConversation, PromotionSchema } from "../imports/promotion.js";
 import { SessionStartSchema, CheckpointSchema } from "../session/hooks.js";
 import { startSession, recordCheckpoint, type SessionDeps } from "../session/lifecycle.js";
 import { inspectSchema, type InspectSchemaDeps } from "../schema/inspect.js";
@@ -41,6 +48,26 @@ export const FEATURE_TOOLS = {
   },
 } as const;
 export const FEATURE_TOOL_GROUPS = {
+  conversation_import: [
+    {
+      name: "preview_conversation_import",
+      description:
+        "Conversation import v1: preview supported neutral conversations and capture expected source hashes without writing.",
+      schema: PreviewImportSchema,
+    },
+    {
+      name: "commit_conversation_import",
+      description:
+        "Conversation import v1: commit a reviewed manifest outside MemorySinks with source:imported, OCC, locks and idempotence.",
+      schema: z.object({ manifest: ImportManifestSchema }).strict(),
+    },
+    {
+      name: "promote_conversation",
+      description:
+        "Conversation import v1: explicitly record selected messages as agent evidence; quote mode requires exact text, inference remains inferred.",
+      schema: PromotionSchema,
+    },
+  ],
   session_lifecycle: [
     {
       name: "start_session",
@@ -68,6 +95,44 @@ export function registerFeatureTools(
   deps: FeatureToolDeps,
   features: readonly string[],
 ): void {
+  if (features.includes("conversation_import")) {
+    if (!deps.session) throw new Error("Import dependencies missing");
+    for (const tool of FEATURE_TOOL_GROUPS.conversation_import) {
+      server.registerTool(
+        tool.name,
+        {
+          description: tool.description,
+          inputSchema: tool.schema.shape,
+          annotations: {
+            readOnlyHint: tool.name === "preview_conversation_import",
+            destructiveHint: tool.name === "commit_conversation_import",
+            idempotentHint: tool.name !== "promote_conversation",
+            openWorldHint: false,
+          },
+        },
+        async (input: unknown) => {
+          try {
+            if (tool.name === "preview_conversation_import") {
+              const args = PreviewImportSchema.parse(input);
+              return ok(
+                await prepareImport(
+                  args.conversations,
+                  args.target,
+                  args.imported_at,
+                  deps.session!,
+                ),
+              );
+            }
+            if (tool.name === "commit_conversation_import")
+              return ok(await commitImport(tool.schema.parse(input).manifest, deps.session!));
+            return ok(await promoteConversation(PromotionSchema.parse(input), deps.session!));
+          } catch (error) {
+            return errorResponse(errorMessage(error));
+          }
+        },
+      );
+    }
+  }
   if (features.includes("session_lifecycle")) {
     if (!deps.session) throw new Error("Session dependencies missing");
     for (const tool of FEATURE_TOOL_GROUPS.session_lifecycle) {

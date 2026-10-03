@@ -1,3 +1,4 @@
+import { formatConversationDestination } from "../adapters/source/obsidian-fs/import-naming.js";
 import { createHash } from "node:crypto";
 import { parseDocId, decomposeDocId } from "../adapters/registry.js";
 import {
@@ -32,7 +33,7 @@ export function previewImport(conversations: Conversation[], target: string): Im
       source_id: "conversation:" + identity,
       content,
       hash: contentHash(content),
-      target: target + "conversation-" + identity + ".md",
+      target: formatConversationDestination(target, identity),
       conversation: c,
     };
   });

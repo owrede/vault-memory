@@ -257,3 +257,80 @@ it("records session checkpoints through the built opt-in CLI without embeddings 
   const invalid = run("session", "start", "--topic", "x", "--max-chars", "-1", "--json");
   expect(invalid.code).toBe(2);
 });
+it("previews and commits conversation sources through the built CLI and promotes evidence separately", async () => {
+  const { provisionSink } = await import("../adapters/delivery/obsidian-fs/sentinel.js");
+  await f.memorySinkRegistry.registerMemorySinks(
+    [{ name: "memory", handle: "obsidian-fs://lab/_memory/", contract: "default-memory-v1" }],
+    {
+      resolveVaultAbsolutePath: () => f.root,
+      provisioner: (sink, root) => provisionSink(sink, root, { version: "test" }),
+    },
+  );
+  await fs.writeFile(
+    join(configDir, "config.toml"),
+    `[server]\nfeatures=["conversation_import"]\n[[vaults]]\nname="lab"\npath=${JSON.stringify(f.root)}\nwrite_enabled=true\n[[memory_sinks]]\nname="memory"\nhandle="obsidian-fs://lab/_memory/"\ncontract="default-memory-v1"\n`,
+  );
+  const input = join(f.root, "conversation.json"),
+    manifestFile = join(f.root, "manifest.json");
+  await fs.writeFile(
+    input,
+    JSON.stringify([
+      {
+        provider: "neutral",
+        external_id: "cli-chat",
+        messages: [{ id: "message1", role: "user", text: "Two pilots" }],
+      },
+    ]),
+  );
+  const preview = run(
+    "import",
+    "--format",
+    "neutral",
+    "--input",
+    input,
+    "--target",
+    "obsidian-fs://lab/imports/",
+    "--json",
+  );
+  expect(preview.code).toBe(0);
+  const manifest = JSON.parse(preview.stdout);
+  expect(manifest.items).toHaveLength(1);
+  expect(await f.source.exists(manifest.items[0].target)).toBe(false);
+  await fs.writeFile(manifestFile, preview.stdout);
+  const commit = run("import", "--commit", manifestFile, "--json");
+  expect(commit.code).toBe(0);
+  expect(JSON.parse(commit.stdout).ok).toBe(true);
+  const doc = await f.source.readDocument(manifest.items[0].target);
+  expect(doc.properties.source).toBe("imported");
+  expect(JSON.parse(run("import", "--commit", manifestFile, "--json").stdout)).toMatchObject({
+    results: [{ reused: true }],
+  });
+  const promotion = join(f.root, "promotion.json");
+  await fs.writeFile(
+    promotion,
+    JSON.stringify({
+      doc_id: doc.id,
+      expected_hash: doc.hash,
+      message_ids: ["message1"],
+      claim: "Two pilots",
+      mode: "quote",
+      sink: "memory",
+      observed_at: "2026-10-03T12:00:00Z",
+    }),
+  );
+  const result = run("promote-conversation", "--input", promotion, "--json");
+  expect(result.code).toBe(0);
+  expect(JSON.parse(result.stdout).ok).toBe(true);
+  const unsupported = run(
+    "import",
+    "--format",
+    "chatgpt",
+    "--input",
+    input,
+    "--target",
+    "obsidian-fs://lab/imports/",
+    "--json",
+  );
+  expect(unsupported.code).toBe(2);
+  expect(unsupported.stdout).toContain("unsupported_format");
+});

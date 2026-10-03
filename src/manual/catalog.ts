@@ -10,6 +10,10 @@ const mutations = new Set([
   "vacuum_embeddings",
   "record_observation",
   "record_checkpoint",
+  "commit_conversation_import",
+  "promote_conversation",
+  "import-commit",
+  "promote-conversation",
   "session-checkpoint",
   "supersede",
   "compile_brief",
@@ -33,8 +37,17 @@ export function operationAnnotations(name: string) {
       "edit",
       "supersede",
       "compile_brief",
+      "commit_conversation_import",
+      "import-commit",
     ].includes(name),
-    idempotentHint: readOnlyHint || ["record_checkpoint", "session-checkpoint"].includes(name),
+    idempotentHint:
+      readOnlyHint ||
+      [
+        "record_checkpoint",
+        "session-checkpoint",
+        "commit_conversation_import",
+        "import-commit",
+      ].includes(name),
     openWorldHint: ["register_contracts_as_tools", "instantiate_contract"].includes(name),
   };
 }
@@ -51,6 +64,12 @@ export function manualTopic(topic: string) {
       "Read existing brief context. session start --vault V --topic T [--sink S] [--max-chars N] [--as-of ISO] --json; requires session_lifecycle.",
     "session-checkpoint":
       "Record explicit idempotent summary. session checkpoint --input FILE --json; requires session_lifecycle and an existing sink.",
+    "import-preview":
+      "Preview supported neutral-v1 conversations without writing: import --format neutral --input FILE --target SOURCE_FOLDER --json. Requires conversation_import.",
+    "import-commit":
+      "Commit reviewed import manifest with expected source hashes: import --commit MANIFEST --json. Requires conversation_import.",
+    "promote-conversation":
+      "Explicitly record selected messages as agent evidence: promote-conversation --input FILE --json. Requires conversation_import.",
     index: "Build or update the derived local index; mutates SQLite and may request embeddings.",
     "add-vault": "Register a vault in local configuration.",
     search: "Search indexed knowledge. --query Q [--vault V] [--as-of ISO] [--json]",

@@ -12,6 +12,8 @@
 
 **Status:** Geplant. Tests und Kommandos dieses Plans sind Abnahmevorgaben und wurden noch nicht als Implementierungsnachweis ausgeführt.
 
+**Ausführungspräzisierung:** Neutral-v1 ist das gelieferte Importprofil. ChatGPT ist gemäß der Bedingung „nur gegen dokumentierte aktuelle Referenz“ nicht aktiviert: OpenAI beschreibt den Export, veröffentlicht aber kein verbindliches JSON-Mapping-Schema/versioniertes Originalfixture. `chatgpt` liefert deshalb explizit `unsupported_format`, einschließlich branching/current_node, statt still Varianten oder Anhänge zu verlieren. Kein synthetisches Fixture wird als Originalexport ausgegeben. Die neue Quelle wird über Delivery.write erstellt; bestehende Quellen über Delivery.update mit Callerhash.
+
 **Voraussetzungen:** F04, F05, F07.
 
 ## Global Constraints
