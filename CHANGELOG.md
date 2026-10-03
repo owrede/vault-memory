@@ -12,7 +12,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-_Nothing yet._
+### Added
+
+- Document locks: Boolean `locked: true` in stored frontmatter prevents
+  overwrites, frontmatter changes, deletion and superseding through delivery
+  adapters. A correct hash cannot bypass the lock. Unlock in Obsidian or a
+  text editor, then read the document again before retrying.
+
+### Fixed
+
+- Locked documents return `document_locked` consistently through note and
+  frontmatter handlers. Rejected writes no longer suppress later external
+  editor events; watcher suppression runs only immediately before a mutation.
 
 ## [2.4.1] — 2026-08-09
 

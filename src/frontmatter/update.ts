@@ -33,6 +33,8 @@ import type { AdapterRegistry } from "../adapters/registry.js";
 import { formatDocId, parseSourceHandle } from "../adapters/registry.js";
 import type { MemorySinkRegistry } from "../memory/registry.js";
 import { errorMessage } from "../errors/format.js";
+import { getDocumentLockConflict } from "../adapters/delivery/document-lock.js";
+import type { WriteOptions } from "../adapters/delivery/types.js";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public API
@@ -87,7 +89,12 @@ export interface UpdateSuccess {
 
 export interface UpdateConflict {
   ok: false;
-  reason: "hash_mismatch" | "permission_denied" | "note_not_found" | "sink_write_blocked";
+  reason:
+    | "hash_mismatch"
+    | "permission_denied"
+    | "note_not_found"
+    | "sink_write_blocked"
+    | "document_locked";
   currentHash?: string;
   message: string;
   /** Phase 2 envelope (sink_write_blocked). */
@@ -313,6 +320,8 @@ export async function updateFrontmatter(input: UpdateFrontmatterInput): Promise<
 
   const body = blocksToBody(doc);
   const existingFm = stripWikilinks(doc.properties as Record<string, unknown>);
+  const lock = getDocumentLockConflict(existingFm);
+  if (lock) return lock;
   // The current hash on disk is exactly `doc.hash` (ObsidianFsSource uses
   // `computeNoteHash(body, fm)`). The wikilinks injection happens AFTER
   // hash computation in the parser, so doc.hash matches the gray-matter
@@ -351,31 +360,26 @@ export async function updateFrontmatter(input: UpdateFrontmatterInput): Promise<
   }
 
   // ── WRITE via Delivery ─────────────────────────────────────────────────────
-  // Pass the suppression hook through opts? — DeliveryAdapter does not
-  // expose it on the v2 surface. Instead, call it directly before
-  // dispatching; this matches the v1 ordering (hook fires immediately
-  // before the fs write).
-  onBeforeFsWrite?.();
+  // The adapter calls suppression only once its guards have accepted the
+  // mutation. A rejected update must not hide an external editor event.
 
   const partial: Partial<Document> = {
     blocks: [{ kind: "paragraph", text: body }],
     properties: Object.keys(next).length > 0 ? next : {},
   };
-  const writeOpts: {
-    expectedHash: string;
-    clientId?: string;
-  } = {
+  const writeOpts: WriteOptions = {
     expectedHash: currentHash,
+    onBeforeWrite: onBeforeFsWrite,
   };
   if (clientId !== undefined) writeOpts.clientId = clientId;
 
   const writeRes = await delivery.write(docId, partial, writeOpts);
   if (!writeRes.ok) {
     // Shape-map Delivery v2 conflict reasons back to v1 update result.
-    if (writeRes.reason === "permission_denied") {
+    if (writeRes.reason === "permission_denied" || writeRes.reason === "document_locked") {
       return {
         ok: false,
-        reason: "permission_denied",
+        reason: writeRes.reason,
         message: writeRes.message ?? "Write rejected by delivery adapter.",
       };
     }
@@ -420,7 +424,7 @@ async function resolveAdapters(
     write: (
       id: DocId,
       doc: Partial<Document>,
-      opts?: { expectedHash?: string; clientId?: string },
+      opts?: WriteOptions,
     ) => Promise<
       | { ok: true; newHash: string; doc_id: DocId; created: boolean }
       | { ok: false; reason: string; currentHash?: string; message?: string }

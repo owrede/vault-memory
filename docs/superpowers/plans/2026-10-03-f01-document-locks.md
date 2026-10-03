@@ -103,7 +103,7 @@ Expected: nur Policy, Adapter und zugehörige Tests im Commit.
 - Consumes: Task-1 `getDocumentLockConflict(...)`, Konflikt `document_locked`.
 - Produces: `WriteOptions.onBeforeWrite?: () => void` als rein interner Callback. FS-Adapter reicht ihn in bestehendes `onBeforeFsWrite` weiter. Stub ruft ihn unmittelbar vor Map-Mutation. `updateFrontmatter`-Konflikte enthalten `document_locked`. Keine neue öffentliche MCP-Eingabe.
 
-- [ ] **Step 1: RED-Tests schreiben.** In `update.test.ts` gesperrte Datei mit bestehender Testfixture anlegen. `merge:{locked:{$unset:true}}` und `merge:{}` beide ablehnen; Bytes/DB/Audit und Hook unangetastet. Handlerfixture: echte `AdapterRegistry`, `ObsidianFsSource`, `ObsidianFsDelivery`, `VaultManager`, `MemorySinkRegistry` und `SuppressionSet`. Nur von `createNotesHandlers` konsumierte Dependencies aus realen Instanzen bereitstellen.
+- [ ] **Step 1: RED-Tests schreiben.** In `update.test.ts` gesperrte Datei mit bestehender Testfixture anlegen. `merge:{locked:{$unset:true}}` und `merge:{}` beide ablehnen; Bytes/DB/Audit und Hook unangetastet. Handlerfixture: echte `AdapterRegistry`, `ObsidianFsSource`, `ObsidianFsDelivery`, `VaultManager`, `MemorySinkRegistry` und `SuppressionSet`. Nur von `makeNotesHandlers` konsumierte Dependencies aus realen Instanzen bereitstellen.
 
 ```ts
 const result = await handlers.write_note({vault: "locks", path: "approved.md", content: "Changed", expected_hash: originalHash});

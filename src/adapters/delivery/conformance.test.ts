@@ -209,7 +209,8 @@ describe.each(adapters)("DeliveryAdapter conformance (%s)", (_name, factory) => 
           properties: { locked: true },
         });
         if (!first.ok) throw new Error("fixture creation failed");
-        const opts = { expectedHash: first.newHash };
+        let callbackCount = 0;
+        const opts = { expectedHash: first.newHash, onBeforeWrite: () => callbackCount++ };
         const patch = {
           properties: { locked: false },
           blocks: [{ kind: "paragraph" as const, text: "Changed" }],
@@ -223,9 +224,38 @@ describe.each(adapters)("DeliveryAdapter conformance (%s)", (_name, factory) => 
         // silently remove the document either.
         const second = await f.adapter.update(id, patch, opts);
         expect(second).toMatchObject({ ok: false, reason: "document_locked" });
+        expect(callbackCount).toBe(0);
         if (f.vaultDir) {
           expect(await fs.readFile(join(f.vaultDir, "locked.md"), "utf8")).toContain("Approved");
         }
+      } finally {
+        await f.cleanup();
+      }
+    },
+  );
+
+  it.each(["write", "update", "delete"] as const)(
+    "calls the mutation hook exactly once on a successful %s",
+    async (operation) => {
+      const f = await factory();
+      try {
+        const id = f.mintId("hook.md");
+        const first = await f.adapter.write(id, {
+          blocks: [{ kind: "paragraph", text: "Original" }],
+        });
+        if (!first.ok) throw new Error("fixture creation failed");
+        let callbackCount = 0;
+        const opts = { expectedHash: first.newHash, onBeforeWrite: () => callbackCount++ };
+        const result =
+          operation === "delete"
+            ? await f.adapter.delete(id, opts)
+            : await f.adapter[operation](
+                id,
+                { blocks: [{ kind: "paragraph", text: "Changed" }] },
+                opts,
+              );
+        expect(result.ok).toBe(true);
+        expect(callbackCount).toBe(1);
       } finally {
         await f.cleanup();
       }

@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, beforeEach, afterEach, vi } from "vitest";
 import { promises as fs } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -7,6 +7,11 @@ import { Database } from "../db/index.js";
 import type { Vault } from "../vault/index.js";
 import { updateFrontmatter } from "./update.js";
 import { sha256 } from "../adapters/source/obsidian-fs/hash.js";
+import { AdapterRegistry } from "../adapters/registry.js";
+import { ObsidianFsSource } from "../adapters/source/obsidian-fs/index.js";
+import { ObsidianFsDelivery } from "../adapters/delivery/obsidian-fs/index.js";
+import type { DocId, Document } from "../types.js";
+import type { WriteOptions } from "../adapters/delivery/types.js";
 
 interface TestCtx {
   vault: Vault;
@@ -83,6 +88,59 @@ describe("updateFrontmatter", () => {
   let ctx: TestCtx;
   afterEach(async () => {
     await ctx.cleanup();
+  });
+
+  it.each([{}, { locked: { $unset: true } }, { locked: false }, { status: "changed" }])(
+    "refuses a locked document even for merge %j, without side effects",
+    async (merge) => {
+      ctx = await makeCtx();
+      const { absPath } = await writeNote(ctx, "n.md", { locked: true }, "Approved\n");
+      const before = await fs.readFile(absPath, "utf8");
+      const row = ctx.vault.db.notes.getByPath("n.md");
+      const audit = ctx.vault.db.audit.listWrites({});
+      const hook = vi.fn();
+      const result = await updateFrontmatter({
+        vault: ctx.vault,
+        relativePath: "n.md",
+        merge,
+        onBeforeFsWrite: hook,
+      });
+      expect(result).toMatchObject({ ok: false, reason: "document_locked" });
+      expect(await fs.readFile(absPath, "utf8")).toBe(before);
+      expect(ctx.vault.db.notes.getByPath("n.md")).toEqual(row);
+      expect(ctx.vault.db.audit.listWrites({})).toEqual(audit);
+      expect(hook).not.toHaveBeenCalled();
+    },
+  );
+
+  it("preserves the delivery lock conflict if the editor locks after the source read", async () => {
+    ctx = await makeCtx();
+    const { absPath } = await writeNote(ctx, "n.md", {}, "Approved\n");
+    class LockingDelivery extends ObsidianFsDelivery {
+      override async write(id: DocId, doc: Partial<Document>, opts?: WriteOptions) {
+        // Reproduce the external edit at the Source/Delivery boundary;
+        // all guard and write behavior remains in the real adapter.
+        await fs.writeFile(absPath, "---\nlocked: true\n---\nApproved\n");
+        return super.write(id, doc, opts);
+      }
+    }
+    const registry = new AdapterRegistry();
+    const source = new ObsidianFsSource(ctx.vault.config);
+    const delivery = new LockingDelivery(ctx.vault, "test");
+    registry.registerSource(source.handle, source);
+    registry.registerDelivery(delivery.handle, delivery);
+    const hook = vi.fn();
+    const result = await updateFrontmatter({
+      vault: ctx.vault,
+      registry,
+      relativePath: "n.md",
+      merge: { status: "changed" },
+      onBeforeFsWrite: hook,
+    });
+    expect(result).toMatchObject({ ok: false, reason: "document_locked" });
+    expect(await fs.readFile(absPath, "utf8")).toBe("---\nlocked: true\n---\nApproved\n");
+    expect(ctx.vault.db.audit.listWrites({})).toHaveLength(0);
+    expect(hook).not.toHaveBeenCalled();
   });
 
   it("plain set adds a key", async () => {

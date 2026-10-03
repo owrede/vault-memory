@@ -78,3 +78,17 @@ Pro Lieferung werden commitbarer Code, Tests, Bedienungsdokumentation und ein Pr
 ## Planindex
 
 Je Feature liegt ein eigener Plan unter `docs/superpowers/plans/2026-10-03-fNN-*.md`. Die Ausführung erfolgt zunächst inline für F01 mit anschließendem unabhängigem Code-Review. Ein Worktree unter `/private/tmp/vault-memory-basic-memory-features` hält den bisherigen Checkout sauber. Der Nutzer hat Erstellung der Pläne und anschließenden Implementierungsbeginn bereits beauftragt.
+
+## Einzelpläne
+
+- [document-locks](../plans/2026-10-03-f01-document-locks.md)
+- [targeted-edits](../plans/2026-10-03-f02-targeted-edits.md)
+- [compact-retrieval](../plans/2026-10-03-f03-compact-retrieval.md)
+- [categorized-observations](../plans/2026-10-03-f04-categorized-observations.md)
+- [domain-relations](../plans/2026-10-03-f05-domain-relations.md)
+- [schema-validation-drift](../plans/2026-10-03-f06-schema-validation-drift.md)
+- [valid-time](../plans/2026-10-03-f07-valid-time.md)
+- [cli-manuals](../plans/2026-10-03-f08-cli-manuals.md)
+- [local-onnx-embeddings](../plans/2026-10-03-f09-local-onnx-embeddings.md)
+- [session-checkpoints](../plans/2026-10-03-f10-session-checkpoints.md)
+- [conversation-import](../plans/2026-10-03-f11-conversation-import.md)

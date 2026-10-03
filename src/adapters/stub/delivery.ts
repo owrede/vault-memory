@@ -125,6 +125,7 @@ export class StubDelivery implements DeliveryAdapter {
       hash: "",
     };
     merged.hash = computeStubHash(merged);
+    opts?.onBeforeWrite?.();
     this.docs.set(id, merged);
     return { ok: true, doc_id: id, newHash: merged.hash, created };
   }
@@ -147,11 +148,12 @@ export class StubDelivery implements DeliveryAdapter {
       hash: "",
     };
     next.hash = computeStubHash(next);
+    opts?.onBeforeWrite?.();
     this.docs.set(id, next);
     return { ok: true, doc_id: id, newHash: next.hash };
   }
 
-  async delete(id: DocId, _opts?: WriteOptions): Promise<DeleteResult> {
+  async delete(id: DocId, opts?: WriteOptions): Promise<DeleteResult> {
     // Hard-deletion of memory documents is forbidden in v2.0.0
     // (parity with ObsidianFsDelivery; see Plan 02-03 RESEARCH Pitfall 5).
     if (this.memorySinkRegistry) {
@@ -171,6 +173,7 @@ export class StubDelivery implements DeliveryAdapter {
     }
     const lock = getDocumentLockConflict(this.docs.get(id)?.properties);
     if (lock) return lock;
+    if (this.docs.has(id)) opts?.onBeforeWrite?.();
     const existed = this.docs.delete(id);
     if (!existed) {
       return { ok: false, reason: "not_found", message: `Document not found: ${id}` };

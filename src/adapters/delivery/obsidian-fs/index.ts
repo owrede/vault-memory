@@ -268,6 +268,7 @@ export class ObsidianFsDelivery implements DeliveryAdapter {
       ...(opts?.expectedHash !== undefined ? { expectedHash: opts.expectedHash } : {}),
       clientId: effectiveClientId,
       isMemorySinkWrite: this.isMemorySinkWriteFor(id),
+      onBeforeFsWrite: opts?.onBeforeWrite,
     });
     return v1ToV2WriteResult(id, v1);
   }
@@ -367,6 +368,7 @@ export class ObsidianFsDelivery implements DeliveryAdapter {
       expectedHash: opts.expectedHash,
       clientId: effectiveClientId,
       isMemorySinkWrite: this.isMemorySinkWriteFor(id),
+      onBeforeFsWrite: opts?.onBeforeWrite,
     });
     return v1ToV2UpdateResult(id, v1);
   }
@@ -435,6 +437,7 @@ export class ObsidianFsDelivery implements DeliveryAdapter {
       expectedHash: opts.expectedHash,
       clientId: effectiveClientId,
       isMemorySinkWrite: this.isMemorySinkWriteFor(id),
+      onBeforeFsWrite: opts?.onBeforeWrite,
     });
     if (!v1.ok) {
       // v1 returns hash_mismatch when the file is absent. Re-shape to

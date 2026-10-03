@@ -191,6 +191,8 @@ export type DeleteResult = DeleteSuccess | WriteConflict;
  * a successful write would.
  */
 export interface WriteOptions {
+  /** Called immediately before an actual backing-store mutation, after guards. */
+  onBeforeWrite?: () => void;
   /** OCC token — refuse write if on-store hash differs. */
   expectedHash?: string;
   /** Audit-log attribution; defaults at constructor level (D-02). */

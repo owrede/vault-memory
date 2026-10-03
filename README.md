@@ -247,6 +247,31 @@ tools promoted to MCP Resources remain callable through v2.x with a `DEPRECATED`
 notice in their tool description (removal scheduled for v3.0.0). See
 [CHANGELOG.md](./CHANGELOG.md) for full history.
 
+## Document locks
+
+Set the Boolean frontmatter field `locked: true` to protect a reviewed note:
+
+```yaml
+locked: true
+```
+
+The delivery adapters reject overwrites, updates, frontmatter changes,
+deletion and `supersede` with `{ "ok": false, "reason": "document_locked" }`.
+The lock is checked against the currently stored document, so a matching
+`expected_hash`, an omitted frontmatter payload or an incoming `locked: false`
+cannot bypass it. Locked notes remain readable and searchable.
+
+You can create a locked note or set the lock on an editable note. To unlock an
+existing note, remove the field or set it to `false` directly in Obsidian or a
+text editor, then read the note again to obtain its current hash. There is no
+agent override. Only the Boolean `true` locks; the string `"true"`, `false`,
+`null` and an absent field do not.
+
+The lock is an application-level editing rule. Existing read-only, path,
+MemorySink, provenance and concurrency protections still apply. Rejected
+operations leave the file, SQLite index, write audit and watcher suppression
+unchanged. External editors retain normal access to Markdown files.
+
 ## License
 
 MIT.
