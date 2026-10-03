@@ -90,3 +90,14 @@ describe("explicit categorized observations", () => {
     ]);
   });
 });
+it("preserves literal inline-code and non-trailing validity examples", () => {
+  const claims = [
+    "The literal `<!-- validity: {} -->` is documentation.",
+    "Documentation <!-- validity: {} --> continues.",
+    "The example `<!-- validity: broken -->`",
+  ];
+  for (const claim of claims)
+    expect(parseObservations(`- [fact] ${claim}`)).toEqual([
+      { category: "fact", text: claim, line_start: 1, line_end: 1 },
+    ]);
+});

@@ -14,7 +14,15 @@ export function parseObservations(body: string): ObservationDraft[] {
     if (!tagged || tagged[1] === "x" || !tagged[2]!.trim()) return [];
     let text = tagged[2]!.trim();
     let attributes: Pick<ObservationDraft, "validity" | "validity_error"> = {};
-    const marker = text.indexOf("<!-- validity:");
+    const candidate = text.lastIndexOf("<!-- validity:");
+    const suffix = text.slice(candidate);
+    const closing = suffix.indexOf("-->");
+    const marker =
+      candidate >= 0 &&
+      !inCodeSpan(text, candidate) &&
+      (closing < 0 || !suffix.slice(closing + 3).trim())
+        ? candidate
+        : -1;
     if (marker >= 0) {
       const annotation = /^<!-- validity:\s*([\s\S]*?)\s*-->$/.exec(text.slice(marker));
       text = text.slice(0, marker).trim();
@@ -44,4 +52,17 @@ export function parseObservations(body: string): ObservationDraft[] {
       },
     ];
   });
+}
+
+function inCodeSpan(text: string, offset: number): boolean {
+  const runs = [...text.matchAll(/`+/g)];
+  for (let i = 0; i < runs.length; i++) {
+    const opening = runs[i]!;
+    const j = runs.findIndex((run, index) => index > i && run[0].length === opening[0].length);
+    if (j < 0) continue;
+    const closing = runs[j]!;
+    if (offset > opening.index! && offset < closing.index!) return true;
+    i = j;
+  }
+  return false;
 }
