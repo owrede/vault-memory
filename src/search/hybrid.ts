@@ -19,6 +19,7 @@
  */
 
 import { resolveAsOf, frontmatterValidity } from "../memory/valid-time.js";
+import { embedQuery } from "../embeddings/client.js";
 import type { OllamaClient } from "../ollama/index.js";
 import type { Vault } from "../vault/index.js";
 import type { DocId, SearchHit, SourceHandle } from "../types.js";
@@ -250,7 +251,7 @@ export async function hybridSearch(opts: HybridSearchOptions): Promise<SearchHit
     if (cached) return cached;
     const p = (async (): Promise<number[] | null> => {
       try {
-        const res = await opts.ollama.embed({ model, texts: [query] });
+        const res = await embedQuery(opts.ollama, { model, texts: [query] });
         const v = res.vectors[0];
         return v ?? null;
       } catch {

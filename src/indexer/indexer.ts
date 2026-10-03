@@ -13,6 +13,7 @@ import { scanVault } from "../adapters/source/obsidian-fs/scanner.js";
 import { parseNote } from "../adapters/source/obsidian-fs/parser.js";
 import { chunkNote } from "../chunker/index.js";
 import { computeChunkIdFragment } from "../chunker/chunk-id.js";
+import { providerModel } from "../embeddings/client.js";
 import { OllamaClient } from "../ollama/index.js";
 import type { Vault } from "../vault/index.js";
 import type {
@@ -85,6 +86,12 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
     if (!ollama) {
       throw new Error("indexVault: embeddings='ollama' requires an OllamaClient (options.ollama).");
     }
+    const identity = providerModel(ollama, options.embeddingModel);
+    const current = vault.db.models.getActive();
+    if (identity.provider === "onnx" && current && current.name !== identity.name)
+      throw new Error(
+        "Build the ONNX shadow index and switch active model explicitly before reindexing",
+      );
     log(`Probing Ollama model: ${options.embeddingModel}`);
     const health = await ollama.healthCheck();
     if (!health.ok) {
@@ -106,8 +113,7 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
     });
     dim = probe.dim;
     modelRow = vault.db.models.upsert({
-      name: options.embeddingModel,
-      provider: "ollama",
+      ...identity,
       dim,
     });
 
@@ -129,8 +135,7 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
         texts: ["probe"],
       });
       const row = vault.db.models.upsert({
-        name: secName,
-        provider: "ollama",
+        ...providerModel(ollama, secName),
         dim: secProbe.dim,
         active: false,
       });

@@ -11,6 +11,7 @@
 import * as path from "node:path";
 import type { Vault } from "../vault/index.js";
 import type { OllamaClient } from "../ollama/index.js";
+import { providerModel } from "../embeddings/client.js";
 import { parseNote } from "../adapters/source/obsidian-fs/parser.js";
 import { chunkNote } from "../chunker/index.js";
 import { computeChunkIdFragment } from "../chunker/chunk-id.js";
@@ -62,7 +63,8 @@ export interface IndexNoteResult {
  *     update aliases, persist wikilinks
  */
 export async function indexNote(options: IndexNoteOptions): Promise<IndexNoteResult> {
-  const { vault, absolutePath, embeddingModel, ollama } = options;
+  const { vault, absolutePath, ollama } = options;
+  const embeddingModel = providerModel(ollama, options.embeddingModel).name;
   const secondaryName = options.secondaryEmbeddingModel;
 
   // 1. Validate path is inside the vault.

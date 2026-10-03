@@ -6,6 +6,7 @@ import { ObsidianFsSource } from "./index.js";
 import { ObsidianFsDelivery } from "../../delivery/obsidian-fs/index.js";
 import { MemorySinkRegistry } from "../../../memory/registry.js";
 import { discoverMemorySinks } from "../../../server.js";
+import { configuredEmbeddingClient } from "../../embeddings/configured.js";
 import { OllamaClient } from "../../../ollama/index.js";
 import { searchVaults } from "../../../search/dispatch.js";
 import { inspectionBody } from "../../../schema/body.js";
@@ -31,6 +32,7 @@ export async function runLocalKnowledge(args: KnowledgeArgs): Promise<number> {
     return runKnowledgeCommand(args, { manual: manualTopic } as never, io);
   const config = await loadConfig();
   const manager = new VaultManager();
+  let embeddings: Awaited<ReturnType<typeof configuredEmbeddingClient>> | undefined;
   try {
     await manager.loadAll(config.vaults);
     const sinks = new MemorySinkRegistry();
@@ -46,7 +48,11 @@ export async function runLocalKnowledge(args: KnowledgeArgs): Promise<number> {
           provisioner: async () => {}, // CLI commands discover sinks; only explicit provisioning creates sentinels.
         },
       );
-    const ollama = new OllamaClient({ endpoint: config.server.ollama_endpoint });
+    embeddings = await configuredEmbeddingClient(
+      config.server,
+      args.command !== "read" && manager.list().some((v) => v.config.backend !== "contextfit"),
+    );
+    const ollama = embeddings.client;
     const registry = new AdapterRegistry();
     for (const vault of manager.list()) {
       const source = new ObsidianFsSource(vault.config);
@@ -72,7 +78,7 @@ export async function runLocalKnowledge(args: KnowledgeArgs): Promise<number> {
           const results = await searchVaults({
             query: input.query!,
             vaults,
-            embeddingModel: config.server.default_embedding_model ?? "qwen3-embedding:0.6b",
+            embeddingModel: embeddings!.model,
             ollama,
             asOf: input.as_of,
           });
@@ -136,7 +142,7 @@ export async function runLocalKnowledge(args: KnowledgeArgs): Promise<number> {
                 {
                   manager,
                   ollama,
-                  defaultModel: config.server.default_embedding_model ?? "qwen3-embedding:0.6b",
+                  defaultModel: embeddings!.model,
                 },
                 id,
               );
@@ -154,6 +160,7 @@ export async function runLocalKnowledge(args: KnowledgeArgs): Promise<number> {
     if (args.json) io.stdout(JSON.stringify({ ok: false, error: String(error) }) + "\n");
     return 5;
   } finally {
+    await embeddings?.close();
     manager.closeAll();
   }
 }

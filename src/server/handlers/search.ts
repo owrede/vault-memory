@@ -32,6 +32,7 @@ import {
   truncateSnippet,
 } from "../utils.js";
 import type { ToolName } from "../../tool-registry.js";
+import { embedQuery } from "../../embeddings/client.js";
 import type { Handler, HandlerDeps } from "../deps.js";
 
 /** One frontmatter condition: matches when `frontmatter[key]` equals `value`. */
@@ -158,7 +159,7 @@ async function handleSearchSemantic(
 
     let queryVec = embedCache.get(modelName);
     if (!queryVec) {
-      const embedResp = await ollama.embed({ model: modelName, texts: [query] });
+      const embedResp = await embedQuery(ollama, { model: modelName, texts: [query] });
       queryVec = embedResp.vectors[0];
       if (!queryVec) continue;
       embedCache.set(modelName, queryVec);

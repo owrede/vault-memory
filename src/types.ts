@@ -36,6 +36,8 @@ export interface VaultConfig {
 }
 
 export interface ServerConfig {
+  embedding_provider?: "ollama" | "onnx";
+  model_path?: string;
   features?: import("./features.js").FeatureName[];
   log_level?: "debug" | "info" | "warn" | "error";
   ollama_endpoint?: string;

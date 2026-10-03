@@ -17,6 +17,8 @@ import { FEATURE_NAMES } from "../features.js";
 const ServerConfigSchema = z.object({
   features: z.array(z.enum(FEATURE_NAMES)).default([]),
   log_level: z.enum(["debug", "info", "warn", "error"]).optional(),
+  embedding_provider: z.enum(["ollama", "onnx"]).optional(),
+  model_path: z.string().min(1).optional(),
   ollama_endpoint: z.string().url().optional(),
   default_embedding_model: z.string().optional(),
   reranker_model: z.string().optional(),

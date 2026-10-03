@@ -190,3 +190,25 @@ it("does not provision a missing memory sink during source reads", async () => {
     code: "ENOENT",
   });
 });
+it("indexes and searches using configured native ONNX without an Ollama service", async () => {
+  const modelPath = new URL("../../tests/fixtures/tiny-embedding/", import.meta.url).pathname;
+  await fs.writeFile(join(f.root, "Alpha.md"), "# Alpha\nAlpha");
+  await fs.writeFile(
+    join(configDir, "config.toml"),
+    `[server]\nembedding_provider="onnx"\nmodel_path=${JSON.stringify(modelPath)}\n[[vaults]]\nname="lab"\npath=${JSON.stringify(f.root)}\nwrite_enabled=true\n`,
+  );
+  const indexed = run("index", "--vault", "lab", "--full");
+  expect(indexed.code).toBe(0);
+  const result = run("search", "--vault", "lab", "--query", "Alpha", "--json");
+  expect(result.code).toBe(0);
+  expect(JSON.parse(result.stdout).results[0]).toMatchObject({ notePath: "Alpha.md" });
+});
+it("reads source metadata even when optional ONNX assets are unavailable", async () => {
+  await fs.writeFile(
+    join(configDir, "config.toml"),
+    `[server]\nembedding_provider="onnx"\nmodel_path="/missing-model-assets-fixture"\n[[vaults]]\nname="lab"\npath=${JSON.stringify(f.root)}\n`,
+  );
+  expect(run("read", "--doc-id", f.id("A B.md"), "--projection", "metadata", "--json").code).toBe(
+    0,
+  );
+});

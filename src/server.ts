@@ -109,6 +109,7 @@ import {
 import { makeNotesHandlers, handleReadNote } from "./server/handlers/notes.js";
 import { registerFeatureTools } from "./server/feature-tools.js";
 import { refreshEditedDocument } from "./edit/refresh.js";
+import { configuredEmbeddingClient } from "./adapters/embeddings/configured.js";
 import { operationAnnotations } from "./manual/catalog.js";
 import { registerManualResources } from "./manual/resources.js";
 import { InvalidValidityError } from "./memory/valid-time.js";
@@ -285,11 +286,12 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
     changeFeeds.set(vault.config.name, changeFeed);
   }
 
-  const ollama = new OllamaClient({
-    endpoint: config.server.ollama_endpoint,
-  });
-
-  const defaultModel = config.server.default_embedding_model ?? "qwen3-embedding:0.6b";
+  const embeddings = await configuredEmbeddingClient(
+    config.server,
+    manager.list().some((v) => v.config.backend !== "contextfit"),
+  );
+  const ollama = embeddings.client;
+  const defaultModel = embeddings.model;
 
   // Default search scope. When VAULT_MEMORY_ACTIVE_VAULT is set, search_*
   // tools default to that single vault unless the caller passes an explicit
@@ -450,6 +452,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
     for (const cf of changeFeeds.values()) {
       await cf.close();
     }
+    await embeddings.close();
   };
   process.on("SIGINT", () => {
     void shutdown().finally(() => process.exit(0));

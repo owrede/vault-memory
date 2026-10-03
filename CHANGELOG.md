@@ -1546,3 +1546,5 @@ Reviewers should block merges that change behavior but don't touch this file.
 - F07: business validity intervals, historical v2 retrieval, inherited or explicit statement bounds, indexed pre-limit filtering and migration 18.
 
 - F08: scriptable search/read/edit CLI, isolated configuration seam, versioned MCP manual templates and operation annotations.
+
+- F09: optional local CPU ONNX embedding provider, SHA256-pinned manifest identity, query/passage prefixes, native fixture tests and explicit shadow migration preserving existing vectors.

@@ -15,6 +15,7 @@
  * skips chunks that are already embedded. Safe to interrupt and resume.
  */
 
+import { providerModel } from "../embeddings/client.js";
 import { randomUUID } from "node:crypto";
 import type { Vault } from "../vault/index.js";
 import type { OllamaClient } from "../ollama/index.js";
@@ -69,8 +70,7 @@ export async function startShadowIndex(options: ShadowIndexOptions): Promise<Sha
 
   // 2. Register the model (active=false — primary stays active).
   const modelRow = vault.db.models.upsert({
-    name: model,
-    provider: "ollama",
+    ...providerModel(ollama, model),
     dim,
     active: false,
   });
@@ -158,7 +158,7 @@ export async function startShadowIndex(options: ShadowIndexOptions): Promise<Sha
   return {
     runId,
     modelId: modelRow.id,
-    modelName: model,
+    modelName: modelRow.name,
     dim,
     chunksTotal,
     chunksEmbedded,
