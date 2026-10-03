@@ -1,0 +1,186 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/observations/parse.test.ts src/observations/index.integration.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/observations/parse.test.ts (14 tests | 2 failed) 8ms
+     × ignores a fence opened on a list item line 4ms
+     × does not close a root fence with a four-space indented marker 1ms
+[single-indexer:lab] section build failed for a.md: reject fixture
+stderr | src/observations/index.integration.test.ts > observation index uses canonical files > keeps a failed full publication dirty and repairs all sections on retry
+[indexer:lab] section build failed for a.md: reject fixture — skipping sections for this note
+
+ ❯ |unit| src/observations/index.integration.test.ts (13 tests | 4 failed) 139ms
+     × keeps a failed single publication dirty and repairs all sections on retry 12ms
+     × keeps a failed full publication dirty and repairs all sections on retry 8ms
+     × selected bundle sections exclude statements from other headings 7ms
+     × dossiers preserve statement provenance and share selected-section semantics 8ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/observations/index.integration.test.ts > observation index uses canonical files > keeps a failed single publication dirty and repairs all sections on retry
+AssertionError: promise resolved "{ status: 'indexed', …(4) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "chunksCreated": 1,
++   "isNew": false,
++   "noteId": 1,
++   "notePath": "a.md",
++   "status": "indexed",
+  }
+
+ ❯ src/observations/index.integration.test.ts:104:59
+    102|     f.vault.db.handle.exec("CREATE TRIGGER reject_statement BEFORE INS…
+    103|     await fs.writeFile(join(f.root, "a.md"), "# A\n- [fact] Changed\n#…
+    104|     if (mode === "single") await expect(indexNote(opts())).rejects.toT…
+       |                                                           ^
+    105|     else expect(await indexVault(f.vault, { mode: "full", embeddingMod…
+    106|     expect(f.vault.db.notes.getById(noteId)!.body_hash).toBeNull();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  |unit| src/observations/index.integration.test.ts > observation index uses canonical files > keeps a failed full publication dirty and repairs all sections on retry
+AssertionError: expected { …(8) } to match object { status: 'failed' }
+(7 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "status": "failed",
++   "status": "completed",
+  }
+
+ ❯ src/observations/index.integration.test.ts:105:108
+    103|     await fs.writeFile(join(f.root, "a.md"), "# A\n- [fact] Changed\n#…
+    104|     if (mode === "single") await expect(indexNote(opts())).rejects.toT…
+    105|     else expect(await indexVault(f.vault, { mode: "full", embeddingMod…
+       |                                                                                                            ^
+    106|     expect(f.vault.db.notes.getById(noteId)!.body_hash).toBeNull();
+    107|     expect(f.vault.db.observations.listForNote(noteId)).toEqual(previo…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+ FAIL  |unit| src/observations/index.integration.test.ts > observation index uses canonical files > selected bundle sections exclude statements from other headings
+AssertionError: expected [] to deeply equal [ 'A', 'B' ]
+
+- Expected
++ Received
+
+- [
+-   "A",
+-   "B",
+- ]
++ []
+
+ ❯ src/observations/index.integration.test.ts:184:62
+    182|     const result = await bundle({ projection: "sections", heading_path…
+    183|     expect(result.observations!.statements.map((row) => row.text)).toE…
+    184|     expect(result.observations!.statements[0]!.heading_path).toEqual([…
+       |                                                              ^
+    185|   });
+    186|   it("dossiers preserve statement provenance and share selected-sectio…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯
+
+ FAIL  |unit| src/observations/index.integration.test.ts > observation index uses canonical files > dossiers preserve statement provenance and share selected-section semantics
+AssertionError: expected [ { …(17) } ] to match object [ { text: 'Second', …(2) } ]
+(14 matching properties omitted from actual)
+
+- Expected
++ Received
+
+@@ -1,11 +1,8 @@
+  [
+    {
+-     "heading_path": [
+-       "A",
+-       "B",
+-     ],
++     "heading_path": [],
+      "properties": {
+        "confidence": "direct",
+        "evidence": [
+          "source-1",
+        ],
+
+ ❯ src/observations/index.integration.test.ts:203:45
+    201|       },
+    202|     );
+    203|     expect(result.observations!.statements).toMatchObject([
+       |                                             ^
+    204|       {
+    205|         text: "Second",
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/6]⎯
+
+ FAIL  |unit| src/observations/parse.test.ts > explicit categorized observations > ignores a fence opened on a list item line
+AssertionError: expected [ { category: 'fact', …(3) } ] to deeply equal [ { category: 'fact', …(3) } ]
+
+- Expected
++ Received
+
+  [
+    {
+      "category": "fact",
+-     "line_end": 4,
+-     "line_start": 4,
+-     "text": "Real",
++     "line_end": 2,
++     "line_start": 2,
++     "text": "Example only",
+    },
+  ]
+
+ ❯ src/observations/parse.test.ts:64:8
+     62|   it("ignores a fence opened on a list item line", () => {
+     63|     expect(parseObservations("- ```md\n  - [fact] Example only\n  ```\…
+     64|       .toEqual([{ category: "fact", text: "Real", line_start: 4, line_…
+       |        ^
+     65|   });
+     66|   it("does not close a root fence with a four-space indented marker", …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯
+
+ FAIL  |unit| src/observations/parse.test.ts > explicit categorized observations > does not close a root fence with a four-space indented marker
+AssertionError: expected [ { category: 'fact', …(3) } ] to deeply equal [ { category: 'fact', …(3) } ]
+
+- Expected
++ Received
+
+  [
+    {
+      "category": "fact",
+-     "line_end": 5,
+-     "line_start": 5,
+-     "text": "Real",
++     "line_end": 3,
++     "line_start": 3,
++     "text": "Example only",
+    },
+  ]
+
+ ❯ src/observations/parse.test.ts:68:8
+     66|   it("does not close a root fence with a four-space indented marker", …
+     67|     expect(parseObservations("```md\n    ```\n- [fact] Example only\n`…
+     68|       .toEqual([{ category: "fact", text: "Real", line_start: 5, line_…
+       |        ^
+     69|   });
+     70|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/6]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  6 failed | 21 passed (27)
+   Start at  16:36:54
+   Duration  664ms (transform 291ms, setup 0ms, import 460ms, tests 148ms, environment 0ms)
+

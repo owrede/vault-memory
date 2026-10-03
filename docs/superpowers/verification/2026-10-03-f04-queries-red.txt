@@ -1,0 +1,108 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/db/queries/observations.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/db/queries/observations.test.ts (4 tests | 4 failed) 28ms
+     × creates observation storage and source-hash marker in migration 17 12ms
+     × replaces snapshots idempotently, retaining ids of identical statements 6ms
+     × rolls back the complete snapshot on invalid source coordinates 5ms
+     × cascades deletion and safely binds category filters 5ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/db/queries/observations.test.ts > derived observation SQL snapshots > creates observation storage and source-hash marker in migration 17
+AssertionError: expected [] to have a length of 8 but got +0
+
+- Expected
++ Received
+
+- 8
++ 0
+
+ ❯ src/db/queries/observations.test.ts:16:58
+     14|   afterEach(() => { db.close(); });
+     15|   it("creates observation storage and source-hash marker in migration …
+     16|     expect(db.handle.pragma("table_info(observations)")).toHaveLength(…
+       |                                                          ^
+     17|     expect((db.handle.pragma("table_info(notes)") as {name: string}[])…
+     18|     db.migrate(); db.migrate();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  |unit| src/db/queries/observations.test.ts > derived observation SQL snapshots > replaces snapshots idempotently, retaining ids of identical statements
+AssertionError: expected [] to match object [ { category: 'fact', …(5) }, …(1) ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "category": "fact",
+-     "doc_hash": "h1",
+-     "line_end": 3,
+-     "line_start": 2,
+-     "note_id": 1,
+-     "text": "Exact fact",
+-   },
+-   {
+-     "category": "decision",
+-     "doc_hash": "h1",
+-     "line_end": 5,
+-     "line_start": 5,
+-     "note_id": 1,
+-     "text": "Decision",
+-   },
+- ]
++ []
+
+ ❯ src/db/queries/observations.test.ts:24:21
+     22|     db.observations.replaceForNote(id, "h1", rows);
+     23|     const initial = db.observations.listForNote(id);
+     24|     expect(initial).toMatchObject(rows.map(row => ({ ...row, note_id: …
+       |                     ^
+     25|     expect(db.observations.indexedHash(id)).toBe("h1");
+     26|     db.observations.replaceForNote(id, "h1", rows);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  |unit| src/db/queries/observations.test.ts > derived observation SQL snapshots > rolls back the complete snapshot on invalid source coordinates
+AssertionError: expected [Function] to throw an error
+ ❯ src/db/queries/observations.test.ts:38:92
+     36|     db.observations.replaceForNote(id, "h1", rows);
+     37|     const initial = db.observations.listForNote(id);
+     38|     expect(() => db.observations.replaceForNote(id, "h2", [{ ...rows[0…
+       |                                                                                            ^
+     39|     expect(db.observations.listForNote(id)).toEqual(initial);
+     40|     expect(db.observations.indexedHash(id)).toBe("h1");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  |unit| src/db/queries/observations.test.ts > derived observation SQL snapshots > cascades deletion and safely binds category filters
+AssertionError: expected [] to have a length of 1 but got +0
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ src/db/queries/observations.test.ts:44:53
+     42|   it("cascades deletion and safely binds category filters", () => {
+     43|     db.observations.replaceForNote(id, "h1", rows);
+     44|     expect(db.observations.listForNote(id, "fact")).toHaveLength(1);
+       |                                                     ^
+     45|     expect(db.observations.listForNote(id, "fact' OR 1=1 --")).toEqual…
+     46|     db.notes.deleteByPath("a.md");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed (4)
+   Start at  16:05:18
+   Duration  228ms (transform 78ms, setup 0ms, import 105ms, tests 28ms, environment 0ms)
+

@@ -7,8 +7,8 @@ Verbindliches Ziel: alle elf Feature-Upgrades gemäß Design und Einzelplänen i
 | F01 Dokumentensperren | abgeschlossen | `2026-10-03-f01-document-locks.md` |
 | F02 Gezieltes Editieren | abgeschlossen | `2026-10-03-f02-targeted-edits.md` |
 | F03 Kompakter Kontext | abgeschlossen | `2026-10-03-f03-compact-retrieval.md` |
-| F04 Beobachtungen | Gesamtprüfung grün, Review ausstehend | `.superpowers/sdd/2026-10-03-f04-categorized-observations/progress.md` |
-| F05 Fachliche Relationen | geplant | eigener Plan |
+| F04 Beobachtungen | abgeschlossen | `2026-10-03-f04-categorized-observations.md` |
+| F05 Fachliche Relationen | Parser geprüft, Graphintegration in Arbeit | eigener Plan |
 | F06 Schemas/Drift | geplant | eigener Plan |
 | F07 Gültigkeitszeit | geplant | eigener Plan |
 | F08 CLI/Handbuch | geplant | eigener Plan |

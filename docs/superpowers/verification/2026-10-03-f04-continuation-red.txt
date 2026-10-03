@@ -1,0 +1,47 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/observations/parse.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/observations/parse.test.ts (17 tests | 1 failed) 8ms
+     × retains deeply aligned paragraph continuations without a blank line 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/observations/parse.test.ts > explicit categorized observations > retains deeply aligned paragraph continuations without a blank line
+AssertionError: expected [ { category: 'preference', …(3) } ] to deeply equal [ { category: 'preference', …(3) } ]
+
+- Expected
++ Received
+
+  [
+    {
+      "category": "preference",
+-     "line_end": 2,
++     "line_end": 1,
+      "line_start": 1,
+-     "text": "Async writing
+- with detailed context",
++     "text": "Async writing",
+    },
+  ]
+
+ ❯ src/observations/parse.test.ts:81:103
+     79|   });
+     80|   it("retains deeply aligned paragraph continuations without a blank l…
+     81|     expect(parseObservations("- [preference] Async writing\n          …
+       |                                                                                                       ^
+     82|       { category: "preference", text: "Async writing\nwith detailed co…
+     83|     ]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 16 passed (17)
+   Start at  16:44:49
+   Duration  128ms (transform 22ms, setup 0ms, import 30ms, tests 8ms, environment 0ms)
+
