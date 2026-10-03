@@ -1,0 +1,193 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/relations/parse.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/relations/parse.test.ts (10 tests | 8 failed) 9ms
+     × keeps role, alias target and source line 5ms
+     × retains distinct unknown roles pointing to the same target 1ms
+     × stops at a sibling heading and supports nested Relations sections 1ms
+     × ignores fenced declarations and headings with ```md 1ms
+     × ignores fenced declarations and headings with ~~~md 0ms
+     × ignores fenced declarations and headings with ````md 1ms
+     × keeps code examples inside Relations out of the graph 0ms
+     × retains section-qualified targets and CRLF line numbers 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 8 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/relations/parse.test.ts > explicit domain relation declarations > keeps role, alias target and source line
+AssertionError: expected [] to deeply equal [ { rel: 'owns', …(2) }, …(1) ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "line": 2,
+-     "rel": "owns",
+-     "target": "Atlas",
+-   },
+-   {
+-     "line": 3,
+-     "rel": "depends_on",
+-     "target": "Budget",
+-   },
+- ]
++ []
+
+ ❯ src/relations/parse.test.ts:6:8
+      4|   it("keeps role, alias target and source line", () => {
+      5|     expect(parseDomainRelations("## Relations\n- owns [[Atlas]]\n- dep…
+      6|       .toEqual([{ rel: "owns", target: "Atlas", line: 2 }, { rel: "dep…
+       |        ^
+      7|   });
+      8|   it("does not infer relations from ordinary wikilinks or prose", () =…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/8]⎯
+
+ FAIL  |unit| src/relations/parse.test.ts > explicit domain relation declarations > retains distinct unknown roles pointing to the same target
+AssertionError: expected [] to deeply equal [ { rel: 'custom_role', …(2) }, …(1) ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "line": 2,
+-     "rel": "custom_role",
+-     "target": "Atlas",
+-   },
+-   {
+-     "line": 3,
+-     "rel": "manages",
+-     "target": "Atlas",
+-   },
+- ]
++ []
+
+ ❯ src/relations/parse.test.ts:13:8
+     11|   it("retains distinct unknown roles pointing to the same target", () …
+     12|     expect(parseDomainRelations("# Relations\n- custom_role [[Atlas]]\…
+     13|       .toEqual([{ rel: "custom_role", target: "Atlas", line: 2 }, { re…
+       |        ^
+     14|   });
+     15|   it("stops at a sibling heading and supports nested Relations section…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/8]⎯
+
+ FAIL  |unit| src/relations/parse.test.ts > explicit domain relation declarations > stops at a sibling heading and supports nested Relations sections
+AssertionError: expected [] to deeply equal [ { rel: 'owns', …(2) }, …(1) ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "line": 3,
+-     "rel": "owns",
+-     "target": "Atlas",
+-   },
+-   {
+-     "line": 5,
+-     "rel": "leads",
+-     "target": "Budget",
+-   },
+- ]
++ []
+
+ ❯ src/relations/parse.test.ts:17:8
+     15|   it("stops at a sibling heading and supports nested Relations section…
+     16|     expect(parseDomainRelations("# Oliver\n## Relations\n- owns [[Atla…
+     17|       .toEqual([{ rel: "owns", target: "Atlas", line: 3 }, { rel: "lea…
+       |        ^
+     18|   });
+     19|   it.each(["```md", "~~~md", "````md"])("ignores fenced declarations a…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/8]⎯
+
+ FAIL  |unit| src/relations/parse.test.ts > explicit domain relation declarations > ignores fenced declarations and headings with ```md
+ FAIL  |unit| src/relations/parse.test.ts > explicit domain relation declarations > ignores fenced declarations and headings with ~~~md
+ FAIL  |unit| src/relations/parse.test.ts > explicit domain relation declarations > ignores fenced declarations and headings with ````md
+AssertionError: expected [] to deeply equal [ { rel: 'owns', …(2) } ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "line": 6,
+-     "rel": "owns",
+-     "target": "Real",
+-   },
+- ]
++ []
+
+ ❯ src/relations/parse.test.ts:22:8
+     20|     const close = marker.startsWith("~") ? "~~~" : marker.startsWith("…
+     21|     expect(parseDomainRelations(`${marker}\n## Relations\n- owns [[Fak…
+     22|       .toEqual([{ rel: "owns", target: "Real", line: 6 }]);
+       |        ^
+     23|   });
+     24|   it("keeps code examples inside Relations out of the graph", () => {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/8]⎯
+
+ FAIL  |unit| src/relations/parse.test.ts > explicit domain relation declarations > keeps code examples inside Relations out of the graph
+AssertionError: expected [] to deeply equal [ { rel: 'owns', …(2) } ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "line": 6,
+-     "rel": "owns",
+-     "target": "Real",
+-   },
+- ]
++ []
+
+ ❯ src/relations/parse.test.ts:26:8
+     24|   it("keeps code examples inside Relations out of the graph", () => {
+     25|     expect(parseDomainRelations("# Relations\n- Examples\n    ```md\n …
+     26|       .toEqual([{ rel: "owns", target: "Real", line: 6 }]);
+       |        ^
+     27|   });
+     28|   it("retains section-qualified targets and CRLF line numbers", () => {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/8]⎯
+
+ FAIL  |unit| src/relations/parse.test.ts > explicit domain relation declarations > retains section-qualified targets and CRLF line numbers
+AssertionError: expected [] to deeply equal [ { rel: 'owns', …(2) } ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "line": 2,
+-     "rel": "owns",
+-     "target": "Atlas#Plan",
+-   },
+- ]
++ []
+
+ ❯ src/relations/parse.test.ts:30:8
+     28|   it("retains section-qualified targets and CRLF line numbers", () => {
+     29|     expect(parseDomainRelations("  ## Relations\r\n+ owns [[Atlas#Plan…
+     30|       .toEqual([{ rel: "owns", target: "Atlas#Plan", line: 2 }]);
+       |        ^
+     31|   });
+     32|   it("rejects malformed declarations and standalone indented code", ()…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/8]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  8 failed | 2 passed (10)
+   Start at  16:30:22
+   Duration  137ms (transform 16ms, setup 0ms, import 25ms, tests 9ms, environment 0ms)
+
