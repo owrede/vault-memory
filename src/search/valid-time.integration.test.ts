@@ -8,6 +8,7 @@ import { OllamaClient } from "../ollama/index.js";
 import { handleRecall as recall } from "../memory/tools/recall.js";
 import { getDocumentBundle } from "../assembly/bundle.js";
 import { DEFAULT_MEMORY_V1 } from "../memory/contract/index.js";
+import { updateFrontmatter } from "../frontmatter/update.js";
 import { z } from "zod";
 import { TOOLS, TOOL_SCHEMAS } from "../tool-registry.js";
 import { parseObservations } from "../observations/parse.js";
@@ -88,6 +89,20 @@ describe("business validity in real SQLite search and source citations", () => {
       { ...doc, properties: { ...doc.properties, valid_to: "wrong" } },
       { expectedHash: doc.hash },
     );
+    expect(result).toMatchObject({ ok: false, reason: "invalid_validity" });
+    expect((await f.source.readDocument(doc.id)).hash).toBe(doc.hash);
+  });
+  it("keeps invalid_validity distinct from OCC in frontmatter updates", async () => {
+    await fs.writeFile(join(f.root, "user.md"), "# User\nOriginal");
+    await indexVault(f.vault, { embeddings: "none", embeddingModel: "unused" });
+    const doc = await f.source.readDocument(f.id("user.md"));
+    const result = await updateFrontmatter({
+      vault: f.vault,
+      registry: f.adapterRegistry,
+      relativePath: "user.md",
+      expectedHash: doc.hash,
+      merge: { valid_from: "2026-02-30T00:00:00Z" },
+    });
     expect(result).toMatchObject({ ok: false, reason: "invalid_validity" });
     expect((await f.source.readDocument(doc.id)).hash).toBe(doc.hash);
   });

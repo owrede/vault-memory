@@ -94,7 +94,8 @@ export interface UpdateConflict {
     | "permission_denied"
     | "note_not_found"
     | "sink_write_blocked"
-    | "document_locked";
+    | "document_locked"
+    | "invalid_validity";
   currentHash?: string;
   message: string;
   /** Phase 2 envelope (sink_write_blocked). */
@@ -376,7 +377,11 @@ export async function updateFrontmatter(input: UpdateFrontmatterInput): Promise<
   const writeRes = await delivery.write(docId, partial, writeOpts);
   if (!writeRes.ok) {
     // Shape-map Delivery v2 conflict reasons back to v1 update result.
-    if (writeRes.reason === "permission_denied" || writeRes.reason === "document_locked") {
+    if (
+      writeRes.reason === "permission_denied" ||
+      writeRes.reason === "document_locked" ||
+      writeRes.reason === "invalid_validity"
+    ) {
       return {
         ok: false,
         reason: writeRes.reason,
