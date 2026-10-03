@@ -335,8 +335,8 @@ export async function writeNote(input: WriteNoteInput): Promise<WriteResult> {
       });
       vault.db.aliases.setForNote(up.id, extractAliases(written.frontmatter));
       vault.db.observations.replaceForNote(up.id, written.hash, parseObservations(written.content));
-      if (input.skipUnchanged) {
-        // Targeted edits cannot publish the new hash beside old citations.
+      if (input.skipUnchanged || previousHash !== written.hash) {
+        // Every changed canonical write must invalidate old derived citations.
         // Invalidate in the same transaction; a failed refresh remains
         // repairable by normal single/full/catchup indexing.
         vault.db.notes.invalidateIndex(up.id);

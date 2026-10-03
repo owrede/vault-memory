@@ -388,7 +388,9 @@ export async function expand(deps: ExpandDeps, opts: ExpandOptions): Promise<Exp
                     .readDocument(sourceId);
                   declaringSources.set(
                     sourceId,
-                    sourceDoc.hash === sourceRow.hash ? sourceDoc : null,
+                    sourceRow.body_hash !== null && sourceDoc.hash === sourceRow.hash
+                      ? sourceDoc
+                      : null,
                   );
                 } catch {
                   declaringSources.set(sourceId, null);

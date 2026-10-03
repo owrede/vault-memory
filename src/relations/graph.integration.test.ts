@@ -145,6 +145,54 @@ describe("domain relations on the real file/SQLite graph", () => {
       ),
     ).toEqual(["Oliver"]);
   });
+
+  it("invalidates ordinary delivery writes and repairs changed role edges on retry", async () => {
+    const id = f.id("Oliver.md");
+    const original = await f.source.readDocument(id);
+    const update = await f.delivery.update(
+      id,
+      { blocks: [{ kind: "paragraph", text: "# Oliver\n## Relations\n- leads [[Atlas]]\n" }] },
+      { expectedHash: original.hash },
+    );
+    expect(update.ok).toBe(true);
+    expect((await run("Oliver.md", { direction: "outgoing", rels: ["owns"] })).documents).toEqual(
+      [],
+    );
+    expect(f.vault.db.notes.getByPath("Oliver.md")!.body_hash).toBeNull();
+    await indexNote({
+      vault: f.vault,
+      absolutePath: join(f.root, "Oliver.md"),
+      embeddings: "none",
+      embeddingModel: "unused",
+    });
+    expect(
+      (await run("Oliver.md", { direction: "outgoing", rels: ["leads"] })).documents.map(
+        (doc) => doc.title,
+      ),
+    ).toEqual(["Atlas"]);
+  });
+  it.each([
+    "- ```md\n  example\n  ```\n- owns [[Atlas]]\n",
+    "- ```md\n  example\n- owns [[Atlas]]\n",
+    "```bad`info\n- owns [[Atlas]]\n",
+    "- owns [[Atlas # Plan | Roadmap]]\n",
+  ])(
+    "indexes actual declarations despite legacy wikilink fence/whitespace differences: %s",
+    async (body) => {
+      await fs.writeFile(join(f.root, "Oliver.md"), "# Relations\n" + body);
+      await indexNote({
+        vault: f.vault,
+        absolutePath: join(f.root, "Oliver.md"),
+        embeddings: "none",
+        embeddingModel: "unused",
+      });
+      expect(
+        (await run("Oliver.md", { direction: "outgoing", rels: ["owns"] })).documents.map(
+          (doc) => doc.title,
+        ),
+      ).toEqual(["Atlas"]);
+    },
+  );
   it("refuses edits to locked relation sources without changing graph rows", async () => {
     await fs.writeFile(
       join(f.root, "Oliver.md"),
