@@ -4,7 +4,7 @@ Stand: 2026-10-03. vault-memory: `9bc728e`, 2.4.1. Referenz: Basic Memory `194af
 
 ## Ziel und Grenzen
 
-Wissen feiner darstellen, gezielter abrufen und sichere Bearbeitung erleichtern. Basic Memory liefert Ideen; seine Implementierung wird nicht kopiert. vault-memory behält seinen Provenienzvertrag, den Schutz von MemorySinks, aktive statt supersedierte Suchergebnisse und lokale Verarbeitung. Dieses Programm besteht aus elf unabhängig abnehmbaren Lieferungen. In der ersten Lieferung wird F01 vollständig umgesetzt; F02–F11 sind anschließend ausführbare Ausbaupläne, keine bereits implementierten Funktionen.
+Wissen feiner darstellen, gezielter abrufen und sichere Bearbeitung erleichtern. Basic Memory liefert Ideen; seine Implementierung wird nicht kopiert. vault-memory behält seinen Provenienzvertrag, den Schutz von MemorySinks, aktive statt supersedierte Suchergebnisse und lokale Verarbeitung. Dieses Programm besteht aus elf unabhängig abnehmbaren Lieferungen. Der ursprüngliche Implementierungsbeginn mit F01 wurde durch den ausdrücklichen Folgeauftrag zur vollständigen Umsetzung F01–F11 erweitert. Der aktuelle Abnahmestand steht in `../verification/FEATURE-STATUS.md`; geplant ist nicht gleich implementiert.
 
 ## Globale Anforderungen
 
@@ -77,7 +77,7 @@ Pro Lieferung werden commitbarer Code, Tests, Bedienungsdokumentation und ein Pr
 
 ## Planindex
 
-Je Feature liegt ein eigener Plan unter `docs/superpowers/plans/2026-10-03-fNN-*.md`. Die Ausführung erfolgt zunächst inline für F01 mit anschließendem unabhängigem Code-Review. Ein Worktree unter `/private/tmp/vault-memory-basic-memory-features` hält den bisherigen Checkout sauber. Der Nutzer hat Erstellung der Pläne und anschließenden Implementierungsbeginn bereits beauftragt.
+Je Feature liegt ein eigener Plan unter `docs/superpowers/plans/2026-10-03-fNN-*.md`. Die Ausführung erfolgt inline für alle elf Features mit unabhängigem Code-Review pro Lieferung. Ein Worktree unter `/private/tmp/vault-memory-basic-memory-features` hält den bisherigen Checkout sauber. Der Nutzer hat Erstellung der Pläne und anschließenden Implementierungsbeginn bereits beauftragt.
 
 ## Einzelpläne
 

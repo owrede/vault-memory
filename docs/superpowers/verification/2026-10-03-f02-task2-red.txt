@@ -1,0 +1,314 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/edit/apply.test.ts src/server/feature-tools.test.ts src/config/loader.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/config/loader.test.ts (26 tests | 3 failed) 54ms
+     × keeps feature modules disabled by default 9ms
+     × accepts explicitly enabled feature modules 2ms
+     × rejects unknown feature modules rather than ignoring them 4ms
+ ❯ |unit| src/server/feature-tools.test.ts (2 tests | 1 failed) 35ms
+     × registers one versioned edit tool and executes a real file edit 15ms
+ ❯ |unit| src/edit/apply.test.ts (10 tests | 10 failed) 99ms
+     × updates only the selected section, retaining frontmatter bytes and unrelated text 25ms
+     × leaves a same-text edit without audit, file or suppression side effects 9ms
+     × a locked changed edit never mutates state 8ms
+     × a locked same edit never mutates state 8ms
+     × a read-only changed edit is rejected 7ms
+     × a read-only same edit is rejected 7ms
+     × does not fabricate a current expected hash for a stale caller 8ms
+     × rejects a missing target without mutating the document 8ms
+     × preserves provenance for a valid sink edit 9ms
+     × refuses a sink with externally invalidated provenance even for a no-op 9ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 14 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/config/loader.test.ts > loadConfig — Phase 2 memory blocks > keeps feature modules disabled by default
+AssertionError: expected undefined to deeply equal []
+
+- Expected:
+[]
+
++ Received:
+undefined
+
+ ❯ src/config/loader.test.ts:33:74
+     31|
+     32|   it("keeps feature modules disabled by default", async () => {
+     33|     expect((await loadConfig(await seed("[server]\n"))).server.feature…
+       |                                                                          ^
+     34|   });
+     35|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/14]⎯
+
+ FAIL  |unit| src/config/loader.test.ts > loadConfig — Phase 2 memory blocks > accepts explicitly enabled feature modules
+AssertionError: expected undefined to deeply equal [ 'document_edit' ]
+
+- Expected:
+[
+  "document_edit",
+]
+
++ Received:
+undefined
+
+ ❯ src/config/loader.test.ts:37:104
+     35|
+     36|   it("accepts explicitly enabled feature modules", async () => {
+     37|     expect((await loadConfig(await seed('[server]\nfeatures = ["docume…
+       |                                                                                                        ^
+     38|   });
+     39|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/14]⎯
+
+ FAIL  |unit| src/config/loader.test.ts > loadConfig — Phase 2 memory blocks > rejects unknown feature modules rather than ignoring them
+AssertionError: promise resolved "{ server: { …(3) }, vaults: [], …(5) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "brief": undefined,
++   "contracts": {
++     "auto_register_tools": false,
++     "defaults": {},
++     "mcp_clients": {},
++     "step_timeout_seconds": 30,
++     "tool_prefix": "vm_",
++   },
++   "memory": undefined,
++   "memory_sinks": [],
++   "plugin": {
++     "enabled": false,
++   },
++   "server": {
++     "default_embedding_model": "qwen3-embedding",
++     "log_level": "info",
++     "ollama_endpoint": "http://localhost:11434",
++   },
++   "vaults": [],
+  }
+
+ ❯ src/config/loader.test.ts:41:76
+     39|
+     40|   it("rejects unknown feature modules rather than ignoring them", asyn…
+     41|     await expect(loadConfig(await seed('[server]\nfeatures = ["typo"]\…
+       |                                                                            ^
+     42|   });
+     43|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/14]⎯
+
+ FAIL  |unit| src/edit/apply.test.ts > applyDocumentPatch on canonical files > updates only the selected section, retaining frontmatter bytes and unrelated text
+AssertionError: expected { ok: false, reason: 'not_found' } to match object { ok: true, …(1) }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "doc_id": "obsidian-fs://lab/approved.md",
+-   "ok": true,
++   "ok": false,
+  }
+
+ ❯ src/edit/apply.test.ts:31:20
+     29|     await fs.writeFile(join(f.root, "approved.md"), raw);
+     30|     const result = await edit(id, { kind: "section", heading_path: ["A…
+     31|     expect(result).toMatchObject({ ok: true, doc_id: id });
+       |                    ^
+     32|     expect(await fs.readFile(join(f.root, "approved.md"), "utf8")).toB…
+     33|     expect(f.vault.db.audit.listWrites({})).toHaveLength(2);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/14]⎯
+
+ FAIL  |unit| src/edit/apply.test.ts > applyDocumentPatch on canonical files > leaves a same-text edit without audit, file or suppression side effects
+AssertionError: expected { ok: false, reason: 'not_found' } to match object { ok: true }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "ok": true,
++   "ok": false,
+  }
+
+ ❯ src/edit/apply.test.ts:39:83
+     37|     const id = await seed();
+     38|     const before = await snapshot();
+     39|     expect(await edit(id, { kind: "replace", old_text: "Old", new_text…
+       |                                                                                   ^
+     40|     expect(await snapshot()).toEqual(before);
+     41|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/14]⎯
+
+ FAIL  |unit| src/edit/apply.test.ts > applyDocumentPatch on canonical files > a locked changed edit never mutates state
+ FAIL  |unit| src/edit/apply.test.ts > applyDocumentPatch on canonical files > a locked same edit never mutates state
+AssertionError: expected { ok: false, reason: 'not_found' } to match object { Object (ok, reason) }
+
+- Expected
++ Received
+
+  {
+    "ok": false,
+-   "reason": "document_locked",
++   "reason": "not_found",
+  }
+
+ ❯ src/edit/apply.test.ts:45:109
+     43|     const id = await seed({ locked: true });
+     44|     const before = await snapshot();
+     45|     expect(await edit(id, { kind: "replace", old_text: "Old", new_text…
+       |                                                                                                             ^
+     46|     expect(await snapshot()).toEqual(before);
+     47|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/14]⎯
+
+ FAIL  |unit| src/edit/apply.test.ts > applyDocumentPatch on canonical files > a read-only changed edit is rejected
+ FAIL  |unit| src/edit/apply.test.ts > applyDocumentPatch on canonical files > a read-only same edit is rejected
+AssertionError: expected { ok: false, reason: 'not_found' } to match object { ok: false, …(1) }
+
+- Expected
++ Received
+
+  {
+    "ok": false,
+-   "reason": "permission_denied",
++   "reason": "not_found",
+  }
+
+ ❯ src/edit/apply.test.ts:52:109
+     50|     f.vault.config.write_enabled = false;
+     51|     const before = await snapshot();
+     52|     expect(await edit(id, { kind: "replace", old_text: "Old", new_text…
+       |                                                                                                             ^
+     53|     expect(await snapshot()).toEqual(before);
+     54|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/14]⎯
+
+ FAIL  |unit| src/edit/apply.test.ts > applyDocumentPatch on canonical files > does not fabricate a current expected hash for a stale caller
+AssertionError: expected { ok: false, reason: 'not_found' } to match object { ok: false, reason: 'hash_mismatch' }
+
+- Expected
++ Received
+
+  {
+    "ok": false,
+-   "reason": "hash_mismatch",
++   "reason": "not_found",
+  }
+
+ ❯ src/edit/apply.test.ts:58:92
+     56|     const id = await seed();
+     57|     const before = await snapshot();
+     58|     expect(await edit(id, { kind: "replace", old_text: "Old", new_text…
+       |                                                                                            ^
+     59|     expect(await snapshot()).toEqual(before);
+     60|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/14]⎯
+
+ FAIL  |unit| src/edit/apply.test.ts > applyDocumentPatch on canonical files > rejects a missing target without mutating the document
+AssertionError: expected { ok: false, reason: 'not_found' } to deeply equal { ok: false, …(1) }
+
+- Expected
++ Received
+
+  {
+    "ok": false,
+-   "reason": "target_not_found",
++   "reason": "not_found",
+  }
+
+ ❯ src/edit/apply.test.ts:64:87
+     62|     const id = await seed();
+     63|     const before = await snapshot();
+     64|     expect(await edit(id, { kind: "replace", old_text: "Missing", new_…
+       |                                                                                       ^
+     65|     expect(await snapshot()).toEqual(before);
+     66|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/14]⎯
+
+ FAIL  |unit| src/edit/apply.test.ts > applyDocumentPatch on canonical files > preserves provenance for a valid sink edit
+AssertionError: expected { ok: false, reason: 'not_found' } to match object { ok: true }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "ok": true,
++   "ok": false,
+  }
+
+ ❯ src/edit/apply.test.ts:70:83
+     68|     const properties = { source: "agent", evidence: ["meeting-1"], con…
+     69|     const id = await seed(properties, "_memory/approved.md");
+     70|     expect(await edit(id, { kind: "replace", old_text: "Old", new_text…
+       |                                                                                   ^
+     71|     expect((await f.source.readDocument(id)).properties).toMatchObject…
+     72|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/14]⎯
+
+ FAIL  |unit| src/edit/apply.test.ts > applyDocumentPatch on canonical files > refuses a sink with externally invalidated provenance even for a no-op
+AssertionError: expected { ok: false, reason: 'not_found' } to match object { ok: false, …(1) }
+
+- Expected
++ Received
+
+  {
+    "ok": false,
+-   "reason": "missing_provenance",
++   "reason": "not_found",
+  }
+
+ ❯ src/edit/apply.test.ts:80:83
+     78|     await fs.writeFile(path, raw.replace("confidence: direct\n", ""));
+     79|     const before = await snapshot("_memory/approved.md");
+     80|     expect(await edit(id, { kind: "replace", old_text: "Old", new_text…
+       |                                                                                   ^
+     81|     expect(await snapshot("_memory/approved.md")).toEqual(before);
+     82|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[11/14]⎯
+
+ FAIL  |unit| src/server/feature-tools.test.ts > opt-in feature MCP surface > registers one versioned edit tool and executes a real file edit
+AssertionError: expected [ 'baseline_read' ] to deeply equal [ 'baseline_read', 'edit_document' ]
+
+- Expected
++ Received
+
+  [
+    "baseline_read",
+-   "edit_document",
+  ]
+
+ ❯ src/server/feature-tools.test.ts:35:37
+     33|     await connect(["document_edit", "document_edit"]);
+     34|     const listed = (await client.listTools()).tools;
+     35|     expect(listed.map(t => t.name)).toEqual(["baseline_read", "edit_do…
+       |                                     ^
+     36|     expect(listed.find(t => t.name === "edit_document")?.description).…
+     37|     const response = await client.callTool({ name: "edit_document", ar…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[12/14]⎯
+
+
+ Test Files  3 failed (3)
+      Tests  14 failed | 24 passed (38)
+   Start at  15:14:04
+   Duration  555ms (transform 394ms, setup 0ms, import 773ms, tests 188ms, environment 0ms)
+

@@ -1,0 +1,37 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/server/feature-tools.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/server/feature-tools.test.ts (2 tests | 1 failed) 39ms
+     × registers one versioned edit tool and executes a real file edit 19ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/server/feature-tools.test.ts > opt-in feature MCP surface > registers one versioned edit tool and executes a real file edit
+AssertionError: expected '' to contain 'Edited'
+
+- Expected
++ Received
+
+- Edited
+
+ ❯ src/server/feature-tools.test.ts:67:77
+     65|     ]);
+     66|     const note = f.vault.db.notes.getByPath("example.md")!;
+     67|     expect(f.vault.db.chunks.getByNote(note.id).map(c => c.text).join(…
+       |                                                                             ^
+     68|     expect(note.body_hash).not.toBeNull();
+     69|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  15:34:47
+   Duration  503ms (transform 210ms, setup 0ms, import 381ms, tests 39ms, environment 0ms)
+

@@ -1,0 +1,139 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/edit
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/edit/patch.test.ts (21 tests | 3 failed) 9ms
+     × preserves unrelated valid section boundaries in # A
+old
+#
+KEEP
+# C
+keep
+ 5ms
+     × preserves unrelated valid section boundaries in # A
+old
+```bad`info
+# B
+KEEP
+ 1ms
+     × preserves mixed newline bytes for an identical unique replacement 1ms
+ ❯ |unit| src/edit/apply.test.ts (11 tests | 1 failed) 116ms
+     × invalidates stale derived data and permits ordinary reindex after an edit 10ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/edit/apply.test.ts > applyDocumentPatch on canonical files > invalidates stale derived data and permits ordinary reindex after an edit
+AssertionError: expected '' to contain 'Old'
+
+- Expected
++ Received
+
+- Old
+
+ ❯ src/edit/apply.test.ts:75:76
+     73|     await indexNote(options);
+     74|     const noteId = f.vault.db.notes.getByPath("approved.md")!.id;
+     75|     expect(f.vault.db.chunks.getByNote(noteId).map(c => c.text).join("…
+       |                                                                            ^
+     76|     expect(await edit(id, { kind: "replace", old_text: "Old", new_text…
+     77|       .toMatchObject({ ok: true });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  |unit| src/edit/patch.test.ts > targeted text patches > preserves unrelated valid section boundaries in # A
+old
+#
+KEEP
+# C
+keep
+
+AssertionError: expected { ok: true, …(1) } to deeply equal { ok: true, …(1) }
+
+- Expected
++ Received
+
+  {
+    "body": "# A
+  New
+- #
+- KEEP
+  # C
+  keep
+  ",
+    "ok": true,
+  }
+
+ ❯ src/edit/patch.test.ts:10:8
+      8|   ])("preserves unrelated valid section boundaries in %s", (body, expe…
+      9|     expect(patchBody(body!, { kind: "section", heading_path: ["A"], co…
+     10|       .toEqual({ ok: true, body: expected });
+       |        ^
+     11|   });
+     12|   it("preserves mixed newline bytes for an identical unique replacemen…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  |unit| src/edit/patch.test.ts > targeted text patches > preserves unrelated valid section boundaries in # A
+old
+```bad`info
+# B
+KEEP
+
+AssertionError: expected { ok: true, body: '# A\nNew\n' } to deeply equal { ok: true, …(1) }
+
+- Expected
++ Received
+
+  {
+    "body": "# A
+  New
+- # B
+- KEEP
+  ",
+    "ok": true,
+  }
+
+ ❯ src/edit/patch.test.ts:10:8
+      8|   ])("preserves unrelated valid section boundaries in %s", (body, expe…
+      9|     expect(patchBody(body!, { kind: "section", heading_path: ["A"], co…
+     10|       .toEqual({ ok: true, body: expected });
+       |        ^
+     11|   });
+     12|   it("preserves mixed newline bytes for an identical unique replacemen…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  |unit| src/edit/patch.test.ts > targeted text patches > preserves mixed newline bytes for an identical unique replacement
+AssertionError: expected { ok: true, body: 'a\r\nold\r\nb' } to deeply equal { ok: true, body: 'a\r\nold\nb' }
+
+- Expected
++ Received
+
+  {
+    "body": "a
+- old
++ old
+  b",
+    "ok": true,
+  }
+
+ ❯ src/edit/patch.test.ts:15:8
+     13|     const body = "a\r\nold\nb";
+     14|     expect(patchBody(body, { kind: "replace", old_text: "old\n", new_t…
+     15|       .toEqual({ ok: true, body });
+       |        ^
+     16|   });
+     17|   it("does not treat a short fence as the end of a longer code fence",…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  4 failed | 28 passed (32)
+   Start at  15:32:35
+   Duration  606ms (transform 295ms, setup 0ms, import 450ms, tests 125ms, environment 0ms)
+
