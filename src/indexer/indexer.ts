@@ -265,6 +265,7 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
       else if (needsReindex || frontmatterOnly) notesUpdated++;
 
       if (needsReindex) {
+        vault.db.notes.invalidateIndex(upsert.id);
         parsedNotes.push({ parsed, noteId: upsert.id, needsReindex: true });
       } else if (frontmatterOnly) {
         vault.db.wikilinks.deleteByNote(upsert.id);
@@ -429,6 +430,9 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
     }
     if (resolved > 0) log(`Second pass resolved ${resolved} wikilinks`);
 
+    for (const { parsed, noteId } of parsedNotes) {
+      vault.db.notes.markIndexCurrent(noteId, parsed.bodyHash);
+    }
     vault.db.audit.finishRun(runId, {
       notesIndexed,
       chunksCreated,

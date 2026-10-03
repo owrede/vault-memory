@@ -102,11 +102,6 @@ export class NotesQueries {
       (input.vaultName !== undefined ? `obsidian-fs://${input.vaultName}/${input.path}` : null);
     if (existing) {
       if (existing.hash === input.hash) {
-        if (existing.body_hash === null) {
-          this.db
-            .prepare("UPDATE notes SET body_hash = ? WHERE id = ?")
-            .run(input.bodyHash, existing.id);
-        }
         return { id: existing.id, isNew: false };
       }
       this._update.run({
@@ -148,6 +143,9 @@ export class NotesQueries {
    * derived data. NULL body_hash already denotes an unindexed/legacy body. */
   invalidateIndex(noteId: number): void {
     this.db.prepare("UPDATE notes SET body_hash = NULL WHERE id = ?").run(noteId);
+  }
+  markIndexCurrent(noteId: number, bodyHash: string): void {
+    this.db.prepare("UPDATE notes SET body_hash = ? WHERE id = ?").run(bodyHash, noteId);
   }
 
   getByPath(path: string): NoteRow | null {

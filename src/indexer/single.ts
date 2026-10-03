@@ -187,6 +187,7 @@ export async function indexNote(options: IndexNoteOptions): Promise<IndexNoteRes
   // while sections still point at them trips a FOREIGN KEY constraint. (This
   // ordering matches the full indexer; single-indexer historically skipped
   // section maintenance — now fixed so live re-index keeps sections correct.)
+  vault.db.notes.invalidateIndex(upsert.id);
   vault.db.sections.deleteByNote(upsert.id);
   vault.db.chunks.deleteByNote(upsert.id);
   vault.db.wikilinks.deleteByNote(upsert.id);
@@ -208,6 +209,7 @@ export async function indexNote(options: IndexNoteOptions): Promise<IndexNoteRes
     // with only frontmatter (e.g. a person stub with `owner:` /
     // `attendees:` arrays) can still emit frontmatter-ref edges.
     writeAllEdges(vault, upsert.id, parsed);
+    vault.db.notes.markIndexCurrent(upsert.id, parsed.bodyHash);
     return {
       status: "indexed",
       notePath: parsed.relativePath,
@@ -302,6 +304,8 @@ export async function indexNote(options: IndexNoteOptions): Promise<IndexNoteRes
   // ── Phase 4 / 04-02 / GRA-04 / D-02 ──
   // Full re-embed branch — emit the typed-edge mix into `edges`.
   writeAllEdges(vault, upsert.id, parsed);
+
+  vault.db.notes.markIndexCurrent(upsert.id, parsed.bodyHash);
 
   return {
     status: "indexed",
