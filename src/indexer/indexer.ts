@@ -70,6 +70,9 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
   options = {
     ...options,
     embeddingModel: providerModel(options.ollama, options.embeddingModel).name,
+    secondaryEmbeddingModel: options.secondaryEmbeddingModel
+      ? providerModel(options.ollama, options.secondaryEmbeddingModel).name
+      : undefined,
   };
   const startedAt = Date.now();
   const runId = randomUUID();

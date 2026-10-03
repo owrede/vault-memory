@@ -220,3 +220,56 @@ it("refreshes with the newly active provider after a shadow switch in catchup an
     await f.cleanup();
   }
 });
+it("routes a bare ONNX secondary name to native inference during a full legacy index", async () => {
+  const { createServer } = await import("node:http");
+  const { ProviderEmbeddingClient } = await import("./client.js");
+  const provider = await loadOnnxProvider(modelPath),
+    f = await createVaultFixture();
+  const remoteModels: string[] = [];
+  const server = createServer((req, res) => {
+    let data = "";
+    req.on("data", (d) => (data += d));
+    req.on("end", () => {
+      res.setHeader("content-type", "application/json");
+      if (req.url === "/api/tags")
+        res.end(
+          JSON.stringify({ models: [{ name: "legacy" }, { name: provider.identity.model }] }),
+        );
+      else {
+        const body = JSON.parse(data);
+        remoteModels.push(body.model);
+        res.end(JSON.stringify({ embeddings: body.input.map(() => [1, 0]) }));
+      }
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address() as { port: number };
+  const client = new ProviderEmbeddingClient(provider, {
+    endpoint: `http://127.0.0.1:${address.port}`,
+    retries: 0,
+  });
+  try {
+    await fs.writeFile(join(f.root, "Alpha.md"), "# Alpha\nAlpha");
+    expect(
+      (
+        await indexVault(f.vault, {
+          mode: "full",
+          embeddingModel: "legacy",
+          secondaryEmbeddingModel: provider.identity.model,
+          ollama: client,
+        })
+      ).status,
+    ).toBe("completed");
+    const shadow = f.vault.db.models.getByName(embeddingNamespace(provider.identity))!;
+    const expected = (await provider.embed(["# Alpha\nAlpha"]))[0]!;
+    expect(f.vault.db.embeddings.searchSemantic(shadow.id, expected, 1)[0]!.distance).toBeCloseTo(
+      0,
+      5,
+    );
+    expect(remoteModels.every((model) => model === "legacy")).toBe(true);
+  } finally {
+    await client.close();
+    await f.cleanup();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});
