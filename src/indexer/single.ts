@@ -243,18 +243,10 @@ export async function indexNote(options: IndexNoteOptions): Promise<IndexNoteRes
   // Rebuild this note's sections (was previously skipped by the single-indexer,
   // so live-reindexed notes silently lost their section rows). Runs for BOTH
   // backends — sections power outline/search_sections/bundle and need no
-  // embeddings. Defensive try/catch: one pathological note must not break the
-  // watcher (mirrors the full indexer).
-  try {
-    syncObservationIndex(vault, upsert.id, parsed, () => {
-      buildSectionsForNote(vault, upsert.id, parsed.indexedContent, chunkIds);
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    process.stderr.write(
-      `[single-indexer:${vault.config.name}] section build failed for ${parsed.relativePath}: ${message}\n`,
-    );
-  }
+  // embeddings. Publication failures propagate and retain the dirty marker for retry.
+  syncObservationIndex(vault, upsert.id, parsed, () => {
+    buildSectionsForNote(vault, upsert.id, parsed.indexedContent, chunkIds);
+  });
 
   // Embed — Ollama path only. ContextFit vaults skip; the chunks + links +
   // edges persisted here power the SQLite-backed tools, and search runs via

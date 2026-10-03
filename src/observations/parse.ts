@@ -7,8 +7,8 @@ export interface ObservationDraft {
 export function parseObservations(body: string): ObservationDraft[] {
   const rows: ObservationDraft[] = [];
   let active: { draft: ObservationDraft; indent: number } | undefined;
-  const listIndents: number[] = [];
-  let fence: { char: string; length: number } | undefined;
+  const listIndents: { indent: number; contentIndent: number }[] = [];
+  let fence: { char: string; length: number; base: number } | undefined;
   const lines = body.split(/\r?\n/);
   for (const [index, line] of lines.entries()) {
     const fenceIndent = /^ */.exec(line)![0].length;
@@ -16,6 +16,8 @@ export function parseObservations(body: string): ObservationDraft[] {
     if (fence) {
       if (
         marker &&
+        fenceIndent >= fence.base &&
+        fenceIndent <= fence.base + 3 &&
         marker[2]![0] === fence.char &&
         marker[2]!.length >= fence.length &&
         !marker[3]!.trim()
@@ -23,24 +25,33 @@ export function parseObservations(body: string): ObservationDraft[] {
         fence = undefined;
       continue;
     }
+    const bullet = /^( *)([-*+])[\t ]+(.*)$/.exec(line);
+    const inlineFence = bullet && /^(`{3,}|~{3,})(.*)$/.exec(bullet[3]!);
+    const container = listIndents.findLast((level) => level.contentIndent <= fenceIndent);
+    const base = container?.contentIndent ?? 0;
     if (
-      marker &&
-      (fenceIndent <= 3 || listIndents.some((level) => level < fenceIndent)) &&
-      !(marker[2]![0] === "`" && marker[3]!.includes("`"))
+      inlineFence &&
+      !(inlineFence[1]![0] === "`" && inlineFence[2]!.includes("`")) &&
+      (bullet![1]!.length <= 3 || listIndents.some((level) => level.indent < bullet![1]!.length))
     ) {
-      fence = { char: marker[2]![0]!, length: marker[2]!.length };
+      const contentIndent = line.length - bullet![3]!.length;
+      fence = { char: inlineFence[1]![0]!, length: inlineFence[1]!.length, base: contentIndent };
       active = undefined;
       continue;
     }
-    const bullet = /^( *)([-*+])[\t ]+(.*)$/.exec(line);
+    if (marker && fenceIndent - base <= 3 && !(marker[2]![0] === "`" && marker[3]!.includes("`"))) {
+      fence = { char: marker[2]![0]!, length: marker[2]!.length, base };
+      active = undefined;
+      continue;
+    }
     if (bullet) {
       const indent = bullet[1]!.length;
       active = undefined;
       // Four spaces alone denote code, unless a shallower list item
       // establishes the nesting context.
-      if (indent > 3 && !listIndents.some((level) => level < indent)) continue;
-      while (listIndents.length && listIndents.at(-1)! >= indent) listIndents.pop();
-      listIndents.push(indent);
+      if (indent > 3 && !listIndents.some((level) => level.indent < indent)) continue;
+      while (listIndents.length && listIndents.at(-1)!.indent >= indent) listIndents.pop();
+      listIndents.push({ indent, contentIndent: line.length - bullet[3]!.length });
       const tagged = /^\[([a-z][a-z0-9_-]*)\][\t ]+(.+)$/.exec(bullet[3]!);
       if (!tagged || tagged[1] === "x" || !tagged[2]!.trim()) continue;
       const draft = {

@@ -59,4 +59,14 @@ describe("explicit categorized observations", () => {
       { category: "fact", text: "Real", line_start: 1, line_end: 1 },
     ]);
   });
+  it("ignores a fence opened on a list item line", () => {
+    expect(parseObservations("- ```md\n  - [fact] Example only\n  ```\n- [fact] Real\n")).toEqual([
+      { category: "fact", text: "Real", line_start: 4, line_end: 4 },
+    ]);
+  });
+  it("does not close a root fence with a four-space indented marker", () => {
+    expect(
+      parseObservations("```md\n    ```\n- [fact] Example only\n```\n- [fact] Real\n"),
+    ).toEqual([{ category: "fact", text: "Real", line_start: 5, line_end: 5 }]);
+  });
 });

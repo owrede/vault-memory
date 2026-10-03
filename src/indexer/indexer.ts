@@ -333,21 +333,10 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
       // chunker's start_offset to find each chunk's owning heading
       // region. Sections of a heading with no body content get
       // chunk_id_first = chunk_id_last = NULL.
-      // Defensive: section building must never abort the whole vault index
-      // because of one pathological note. The duplicate-anchor crash is
-      // handled at the insert layer (insertOneResolving); this catch covers
-      // any other unexpected failure — log and continue with the rest of the
-      // vault (see ISSUE-indexer-duplicate-anchor.md "Notes for the agent").
-      try {
-        syncObservationIndex(vault, noteId, parsed, () => {
-          buildSectionsForNote(vault, noteId, parsed.indexedContent, chunkIds);
-        });
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        console.error(
-          `[indexer:${vault.config.name}] section build failed for ${parsed.relativePath}: ${message} — skipping sections for this note`,
-        );
-      }
+      // Publication failures abort this run; dirty notes are repaired on retry.
+      syncObservationIndex(vault, noteId, parsed, () => {
+        buildSectionsForNote(vault, noteId, parsed.indexedContent, chunkIds);
+      });
 
       // Embed — ONLY in the Ollama path. ContextFit vaults (embedMode "none")
       // skip this entirely: chunks + sections + links + edges are persisted

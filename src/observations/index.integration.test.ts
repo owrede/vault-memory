@@ -94,6 +94,35 @@ describe("observation index uses canonical files", () => {
       audit: f.vault.db.audit.listWrites({}),
     }).toEqual(before);
   });
+
+  it.each(["single", "full"])(
+    "keeps a failed %s publication dirty and repairs all sections on retry",
+    async (mode) => {
+      await indexNote(opts());
+      const noteId = f.vault.db.notes.getByPath("a.md")!.id;
+      const previousRows = f.vault.db.observations.listForNote(noteId);
+      f.vault.db.handle.exec(
+        "CREATE TRIGGER reject_statement BEFORE INSERT ON observations BEGIN SELECT RAISE(ABORT, 'reject fixture'); END;",
+      );
+      await fs.writeFile(join(f.root, "a.md"), "# A\n- [fact] Changed\n## B\n- [decision] Again\n");
+      if (mode === "single") await expect(indexNote(opts())).rejects.toThrow("reject fixture");
+      else
+        expect(
+          await indexVault(f.vault, { mode: "full", embeddingModel: "unused", embeddings: "none" }),
+        ).toMatchObject({ status: "failed" });
+      expect(f.vault.db.notes.getById(noteId)!.body_hash).toBeNull();
+      expect(f.vault.db.observations.listForNote(noteId)).toEqual(previousRows);
+      f.vault.db.handle.exec("DROP TRIGGER reject_statement");
+      await indexNote(opts());
+      expect(f.vault.db.observations.listForNote(noteId).map((row) => row.text)).toEqual([
+        "Changed",
+        "Again",
+      ]);
+      expect(
+        f.vault.db.sections.getByNote(noteId).map((row) => JSON.parse(row.heading_path)),
+      ).toEqual([["A"], ["A", "B"]]);
+    },
+  );
   it("removes old statement rows on rename and cites the new source identity", async () => {
     await indexNote(opts());
     const oldId = f.vault.db.notes.getByPath("a.md")!.id;
@@ -165,6 +194,7 @@ describe("observation index uses canonical files", () => {
     await indexNote(opts());
     const result = await bundle({ projection: "sections", heading_paths: [["A", "B"]] });
     expect(result.observations!.statements.map((row) => row.text)).toEqual(["Second"]);
+    expect(result.observations!.statements[0]!.heading_path).toEqual(["A", "B"]);
   });
   it("dossiers preserve statement provenance and share selected-section semantics", async () => {
     await fs.writeFile(
@@ -186,6 +216,7 @@ describe("observation index uses canonical files", () => {
     expect(result.observations!.statements).toMatchObject([
       {
         text: "Second",
+        heading_path: ["A", "B"],
         properties: { source: "imported", evidence: ["source-1"], confidence: "direct" },
       },
     ]);

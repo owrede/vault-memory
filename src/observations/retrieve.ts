@@ -40,12 +40,16 @@ export function retrieveObservations(
   };
   if (state !== "fresh") return result;
   let rows = index.rows.filter((row) => row.doc_hash === doc.hash);
+  const body = doc.blocks
+    .map((block) => (block.kind === "paragraph" ? block.text : ""))
+    .join("\n\n");
+  const ranges = sectionRanges(body).map((range) => ({
+    ...range,
+    startLine: body.slice(0, range.body_start).split("\n").length,
+    endLine: body.slice(0, Math.max(range.body_start, range.end - 1)).split("\n").length,
+  }));
   const selectors = selectedPaths ?? (headingPath.length ? [headingPath] : undefined);
   if (selectors) {
-    const body = doc.blocks
-      .map((block) => (block.kind === "paragraph" ? block.text : ""))
-      .join("\n\n");
-    const ranges = sectionRanges(body);
     const selected = selectors.map((path) => {
       const matches = ranges.filter((range) => sameHeading(range.heading_path, path));
       if (!matches.length) throw new ProjectionError("target_not_found", path);
@@ -62,6 +66,11 @@ export function retrieveObservations(
   }
   result.available_count = rows.length;
   for (const row of rows) {
+    const rowHeading =
+      ranges
+        .filter((range) => row.line_start >= range.startLine && row.line_end <= range.endLine)
+        .sort((a, b) => b.heading_path.length - a.heading_path.length)[0]?.heading_path ??
+      headingPath;
     if (context?.projection === "metadata") {
       result.excluded.push({ id: row.id, reason: "metadata_projection" });
       continue;
@@ -71,13 +80,13 @@ export function retrieveObservations(
       result.excluded.push({ id: row.id, reason: "budget_exhausted" });
       context!.excluded.push({
         doc_id: doc.id,
-        heading_path: [...headingPath],
+        heading_path: [...rowHeading],
         reason: "budget_exhausted",
       });
       continue;
     }
     result.statements.push({
-      ...toCitationPacket({ ...doc, heading_path: headingPath }, url),
+      ...toCitationPacket({ ...doc, heading_path: rowHeading }, url),
       ...row,
       ...(excerpt ?? {}),
     });
