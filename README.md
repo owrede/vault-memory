@@ -302,6 +302,39 @@ the edit still returns `ok: true` with `index_refresh: "pending"` and a warning;
 normal indexing/catchup retries the invalidated index. With no embedding model
 registered, refresh builds the lexical index without contacting Ollama.
 
+## Compact v2 context
+
+`get_document_bundle`, `assemble_dossier` and `search_sections` accept optional
+`projection`, `heading_paths` and `max_chars`. Existing requests, including
+`projection: "full"` without a budget, keep their previous response.
+
+Use `projection: "metadata"` to omit body snippets. For selected source text:
+
+```json
+{"doc_id":"obsidian-fs://work/project.md","projection":"sections","heading_paths":[["Project","Decisions"]],"max_chars":2000}
+```
+
+Bundles and dossiers select from the anchor document; section search selects
+matching paths from its query candidate sections. Each `context.slices` entry
+contains the complete citation packet, exact body offsets and 1-based body line
+range, `text`, `original_chars` and `truncated`. Sections include their nested
+subsections. Offsets and line ranges refer to the complete source range even
+when the returned text is shortened. Source hashes describe the full document.
+
+One budget covers all body excerpts in the response. Section projection defaults
+to 6000 UTF-16 code units and avoids splitting emoji surrogate pairs. Metadata
+has a body budget of zero; citation fields and properties are retained separately.
+`budget_used`, `budget_limit`, `truncated` and `excluded` show what was shortened
+or omitted. `max_chars: 0` excludes nonempty excerpts explicitly. With full
+projection, an explicit budget limits the existing link/chunk snippets.
+
+Missing selectors return `target_not_found`, duplicate source heading paths
+return `ambiguous_target`, and invalid/missing selection arguments return
+`invalid_projection`. For section search, missing means absent from the query's
+candidate sections. No files or provenance are changed. No configuration flag
+or database migration is required; the original 23 v1 input schemas are frozen
+separately from additive v2 schema snapshots.
+
 ## License
 
 MIT.

@@ -663,613 +663,792 @@
           }
         }
       }
+    }
+  ],
+  "schemas": [
+    {
+      "name": "list_vaults",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
     },
     {
-      "name": "record_observation",
-      "description": "Record a new memory observation under the labeled MemorySink for a vault. Required provenance properties (source, confidence, evidence, status, observed_at, type, superseded_by) are auto-filled from arguments; `properties` is an escape hatch for contract-allowed extras and overrides any sugar default (D-02 — caller-last merge). Writes route through DeliveryAdapter.write() and pass through the centralized provenance validator.",
+      "name": "read_note",
       "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
         "type": "object",
-        "required": [
-          "vault",
-          "claim",
-          "evidence",
-          "confidence",
-          "type"
-        ],
         "properties": {
           "vault": {
-            "type": "string",
-            "description": "Vault name (registered in [vaults] config)"
+            "type": "string"
           },
-          "claim": {
-            "type": "string",
-            "description": "Short natural-language statement of the observation (becomes title + body)."
-          },
-          "evidence": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "DocIds or quoted source spans supporting the claim; empty array allowed."
-          },
-          "confidence": {
-            "type": "string",
-            "enum": [
-              "direct",
-              "inferred",
-              "uncertain"
-            ],
-            "description": "How the agent arrived at this claim."
-          },
-          "type": {
-            "type": "string",
-            "description": "Observation type per the sink contract (e.g. 'observation', 'hypothesis', 'decision')."
-          },
-          "sink": {
-            "type": "string",
-            "description": "Memory sink name OR full obsidian-fs://… handle. Defaults to the vault's default sink."
-          },
-          "properties": {
-            "type": "object",
-            "additionalProperties": true,
-            "description": "Escape-hatch: contract-allowed extra properties; merged AFTER sugar args (caller wins)."
+          "path": {
+            "type": "string"
           }
-        }
-      }
-    },
-    {
-      "name": "supersede",
-      "description": "Mark an existing memory document as superseded by a replacement document. Forward-only — the replacement doc is NOT touched; back-links are derived by the Phase 4 graph layer at query time. Atomic single OCC update on the OLD doc; sets status=\"superseded\", superseded_by, and superseded_reason.",
-      "inputSchema": {
-        "type": "object",
-        "required": [
-          "doc_id",
-          "replacement_doc_id",
-          "reason"
-        ],
-        "properties": {
-          "doc_id": {
-            "type": "string",
-            "description": "DocId of the document being superseded."
-          },
-          "replacement_doc_id": {
-            "type": "string",
-            "description": "DocId of the replacement document."
-          },
-          "reason": {
-            "type": "string",
-            "description": "Why the old document is being retired; written to superseded_reason."
-          }
-        }
-      }
-    },
-    {
-      "name": "compile_brief",
-      "description": "Compile a brief from caller-supplied source documents and write it to the briefs sink. Resolves the LLM via the D-10 capability-first ladder (MCP Sampling → local Ollama → caller `prepared_text` → structured error). Enforces D-11 wikilink emission per source (appends a `## Sources` footer when the LLM omits them) and writes through DeliveryAdapter. On target collision, auto-supersedes the prior brief via the Phase 2 supersede chain (D-12).",
-      "inputSchema": {
-        "type": "object",
+        },
         "required": [
           "vault",
-          "target",
-          "source_doc_ids",
-          "purpose"
+          "path"
         ],
-        "properties": {
-          "vault": {
-            "type": "string",
-            "description": "Vault name (registered in [vaults] config)"
-          },
-          "target": {
-            "type": "string",
-            "description": "Stable cross-version handle for the brief (e.g. 'atlas-q3')."
-          },
-          "source_doc_ids": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "minItems": 1,
-            "maxItems": 50,
-            "description": "DocIds the brief is compiled from; deduped, capped at 50 (D-03)."
-          },
-          "purpose": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 500,
-            "description": "Free-form purpose; bounded so list_briefs stays scannable."
-          },
-          "max_tokens": {
-            "type": "integer",
-            "minimum": 1,
-            "default": 2000,
-            "description": "Hint for the LLM ladder; default 2000."
-          },
-          "prepared_text": {
-            "type": "string",
-            "description": "D-10 tier 3 fallback when no LLM is reachable — verbatim body to stitch in."
-          },
-          "sink": {
-            "type": "string",
-            "description": "Override the default `_memory/_briefs` sink."
-          }
-        }
+        "additionalProperties": false
       }
     },
     {
-      "name": "get_brief",
-      "description": "Look up a brief by target slug. D-13 decision tree: staleness dominates; age is independent; follow the supersede chain to the terminal brief. Returns null when the caller MUST recompile (stale + !allow_stale OR too_old + !allow_stale).",
+      "name": "search_semantic",
       "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
         "type": "object",
-        "required": [
-          "vault",
-          "target"
-        ],
         "properties": {
-          "vault": {
+          "query": {
             "type": "string",
-            "description": "Vault name (registered in [vaults] config)"
-          },
-          "target": {
-            "type": "string",
-            "description": "Stable cross-version handle for the brief."
-          },
-          "max_age_days": {
-            "type": "integer",
-            "minimum": 0,
-            "description": "Reject briefs older than this many days unless allow_stale=true."
-          },
-          "allow_stale": {
-            "type": "boolean",
-            "default": false,
-            "description": "When true, return briefs flagged stale or too_old with annotation rather than null."
-          }
-        }
-      }
-    },
-    {
-      "name": "get_outline",
-      "description": "Return the navigable section tree for a document. Each OutlineNode carries an `anchor` (the section's citation token), `heading_path` (root → leaf), `heading_text`, `level`, and `chunk_ids` (v1 chunk-table IDs in that section). Consume `anchor` + `heading_path` as the section-level half of the citation packet. Unknown doc_id returns an error response with {error:'doc_not_found', doc_id}.",
-      "inputSchema": {
-        "type": "object",
-        "required": [
-          "doc_id"
-        ],
-        "properties": {
-          "doc_id": {
-            "type": "string",
-            "description": "Opaque DocId (obsidian-fs://<vault>/<path>) of the document"
+            "minLength": 1
           },
           "vaults": {
             "type": "array",
             "items": {
               "type": "string"
-            },
-            "description": "Optional vault filter; usually omitted (the DocId names a vault)."
+            }
+          },
+          "top_k": {
+            "default": 10,
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 100
+          },
+          "exclude_paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
-        }
+        },
+        "required": [
+          "query",
+          "top_k"
+        ],
+        "additionalProperties": false
       }
     },
     {
-      "name": "search_sections",
-      "description": "Section-level retrieval. Composes the v1 hybrid (semantic + BM25 + RRF) pipeline with a chunk-to-section promotion step: runs hybrid with an inflated top_k = limit × 5, promotes each chunk hit to its enclosing section, dedupes by (note, section anchor), scores each section as the MAX of its constituent chunks, tie-breaks by chunk_id_first ASC, and returns the top `limit` sections. Each hit carries an 8-field citation packet (D-01) with a non-empty section heading_path PLUS the section anchor, score, contributing chunk_ids, and an optional snippet from the best-scoring chunk. Use when you want WHOLE-SECTION context, not a chunk window.",
+      "name": "search_text",
       "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
         "type": "object",
-        "required": [
-          "query"
-        ],
         "properties": {
-          "projection": {
+          "query": {
             "type": "string",
-            "enum": [
-              "full",
-              "metadata",
-              "sections"
-            ],
-            "description": "Optional v2 projection; sections requires heading_paths. Defaults to the legacy response."
+            "minLength": 1
           },
-          "max_chars": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991,
-            "description": "Global UTF-16 body character budget. Sections defaults to 6000; zero excludes body text. Metadata is always body-free."
-          },
-          "heading_paths": {
+          "vaults": {
             "type": "array",
-            "minItems": 1,
             "items": {
-              "type": "array",
-              "minItems": 1,
-              "items": {
+              "type": "string"
+            }
+          },
+          "top_k": {
+            "default": 10,
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 100
+          },
+          "exclude_paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "query",
+          "top_k"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "search_hybrid",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1
+          },
+          "vaults": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "top_k": {
+            "default": 10,
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 100
+          },
+          "rrf_k": {
+            "default": 60,
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 1000
+          },
+          "exclude_paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "rerank": {
+            "default": false,
+            "type": "boolean"
+          },
+          "recency_weight": {
+            "default": 0,
+            "type": "number"
+          },
+          "authority_weight": {
+            "default": 0,
+            "type": "number"
+          },
+          "half_life_days": {
+            "default": 30,
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "include_superseded": {
+            "default": false,
+            "type": "boolean"
+          },
+          "frontmatter_boosts": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "value": {
+                  "type": "string"
+                },
+                "weight": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "key",
+                "value",
+                "weight"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "frontmatter_filter": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "value": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "key",
+                "value"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "expand": {
+            "type": "object",
+            "properties": {
+              "hops": {
+                "anyOf": [
+                  {
+                    "type": "number",
+                    "const": 1
+                  },
+                  {
+                    "type": "number",
+                    "const": 2
+                  }
+                ]
+              },
+              "direction": {
                 "type": "string",
-                "minLength": 1
+                "enum": [
+                  "forward",
+                  "backward",
+                  "both"
+                ]
+              },
+              "edge_types": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "wikilink",
+                    "mention",
+                    "frontmatter-ref",
+                    "hyperlink"
+                  ]
+                }
               }
             },
-            "description": "Exact heading paths on the anchor, or filters on section-search results."
+            "required": [
+              "hops"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "query",
+          "top_k",
+          "rrf_k",
+          "rerank",
+          "recency_weight",
+          "authority_weight",
+          "half_life_days",
+          "include_superseded"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_backlinks",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "vault": {
+            "type": "string"
           },
-          "query": {
+          "path": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "vault",
+          "path"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_forward_links",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "vault": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "include_broken": {
+            "default": true,
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "vault",
+          "path",
+          "include_broken"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "find_broken_links",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "vault": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "vault"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "query_frontmatter",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "vault": {
+            "type": "string"
+          },
+          "where": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "$in": {
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "boolean"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    }
+                  },
+                  "required": [
+                    "$in"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "$exists": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "$exists"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "$contains": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "boolean"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "$contains"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "limit": {
+            "default": 100,
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "vault",
+          "where",
+          "limit"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "write_note",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "vault": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "frontmatter": {
+            "anyOf": [
+              {
+                "type": "object",
+                "propertyNames": {
+                  "type": "string"
+                },
+                "additionalProperties": {}
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "expected_hash": {
+            "type": "string"
+          },
+          "client_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "vault",
+          "path",
+          "content"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "update_frontmatter",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "vault": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "merge": {
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {}
+          },
+          "expected_hash": {
+            "type": "string"
+          },
+          "client_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "vault",
+          "path",
+          "merge"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "delete_note",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "vault": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "expected_hash": {
+            "type": "string"
+          },
+          "client_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "vault",
+          "path",
+          "expected_hash"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "audit_log",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "vault": {
+            "type": "string"
+          },
+          "note_path": {
+            "type": "string"
+          },
+          "op": {
+            "type": "string",
+            "enum": [
+              "create",
+              "update",
+              "delete"
+            ]
+          },
+          "since": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "limit": {
+            "default": 50,
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 1000
+          },
+          "is_memory_sink_write": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "vault",
+          "limit"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_models",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "vault": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "vault"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "start_shadow_index",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "vault": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string",
+            "minLength": 1
+          },
+          "batch_size": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 256
+          }
+        },
+        "required": [
+          "vault",
+          "model"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "switch_active_model",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "vault": {
+            "type": "string"
+          },
+          "model_name": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "vault",
+          "model_name"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "vacuum_embeddings",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "vault": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "vault"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "index_runs",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "vault": {
             "type": "string"
           },
           "limit": {
+            "default": 20,
             "type": "integer",
-            "minimum": 1,
-            "maximum": 50,
-            "default": 10
-          },
-          "vaults": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "recency_weight": {
-            "type": "number",
-            "minimum": 0,
-            "default": 0,
-            "description": "Forward-compat with slice 03-05's authority/staleness rescore. Accepted today; ignored until 03-05 lands."
-          },
-          "authority_weight": {
-            "type": "number",
-            "minimum": 0,
-            "default": 0,
-            "description": "Forward-compat with slice 03-05's authority/staleness rescore. Accepted today; ignored until 03-05 lands."
-          },
-          "include_superseded": {
-            "type": "boolean",
-            "default": false,
-            "description": "Forward-compat with slice 03-05. When false (default), superseded docs are filtered out at the chunk level inside hybrid; accepted today, ignored until 03-05."
+            "exclusiveMinimum": 0,
+            "maximum": 200
           }
-        }
+        },
+        "required": [
+          "vault",
+          "limit"
+        ],
+        "additionalProperties": false
       }
     },
     {
-      "name": "recall",
-      "description": "Retrieve memory documents from one or more labeled MemorySinks, filtered by provenance (min_confidence, types, max_age_days) and ranked by recency (observed_at DESC). Returns citation packets (doc_id, source_handle, title, heading_path, mtime, hash, display_url, properties) — the same 8-field shape Phase 3 assembly tools use. Superseded documents are hidden by default.",
+      "name": "search",
       "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
         "type": "object",
-        "required": [
-          "query"
-        ],
         "properties": {
           "query": {
             "type": "string",
-            "description": "Natural-language query; routes through hybrid (semantic + BM25) search."
-          },
-          "min_confidence": {
-            "type": "string",
-            "enum": [
-              "direct",
-              "inferred",
-              "uncertain"
-            ],
-            "description": "Exclude docs whose confidence ordinal is lower than this (direct=3, inferred=2, uncertain=1)."
-          },
-          "types": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Restrict to docs whose `type` property is in this set."
-          },
-          "max_age_days": {
-            "type": "integer",
-            "minimum": 1,
-            "description": "Exclude docs whose `observed_at` is older than this many days."
-          },
-          "sink": {
-            "type": "string",
-            "description": "Memory sink name OR full obsidian-fs://… handle. Defaults to all configured sinks."
+            "minLength": 1
           },
           "limit": {
+            "default": 10,
             "type": "integer",
-            "minimum": 1,
-            "maximum": 200,
+            "exclusiveMinimum": 0,
+            "maximum": 50
+          }
+        },
+        "required": [
+          "query",
+          "limit"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "fetch",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "vault_stats",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "vault": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "recent_notes",
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "properties": {
+          "vault": {
+            "type": "string"
+          },
+          "limit": {
             "default": 20,
-            "description": "Max results AFTER filter+sort."
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 200
           },
-          "vaults": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Restrict to these vault names; defaults to all configured."
-          }
-        }
-      }
-    },
-    {
-      "name": "get_document_bundle",
-      "description": "Document-tree retrieval. Returns a structured bundle for a single document: { anchor (citation packet + optional status/superseded_by), outline (section tree via buildOutlineTree — same shape as get_outline.root), backlinks (citation packets + property_snippet + relation:\"wikilink\"), forward_links (same shape; broken links omitted), recent_edits (≤10 most recent audit_log rows mapped to {at, op, client_id, is_memory_sink_write?}) }. Every citation packet is the full 8-field D-01 shape from src/memory/citation-packet.ts. v2.0.0 accepts only depth:1 (one-hop links); the field is zod-pinned to z.literal(1) for forward compatibility. recent_edits is keyed by the anchor's CURRENT note path — pre-rename history is preserved in audit_log but not surfaced here (Phase 4 widens). Unknown doc_id returns { isError: true, error: \"doc_not_found\", doc_id }.",
-      "inputSchema": {
-        "type": "object",
-        "required": [
-          "doc_id"
-        ],
-        "properties": {
-          "projection": {
-            "type": "string",
-            "enum": [
-              "full",
-              "metadata",
-              "sections"
-            ],
-            "description": "Optional v2 projection; sections requires heading_paths. Defaults to the legacy response."
-          },
-          "max_chars": {
+          "since": {
             "type": "integer",
             "minimum": 0,
-            "maximum": 9007199254740991,
-            "description": "Global UTF-16 body character budget. Sections defaults to 6000; zero excludes body text. Metadata is always body-free."
-          },
-          "heading_paths": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-              "type": "array",
-              "minItems": 1,
-              "items": {
-                "type": "string",
-                "minLength": 1
-              }
-            },
-            "description": "Exact heading paths on the anchor, or filters on section-search results."
-          },
-          "doc_id": {
-            "type": "string",
-            "description": "Opaque DocId (obsidian-fs://<vault>/<path>) of the anchor document."
-          },
-          "depth": {
-            "type": "integer",
-            "enum": [
-              1
-            ],
-            "default": 1,
-            "description": "Depth of the link walk. v2.0.0 accepts only depth:1 (one-hop). Phase 4 may widen."
-          },
-          "vaults": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Optional vault filter; usually omitted (the DocId names a vault)."
+            "maximum": 9007199254740991
           }
-        }
-      }
-    },
-    {
-      "name": "expand",
-      "description": "Typed-edge BFS retrieval. Returns the typed-edge neighborhood of one or more seed documents as a flat array of citation packets, each carrying `via: {seed_doc_id, hop, edge_type, direction}` provenance. Hops hard-capped at 2 (v2.0.0). Default direction = 'both'. Filterable by edge_type and by document properties (strict equality, no operators). Memory-sink documents (`_memory/...`) surface only when they are already linked from a user note in the result set (per ADR-004 memory-namespace opacity rule). Frontmatter-ref edges are extracted heuristically: `[[...]]` syntax in any property value OR allowlisted property names (`assignee`, `owner`, `project`, `related`, `parent`, `child`, `attendees`, `superseded_by`) matched against `note_aliases`. `include_superseded` defaults to false (Phase 2 D-03 forward-only supersede). Unknown seed_doc_ids do not throw — they are returned in a `warnings: [{seed_doc_id, reason: 'unknown_doc'}]` array. Shortest path wins on dedup; ties broken by (seed_doc_id, edge_type, direction).",
-      "inputSchema": {
-        "type": "object",
+        },
         "required": [
-          "seed_doc_ids",
-          "hops"
+          "limit"
         ],
-        "properties": {
-          "seed_doc_ids": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-              "type": "string",
-              "description": "Opaque DocId (e.g. obsidian-fs://<vault>/<path>)."
-            }
-          },
-          "hops": {
-            "type": "number",
-            "enum": [
-              1,
-              2
-            ],
-            "description": "Hop cap (1 or 2). v2.0.0 hard-caps at 2."
-          },
-          "direction": {
-            "type": "string",
-            "enum": [
-              "forward",
-              "backward",
-              "both"
-            ],
-            "default": "both",
-            "description": "Edge traversal direction; default 'both'."
-          },
-          "edge_types": {
-            "type": "array",
-            "items": {
-              "type": "string",
-              "enum": [
-                "wikilink",
-                "mention",
-                "frontmatter-ref",
-                "hyperlink"
-              ]
-            },
-            "description": "Optional filter on edge types; default = all four types."
-          },
-          "filter_properties": {
-            "type": "object",
-            "additionalProperties": true,
-            "description": "Strict-equality predicate on document properties (e.g. {type: 'Project'})."
-          },
-          "include_superseded": {
-            "type": "boolean",
-            "default": false,
-            "description": "When false (default), docs whose properties.status === 'superseded' are dropped."
-          }
-        }
+        "additionalProperties": false
       }
     },
     {
-      "name": "cluster",
-      "description": "Community detection over the typed-edge graph via Louvain modularity (Blondel et al. 2008) using `graphology` + `graphology-communities-louvain`. Deterministic: same input produces byte-identical cluster_id assignment via DocId-sorted node insertion + seeded RNG (`vault-memory-cluster-v1`). cluster_id = smallest member DocId per community. Hard-capped at 5000 nodes; pass `force: true` to override. Either `query` (composes search_hybrid + expand 1-hop) OR `seed_doc_ids` (uses provided seeds + induced 1-hop neighborhood); not both — passing both returns {ok:false, reason:'both_seeds_and_query'}. On the `query` path with multiple vaults configured, the `vault` field is required so search scope is deterministic; single-vault setups may omit it (returns {ok:false, reason:'vault_required'} otherwise). Returns per-cluster {cluster_id, size, members[], summary: {top_types, top_titles, edge_density}}. No LLM enrichment — summary fields are pure-deterministic computations (LLM enrichment is Phase 5 brief layer's job). _memory opacity inherited from expand() (Plan 04-03).",
+      "name": "suggest_frontmatter",
       "inputSchema": {
-        "type": "object",
-        "required": [
-          "method"
-        ],
-        "properties": {
-          "query": {
-            "type": "string",
-            "description": "Natural-language query. When set, composes search_hybrid + expand(hops=1, both). Mutually exclusive with seed_doc_ids."
-          },
-          "seed_doc_ids": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-              "type": "string"
-            },
-            "description": "1+ opaque DocIds. When set, cluster() uses these seeds + their induced 1-hop neighborhood. Mutually exclusive with query."
-          },
-          "vault": {
-            "type": "string",
-            "description": "Vault name to scope the `query` search against (CR-02). Required on the `query` path when multiple vaults are configured; optional on single-vault setups. Ignored on the `seed_doc_ids` path (the vault is inferred from each DocId)."
-          },
-          "method": {
-            "type": "string",
-            "enum": [
-              "edge-community"
-            ],
-            "description": "Clustering algorithm. v2.0.0 supports only 'edge-community' (Louvain)."
-          },
-          "query_top_k": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 200,
-            "default": 50,
-            "description": "Only used in the query path: how many top hits to retrieve before expansion. Default 50."
-          },
-          "force": {
-            "type": "boolean",
-            "default": false,
-            "description": "Bypass the 5000-node hard cap. When false (default), oversized inputs return {ok:false, reason:'node_count_exceeded'}."
-          }
-        }
-      }
-    },
-    {
-      "name": "assemble_dossier",
-      "description": "Resolve a {type, key} pair to an anchor document and walk its backlinks into a structured dossier: { anchor (citation packet), linked_documents (citation packets + relation), property_rollups (linked_count, linked_types, status_distribution) }. Strict properties.type match (D-03). The key matches the candidate's title OR any entry in properties.aliases (D-04). v2.0.0 returns relation:\"wikilink\" on every linked_documents entry (the v1 wikilinks table is the only edge source); Phase 4 (GRA-04) widens to typed edges. Superseded backlinks are NOT filtered — dossiers show the whole picture (CONTEXT D-04).",
-      "inputSchema": {
-        "type": "object",
-        "required": [
-          "type",
-          "key"
-        ],
-        "properties": {
-          "projection": {
-            "type": "string",
-            "enum": [
-              "full",
-              "metadata",
-              "sections"
-            ],
-            "description": "Optional v2 projection; sections requires heading_paths. Defaults to the legacy response."
-          },
-          "max_chars": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991,
-            "description": "Global UTF-16 body character budget. Sections defaults to 6000; zero excludes body text. Metadata is always body-free."
-          },
-          "heading_paths": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-              "type": "array",
-              "minItems": 1,
-              "items": {
-                "type": "string",
-                "minLength": 1
-              }
-            },
-            "description": "Exact heading paths on the anchor, or filters on section-search results."
-          },
-          "type": {
-            "type": "string",
-            "description": "Exact-match value for properties.type on the anchor document (e.g. 'Person', 'Project', 'Meeting'). No fuzzy / synonym matching."
-          },
-          "key": {
-            "type": "string",
-            "description": "Candidate key. Matches the document's title OR any entry in properties.aliases (a string[] from frontmatter). Exact-string match."
-          },
-          "vaults": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Restrict to these vault names; defaults to all configured."
-          }
-        }
-      }
-    },
-    {
-      "name": "register_contracts_as_tools",
-      "description": "Explicit-control escape valve (D-A1) — scans the per-vault contract registry and updates the dynamic MCP tool list (registers new contracts as vm_<name> tools, unregisters removed ones) regardless of the [contracts.auto_register_tools] config gate. Always callable. Returns a per-vault diff of {registered, unregistered}. Omit `vault` to apply to every configured vault.",
-      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
         "type": "object",
         "properties": {
           "vault": {
-            "type": "string",
-            "description": "Vault name; omit to apply to all vaults."
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "content": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "folder_hint": {
+            "type": "string"
           }
-        }
-      }
-    },
-    {
-      "name": "describe_contract",
-      "description": "Return the input JSON Schema + an auto-generated markdown summary for a contract (Q-DESCRIBE). Pure function — does not execute the contract. Summary lists Inputs / Sources / Sinks / Assembly (numbered) / write_back / Output Shape. Omit `vault` on single-vault setups; on multi-vault setups, pass `vault` to disambiguate (returns `{ok:false, reason:'ambiguous_vault'}` otherwise).",
-      "inputSchema": {
-        "type": "object",
+        },
         "required": [
-          "name"
+          "vault"
         ],
-        "properties": {
-          "name": {
-            "type": "string",
-            "description": "Registered contract name (see register_contracts_as_tools)."
-          },
-          "vault": {
-            "type": "string",
-            "description": "Vault name; omit on single-vault setups."
-          }
-        }
-      }
-    },
-    {
-      "name": "instantiate_contract",
-      "description": "Execute a registered contract end-to-end. Zod-validates inputs against the contract's inputZodSchema (additionalProperties:false rejects typos). Resolves source/sink overrides per D-A4b default chain (explicit → config → contract literal → error if required); sinks are MemorySink-only per D-A4c (MEM-05 invariant un-bypassable). Runs each assembly step through verbDispatcher with template resolution + named-binding accumulation. write_back routes through DeliveryAdapter.write() (MEM-05 chokepoint). Returns the Q-OUTPUT bundle {steps, write_back} on success OR a structured InstantiateError envelope (12 sealed reasons per ADR-006 §Decision 7). Omit `vault` on single-vault setups; multi-vault setups require it (returns `ambiguous_vault` otherwise).",
-      "inputSchema": {
-        "type": "object",
-        "required": [
-          "name"
-        ],
-        "properties": {
-          "name": {
-            "type": "string",
-            "description": "Registered contract name."
-          },
-          "inputs": {
-            "type": "object",
-            "additionalProperties": true,
-            "description": "Contract inputs; validated against the contract's inputZodSchema."
-          },
-          "source_overrides": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            },
-            "description": "Override declared source handles by handle name (e.g. {default_source: 'obsidian-fs://x'})."
-          },
-          "sink_overrides": {
-            "type": "object",
-            "additionalProperties": {
-              "type": "string"
-            },
-            "description": "Override declared sink handles by handle name. Targets MUST resolve through MemorySinkRegistry (D-A4c)."
-          },
-          "vault": {
-            "type": "string",
-            "description": "Vault name; omit on single-vault setups."
-          }
-        }
+        "additionalProperties": false
       }
     }
   ]

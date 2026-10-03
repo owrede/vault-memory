@@ -15,14 +15,21 @@
 
 import { formatDocId, parseSourceHandle } from "../../adapters/registry.js";
 import { getOutline } from "../../assembly/outline.js";
-import { searchSections } from "../../assembly/search-sections.js";
+import {
+  searchSectionsWithContext,
+  type SearchSectionsArgs,
+} from "../../assembly/search-sections.js";
+import type { AssembleDossierArgs } from "../../assembly/dossier.js";
+import type { GetDocumentBundleArgs } from "../../assembly/bundle.js";
 import { assembleDossier, getDocumentBundle } from "../../assembly/index.js";
 import { hybridSearch } from "../../search/index.js";
 import type { Vault } from "../../vault/index.js";
 import type { ToolName } from "../../tool-registry.js";
 import type { Handler, HandlerDeps } from "../deps.js";
 
-export function makeAssemblyHandlers(deps: HandlerDeps): Partial<Record<ToolName, Handler>> {
+export function makeAssemblyHandlers(
+  deps: Pick<HandlerDeps, "manager" | "ollama" | "defaultModel" | "adapterRegistry">,
+): Partial<Record<ToolName, Handler>> {
   const { manager, ollama, defaultModel, adapterRegistry } = deps;
   return {
     // ── Phase 3 assembly tools (Plan 03-02 / ASM-02) ───────────────────────
@@ -40,14 +47,7 @@ export function makeAssemblyHandlers(deps: HandlerDeps): Partial<Record<ToolName
 
     // ── Phase 3 assembly tools (Plan 03-03) ──────────────────────────────────
     search_sections: async (a) => {
-      const p = a as {
-        query: string;
-        limit?: number;
-        vaults?: string[];
-        recency_weight?: number;
-        authority_weight?: number;
-        include_superseded?: boolean;
-      };
+      const p = a as SearchSectionsArgs;
       // Resolve target vaults: callers may scope to a subset; default to
       // all configured vaults (mirrors search_hybrid's behavior).
       const allVaults = manager.list();
@@ -55,7 +55,7 @@ export function makeAssemblyHandlers(deps: HandlerDeps): Partial<Record<ToolName
         ? p.vaults.map((name) => manager.require(name))
         : allVaults;
 
-      const results = await searchSections(
+      return searchSectionsWithContext(
         {
           searchHybrid: async (input) =>
             hybridSearch({
@@ -119,6 +119,7 @@ export function makeAssemblyHandlers(deps: HandlerDeps): Partial<Record<ToolName
           },
         },
         {
+          ...p,
           query: p.query,
           limit: p.limit ?? 10,
           ...(p.vaults !== undefined ? { vaults: p.vaults } : {}),
@@ -129,12 +130,11 @@ export function makeAssemblyHandlers(deps: HandlerDeps): Partial<Record<ToolName
             : {}),
         },
       );
-      return { results, count: results.length };
     },
 
     // ── Phase 3 assembly tools (Plan 03-06) ────────────────────────────────
     assemble_dossier: async (a) => {
-      const p = a as { type: string; key: string; vaults?: string[] };
+      const p = a as AssembleDossierArgs;
       return assembleDossier(
         {
           manager,
@@ -147,7 +147,7 @@ export function makeAssemblyHandlers(deps: HandlerDeps): Partial<Record<ToolName
 
     // ── Phase 3 assembly tools (Plan 03-04 / ASM-01) ───────────────────────
     get_document_bundle: async (a) => {
-      const p = a as { doc_id: string; depth?: 1; vaults?: string[] };
+      const p = a as GetDocumentBundleArgs;
       return getDocumentBundle(
         {
           manager,

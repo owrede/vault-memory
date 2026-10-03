@@ -38,6 +38,27 @@
 //     pass through both the top-level `description` and per-field
 //     `.describe()` chains).
 
+const PROJECTION_PROPERTIES = {
+  projection: {
+    type: "string",
+    enum: ["full", "metadata", "sections"],
+    description:
+      "Optional v2 projection; sections requires heading_paths. Defaults to the legacy response.",
+  },
+  max_chars: {
+    type: "integer",
+    minimum: 0,
+    maximum: Number.MAX_SAFE_INTEGER,
+    description:
+      "Global UTF-16 body character budget. Sections defaults to 6000; zero excludes body text. Metadata is always body-free.",
+  },
+  heading_paths: {
+    type: "array",
+    minItems: 1,
+    items: { type: "array", minItems: 1, items: { type: "string", minLength: 1 } },
+    description: "Exact heading paths on the anchor, or filters on section-search results.",
+  },
+} as const;
 export const TOOLS = [
   {
     name: "list_vaults",
@@ -742,6 +763,7 @@ export const TOOLS = [
       type: "object",
       required: ["query"],
       properties: {
+        ...PROJECTION_PROPERTIES,
         query: { type: "string" },
         limit: {
           type: "integer",
@@ -848,6 +870,7 @@ export const TOOLS = [
       type: "object",
       required: ["doc_id"],
       properties: {
+        ...PROJECTION_PROPERTIES,
         doc_id: {
           type: "string",
           description: "Opaque DocId (obsidian-fs://<vault>/<path>) of the anchor document.",
@@ -1011,6 +1034,7 @@ export const TOOLS = [
       type: "object",
       required: ["type", "key"],
       properties: {
+        ...PROJECTION_PROPERTIES,
         type: {
           type: "string",
           description:
@@ -1131,6 +1155,24 @@ export type ToolName = (typeof TOOLS)[number]["name"];
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { z, type ZodRawShape } from "zod";
+const PROJECTION_SCHEMA = {
+  projection: z
+    .enum(["full", "metadata", "sections"])
+    .optional()
+    .describe(PROJECTION_PROPERTIES.projection.description),
+  max_chars: z
+    .number()
+    .int()
+    .min(0)
+    .max(Number.MAX_SAFE_INTEGER)
+    .optional()
+    .describe(PROJECTION_PROPERTIES.max_chars.description),
+  heading_paths: z
+    .array(z.array(z.string().min(1)).min(1))
+    .min(1)
+    .optional()
+    .describe(PROJECTION_PROPERTIES.heading_paths.description),
+};
 
 /**
  * Canonical DocId pattern (mirrors `DOC_ID_PATTERN` in
@@ -1446,6 +1488,7 @@ export const TOOL_SCHEMAS = {
 
   // ── Phase 3 assembly tools (Plan 03-03) ─────────────────────────────────
   search_sections: {
+    ...PROJECTION_SCHEMA,
     query: z.string().min(1),
     limit: z.number().int().positive().max(50).optional().default(10),
     vaults: z.array(z.string().min(1)).optional(),
@@ -1501,6 +1544,7 @@ export const TOOL_SCHEMAS = {
 
   // ── Phase 3 assembly tools (Plan 03-04 / ASM-01) ────────────────────────
   get_document_bundle: {
+    ...PROJECTION_SCHEMA,
     doc_id: z
       .string()
       .regex(DOC_ID_PATTERN)
@@ -1576,6 +1620,7 @@ export const TOOL_SCHEMAS = {
 
   // ── Phase 3 assembly tools (Plan 03-06) ─────────────────────────────────
   assemble_dossier: {
+    ...PROJECTION_SCHEMA,
     type: z
       .string()
       .min(1)

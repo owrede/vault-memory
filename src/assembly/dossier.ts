@@ -74,6 +74,12 @@ import {
 } from "../memory/citation-packet.js";
 import type { Document } from "../types.js";
 import type { Vault, VaultManager } from "../vault/index.js";
+import {
+  documentContext,
+  validateProjection,
+  type ContextSelection,
+  type ProjectionArgs,
+} from "./selection.js";
 
 /**
  * Dossier deps — supplied at server bootstrap. Mirrors the recall
@@ -96,7 +102,7 @@ export interface AssembleDossierDeps {
  * subset of registered vaults; omitting it falls back to "all configured
  * vaults" (mirrors the recall convention).
  */
-export interface AssembleDossierArgs {
+export interface AssembleDossierArgs extends ProjectionArgs {
   type: string;
   key: string;
   vaults?: string[];
@@ -144,6 +150,7 @@ export interface DossierError {
  * Structured dossier result. `anchor === null` iff `error !== null`.
  */
 export interface DossierResult {
+  context?: ContextSelection;
   anchor: DossierAnchor | null;
   linked_documents: LinkedDocument[];
   property_rollups: {
@@ -326,6 +333,7 @@ export async function assembleDossier(
   deps: AssembleDossierDeps,
   args: AssembleDossierArgs,
 ): Promise<DossierResult> {
+  validateProjection(args);
   // 1) Build the candidate vault list. Throws on unknown vault names
   //    — the server wraps the exception in errorResponse() at the
   //    dispatch boundary.
@@ -427,8 +435,10 @@ export async function assembleDossier(
     status_distribution[status] = (status_distribution[status] ?? 0) + 1;
   }
 
+  const context = documentContext(anchorDoc, anchorPacket.display_url, args);
   return {
     anchor: anchorPacket,
+    ...(context ? { context } : {}),
     linked_documents: linkedDocuments,
     property_rollups: {
       linked_count: linkedDocuments.length,

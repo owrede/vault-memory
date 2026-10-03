@@ -88,6 +88,13 @@ import { buildOutlineTree } from "./outline.js";
 import type { OutlineNode } from "./types.js";
 import type { BlockNode, ChunkRow, Document, SectionRow } from "../types.js";
 import type { Vault, VaultManager } from "../vault/index.js";
+import {
+  documentContext,
+  takeContext,
+  validateProjection,
+  type ContextSelection,
+  type ProjectionArgs,
+} from "./selection.js";
 
 /**
  * Maximum number of audit-log rows surfaced in `recent_edits`.
@@ -117,7 +124,7 @@ export interface GetDocumentBundleDeps {
  * Validated input shape for `get_document_bundle`. Matches the Zod
  * `GetDocumentBundleArgs` schema in `src/tool-registry.ts`.
  */
-export interface GetDocumentBundleArgs {
+export interface GetDocumentBundleArgs extends ProjectionArgs {
   /** Opaque DocId — `<scheme>://<authority>/<resource>`. */
   doc_id: string;
   /**
@@ -209,6 +216,7 @@ export interface BundleRecentEdit {
  * Wire shape of the `get_document_bundle({doc_id})` MCP tool response.
  */
 export interface BundleResult {
+  context?: ContextSelection;
   anchor: BundleAnchor;
   outline: OutlineNode[];
   backlinks: BacklinkEntry[];
@@ -282,6 +290,7 @@ export async function getDocumentBundle(
   deps: GetDocumentBundleDeps,
   args: GetDocumentBundleArgs,
 ): Promise<BundleResult> {
+  validateProjection(args);
   // 1) Validate-decompose the DocId. `parseDocId` throws on malformed
   //    input — surface as `doc_not_found` (callers gave us a bad id).
   let parsed: { scheme: string; authority: string; resource: string };
@@ -445,11 +454,33 @@ export async function getDocumentBundle(
   //    forward-link entry carries its own (same vault in v2.0.0, but
   //    Phase 4 cross-adapter graph walks may surface heterogeneous
   //    source handles).
+  const context = documentContext(anchorDoc, anchorPacket.display_url, args);
+  if (context) {
+    for (const link of [...backlinks, ...forward_links]) {
+      if (context.projection !== "full") link.property_snippet = "";
+      else {
+        const excerpt = takeContext(context, link.property_snippet);
+        if (!excerpt.text.length && excerpt.original_chars) {
+          context.excluded.push({
+            doc_id: link.doc_id,
+            heading_path: link.heading_path,
+            reason: "budget_exhausted",
+          });
+        }
+        Object.assign(link, {
+          property_snippet: excerpt.text,
+          truncated: excerpt.truncated,
+          original_chars: excerpt.original_chars,
+        });
+      }
+    }
+  }
   return {
     anchor: anchorPacket,
     outline,
     backlinks,
     forward_links,
     recent_edits,
+    ...(context ? { context } : {}),
   };
 }

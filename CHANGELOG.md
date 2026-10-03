@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Compact v2 assembly projections: body-free metadata, selected source
+  sections with complete citations, global character budgets and explicit
+  truncation/exclusions. Preserve legacy defaults and original v1 schemas.
+
 - Opt-in `document_edit` module with hash-protected `edit_document` text and
   heading-section patches, preserved frontmatter formatting and guarded no-ops.
 
@@ -23,6 +27,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   text editor, then read the document again before retrying.
 
 ### Fixed
+
+- Targeted edit section boundaries, identical mixed-newline no-ops and
+  derived-index refresh/retry after successful edits.
 
 - Locked documents return `document_locked` consistently through note and
   frontmatter handlers. Rejected writes no longer suppress later external

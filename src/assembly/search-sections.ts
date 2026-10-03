@@ -48,12 +48,21 @@
 import type { DocId, Document, SearchHit, SourceHandle } from "../types.js";
 import type { CitationPacket } from "../memory/citation-packet.js";
 import { toCitationPacket } from "../memory/citation-packet.js";
+import {
+  contextSelection,
+  documentContext,
+  sameHeading,
+  takeContext,
+  ProjectionError,
+  type ProjectionArgs,
+  type ContextSelection,
+} from "./selection.js";
 
 /**
  * Input shape for the `search_sections` MCP tool. Validated upstream
  * by Zod in `tool-registry.ts`; this is the post-validation shape.
  */
-export interface SearchSectionsArgs {
+export interface SearchSectionsArgs extends ProjectionArgs {
   query: string;
   limit: number;
   vaults?: string[];
@@ -140,6 +149,8 @@ export interface SectionHit extends CitationPacket {
   snippet?: string;
   /** Every chunk_idx that contributed to this section in this query. */
   chunk_ids: number[];
+  truncated?: boolean;
+  original_chars?: number;
 }
 
 /**
@@ -172,10 +183,16 @@ interface SectionAccumulator {
  * Run section-level retrieval. See the file header for the full
  * composition algorithm.
  */
-export async function searchSections(
+export async function searchSectionsWithContext(
   deps: SearchSectionsDeps,
   args: SearchSectionsArgs,
-): Promise<SectionHit[]> {
+): Promise<{ results: SectionHit[]; count: number; context?: ContextSelection }> {
+  const context = contextSelection(args);
+  const response = (results: SectionHit[]) => ({
+    results,
+    count: results.length,
+    ...(context ? { context } : {}),
+  });
   // 1) Inflate topK and call the inner hybrid pipeline. A single call
   //    keeps the v1 RRF (+ optional rerank) byte-identical.
   const chunkHits = await deps.searchHybrid({
@@ -184,7 +201,7 @@ export async function searchSections(
     vaults: args.vaults,
   });
 
-  if (chunkHits.length === 0) return [];
+  if (chunkHits.length === 0) return response([]);
 
   // 2) Promote each chunk hit to its enclosing section, accumulating
   //    by `(note_id, anchor)`. Drop orphan chunks silently.
@@ -223,7 +240,7 @@ export async function searchSections(
     }
   }
 
-  if (sectionMap.size === 0) return [];
+  if (sectionMap.size === 0) return response([]);
 
   // 3) Sort by score DESC, tie-break by `chunk_id_first` ASC. Earlier
   //    sections in document order win deterministic ties.
@@ -234,7 +251,19 @@ export async function searchSections(
 
   // 4) Slice to limit BEFORE hydration — avoids paying for `Document`
   //    reads on losing sections.
-  const winners = sorted.slice(0, args.limit);
+  if (context?.projection === "sections") {
+    for (const path of args.heading_paths!) {
+      if (!sorted.some((acc) => sameHeading(path, acc.resolution.headingPath)))
+        throw new ProjectionError("target_not_found", path);
+    }
+  }
+  const winners = (
+    context?.projection === "sections"
+      ? sorted.filter((acc) =>
+          args.heading_paths!.some((path) => sameHeading(path, acc.resolution.headingPath)),
+        )
+      : sorted
+  ).slice(0, args.limit);
 
   // 5) Hydrate each surviving section into a `SectionHit`. The
   //    citation packet is built from the full `Document` (via the
@@ -272,14 +301,42 @@ export async function searchSections(
       score: acc.bestScore,
       chunk_ids: [...acc.chunkIdxs],
     };
-    if (acc.bestHit.chunkText.length > 0) {
+    if (context?.projection === "sections") {
+      const selected = documentContext(doc, packet.display_url, {
+        projection: "sections",
+        heading_paths: [acc.resolution.headingPath],
+        max_chars: context.budget_limit - context.budget_used,
+      })!;
+      context.budget_used += selected.budget_used;
+      context.truncated ||= selected.truncated;
+      context.slices.push(...selected.slices);
+      context.excluded.push(...selected.excluded);
+    } else if (context?.projection === "full") {
+      const excerpt = takeContext(context, acc.bestHit.chunkText);
+      hit.snippet = excerpt.text;
+      hit.truncated = excerpt.truncated;
+      hit.original_chars = excerpt.original_chars;
+      if (!excerpt.text.length && excerpt.original_chars)
+        context.excluded.push({
+          doc_id: doc.id,
+          heading_path: packet.heading_path,
+          reason: "budget_exhausted",
+        });
+    } else if (!context && acc.bestHit.chunkText.length > 0) {
       hit.snippet = acc.bestHit.chunkText;
     }
     hits.push(hit);
   }
 
-  return hits;
+  return response(hits);
 }
 
 // Re-exports for ergonomic imports.
 export type { CitationPacket, DocId, Document, SearchHit, SourceHandle };
+
+export async function searchSections(
+  deps: SearchSectionsDeps,
+  args: SearchSectionsArgs,
+): Promise<SectionHit[]> {
+  return (await searchSectionsWithContext(deps, args)).results;
+}

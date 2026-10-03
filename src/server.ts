@@ -108,6 +108,7 @@ import {
 import { makeNotesHandlers, handleReadNote } from "./server/handlers/notes.js";
 import { registerFeatureTools } from "./server/feature-tools.js";
 import { refreshEditedDocument } from "./edit/refresh.js";
+import { ProjectionError } from "./assembly/selection.js";
 import { decomposeDocId } from "./adapters/registry.js";
 import { makeSearchHandlers, handleSearchHybrid } from "./server/handlers/search.js";
 import { makeGraphHandlers } from "./server/handlers/graph.js";
@@ -1015,6 +1016,9 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
           // (forthcoming get_bundle, dossier) will throw the same shape.
           if (err instanceof DocNotFoundError) {
             return errorResponseJson({ error: "doc_not_found", doc_id: err.doc_id });
+          }
+          if (err instanceof ProjectionError) {
+            return errorResponseJson({ error: err.code, heading_path: err.heading_path });
           }
           const message = errorMessage(err);
           return errorResponse(message);
