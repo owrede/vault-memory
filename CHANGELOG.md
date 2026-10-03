@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Opt-in `schema_inspection` module: read-only candidate profiles, named
+  MemoryContract validation, strict/permissive diagnostics and property/category/
+  role drift with fresh citations; inference never weakens provenance requirements.
+
 - Explicit domain role declarations in Relations sections, additive v2 expand
   role filters and incoming/outgoing aliases, source-line/hash provenance and
   stale-relation diagnostics on the existing typed graph.

@@ -1,3 +1,4 @@
+import { resolveInspectionContract } from "./schema/resolve-contract.js";
 /**
  * MCP server.
  *
@@ -1031,6 +1032,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
     server,
     {
       adapterRegistry,
+      resolveSchemaContract: (name, ids) => resolveInspectionContract(manager, name, ids),
       onBeforeWrite: (id) => suppression.add(decomposeDocId(id).resource),
       onAfterWrite: (id) => refreshEditedDocument({ manager, ollama, defaultModel }, id),
     },

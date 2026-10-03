@@ -388,6 +388,46 @@ A changed declaring source returns `stale_relation` and excludes its indexed
 role until reindexing. Traversal never invents an inverse role or confidence.
 The original v1 graph-tool schemas stay unchanged.
 
+## Read-only schema candidates, validation and drift
+
+Enable the separate module explicitly:
+
+```toml
+[server]
+features = ["document_edit", "schema_inspection"]
+```
+
+`inspect_schema` accepts `mode: "infer" | "validate" | "diff"`, `doc_ids`, an
+optional named MemoryContract and `strict` (default false). Infer returns
+candidate-only field types/prevalence, category/role prevalence, sample size
+and complete fresh source citations. It neither marks empirical fields required
+nor saves or changes a contract. A supplied contract retains all of its explicit
+required keys, including keys absent from the sample. The adapter's derived
+`wikilinks` property is excluded from filesystem field profiles/validation;
+citation properties retain their original adapter shape.
+
+Validate and diff require an explicit contract. Registered MemoryContracts,
+including `default-memory-v1`, use their existing Zod validators and required-key
+lists. Missing required provenance, wrong types and cross-field violations are
+always errors. Additional undeclared fields are warnings permissively and errors
+with `strict: true`; `passed` means no errors. Diagnostics cite the source hash,
+field path, and source line for body declarations. Diff reports required missing
+in any sampled document, unexpected fields and new observed types.
+
+An unregistered name loads its existing `_contracts/memory/<name>.yaml` from the
+single filesystem vault named by the samples. The existing process-wide named
+MemoryContract cache remains in use; multiple vaults cannot select an ambiguous
+disk fallback. Author contracts explicitly and version them yourself. Optional
+`observation_categories: [fact, decision]` and `relation_roles: [owns, depends_on]`
+restrict inspection vocabularies. Omitted vocabularies are unrestricted; declared
+empty arrays allow no values. Unknown declarations become warnings or strict
+errors and appear in category/role drift. These vocabularies apply to inspection;
+they do not change MemorySink write validators or promote observations.
+
+Inspections work on readonly/locked sources, mutate no files or SQLite, and
+fail closed for unavailable samples. The existing `suggest_frontmatter` tool and
+the default catalog remain compatible. No database migration is required.
+
 ## License
 
 MIT.

@@ -1,3 +1,4 @@
+import { inspectSchema, type InspectSchemaDeps } from "../schema/inspect.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { AdapterRegistry } from "../adapters/registry.js";
 import type { DocId } from "../types.js";
@@ -25,9 +26,21 @@ export const FEATURE_TOOLS = {
       ]),
     }),
   },
+  schema_inspection: {
+    name: "inspect_schema",
+    description:
+      "Schema inspection module v1: read-only candidate profiles, explicit MemoryContract validation and drift. Never changes contracts or provenance.",
+    schema: z.object({
+      mode: z.enum(["infer", "validate", "diff"]),
+      doc_ids: z.array(z.string().min(1)),
+      contract: z.string().min(1).optional(),
+      strict: z.boolean().optional().default(false),
+    }),
+  },
 } as const;
 export interface FeatureToolDeps {
   adapterRegistry: AdapterRegistry;
+  resolveSchemaContract?: InspectSchemaDeps["resolveContract"];
   onBeforeWrite?: (id: DocId) => void;
   onAfterWrite?: (id: DocId) => Promise<void>;
 }
@@ -36,6 +49,34 @@ export function registerFeatureTools(
   deps: FeatureToolDeps,
   features: readonly string[],
 ): void {
+  if (features.includes("schema_inspection")) {
+    const tool = FEATURE_TOOLS.schema_inspection;
+    server.registerTool(
+      tool.name,
+      {
+        description: tool.description,
+        inputSchema: tool.schema.shape,
+        annotations: {
+          readOnlyHint: true,
+          destructiveHint: false,
+          idempotentHint: true,
+          openWorldHint: false,
+        },
+      },
+      async (input) => {
+        try {
+          return ok(
+            await inspectSchema(tool.schema.parse(input), {
+              adapterRegistry: deps.adapterRegistry,
+              resolveContract: deps.resolveSchemaContract,
+            }),
+          );
+        } catch (error) {
+          return errorResponse(errorMessage(error));
+        }
+      },
+    );
+  }
   if (!features.includes("document_edit")) return;
   const tool = FEATURE_TOOLS.document_edit;
   server.registerTool(

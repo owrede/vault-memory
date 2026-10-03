@@ -27,6 +27,9 @@ export interface MemoryContract {
    * required key" deterministically.
    */
   requiredKeys: readonly string[];
+  /** Optional explicit vocabularies used by read-only schema inspection. */
+  observationCategories?: readonly string[];
+  relationRoles?: readonly string[];
   /** Naming strategy and optional pattern (see ADR-004 §Naming strategies). */
   naming: {
     strategy: "caller-provided" | "date-slug" | "adapter-assigned";

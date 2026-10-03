@@ -63,6 +63,8 @@ export const MemoryContractYamlSchema = z.object({
   required_properties: z.record(z.string(), PropertyRuleSchema),
   optional_properties: z.record(z.string(), PropertyRuleSchema).default({}),
   cross_field_rules: z.array(CrossFieldRuleSchema).default([]),
+  observation_categories: z.array(z.string().min(1)).optional(),
+  relation_roles: z.array(z.string().min(1)).optional(),
   naming: z.object({
     strategy: z.enum(["caller-provided", "date-slug", "adapter-assigned"]),
     pattern: z.string().optional(),
