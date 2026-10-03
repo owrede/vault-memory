@@ -1,3 +1,4 @@
+import { inspectionBody } from "./body.js";
 import { z } from "zod";
 import {
   decomposeDocId,
@@ -35,12 +36,14 @@ export interface SchemaDiagnostic {
   message: string;
   value?: string;
   line?: number;
+  line_basis?: "source_body" | "rendered_markdown";
 }
 export interface InspectionResult {
   mode: InspectSchemaArgs["mode"];
   sample_size: number;
   sources: CitationPacket[];
   profiles: FieldProfile[];
+  body_projections?: { doc_id: DocId; line_basis: "rendered_markdown" }[];
   categories: ValueProfile[];
   relations: ValueProfile[];
   contract?: { name: string; version: string };
@@ -105,17 +108,16 @@ export async function inspectSchema(
         parseSourceHandle(`${scheme}://${authority}`),
       );
       const doc = await source.readDocument(id);
-      const body = doc.blocks
-        .map((block) => (block.kind === "paragraph" ? block.text : ""))
-        .join("\n\n");
+      const body = inspectionBody(doc.blocks);
       const properties = { ...doc.properties };
       if (scheme === "obsidian-fs") delete properties.wikilinks;
       return {
         doc,
         properties,
+        line_basis: body.line_basis,
         citation: toCitationPacket(doc, displayUrlFor(id, source)),
-        observations: parseObservations(body),
-        roles: parseDomainRelations(body),
+        observations: parseObservations(body.text),
+        roles: parseDomainRelations(body.text),
       };
     }),
   );
@@ -133,6 +135,12 @@ export async function inspectSchema(
     relations,
     ...(contract ? { contract: { name: contract.name, version: contract.version } } : {}),
   };
+  const rendered = samples.filter((sample) => sample.line_basis === "rendered_markdown");
+  if (rendered.length)
+    result.body_projections = rendered.map((sample) => ({
+      doc_id: sample.doc.id,
+      line_basis: "rendered_markdown",
+    }));
   if (args.mode === "infer") {
     result.candidate_only = true;
     result.candidates = [
@@ -196,7 +204,7 @@ export async function inspectSchema(
             ["observations"],
             "unknown_category",
             `Category '${row.category}' is not declared`,
-            { value: row.category, line: row.line_start },
+            { value: row.category, line: row.line_start, line_basis: sample.line_basis },
           ),
         );
     for (const row of sample.roles)
@@ -205,6 +213,7 @@ export async function inspectSchema(
           diagnostic(["relations"], "unknown_relation", `Role '${row.rel}' is not declared`, {
             value: row.rel,
             line: row.line,
+            line_basis: sample.line_basis,
           }),
         );
     (args.strict ? errors : warnings).push(...schemaWarnings);

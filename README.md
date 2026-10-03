@@ -411,7 +411,10 @@ including `default-memory-v1`, use their existing Zod validators and required-ke
 lists. Missing required provenance, wrong types and cross-field violations are
 always errors. Additional undeclared fields are warnings permissively and errors
 with `strict: true`; `passed` means no errors. Diagnostics cite the source hash,
-field path, and source line for body declarations. Diff reports required missing
+field path, and source line for body declarations. Structured headings, lists
+and nested sections are inspected through a Markdown projection; `body_projections`
+and `line_basis: "rendered_markdown"` mark its lines as rendered coordinates.
+The source citation/hash remains the original document. Diff reports required missing
 in any sampled document, unexpected fields and new observed types.
 
 An unregistered name loads its existing `_contracts/memory/<name>.yaml` from the

@@ -1,3 +1,6 @@
+import { StubSource } from "../adapters/stub/source.js";
+import { parseDocId } from "../adapters/registry.js";
+import { z } from "zod";
 import { resolveInspectionContract } from "./resolve-contract.js";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { promises as fs } from "node:fs";
@@ -151,6 +154,48 @@ describe("read-only schema inspection over real sources and contracts", () => {
       },
     );
     expect(result).toMatchObject({ passed: true, contract: { name: "inspection-auto-fixture" } });
+  });
+
+  it("retains structured lists/headings and marks rendered declaration lines", async () => {
+    const original = await f.source.readDocument(f.id("a.md"));
+    const source = new StubSource();
+    const doc = {
+      ...original,
+      id: parseDocId("stub://memory/structured"),
+      source: source.handle,
+      properties: {},
+      blocks: [
+        { kind: "list" as const, ordered: false, items: ["[custom_fact] Claim"] },
+        { kind: "heading" as const, level: 2 as const, text: "Relations" },
+        { kind: "paragraph" as const, text: "- custom_role [[Other]]" },
+      ],
+    };
+    source.inner().set(doc.id, doc);
+    f.adapterRegistry.registerSource(source.handle, source);
+    const result = await inspectSchema(
+      { mode: "validate", contract: "structured-fixture", doc_ids: [doc.id], strict: true },
+      {
+        adapterRegistry: f.adapterRegistry,
+        resolveContract: async () => ({
+          name: "structured-fixture",
+          version: "1",
+          propertiesSchema: z.object({}).passthrough(),
+          requiredKeys: [],
+          naming: { strategy: "caller-provided" },
+          observationCategories: [],
+          relationRoles: [],
+        }),
+      },
+    );
+    expect(result.passed).toBe(false);
+    expect(result.categories).toEqual([{ value: "custom_fact", present: 1, total: 1 }]);
+    expect(result.relations).toEqual([{ value: "custom_role", present: 1, total: 1 }]);
+    expect(result.errors).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "unknown_category", line_basis: "rendered_markdown" }),
+        expect.objectContaining({ code: "unknown_relation", line_basis: "rendered_markdown" }),
+      ]),
+    );
   });
   it("is opt-in through configuration and executes through the real MCP schema", async () => {
     const configPath = join(f.root, "config.toml");
