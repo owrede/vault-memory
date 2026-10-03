@@ -11,16 +11,19 @@ export function markdownLines(body: string): MarkdownLine[] {
   const lists: { indent: number; contentIndent: number }[] = [];
   let fence: { char: string; length: number; base: number } | undefined;
   let offset = 0;
+  let paragraphOpen = false;
   for (const [index, raw] of body.split("\n").entries()) {
     const text = raw.replace(/\r$/, "");
     const row: MarkdownLine = { text, line: index + 1, offset, code: false };
     offset += raw.length + 1;
     result.push(row);
     const indent = /^ */.exec(text)![0].length;
+    if (!text.trim()) paragraphOpen = false;
     const marker = /^( *)(`{3,}|~{3,})(.*)$/.exec(text);
     if (fence && fence.base > 0 && text.trim() && indent < fence.base) fence = undefined;
     if (fence) {
       row.code = true;
+      paragraphOpen = false;
       if (
         marker &&
         indent >= fence.base &&
@@ -44,24 +47,28 @@ export function markdownLines(body: string): MarkdownLine[] {
         base: text.length - bullet[3]!.length,
       };
       row.code = true;
+      paragraphOpen = false;
       continue;
     }
     if (marker && indent - base <= 3 && !(marker[2]![0] === "`" && marker[3]!.includes("`"))) {
       fence = { char: marker[2]![0]!, length: marker[2]!.length, base };
       row.code = true;
+      paragraphOpen = false;
       continue;
     }
     if (bullet) {
       if (!validBullet) {
-        row.code = true;
+        row.code = !paragraphOpen;
         continue;
       }
       while (lists.length && lists.at(-1)!.indent >= indent) lists.pop();
       row.bullet = { indent, contentIndent: text.length - bullet[3]!.length, text: bullet[3]! };
       lists.push(row.bullet);
+      paragraphOpen = true;
     } else if (text.trim() && indent === 0) {
       lists.length = 0;
-    } else if (text.trim() && indent - base >= 4) {
+      paragraphOpen = !/^#{1,6}(?:\s|$)/.test(text);
+    } else if (text.trim() && indent - base >= 4 && !paragraphOpen) {
       row.code = true;
     }
   }

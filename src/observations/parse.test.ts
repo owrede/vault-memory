@@ -77,4 +77,16 @@ describe("explicit categorized observations", () => {
       { category: "fact", text: "Real", line_start: 3, line_end: 3 },
     ]);
   });
+  it("retains deeply aligned paragraph continuations without a blank line", () => {
+    expect(
+      parseObservations("- [preference] Async writing\n               with detailed context\n"),
+    ).toEqual([
+      {
+        category: "preference",
+        text: "Async writing\nwith detailed context",
+        line_start: 1,
+        line_end: 2,
+      },
+    ]);
+  });
 });
