@@ -1,0 +1,222 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/assembly/selection.integration.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/assembly/selection.integration.test.ts (6 tests | 5 failed) 77ms
+     × metadata exposes no linked body snippets or anchor body 12ms
+     × selects B with complete citation, fresh hash and exact source range 10ms
+     × applies one budget across all slices and reports exclusions at zero 8ms
+     × rejects unknown, ambiguous and missing selectors without writes 10ms
+     × dossier uses the same selected source context and preserves metadata 8ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/assembly/selection.integration.test.ts > compact assembly on canonical files > metadata exposes no linked body snippets or anchor body
+AssertionError: expected '{"anchor":{"doc_id":"obsidian-fs://la…' not to contain 'LINK_BODY_SECRET'
+
+Expected: "LINK_BODY_SECRET"
+Received: "{"anchor":{"doc_id":"obsidian-fs://lab/anchor.md","source_handle":"obsidian-fs://lab","title":"A","heading_path":[],"mtime":1791034872698,"hash":"c2b18daefdd85030f3407ff30562a133018e9d902143488ea8012076a8a52e82","display_url":"obsidian://open?vault=lab&file=anchor.md","properties":{"type":"Project","locked":true,"wikilinks":[]}},"outline":[{"anchor":"08a86e7594df5dc8acf5429c4a7d896afe44083a9c720395dba9ae747a6c2adc","heading_path":["A"],"heading_text":"A","level":1,"chunk_ids":["1"],"children":[{"anchor":"2bc7280f6179286c1f79b3bdfd3f3223d59945bf34dce83dbb94bd45ea99d2c5","heading_path":["A","B"],"heading_text":"B","level":2,"chunk_ids":[],"children":[]},{"anchor":"e4c8db48f053dfeeacf8b7f6ed0bac277a61955f8bc99c4f32d62478379bfeea","heading_path":["A","C"],"heading_text":"C","level":2,"chunk_ids":[],"children":[]}]}],"backlinks":[{"doc_id":"obsidian-fs://lab/linked.md","source_handle":"obsidian-fs://lab","title":"linked","heading_path":[],"mtime":1791034872698,"hash":"11911a6a93bf68a8f8f1ed25f04e780d772928c62e2ff8bdc3a666b40dd076e0","display_url":"obsidian://open?vault=lab&file=linked.md","properties":{"wikilinks":[{"target":"anchor"}]},"property_snippet":"[[anchor]]\nLINK_BODY_SECRETLINK_BODY_SECRETLINK_BODY_SECRETLINK_BODY_SECRETLINK_BODY_SECRETLINK_BODY_SECRETLINK_BODY_SECRETLINK_BODY_SECRETLINK_BODY_SECRETLINK_BODY_SECRETLINK_BODY_SECRETLINK_BODY_SEC","relation":"wikilink"}],"forward_links":[],"recent_edits":[]}"
+
+ ❯ src/assembly/selection.integration.test.ts:29:40
+     27|   it("metadata exposes no linked body snippets or anchor body", async …
+     28|     const result = await bundle({ projection: "metadata" });
+     29|     expect(JSON.stringify(result)).not.toContain("LINK_BODY_SECRET");
+       |                                        ^
+     30|     expect(JSON.stringify(result)).not.toContain("TOP_SECRET");
+     31|     expect(JSON.stringify(result).length).toBeLessThan(JSON.stringify(…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  |unit| src/assembly/selection.integration.test.ts > compact assembly on canonical files > selects B with complete citation, fresh hash and exact source range
+AssertionError: expected undefined to match object { budget_used: 5, …(3) }
+
+- Expected:
+{
+  "budget_limit": 100,
+  "budget_used": 5,
+  "excluded": [],
+  "truncated": false,
+}
+
++ Received:
+undefined
+
+ ❯ src/assembly/selection.integration.test.ts:36:28
+     34|     const result = await bundle({ projection: "sections", heading_path…
+     35|     const doc = await f.source.readDocument(f.id("anchor.md"));
+     36|     expect(result.context).toMatchObject({ budget_used: 5, budget_limi…
+       |                            ^
+     37|     expect(result.context!.slices).toEqual([{
+     38|       doc_id: doc.id, source_handle: doc.source, title: doc.title, hea…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  |unit| src/assembly/selection.integration.test.ts > compact assembly on canonical files > applies one budget across all slices and reports exclusions at zero
+AssertionError: expected undefined to match object { budget_used: 7, …(2) }
+
+- Expected:
+{
+  "budget_used": 7,
+  "slices": [
+    {
+      "text": "BBBB
+",
+      "truncated": false,
+    },
+    {
+      "text": "CC",
+      "truncated": true,
+    },
+  ],
+  "truncated": true,
+}
+
++ Received:
+undefined
+
+ ❯ src/assembly/selection.integration.test.ts:50:8
+     48|     const paths = [["A", "B"], ["A", "C"]];
+     49|     expect((await bundle({ projection: "sections", heading_paths: path…
+     50|       .toMatchObject({ budget_used: 7, truncated: true, slices: [{ tex…
+       |        ^
+     51|     expect((await bundle({ projection: "sections", heading_paths: path…
+     52|       .toMatchObject({ budget_used: 0, truncated: true, slices: [], ex…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  |unit| src/assembly/selection.integration.test.ts > compact assembly on canonical files > rejects unknown, ambiguous and missing selectors without writes
+AssertionError: promise resolved "{ anchor: { …(8) }, …(4) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "anchor": {
++     "display_url": "obsidian://open?vault=lab&file=anchor.md",
++     "doc_id": "obsidian-fs://lab/anchor.md",
++     "hash": "c2b18daefdd85030f3407ff30562a133018e9d902143488ea8012076a8a52e82",
++     "heading_path": [],
++     "mtime": 1791034872727,
++     "properties": {
++       "locked": true,
++       "type": "Project",
++       "wikilinks": [],
++     },
++     "source_handle": "obsidian-fs://lab",
++     "title": "A",
++   },
++   "backlinks": [
++     {
++       "display_url": "obsidian://open?vault=lab&file=linked.md",
++       "doc_id": "obsidian-fs://lab/linked.md",
++       "hash": "11911a6a93bf68a8f8f1ed25f04e780d772928c62e2ff8bdc3a666b40dd076e0",
++       "heading_path": [],
++       "mtime": 1791034872727,
++       "properties": {
++         "wikilinks": [
++           {
++             "target": "anchor",
++           },
++         ],
++       },
++       "property_snippet": "[[anchor]]
++ LINK_BODY_SECRETLINK_BODY_SECRETLINK_BODY_SECRETLINK_BODY_SECRETLINK_BODY_SECRETLINK_BODY_SECRETLINK_BODY_SECRETLINK_BODY_SECRETLINK_BODY_SECRETLINK_BODY_SECRETLINK_BODY_SECRETLINK_BODY_SEC",
++       "relation": "wikilink",
++       "source_handle": "obsidian-fs://lab",
++       "title": "linked",
++     },
++   ],
++   "forward_links": [],
++   "outline": [
++     {
++       "anchor": "08a86e7594df5dc8acf5429c4a7d896afe44083a9c720395dba9ae747a6c2adc",
++       "children": [
++         {
++           "anchor": "2bc7280f6179286c1f79b3bdfd3f3223d59945bf34dce83dbb94bd45ea99d2c5",
++           "children": [],
++           "chunk_ids": [],
++           "heading_path": [
++             "A",
++             "B",
++           ],
++           "heading_text": "B",
++           "level": 2,
++         },
++         {
++           "anchor": "e4c8db48f053dfeeacf8b7f6ed0bac277a61955f8bc99c4f32d62478379bfeea",
++           "children": [],
++           "chunk_ids": [],
++           "heading_path": [
++             "A",
++             "C",
++           ],
++           "heading_text": "C",
++           "level": 2,
++         },
++       ],
++       "chunk_ids": [
++         "1",
++       ],
++       "heading_path": [
++         "A",
++       ],
++       "heading_text": "A",
++       "level": 1,
++     },
++   ],
++   "recent_edits": [],
+  }
+
+ ❯ src/assembly/selection.integration.test.ts:56:83
+     54|   it("rejects unknown, ambiguous and missing selectors without writes"…
+     55|     const before = await fs.readFile(join(f.root, "anchor.md"), "utf8"…
+     56|     await expect(bundle({ projection: "sections", heading_paths: [["Mi…
+       |                                                                                   ^
+     57|     await expect(bundle({ projection: "sections" })).rejects.toMatchOb…
+     58|     await expect(bundle({ max_chars: -1 })).rejects.toMatchObject({ co…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+ FAIL  |unit| src/assembly/selection.integration.test.ts > compact assembly on canonical files > dossier uses the same selected source context and preserves metadata
+AssertionError: expected undefined to match object { Object (budget_used, slices) }
+
+- Expected:
+{
+  "budget_used": 3,
+  "slices": [
+    {
+      "heading_path": [
+        "A",
+        "C",
+      ],
+      "text": "CCC",
+      "truncated": true,
+    },
+  ],
+}
+
++ Received:
+undefined
+
+ ❯ src/assembly/selection.integration.test.ts:65:28
+     63|   it("dossier uses the same selected source context and preserves meta…
+     64|     const result = await assembleDossier(deps(), { type: "Project", ke…
+     65|     expect(result.context).toMatchObject({ budget_used: 3, slices: [{ …
+       |                            ^
+     66|     expect(result.anchor!.doc_id).toBe(f.id("anchor.md"));
+     67|     expect(result.linked_documents[0]!.doc_id).toBe(f.id("linked.md"));
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  5 failed | 1 passed (6)
+   Start at  15:41:12
+   Duration  547ms (transform 261ms, setup 0ms, import 378ms, tests 77ms, environment 0ms)
+

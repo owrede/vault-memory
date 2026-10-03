@@ -1,0 +1,87 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/assembly/search-projection.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/assembly/search-projection.test.ts (3 tests | 3 failed) 8ms
+     × metadata excludes indexed snippets 5ms
+     × reads selected source sections with one global budget 2ms
+     × full with a budget caps the combined snippet text 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/assembly/search-projection.test.ts > section search projection > metadata excludes indexed snippets
+AssertionError: expected '{"results":[{"doc_id":"stub://v/a","s…' not to contain 'STALE_CHUNK_TEXT'
+
+Expected: "STALE_CHUNK_TEXT"
+Received: "{"results":[{"doc_id":"stub://v/a","source_handle":"stub://v","title":"A","heading_path":["A","B"],"mtime":1,"hash":"source-hash","display_url":"stub://v/a","properties":{"evidence":["real-source"]},"anchor":"anchor-0","score":1,"chunk_ids":[0],"snippet":"STALE_CHUNK_TEXT"},{"doc_id":"stub://v/a","source_handle":"stub://v","title":"A","heading_path":["A","C"],"mtime":1,"hash":"source-hash","display_url":"stub://v/a","properties":{"evidence":["real-source"]},"anchor":"anchor-1","score":0.9,"chunk_ids":[1],"snippet":"STALE_CHUNK_TEXT"}],"count":2}"
+
+ ❯ src/assembly/search-projection.test.ts:16:121
+     14| describe("section search projection", () => {
+     15|   it("metadata excludes indexed snippets", async () => {
+     16|     expect(JSON.stringify(await searchSectionsWithContext(deps, { quer…
+       |                                                                                                                         ^
+     17|   });
+     18|   it("reads selected source sections with one global budget", async ()…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  |unit| src/assembly/search-projection.test.ts > section search projection > reads selected source sections with one global budget
+AssertionError: expected undefined to match object { budget_used: 7, slices: [ …(2) ] }
+
+- Expected:
+{
+  "budget_used": 7,
+  "slices": [
+    {
+      "hash": "source-hash",
+      "text": "BBBB
+",
+      "truncated": false,
+    },
+    {
+      "hash": "source-hash",
+      "text": "CC",
+      "truncated": true,
+    },
+  ],
+}
+
++ Received:
+undefined
+
+ ❯ src/assembly/search-projection.test.ts:20:28
+     18|   it("reads selected source sections with one global budget", async ()…
+     19|     const result = await searchSectionsWithContext(deps, { query: "x",…
+     20|     expect(result.context).toMatchObject({ budget_used: 7, slices: [
+       |                            ^
+     21|       { text: "BBBB\n", hash: "source-hash", truncated: false }, { tex…
+     22|     ] });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  |unit| src/assembly/search-projection.test.ts > section search projection > full with a budget caps the combined snippet text
+AssertionError: expected 'STALE_CHUNK_TEXTSTALE_CHUNK_TEXT' to be 'STA' // Object.is equality
+
+Expected: "STA"
+Received: "STALE_CHUNK_TEXTSTALE_CHUNK_TEXT"
+
+ ❯ src/assembly/search-projection.test.ts:28:67
+     26|   it("full with a budget caps the combined snippet text", async () => {
+     27|     const result = await searchSectionsWithContext(deps, { query: "x",…
+     28|     expect(result.results.map(hit => hit.snippet ?? "").join("")).toBe…
+       |                                                                   ^
+     29|     expect(result.context).toMatchObject({ budget_used: 3, truncated: …
+     30|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed (3)
+   Start at  15:46:32
+   Duration  143ms (transform 28ms, setup 0ms, import 38ms, tests 8ms, environment 0ms)
+
