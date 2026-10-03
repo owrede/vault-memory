@@ -14,6 +14,7 @@ export function patchBody(body: string, patch: TextPatch): PatchResult {
     if (body.indexOf(patch.old_text, first + patch.old_text.length) >= 0) {
       return { ok: false, reason: "ambiguous_target" };
     }
+    if (patch.old_text === patch.new_text) return { ok: true, body };
     return {
       ok: true,
       body:

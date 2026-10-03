@@ -56,7 +56,7 @@ export async function catchupVault(options: CatchupOptions): Promise<CatchupResu
     knownPaths.add(parsed.relativePath);
 
     const dbRow = vault.db.notes.getByPath(parsed.relativePath);
-    if (dbRow && dbRow.hash === parsed.hash) {
+    if (dbRow && dbRow.body_hash !== null && dbRow.hash === parsed.hash) {
       continue;
     }
 

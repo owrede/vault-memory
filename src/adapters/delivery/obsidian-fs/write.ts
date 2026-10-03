@@ -333,6 +333,16 @@ export async function writeNote(input: WriteNoteInput): Promise<WriteResult> {
         wordCount: countWords(written.content),
       });
       vault.db.aliases.setForNote(up.id, extractAliases(written.frontmatter));
+      if (input.skipUnchanged) {
+        // Targeted edits cannot publish the new hash beside old citations.
+        // Invalidate in the same transaction; a failed refresh remains
+        // repairable by normal single/full/catchup indexing.
+        vault.db.notes.invalidateIndex(up.id);
+        vault.db.sections.deleteByNote(up.id);
+        vault.db.chunks.deleteByNote(up.id);
+        vault.db.wikilinks.deleteByNote(up.id);
+        vault.db.edges.deleteByNote(up.id);
+      }
       vault.db.audit.recordWrite({
         noteId: up.id,
         op: created ? "create" : "update",

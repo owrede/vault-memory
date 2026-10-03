@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { createVaultFixture } from "../../tests/helpers/vault-fixture.js";
 import { applyDocumentPatch } from "./apply.js";
 import type { TextPatch } from "./patch.js";
+import { indexNote } from "../indexer/single.js";
 
 describe("applyDocumentPatch on canonical files", () => {
   let f: Awaited<ReturnType<typeof createVaultFixture>>;
@@ -64,6 +65,42 @@ describe("applyDocumentPatch on canonical files", () => {
       ok: true,
     });
     expect(await snapshot()).toEqual(before);
+  });
+  it("invalidates stale derived data and permits ordinary reindex after an edit", async () => {
+    const id = f.id("approved.md");
+    await fs.writeFile(join(f.root, "approved.md"), "# A\nOld\n");
+    const options = {
+      vault: f.vault,
+      absolutePath: join(f.root, "approved.md"),
+      embeddingModel: "unused",
+      embeddings: "none" as const,
+    };
+    await indexNote(options);
+    const noteId = f.vault.db.notes.getByPath("approved.md")!.id;
+    expect(
+      f.vault.db.chunks
+        .getByNote(noteId)
+        .map((c) => c.text)
+        .join(" "),
+    ).toContain("Old");
+    expect(
+      await edit(id, { kind: "replace", old_text: "Old", new_text: "UniqueNewContent" }),
+    ).toMatchObject({ ok: true });
+    expect(
+      f.vault.db.chunks
+        .getByNote(noteId)
+        .map((c) => c.text)
+        .join(" "),
+    ).not.toContain("Old");
+    expect((await indexNote(options)).status).toBe("indexed");
+    const chunks = f.vault.db.chunks
+      .getByNote(noteId)
+      .map((c) => c.text)
+      .join(" ");
+    expect(chunks).toContain("UniqueNewContent");
+    expect(chunks).not.toContain("Old");
+    expect(f.vault.db.sections.getByNote(noteId).length).toBeGreaterThan(0);
+    expect((await indexNote(options)).status).toBe("unchanged");
   });
   it.each(["changed", "same"])("a locked %s edit never mutates state", async (kind) => {
     const id = await seed({ locked: true });

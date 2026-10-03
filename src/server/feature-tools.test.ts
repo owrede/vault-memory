@@ -4,6 +4,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { createVaultFixture } from "../../tests/helpers/vault-fixture.js";
 import { registerFeatureTools } from "./feature-tools.js";
+import { refreshEditedDocument } from "../edit/refresh.js";
 
 describe("opt-in feature MCP surface", () => {
   let f: Awaited<ReturnType<typeof createVaultFixture>>;
@@ -23,7 +24,15 @@ describe("opt-in feature MCP surface", () => {
     await f.cleanup();
   });
   async function connect(features: string[]) {
-    registerFeatureTools(server, { adapterRegistry: f.adapterRegistry }, features);
+    registerFeatureTools(
+      server,
+      {
+        adapterRegistry: f.adapterRegistry,
+        onAfterWrite: (id) =>
+          refreshEditedDocument({ manager: f.manager, defaultModel: "unused" }, id),
+      },
+      features,
+    );
     const [a, b] = InMemoryTransport.createLinkedPair();
     await server.connect(a);
     await client.connect(b);
@@ -59,5 +68,13 @@ describe("opt-in feature MCP surface", () => {
     expect((await f.source.readDocument(id)).blocks).toEqual([
       { kind: "paragraph", text: "Edited" },
     ]);
+    const note = f.vault.db.notes.getByPath("example.md")!;
+    expect(
+      f.vault.db.chunks
+        .getByNote(note.id)
+        .map((c) => c.text)
+        .join(" "),
+    ).toContain("Edited");
+    expect(note.body_hash).not.toBeNull();
   });
 });

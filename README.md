@@ -296,6 +296,12 @@ entry. `document_locked`, `hash_mismatch`, `ambiguous_target` and
 `target_not_found` are structured refusals. MemorySink provenance remains required.
 Without the feature flag, the standard MCP catalog is unchanged.
 
+Successful edits invalidate stale derived data and refresh chunks, sections,
+edges and the configured retrieval backend before returning. If refresh fails,
+the edit still returns `ok: true` with `index_refresh: "pending"` and a warning;
+normal indexing/catchup retries the invalidated index. With no embedding model
+registered, refresh builds the lexical index without contacting Ollama.
+
 ## License
 
 MIT.

@@ -29,6 +29,7 @@ export const FEATURE_TOOLS = {
 export interface FeatureToolDeps {
   adapterRegistry: AdapterRegistry;
   onBeforeWrite?: (id: DocId) => void;
+  onAfterWrite?: (id: DocId) => Promise<void>;
 }
 export function registerFeatureTools(
   server: McpServer,
@@ -55,16 +56,24 @@ export function registerFeatureTools(
         const id = parseDocId(args.doc_id);
         const { scheme, authority } = decomposeDocId(id);
         const handle = parseSourceHandle(`${scheme}://${authority}`);
-        return ok(
-          await applyDocumentPatch(
-            {
-              source: deps.adapterRegistry.resolveSource(handle),
-              delivery: deps.adapterRegistry.resolveDelivery(handle),
-              onBeforeWrite: () => deps.onBeforeWrite?.(id),
-            },
-            { ...args, doc_id: id },
-          ),
+        const result = await applyDocumentPatch(
+          {
+            source: deps.adapterRegistry.resolveSource(handle),
+            delivery: deps.adapterRegistry.resolveDelivery(handle),
+            onBeforeWrite: () => deps.onBeforeWrite?.(id),
+          },
+          { ...args, doc_id: id },
         );
+        if (result.ok && result.newHash !== args.expected_hash && deps.onAfterWrite) {
+          try {
+            await deps.onAfterWrite(id);
+          } catch (error) {
+            // The canonical edit succeeded. Report refresh failure honestly;
+            // invalidated derived data is repairable by normal indexing.
+            return ok({ ...result, index_refresh: "pending", warning: errorMessage(error) });
+          }
+        }
+        return ok(result);
       } catch (error) {
         return errorResponse(errorMessage(error));
       }

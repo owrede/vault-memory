@@ -18,7 +18,7 @@ export interface HeadingRef {
   startOffset: number;
 }
 
-const ATX_HEADING_RE = /^ {0,3}(#{1,6})\s+(.+?)\s*#*\s*$/;
+const ATX_HEADING_RE = /^ {0,3}(#{1,6})(?:[\t ]+(.*?))?[\t ]*\r?$/;
 const FENCE_RE = /^( {0,3})(`{3,}|~{3,})/;
 
 /**
@@ -40,7 +40,7 @@ export function extractHeadings(content: string): HeadingRef[] {
     const fenceMatch = FENCE_RE.exec(line);
     if (fenceMatch) {
       const marker = fenceMatch[2] ?? "";
-      if (!inFence) {
+      if (!inFence && !(marker[0] === "`" && line.slice(fenceMatch[0].length).includes("`"))) {
         inFence = true;
         fenceMarker = marker[0] ?? null; // remember whether it was ` or ~
         fenceLength = marker.length;
@@ -57,7 +57,7 @@ export function extractHeadings(content: string): HeadingRef[] {
       const m = ATX_HEADING_RE.exec(line);
       if (m) {
         const hashes = m[1] ?? "";
-        const text = m[2] ?? "";
+        const text = (m[2] ?? "").replace(/(?:^|[\t ])#+[\t ]*$/, "");
         headings.push({
           level: hashes.length,
           text: text.trim(),

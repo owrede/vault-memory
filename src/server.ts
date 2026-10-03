@@ -107,6 +107,7 @@ import {
 } from "./server/handlers/vault.js";
 import { makeNotesHandlers, handleReadNote } from "./server/handlers/notes.js";
 import { registerFeatureTools } from "./server/feature-tools.js";
+import { refreshEditedDocument } from "./edit/refresh.js";
 import { decomposeDocId } from "./adapters/registry.js";
 import { makeSearchHandlers, handleSearchHybrid } from "./server/handlers/search.js";
 import { makeGraphHandlers } from "./server/handlers/graph.js";
@@ -1027,6 +1028,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
     {
       adapterRegistry,
       onBeforeWrite: (id) => suppression.add(decomposeDocId(id).resource),
+      onAfterWrite: (id) => refreshEditedDocument({ manager, ollama, defaultModel }, id),
     },
     config.server.features ?? [],
   );

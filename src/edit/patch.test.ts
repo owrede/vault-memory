@@ -2,6 +2,22 @@ import { describe, expect, it } from "vitest";
 import { patchBody, type TextPatch } from "./patch.js";
 
 describe("targeted text patches", () => {
+  it.each([
+    ["# A\nold\n#\nKEEP\n# C\nkeep\n", "# A\nNew\n#\nKEEP\n# C\nkeep\n"],
+    ["# A\nold\n```bad`info\n# B\nKEEP\n", "# A\nNew\n# B\nKEEP\n"],
+  ])("preserves unrelated valid section boundaries in %s", (body, expected) => {
+    expect(patchBody(body!, { kind: "section", heading_path: ["A"], content: "New\n" })).toEqual({
+      ok: true,
+      body: expected,
+    });
+  });
+  it("preserves mixed newline bytes for an identical unique replacement", () => {
+    const body = "a\r\nold\nb";
+    expect(patchBody(body, { kind: "replace", old_text: "old\n", new_text: "old\n" })).toEqual({
+      ok: true,
+      body,
+    });
+  });
   it("does not treat a short fence as the end of a longer code fence", () => {
     expect(
       patchBody("# A\n````md\n```\n## Example\n````\n", {

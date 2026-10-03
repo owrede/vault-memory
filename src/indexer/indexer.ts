@@ -215,7 +215,8 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
       //   - body_hash unchanged       → frontmatter-only edit: keep chunks
       //   - body changed / NULL body_hash → full re-embed
       const previous = vault.db.notes.getByPath(parsed.relativePath);
-      const hashUnchanged = previous != null && previous.hash === parsed.hash;
+      const hashUnchanged =
+        previous != null && previous.body_hash != null && previous.hash === parsed.hash;
       const bodyUnchanged =
         previous != null && previous.body_hash != null && previous.body_hash === parsed.bodyHash;
 

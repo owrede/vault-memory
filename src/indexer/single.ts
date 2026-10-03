@@ -87,7 +87,7 @@ export async function indexNote(options: IndexNoteOptions): Promise<IndexNoteRes
   const existing = vault.db.notes.getByPath(parsed.relativePath);
 
   // 4. Fast path: hash unchanged → still re-apply aliases idempotently.
-  if (existing && existing.hash === parsed.hash) {
+  if (existing && existing.body_hash !== null && existing.hash === parsed.hash) {
     vault.db.aliases.setForNote(existing.id, extractAliases(parsed.frontmatter));
     return {
       status: "unchanged",
