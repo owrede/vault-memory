@@ -198,6 +198,40 @@ const sinkAdapters: Array<[name: string, factory: () => Promise<SinkFixture>]> =
 ];
 
 describe.each(adapters)("DeliveryAdapter conformance (%s)", (_name, factory) => {
+  it.each(["write", "update", "delete"] as const)(
+    "rejects %s of a stored locked document even with a matching hash",
+    async (operation) => {
+      const f = await factory();
+      try {
+        const id = f.mintId("locked.md");
+        const first = await f.adapter.write(id, {
+          blocks: [{ kind: "paragraph", text: "Approved" }],
+          properties: { locked: true },
+        });
+        if (!first.ok) throw new Error("fixture creation failed");
+        const opts = { expectedHash: first.newHash };
+        const patch = {
+          properties: { locked: false },
+          blocks: [{ kind: "paragraph" as const, text: "Changed" }],
+        };
+        const result =
+          operation === "delete"
+            ? await f.adapter.delete(id, opts)
+            : await f.adapter[operation](id, patch, opts);
+        expect(result).toMatchObject({ ok: false, reason: "document_locked" });
+        // The stored lock still prevents a second attempt; deletion cannot
+        // silently remove the document either.
+        const second = await f.adapter.update(id, patch, opts);
+        expect(second).toMatchObject({ ok: false, reason: "document_locked" });
+        if (f.vaultDir) {
+          expect(await fs.readFile(join(f.vaultDir, "locked.md"), "utf8")).toContain("Approved");
+        }
+      } finally {
+        await f.cleanup();
+      }
+    },
+  );
+
   it("1. publishes honest DeliveryCapabilities (all 4 keys present)", async () => {
     const f = await factory();
     try {

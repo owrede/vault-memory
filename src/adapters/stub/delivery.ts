@@ -35,6 +35,7 @@ import { parseSourceHandle } from "../registry.js";
 import { validateAgentWrite } from "../../memory/validator.js";
 import { getContract } from "../../memory/contract/index.js";
 import type { MemorySinkRegistry } from "../../memory/registry.js";
+import { getDocumentLockConflict } from "../delivery/document-lock.js";
 
 function fnv1a(s: string): string {
   // Tiny deterministic hash so write/update results carry a stable
@@ -108,6 +109,8 @@ export class StubDelivery implements DeliveryAdapter {
   async write(id: DocId, doc: Partial<Document>, opts?: WriteOptions): Promise<WriteResult> {
     const guard = this.preflight(id, doc, opts);
     if (guard) return guard;
+    const lock = getDocumentLockConflict(this.docs.get(id)?.properties);
+    if (lock) return lock;
     // hashProtected="none" ⇒ expectedHash is ignored by contract. The
     // conformance test gates this assertion on the capability descriptor.
     const created = !this.docs.has(id);
@@ -133,6 +136,8 @@ export class StubDelivery implements DeliveryAdapter {
     if (!existing) {
       return { ok: false, reason: "not_found", message: `Document not found: ${id}` };
     }
+    const lock = getDocumentLockConflict(existing.properties);
+    if (lock) return lock;
     const next: Document = {
       ...existing,
       ...patch,
@@ -164,6 +169,8 @@ export class StubDelivery implements DeliveryAdapter {
         };
       }
     }
+    const lock = getDocumentLockConflict(this.docs.get(id)?.properties);
+    if (lock) return lock;
     const existed = this.docs.delete(id);
     if (!existed) {
       return { ok: false, reason: "not_found", message: `Document not found: ${id}` };

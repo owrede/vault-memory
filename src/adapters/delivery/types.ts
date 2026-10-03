@@ -128,6 +128,7 @@ export interface WriteConflict {
   reason:
     | "hash_mismatch"
     | "permission_denied"
+    | "document_locked"
     | "not_found"
     // Phase 2 — Guard A / B / sentinel / v1 entry-point refusals:
     | "missing_provenance"

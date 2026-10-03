@@ -17,6 +17,7 @@ import { extractAliases } from "../../../indexer/index.js";
 import { atomicWriteFile, safeJoinInsideVault } from "./fs.js";
 import { formatDocId } from "../../registry.js";
 import type { MemorySinkRegistry } from "../../../memory/registry.js";
+import { getDocumentLockConflict } from "../document-lock.js";
 
 export interface WriteSuccess {
   ok: true;
@@ -28,7 +29,7 @@ export interface WriteSuccess {
 
 export interface WriteConflict {
   ok: false;
-  reason: "hash_mismatch" | "permission_denied" | "sink_write_blocked";
+  reason: "hash_mismatch" | "permission_denied" | "sink_write_blocked" | "document_locked";
   currentHash?: string;
   currentContent?: string;
   message: string;
@@ -233,6 +234,9 @@ export async function writeNote(input: WriteNoteInput): Promise<WriteResult> {
   const created = existing === null;
 
   if (existing !== null) {
+    const lock = getDocumentLockConflict(existing.frontmatter);
+    if (lock) return lock;
+
     if (input.expectedHash === undefined) {
       return {
         ok: false,
@@ -387,6 +391,9 @@ export async function deleteNote(input: DeleteNoteInput): Promise<WriteResult> {
       message: `File "${relativePath}" does not exist — nothing to delete.`,
     };
   }
+  const lock = getDocumentLockConflict(existing.frontmatter);
+  if (lock) return lock;
+
   if (existing.hash !== expectedHash) {
     return {
       ok: false,
