@@ -52,6 +52,7 @@
  * entry-point Guards landing in Plan 02-03b.
  */
 
+import { parseValidity } from "./valid-time.js";
 import type { DocId, Document, MemorySink } from "../types.js";
 import type { WriteConflict } from "../adapters/delivery/types.js";
 import type { MemoryContract } from "./contract/index.js";
@@ -71,6 +72,7 @@ export type GuardFailure = WriteConflict & {
   reason:
     | "missing_provenance"
     | "invalid_provenance"
+    | "invalid_validity"
     | "supersede_mismatch"
     | "agent_write_outside_sink"
     | "non_agent_write_inside_sink";
@@ -131,6 +133,15 @@ export function validateAgentWrite(
         "Memory sinks accept source:'agent' writes only. User notes belong in the surrounding vault.",
     };
   }
+
+  const validity = parseValidity(props ?? {});
+  if (!validity.ok)
+    return {
+      ok: false,
+      reason: "invalid_validity",
+      key: validity.key,
+      message: `invalid_validity: ${validity.key}`,
+    };
 
   // ── Guard A (only when target lands in a sink AND a contract is bound) ──
   if (sink !== null && contract !== null) {

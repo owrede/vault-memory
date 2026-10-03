@@ -1,3 +1,4 @@
+import { parseValidity } from "../valid-time.js";
 /**
  * Hardcoded baseline `MemoryContract` for `default-memory-v1`.
  *
@@ -42,6 +43,8 @@ const baseShape = z
     superseded_by: z.string().nullable().default(null),
     type: z.string().min(1),
     superseded_reason: z.string().optional(),
+    valid_from: z.string().nullable().optional(),
+    valid_to: z.string().nullable().optional(),
   })
   // D-02: unknown contract-extra keys pass through.
   .passthrough()
@@ -50,6 +53,9 @@ const baseShape = z
   // string) are required. Other statuses leave both fields unconstrained
   // beyond their base types.
   .superRefine((data, ctx) => {
+    const validity = parseValidity(data);
+    if (!validity.ok)
+      ctx.addIssue({ code: "custom", path: [validity.key], message: "invalid_validity" });
     if (data.status === "superseded") {
       if (data.superseded_by === null || data.superseded_by === undefined) {
         ctx.addIssue({

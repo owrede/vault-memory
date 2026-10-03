@@ -133,6 +133,7 @@ export interface WriteConflict {
     // Phase 2 — Guard A / B / sentinel / v1 entry-point refusals:
     | "missing_provenance"
     | "invalid_provenance"
+    | "invalid_validity"
     | "supersede_mismatch"
     | "agent_write_outside_sink"
     | "non_agent_write_inside_sink"

@@ -17,6 +17,7 @@ import { extractAliases } from "../../../indexer/index.js";
 import { atomicWriteFile, safeJoinInsideVault } from "./fs.js";
 import { formatDocId } from "../../registry.js";
 import type { MemorySinkRegistry } from "../../../memory/registry.js";
+import { parseValidity } from "../../../memory/valid-time.js";
 import { getDocumentLockConflict } from "../document-lock.js";
 import { parseObservations } from "../../../observations/parse.js";
 
@@ -30,7 +31,12 @@ export interface WriteSuccess {
 
 export interface WriteConflict {
   ok: false;
-  reason: "hash_mismatch" | "permission_denied" | "sink_write_blocked" | "document_locked";
+  reason:
+    | "hash_mismatch"
+    | "permission_denied"
+    | "sink_write_blocked"
+    | "document_locked"
+    | "invalid_validity";
   currentHash?: string;
   currentContent?: string;
   message: string;
@@ -206,6 +212,9 @@ export async function writeNote(input: WriteNoteInput): Promise<WriteResult> {
   const { vault, relativePath, content, registry } = input;
   const frontmatter = input.frontmatter ?? null;
   const clientId = input.clientId ?? UNKNOWN_CLIENT_ID;
+  const validity = parseValidity(frontmatter ?? {});
+  if (!validity.ok)
+    return { ok: false, reason: "invalid_validity", message: `invalid_validity: ${validity.key}` };
 
   // Plan 02-03b — defense-in-depth entry-point Guard. Runs BEFORE the
   // write_enabled check and BEFORE any FS read. When the optional registry

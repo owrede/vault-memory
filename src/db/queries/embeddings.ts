@@ -1,3 +1,4 @@
+import { VALID_NOTES_AT_SQL } from "./validity.js";
 import type BetterSqlite3 from "better-sqlite3";
 
 import type { ModelsQueries } from "./models.js";
@@ -151,7 +152,12 @@ export class EmbeddingsQueries {
     stmts.deleteAll.run();
   }
 
-  searchSemantic(modelId: number, queryVector: number[], topK: number): SemanticHit[] {
+  searchSemantic(
+    modelId: number,
+    queryVector: number[],
+    topK: number,
+    filter?: { asOfMs: number; excludeSuperseded: boolean },
+  ): SemanticHit[] {
     const dim = this.dimForModel(modelId);
     if (queryVector.length !== dim) {
       throw new Error(
@@ -160,7 +166,20 @@ export class EmbeddingsQueries {
       );
     }
     const stmts = this.getStmts(modelId);
-    const rows = stmts.search.all(serializeVector(queryVector), topK);
+    const rows = filter
+      ? (this.db
+          .prepare(
+            `SELECT chunk_id, distance FROM ${this.tableName(modelId, dim)}
+      WHERE vector MATCH ? AND k = ? AND chunk_id IN (
+        SELECT chunks.id FROM chunks JOIN notes ON notes.id=chunks.note_id WHERE ${VALID_NOTES_AT_SQL}
+        ${filter.excludeSuperseded ? "AND (notes.status IS NULL OR notes.status != 'superseded')" : ""})
+      ORDER BY distance`,
+          )
+          .all(serializeVector(queryVector), topK, filter.asOfMs, filter.asOfMs) as {
+          chunk_id: number;
+          distance: number;
+        }[])
+      : stmts.search.all(serializeVector(queryVector), topK);
     return rows.map((r) => ({ chunkId: r.chunk_id, distance: r.distance }));
   }
 

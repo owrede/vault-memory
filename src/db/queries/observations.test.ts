@@ -25,13 +25,13 @@ describe("derived observation SQL snapshots", () => {
     db.close();
   });
   it("creates observation storage and source-hash marker in migration 17", () => {
-    expect(db.handle.pragma("table_info(observations)")).toHaveLength(7);
+    expect(db.handle.pragma("table_info(observations)")).toHaveLength(11);
     expect(
       (db.handle.pragma("table_info(notes)") as { name: string }[]).map((c) => c.name),
     ).toContain("observations_hash");
     db.migrate();
     db.migrate();
-    expect(db.getSchemaVersion()).toBe(17);
+    expect(db.getSchemaVersion()).toBe(18);
   });
   it("upgrades a version-16 vault without inferring or changing its stored text", () => {
     const original = db.notes.getById(id)!;
@@ -40,7 +40,7 @@ describe("derived observation SQL snapshots", () => {
     );
     db.migrate();
     db.migrate();
-    expect(db.getSchemaVersion()).toBe(17);
+    expect(db.getSchemaVersion()).toBe(18);
     expect(db.notes.getById(id)).toMatchObject({
       content: original.content,
       hash: original.hash,

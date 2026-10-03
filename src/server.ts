@@ -109,6 +109,7 @@ import {
 import { makeNotesHandlers, handleReadNote } from "./server/handlers/notes.js";
 import { registerFeatureTools } from "./server/feature-tools.js";
 import { refreshEditedDocument } from "./edit/refresh.js";
+import { InvalidValidityError } from "./memory/valid-time.js";
 import { ProjectionError } from "./assembly/selection.js";
 import { decomposeDocId } from "./adapters/registry.js";
 import { makeSearchHandlers, handleSearchHybrid } from "./server/handlers/search.js";
@@ -1018,6 +1019,13 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
           if (err instanceof DocNotFoundError) {
             return errorResponseJson({ error: "doc_not_found", doc_id: err.doc_id });
           }
+          if (err instanceof InvalidValidityError)
+            return errorResponseJson({
+              isError: true,
+              error: err.code,
+              key: err.key,
+              doc_id: err.doc_id,
+            });
           if (err instanceof ProjectionError) {
             return errorResponseJson({ error: err.code, heading_path: err.heading_path });
           }

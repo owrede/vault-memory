@@ -45,6 +45,7 @@
  * forward-compatible; see `.planning/phases/03-bundles-authority-staleness/03-03-DEVIATIONS.md`.
  */
 
+import { resolveAsOf, parseValidity, isValidAt } from "../memory/valid-time.js";
 import type { DocId, Document, SearchHit, SourceHandle } from "../types.js";
 import type { CitationPacket } from "../memory/citation-packet.js";
 import { toCitationPacket } from "../memory/citation-packet.js";
@@ -68,6 +69,7 @@ import {
  * by Zod in `tool-registry.ts`; this is the post-validation shape.
  */
 export interface SearchSectionsArgs extends ProjectionArgs {
+  as_of?: string;
   query: string;
   limit: number;
   vaults?: string[];
@@ -104,12 +106,15 @@ export interface SectionResolution {
  * change suffices once 03-05 lands.
  */
 export interface SearchSectionsHybridInput {
+  asOf?: string;
+  includeSuperseded?: boolean;
   query: string;
   topK: number;
   vaults?: string[];
 }
 
 export interface SearchSectionsDeps {
+  clock?: () => number;
   observationIndex?: (vaultName: string, notePath: string) => ObservationIndex;
   /** Inner chunk-level hybrid search. */
   searchHybrid: (input: SearchSectionsHybridInput) => Promise<SearchHit[]>;
@@ -194,6 +199,7 @@ export async function searchSectionsWithContext(
   deps: SearchSectionsDeps,
   args: SearchSectionsArgs,
 ): Promise<{ results: SectionHit[]; count: number; context?: ContextSelection }> {
+  const asOf = resolveAsOf(args.as_of, deps.clock);
   const context = contextSelection(args);
   const response = (results: SectionHit[]) => {
     if (context?.projection === "sections" && results.length === 0) {
@@ -206,6 +212,8 @@ export async function searchSectionsWithContext(
   const chunkHits = await deps.searchHybrid({
     query: args.query,
     topK: args.limit * TOP_K_INFLATION_FACTOR,
+    asOf,
+    includeSuperseded: args.include_superseded ?? false,
     vaults: args.vaults,
   });
 
@@ -265,13 +273,12 @@ export async function searchSectionsWithContext(
         throw new ProjectionError("target_not_found", path);
     }
   }
-  const winners = (
+  const winners =
     context?.projection === "sections"
       ? sorted.filter((acc) =>
           args.heading_paths!.some((path) => sameHeading(path, acc.resolution.headingPath)),
         )
-      : sorted
-  ).slice(0, args.limit);
+      : sorted;
 
   // 5) Hydrate each surviving section into a `SectionHit`. The
   //    citation packet is built from the full `Document` (via the
@@ -281,6 +288,7 @@ export async function searchSectionsWithContext(
   //    score / chunk_ids / snippet.
   const hits: SectionHit[] = [];
   for (const acc of winners) {
+    if (hits.length >= args.limit) break;
     let doc: Document;
     try {
       doc = await deps.readDocument(acc.vaultName, acc.notePath);
@@ -291,6 +299,13 @@ export async function searchSectionsWithContext(
       // rather than re-running with a larger inflation factor.
       continue;
     }
+    const bounds = parseValidity(doc.properties);
+    if (
+      !bounds.ok ||
+      !isValidAt(bounds.validity, asOf) ||
+      (doc.properties.status === "superseded" && !args.include_superseded)
+    )
+      continue;
     const packet = toCitationPacket(
       {
         id: doc.id,
@@ -305,6 +320,9 @@ export async function searchSectionsWithContext(
     );
     const hit: SectionHit = {
       ...packet,
+      ...(args.as_of !== undefined || Object.keys(bounds.validity).length
+        ? { as_of: asOf, validity: bounds.validity }
+        : {}),
       anchor: acc.resolution.anchor,
       score: acc.bestScore,
       chunk_ids: [...acc.chunkIdxs],
@@ -340,6 +358,8 @@ export async function searchSectionsWithContext(
         deps.observationIndex?.(acc.vaultName, acc.notePath) ?? { doc_hash: null, rows: [] },
         context,
         packet.heading_path,
+        undefined,
+        { as_of: asOf, explicit: args.as_of !== undefined },
       );
     hits.push(hit);
   }

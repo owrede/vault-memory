@@ -18,6 +18,7 @@
  *    lists, hydrate hits, then global-sort across vaults and take topK.
  */
 
+import { resolveAsOf, frontmatterValidity } from "../memory/valid-time.js";
 import type { OllamaClient } from "../ollama/index.js";
 import type { Vault } from "../vault/index.js";
 import type { DocId, SearchHit, SourceHandle } from "../types.js";
@@ -96,6 +97,7 @@ export interface HybridSearchOptions {
   /** Clock injection seam — defaults to `Date.now`. Mirrors the recall
    *  controller's idiom (`src/memory/tools/recall.ts:~205`). */
   clock?: () => number;
+  asOf?: string;
   /**
    * Phase 3 / 03-05 (ASM-06): display-URL resolver seam.
    *
@@ -230,6 +232,7 @@ interface PerVaultHit {
 }
 
 export async function hybridSearch(opts: HybridSearchOptions): Promise<SearchHit[]> {
+  const asOfMs = Date.parse(resolveAsOf(opts.asOf, opts.clock));
   const topK = opts.topK ?? DEFAULT_TOP_K;
   const rrfK = opts.rrfK ?? DEFAULT_RRF_K;
   const includeBreakdown = opts.includeBreakdown ?? true;
@@ -278,6 +281,7 @@ export async function hybridSearch(opts: HybridSearchOptions): Promise<SearchHit
         perVaultTopN,
         getQueryVector,
         excludeSuperseded,
+        asOfMs,
       ),
     ),
   );
@@ -503,7 +507,7 @@ export async function hybridSearch(opts: HybridSearchOptions): Promise<SearchHit
   // Alias-aware query expansion runs BEFORE expand so an injected alias-target
   // hit is part of the seed set and receives `expansions` like any other hit
   // (ISSUE-aliases-not-in-fulltext-retrieval). No-op for non-alias queries.
-  injectAliasHits(hits, opts, query, includeBreakdown);
+  injectAliasHits(hits, opts, query, includeBreakdown, asOfMs);
 
   // ── Phase 4 / 04-04 / GRA-03 (D-15, D-16): post-rescore expand attachment ──
   //
@@ -585,6 +589,7 @@ function injectAliasHits(
   opts: HybridSearchOptions,
   query: string,
   includeBreakdown: boolean,
+  asOfMs: number,
 ): void {
   if ((opts.aliasExpansion ?? true) !== true) return;
   for (const vault of opts.vaults) {
@@ -597,6 +602,14 @@ function injectAliasHits(
     if (!resolved) continue;
     const note = vault.db.notes.getById(resolved.note_id);
     if (!note) continue;
+    const bounds = frontmatterValidity(note.frontmatter);
+    if (
+      bounds.validity_error ||
+      (bounds.valid_from_ms !== null && bounds.valid_from_ms > asOfMs) ||
+      (bounds.valid_to_ms !== null && asOfMs >= bounds.valid_to_ms) ||
+      (!opts.includeSuperseded && vault.db.notes.getStatus(note.id) === "superseded")
+    )
+      continue;
     // Already surfaced organically? Promote it to the front instead of
     // duplicating, so the alias target is the top hit either way.
     const existingIdx = hits.findIndex(
@@ -673,6 +686,7 @@ async function searchOneVault(
    *  false (the v1 default), both candidate paths are byte-identical
    *  to v1. */
   excludeSuperseded = false,
+  asOfMs: number,
 ): Promise<PerVaultHit[]> {
   const fanK = Math.max(topK * 3, topK);
 
@@ -694,7 +708,10 @@ async function searchOneVault(
     ? (async () => {
         const vec = await getQueryVector(queryModelName);
         if (!vec) return null;
-        const hits = vault.db.embeddings.searchSemantic(activeModel.id, vec, fanK);
+        const hits = vault.db.embeddings.searchSemantic(activeModel.id, vec, fanK, {
+          asOfMs,
+          excludeSuperseded,
+        });
         const distances = new Map<number, number>();
         const chunkIds: number[] = [];
         for (const h of hits) {
@@ -726,7 +743,7 @@ async function searchOneVault(
     chunkIds: number[];
     scores: Map<number, number>;
   }> = Promise.resolve().then(() => {
-    const hits = vault.db.fts.search(query, fanK, false, excludeSuperseded);
+    const hits = vault.db.fts.search(query, fanK, false, excludeSuperseded, asOfMs);
     const scores = new Map<number, number>();
     const chunkIds: number[] = [];
     for (const h of hits) {

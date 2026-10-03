@@ -1,3 +1,6 @@
+import { resolveAsOf, isValidAt, type Validity } from "../memory/valid-time.js";
+import { parseObservations } from "./parse.js";
+import { observationValidity, type ValidityOrigin } from "./validity.js";
 import type { Document } from "../types.js";
 import type { ObservationRow } from "../db/queries/observations.js";
 import { toCitationPacket, type CitationPacket } from "../memory/citation-packet.js";
@@ -13,13 +16,22 @@ export interface ObservationIndex {
   rows: ObservationRow[];
 }
 export type CitedObservation = CitationPacket &
-  ObservationRow & { truncated?: boolean; original_chars?: number };
+  ObservationRow & {
+    truncated?: boolean;
+    original_chars?: number;
+    as_of?: string;
+    validity?: Validity;
+    validity_origin?: ValidityOrigin;
+  };
 export interface ObservationResult {
   state: "fresh" | "stale" | "unindexed";
   doc_hash: string | null;
   available_count: number;
   statements: CitedObservation[];
-  excluded: { id: number; reason: "metadata_projection" | "budget_exhausted" }[];
+  excluded: {
+    id: number;
+    reason: "metadata_projection" | "budget_exhausted" | "outside_validity" | "invalid_validity";
+  }[];
 }
 export function retrieveObservations(
   doc: Document,
@@ -28,6 +40,7 @@ export function retrieveObservations(
   context?: ContextSelection,
   headingPath: string[] = [],
   selectedPaths?: string[][],
+  time: { as_of?: string; explicit?: boolean; clock?: () => number } = {},
 ): ObservationResult {
   const state =
     index.doc_hash === null ? "unindexed" : index.doc_hash === doc.hash ? "fresh" : "stale";
@@ -64,6 +77,27 @@ export function retrieveObservations(
       selected.some((range) => row.line_start >= range.startLine && row.line_end <= range.endLine),
     );
   }
+  const asOf = resolveAsOf(time.as_of, time.clock);
+  const parsed = parseObservations(body);
+  const validity = new Map<number, ReturnType<typeof observationValidity>>();
+  rows = rows.filter((row) => {
+    const draft =
+      parsed.find(
+        (p) =>
+          p.line_start === row.line_start &&
+          p.line_end === row.line_end &&
+          p.category === row.category,
+      ) ?? row;
+    const value = observationValidity(draft, doc.properties);
+    validity.set(row.id, value);
+    const reason = value.validity_error
+      ? "invalid_validity"
+      : !isValidAt(value.validity, asOf)
+        ? "outside_validity"
+        : undefined;
+    if (reason) result.excluded.push({ id: row.id, reason });
+    return !reason;
+  });
   result.available_count = rows.length;
   for (const row of rows) {
     const rowHeading =
@@ -88,6 +122,13 @@ export function retrieveObservations(
     result.statements.push({
       ...toCitationPacket({ ...doc, heading_path: rowHeading }, url),
       ...row,
+      ...(time.explicit || Object.keys(validity.get(row.id)!.validity).length
+        ? {
+            as_of: asOf,
+            validity: validity.get(row.id)!.validity,
+            validity_origin: validity.get(row.id)!.validity_origin,
+          }
+        : {}),
       ...(excerpt ?? {}),
     });
   }

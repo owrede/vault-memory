@@ -1,3 +1,4 @@
+import { parseValidity } from "../valid-time.js";
 /**
  * Hardcoded baseline `MemoryContract` for `default-brief-v1`.
  *
@@ -61,6 +62,8 @@ const baseShape = z
     superseded_by: z.string().nullable().default(null),
     type: z.string().min(1),
     superseded_reason: z.string().optional(),
+    valid_from: z.string().nullable().optional(),
+    valid_to: z.string().nullable().optional(),
 
     // ── Brief-specific properties (D-11 brief shape) ───────────────
     target: z.string().min(1),
@@ -93,6 +96,9 @@ const baseShape = z
   // Cross-field invariants — inherits the `superseded` requirements
   // from default-v1 AND adds the brief-specific `stale` requirement.
   .superRefine((data, ctx) => {
+    const validity = parseValidity(data);
+    if (!validity.ok)
+      ctx.addIssue({ code: "custom", path: [validity.key], message: "invalid_validity" });
     // Inherited from default-v1: when status is "superseded",
     // superseded_by MUST be non-null AND superseded_reason MUST be a
     // non-empty string. The recompile path (D-12) sets

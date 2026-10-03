@@ -1542,3 +1542,5 @@ Pre-0.6 development built the core stack in roughly this order:
 
 **Every PR that ships a user-visible change MUST update `## [Unreleased]` in the same commit.**
 Reviewers should block merges that change behavior but don't touch this file.
+
+- F07: business validity intervals, historical v2 retrieval, inherited or explicit statement bounds, indexed pre-limit filtering and migration 18.

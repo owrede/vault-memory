@@ -76,6 +76,8 @@ export function makeAssemblyHandlers(
                 ? input.vaults.map((name) => manager.require(name))
                 : targetVaults,
               topK: input.topK,
+              asOf: input.asOf,
+              includeSuperseded: input.includeSuperseded,
               rrfK: 60,
               includeBreakdown: false,
             }),

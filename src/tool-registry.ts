@@ -768,6 +768,11 @@ export const TOOLS = [
       type: "object",
       required: ["query"],
       properties: {
+        as_of: {
+          type: "string",
+          description:
+            "Business validity at an ISO timestamp with explicit timezone; defaults to current time.",
+        },
         ...PROJECTION_PROPERTIES,
         query: { type: "string" },
         limit: {
@@ -816,6 +821,16 @@ export const TOOLS = [
       type: "object",
       required: ["query"],
       properties: {
+        include_superseded: {
+          type: "boolean",
+          default: false,
+          description: "Explicit historical opt-in for superseded memories.",
+        },
+        as_of: {
+          type: "string",
+          description:
+            "Business validity at an ISO timestamp with explicit timezone; defaults to current time.",
+        },
         query: {
           type: "string",
           description: "Natural-language query; routes through hybrid (semantic + BM25) search.",
@@ -875,6 +890,11 @@ export const TOOLS = [
       type: "object",
       required: ["doc_id"],
       properties: {
+        as_of: {
+          type: "string",
+          description:
+            "Business validity at an ISO timestamp with explicit timezone; defaults to current time.",
+        },
         ...PROJECTION_PROPERTIES,
         doc_id: {
           type: "string",
@@ -1164,6 +1184,7 @@ export type ToolName = (typeof TOOLS)[number]["name"];
 // TOOL_SCHEMAS — Zod 4 raw shapes per tool (passed to McpServer.registerTool)
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { timestampMillis } from "./memory/valid-time.js";
 import { z, type ZodRawShape } from "zod";
 const PROJECTION_SCHEMA = {
   include_observations: z
@@ -1502,6 +1523,10 @@ export const TOOL_SCHEMAS = {
 
   // ── Phase 3 assembly tools (Plan 03-03) ─────────────────────────────────
   search_sections: {
+    as_of: z
+      .string()
+      .refine((value) => timestampMillis(value) !== null, "invalid as_of")
+      .optional(),
     ...PROJECTION_SCHEMA,
     query: z.string().min(1),
     limit: z.number().int().positive().max(50).optional().default(10),
@@ -1516,6 +1541,11 @@ export const TOOL_SCHEMAS = {
 
   // ── Phase 2 memory tools (Plan 02-05) ───────────────────────────────────
   recall: {
+    include_superseded: z.boolean().optional().default(false),
+    as_of: z
+      .string()
+      .refine((value) => timestampMillis(value) !== null, "invalid as_of")
+      .optional(),
     query: z
       .string()
       .min(1)
@@ -1558,6 +1588,10 @@ export const TOOL_SCHEMAS = {
 
   // ── Phase 3 assembly tools (Plan 03-04 / ASM-01) ────────────────────────
   get_document_bundle: {
+    as_of: z
+      .string()
+      .refine((value) => timestampMillis(value) !== null, "invalid as_of")
+      .optional(),
     ...PROJECTION_SCHEMA,
     doc_id: z
       .string()

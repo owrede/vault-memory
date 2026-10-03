@@ -1,3 +1,6 @@
+import { frontmatterValidity } from "../memory/valid-time.js";
+import { observationValidity } from "../observations/validity.js";
+import { parseObservations } from "../observations/parse.js";
 /**
  * SQL DDL strings and migrations.
  *
@@ -1044,6 +1047,69 @@ function runMigration017(db: BetterSqlite3Database, _ctx: MigrationContext): voi
   }
 }
 
+function runMigration018(db: BetterSqlite3Database): void {
+  for (const table of ["notes", "observations"]) {
+    const columns = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    for (const [name, type] of [
+      ["valid_from_ms", "INTEGER"],
+      ["valid_to_ms", "INTEGER"],
+      ["validity_error", "TEXT"],
+      ...(table === "observations"
+        ? [["validity_origin", "TEXT NOT NULL DEFAULT 'inherited'"]]
+        : []),
+    ]) {
+      if (!columns.some((column) => column.name === name))
+        db.exec(`ALTER TABLE ${table} ADD COLUMN ${name} ${type}`);
+    }
+  }
+  const notes = db.prepare("SELECT id, content, frontmatter FROM notes").all() as {
+    id: number;
+    content: string;
+    frontmatter: string | null;
+  }[];
+  for (const note of notes) {
+    const columns = frontmatterValidity(note.frontmatter);
+    db.prepare(
+      "UPDATE notes SET valid_from_ms=@valid_from_ms,valid_to_ms=@valid_to_ms,validity_error=@validity_error WHERE id=@id",
+    ).run({ id: note.id, ...columns });
+    let properties: Record<string, unknown> = {};
+    try {
+      properties = JSON.parse(note.frontmatter ?? "{}") ?? {};
+    } catch {
+      /* note diagnostic retained */
+    }
+    const parsed = parseObservations(note.content);
+    const rows = db
+      .prepare("SELECT id,category,text,line_start,line_end FROM observations WHERE note_id=?")
+      .all(note.id) as {
+      id: number;
+      category: string;
+      text: string;
+      line_start: number;
+      line_end: number;
+    }[];
+    for (const row of rows) {
+      const draft =
+        parsed.find(
+          (item) =>
+            item.category === row.category &&
+            item.line_start === row.line_start &&
+            item.line_end === row.line_end,
+        ) ?? row;
+      const range = observationValidity(draft, properties);
+      db.prepare(
+        "UPDATE observations SET text=@text,valid_from_ms=@valid_from_ms,valid_to_ms=@valid_to_ms,validity_error=@validity_error,validity_origin=@validity_origin WHERE id=@id",
+      ).run({ id: row.id, text: draft.text, ...range });
+    }
+  }
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS notes_validity ON notes(validity_error, valid_from_ms, valid_to_ms)",
+  );
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS observations_validity ON observations(note_id, validity_error, valid_from_ms, valid_to_ms)",
+  );
+}
+
 export const MIGRATIONS: readonly Migration[] = [
   {
     version: 1,
@@ -1135,5 +1201,10 @@ export const MIGRATIONS: readonly Migration[] = [
     version: 17,
     description: "explicit categorized observations and source-hash index marker",
     run: runMigration017,
+  },
+  {
+    version: 18,
+    description: "derived UTC validity intervals and diagnostic backfill for notes and statements",
+    run: runMigration018,
   },
 ];

@@ -858,6 +858,10 @@
           "query"
         ],
         "properties": {
+          "as_of": {
+            "type": "string",
+            "description": "Business validity at an ISO timestamp with explicit timezone; defaults to current time."
+          },
           "include_observations": {
             "type": "boolean",
             "description": "Include explicitly categorized statements when the derived source hash is fresh; preserves provenance and shares the body budget."
@@ -934,6 +938,15 @@
           "query"
         ],
         "properties": {
+          "include_superseded": {
+            "type": "boolean",
+            "default": false,
+            "description": "Explicit historical opt-in for superseded memories."
+          },
+          "as_of": {
+            "type": "string",
+            "description": "Business validity at an ISO timestamp with explicit timezone; defaults to current time."
+          },
           "query": {
             "type": "string",
             "description": "Natural-language query; routes through hybrid (semantic + BM25) search."
@@ -989,6 +1002,10 @@
           "doc_id"
         ],
         "properties": {
+          "as_of": {
+            "type": "string",
+            "description": "Business validity at an ISO timestamp with explicit timezone; defaults to current time."
+          },
           "include_observations": {
             "type": "boolean",
             "description": "Include explicitly categorized statements when the derived source hash is fresh; preserves provenance and shares the body budget."

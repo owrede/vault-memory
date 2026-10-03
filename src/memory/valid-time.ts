@@ -65,3 +65,44 @@ export function isValidAt(validity: Validity, asOf: string): boolean {
     (parsed.validity.valid_to == null || millis < Date.parse(parsed.validity.valid_to))
   );
 }
+
+export interface ValidityColumns {
+  valid_from_ms: number | null;
+  valid_to_ms: number | null;
+  validity_error: string | null;
+}
+export function validityColumns(properties: Record<string, unknown>): ValidityColumns {
+  const parsed = parseValidity(properties);
+  return parsed.ok
+    ? {
+        valid_from_ms:
+          parsed.validity.valid_from == null ? null : Date.parse(parsed.validity.valid_from),
+        valid_to_ms: parsed.validity.valid_to == null ? null : Date.parse(parsed.validity.valid_to),
+        validity_error: null,
+      }
+    : { valid_from_ms: null, valid_to_ms: null, validity_error: parsed.key };
+}
+export function frontmatterValidity(frontmatter: string | null): ValidityColumns {
+  try {
+    const properties = frontmatter === null ? {} : (JSON.parse(frontmatter) ?? {});
+    if (typeof properties !== "object" || Array.isArray(properties)) throw new Error();
+    return validityColumns(properties);
+  } catch {
+    return { valid_from_ms: null, valid_to_ms: null, validity_error: "frontmatter" };
+  }
+}
+export function resolveAsOf(asOf?: string, clock: () => number = Date.now): string {
+  const value = asOf ?? new Date(clock()).toISOString();
+  const millis = timestampMillis(value);
+  if (millis === null) throw new RangeError("invalid as_of");
+  return new Date(millis).toISOString();
+}
+export class InvalidValidityError extends Error {
+  readonly code = "invalid_validity";
+  constructor(
+    readonly key: string,
+    readonly doc_id?: string,
+  ) {
+    super(`invalid_validity: ${key}`);
+  }
+}

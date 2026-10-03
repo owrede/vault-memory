@@ -1,3 +1,4 @@
+import { VALID_NOTES_AT_SQL } from "./validity.js";
 import type BetterSqlite3 from "better-sqlite3";
 
 export interface BM25Hit {
@@ -47,7 +48,7 @@ export class FtsQueries {
    */
   private readonly _searchExclSup: BetterSqlite3.Statement<[string, number], BM25Row>;
 
-  constructor(db: BetterSqlite3.Database) {
+  constructor(private readonly db: BetterSqlite3.Database) {
     this._search = db.prepare<[string, number], BM25Row>(
       `SELECT rowid AS chunkId, bm25(chunks_fts) AS score
        FROM chunks_fts
@@ -95,10 +96,28 @@ export class FtsQueries {
    *                             docs never reach the caller. v1-default path
    *                             passes `false` and stays byte-identical.
    */
-  search(query: string, topK: number, withSnippet = false, excludeSuperseded = false): BM25Hit[] {
+  search(
+    query: string,
+    topK: number,
+    withSnippet = false,
+    excludeSuperseded = false,
+    asOfMs?: number,
+  ): BM25Hit[] {
     const sanitized = FtsQueries.sanitize(query);
     if (sanitized.length === 0) return [];
 
+    if (asOfMs !== undefined) {
+      const rows = this.db
+        .prepare(
+          `SELECT chunks_fts.rowid AS chunkId, bm25(chunks_fts) AS score
+        FROM chunks_fts JOIN chunks ON chunks.id=chunks_fts.rowid JOIN notes ON notes.id=chunks.note_id
+        WHERE chunks_fts MATCH ? AND ${VALID_NOTES_AT_SQL}
+        ${excludeSuperseded ? "AND (notes.status IS NULL OR notes.status != 'superseded')" : ""}
+        ORDER BY bm25(chunks_fts) ASC LIMIT ?`,
+        )
+        .all(sanitized, asOfMs, asOfMs, topK) as BM25Row[];
+      return rows.map((r) => ({ chunkId: r.chunkId, score: -r.score }));
+    }
     if (withSnippet) {
       // Snippet path is debug/UI only — keep it on the v1 statement so
       // 03-05 doesn't need to prepare a third statement just for the

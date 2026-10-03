@@ -434,3 +434,9 @@ the default catalog remain compatible. No database migration is required.
 ## License
 
 MIT.
+
+### Business validity (F07)
+
+Optional `valid_from` / `valid_to` define a half-open business interval, independently of required `observed_at`: start inclusive, end exclusive, missing or null bounds open. Use quoted ISO timestamps with an explicit timezone and at most millisecond precision. Retrieval defaults to the current time. v2 `recall`, `search_sections`, and `get_document_bundle` accept `as_of`; `recall` also requires `include_superseded: true` to retrieve superseded memories historically. Invalid bounds yield `invalid_validity`; imported invalid documents stay indexed with a diagnostic and are excluded from search. Migration 18 backfills UTC milliseconds without rewriting Markdown.
+
+Individual categorized statements inherit document bounds. A trailing explicit annotation can override only those bounds: `- [fact] January rule <!-- validity: {"valid_from":"2026-01-01T00:00:00Z","valid_to":"2026-02-01T00:00:00Z"} -->`. Null resets a bound to open. Malformed annotations are excluded with `invalid_validity`. Source identity, hash, evidence and confidence remain those of the original document. Direct bundle reads retain the anchor with `valid_at` even outside its interval; their statement list is filtered at `as_of`, allowing explicit statement overrides. Search filters indexed bounds before limits; external edits become searchable after indexing.

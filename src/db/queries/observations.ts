@@ -1,3 +1,4 @@
+import { observationValidity } from "../../observations/validity.js";
 import type BetterSqlite3 from "better-sqlite3";
 import type { ObservationDraft } from "../../observations/parse.js";
 export interface ObservationRow extends ObservationDraft {
@@ -18,12 +19,20 @@ export class ObservationQueries {
     this.db.transaction(() => {
       const previous = new Map(this.listForNote(noteId).map((row) => [key(row), row.id]));
       this.db.prepare("DELETE FROM observations WHERE note_id = ?").run(noteId);
+      const properties =
+        JSON.parse(
+          (
+            this.db.prepare("SELECT frontmatter FROM notes WHERE id=?").get(noteId) as
+              { frontmatter: string | null } | undefined
+          )?.frontmatter ?? "{}",
+        ) ?? {};
       const insert = this.db
-        .prepare(`INSERT INTO observations(id, note_id, doc_hash, category, text, line_start, line_end)
-        VALUES(@id, @note_id, @doc_hash, @category, @text, @line_start, @line_end)`);
+        .prepare(`INSERT INTO observations(id, note_id, doc_hash, category, text, line_start, line_end, valid_from_ms, valid_to_ms, validity_error, validity_origin)
+        VALUES(@id, @note_id, @doc_hash, @category, @text, @line_start, @line_end, @valid_from_ms, @valid_to_ms, @validity_error, @validity_origin)`);
       for (const row of rows)
         insert.run({
           ...row,
+          ...observationValidity(row, properties),
           id: previous.get(key(row)) ?? null,
           note_id: noteId,
           doc_hash: docHash,
@@ -38,12 +47,12 @@ export class ObservationQueries {
     return category === undefined
       ? this.db
           .prepare<[number], ObservationRow>(
-            "SELECT * FROM observations WHERE note_id = ? ORDER BY line_start, line_end, id",
+            "SELECT id,note_id,doc_hash,category,text,line_start,line_end FROM observations WHERE note_id = ? ORDER BY line_start, line_end, id",
           )
           .all(noteId)
       : this.db
           .prepare<[number, string], ObservationRow>(
-            "SELECT * FROM observations WHERE note_id = ? AND category = ? ORDER BY line_start, line_end, id",
+            "SELECT id,note_id,doc_hash,category,text,line_start,line_end FROM observations WHERE note_id = ? AND category = ? ORDER BY line_start, line_end, id",
           )
           .all(noteId, category);
   }
