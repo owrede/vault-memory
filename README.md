@@ -272,6 +272,30 @@ MemorySink, provenance and concurrency protections still apply. Rejected
 operations leave the file, SQLite index, write audit and watcher suppression
 unchanged. External editors retain normal access to Markdown files.
 
+## Optional document editing
+
+Enable the separately versioned edit module in `config.toml`:
+
+```toml
+[server]
+features = ["document_edit"]
+```
+
+This adds `edit_document` to MCP discovery. Call it with `doc_id`, the
+`expected_hash` obtained by reading the document, and either
+`patch: {kind: "replace", old_text: "Old", new_text: "New"}` or
+`patch: {kind: "section", heading_path: ["Project", "Decision"], content: "New decision\n"}`.
+Replacement text must occur exactly once; duplicate heading paths are refused.
+Section edits replace that heading's body, including nested subsections, while
+retaining the heading line and surrounding bytes. ATX headings are recognized
+outside fenced code blocks; Setext headings are not supported.
+
+Body-only edits preserve existing frontmatter comments and formatting. Same-text
+edits still run delivery guards and hash checks but do not write or add an audit
+entry. `document_locked`, `hash_mismatch`, `ambiguous_target` and
+`target_not_found` are structured refusals. MemorySink provenance remains required.
+Without the feature flag, the standard MCP catalog is unchanged.
+
 ## License
 
 MIT.

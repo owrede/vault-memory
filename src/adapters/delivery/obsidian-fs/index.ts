@@ -269,6 +269,7 @@ export class ObsidianFsDelivery implements DeliveryAdapter {
       clientId: effectiveClientId,
       isMemorySinkWrite: this.isMemorySinkWriteFor(id),
       onBeforeFsWrite: opts?.onBeforeWrite,
+      skipUnchanged: opts?.skipUnchanged,
     });
     return v1ToV2WriteResult(id, v1);
   }
@@ -369,6 +370,8 @@ export class ObsidianFsDelivery implements DeliveryAdapter {
       clientId: effectiveClientId,
       isMemorySinkWrite: this.isMemorySinkWriteFor(id),
       onBeforeFsWrite: opts?.onBeforeWrite,
+      skipUnchanged: opts?.skipUnchanged,
+      preserveFrontmatter: true,
     });
     return v1ToV2UpdateResult(id, v1);
   }

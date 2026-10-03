@@ -42,6 +42,10 @@ export interface WriteConflict {
 export type WriteResult = WriteSuccess | WriteConflict;
 
 export interface WriteNoteInput {
+  /** Internal targeted-edit option: keep original YAML bytes when properties match. */
+  preserveFrontmatter?: boolean;
+  /** Internal targeted-edit option: guards still run for identical content. */
+  skipUnchanged?: boolean;
   vault: Vault;
   /** Vault-relative path with forward slashes, ending in .md */
   relativePath: string;
@@ -271,10 +275,29 @@ export async function writeNote(input: WriteNoteInput): Promise<WriteResult> {
   // (see gray-matter/lib/stringify.js), but @types/gray-matter's option type
   // doesn't list the js-yaml keys — hence the narrow cast.
   const yamlDumpOptions = { lineWidth: -1 } as Parameters<typeof matter.stringify>[2];
+  if (
+    input.skipUnchanged &&
+    existing !== null &&
+    existing.hash === computeHash(content, frontmatter)
+  ) {
+    return {
+      ok: true,
+      newHash: existing.hash,
+      noteId: vault.db.notes.getByPath(relativePath)?.id ?? 0,
+      created: false,
+    };
+  }
+
+  const preservePrefix =
+    input.preserveFrontmatter &&
+    existing !== null &&
+    computeHash("", existing.frontmatter) === computeHash("", frontmatter);
   const fileText =
-    frontmatter !== null && Object.keys(frontmatter).length > 0
-      ? matter.stringify(content, frontmatter, yamlDumpOptions)
-      : content;
+    preservePrefix && existing !== null
+      ? existing.raw.slice(0, existing.raw.length - existing.content.length) + content
+      : frontmatter !== null && Object.keys(frontmatter).length > 0
+        ? matter.stringify(content, frontmatter, yamlDumpOptions)
+        : content;
 
   input.onBeforeFsWrite?.();
   await atomicWriteFile(absPath, fileText);

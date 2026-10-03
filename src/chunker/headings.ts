@@ -18,8 +18,8 @@ export interface HeadingRef {
   startOffset: number;
 }
 
-const ATX_HEADING_RE = /^(#{1,6})\s+(.+?)\s*#*\s*$/;
-const FENCE_RE = /^(\s*)(`{3,}|~{3,})/;
+const ATX_HEADING_RE = /^ {0,3}(#{1,6})\s+(.+?)\s*#*\s*$/;
+const FENCE_RE = /^( {0,3})(`{3,}|~{3,})/;
 
 /**
  * Extract all ATX headings from the content, ignoring anything inside fenced
@@ -33,6 +33,7 @@ export function extractHeadings(content: string): HeadingRef[] {
   let offset = 0;
   let inFence = false;
   let fenceMarker: string | null = null;
+  let fenceLength = 0;
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i] ?? "";
@@ -42,7 +43,13 @@ export function extractHeadings(content: string): HeadingRef[] {
       if (!inFence) {
         inFence = true;
         fenceMarker = marker[0] ?? null; // remember whether it was ` or ~
-      } else if (fenceMarker && marker.startsWith(fenceMarker)) {
+        fenceLength = marker.length;
+      } else if (
+        fenceMarker &&
+        marker.startsWith(fenceMarker) &&
+        marker.length >= fenceLength &&
+        line.slice(fenceMatch[0].length).trim().length === 0
+      ) {
         inFence = false;
         fenceMarker = null;
       }

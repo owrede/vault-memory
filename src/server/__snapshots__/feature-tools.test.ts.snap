@@ -1,0 +1,88 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`opt-in feature MCP surface > registers one versioned edit tool and executes a real file edit > document_edit module v1 1`] = `
+{
+  "_meta": undefined,
+  "annotations": {
+    "destructiveHint": true,
+    "idempotentHint": false,
+    "openWorldHint": false,
+    "readOnlyHint": false,
+  },
+  "description": "Document edit module v1: replace one unique text occurrence or a heading section. Requires the hash read by the caller; preserves document locks and provenance.",
+  "execution": {
+    "taskSupport": "forbidden",
+  },
+  "inputSchema": {
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "properties": {
+      "doc_id": {
+        "minLength": 1,
+        "type": "string",
+      },
+      "expected_hash": {
+        "minLength": 1,
+        "type": "string",
+      },
+      "patch": {
+        "oneOf": [
+          {
+            "properties": {
+              "kind": {
+                "const": "replace",
+                "type": "string",
+              },
+              "new_text": {
+                "type": "string",
+              },
+              "old_text": {
+                "minLength": 1,
+                "type": "string",
+              },
+            },
+            "required": [
+              "kind",
+              "old_text",
+              "new_text",
+            ],
+            "type": "object",
+          },
+          {
+            "properties": {
+              "content": {
+                "type": "string",
+              },
+              "heading_path": {
+                "items": {
+                  "minLength": 1,
+                  "type": "string",
+                },
+                "minItems": 1,
+                "type": "array",
+              },
+              "kind": {
+                "const": "section",
+                "type": "string",
+              },
+            },
+            "required": [
+              "kind",
+              "heading_path",
+              "content",
+            ],
+            "type": "object",
+          },
+        ],
+      },
+    },
+    "required": [
+      "doc_id",
+      "expected_hash",
+      "patch",
+    ],
+    "type": "object",
+  },
+  "name": "edit_document",
+  "title": undefined,
+}
+`;

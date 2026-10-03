@@ -12,8 +12,10 @@ import { readFile } from "node:fs/promises";
 import { parse as parseToml } from "smol-toml";
 import { z } from "zod";
 import type { AppConfig } from "../types.js";
+import { FEATURE_NAMES } from "../features.js";
 
 const ServerConfigSchema = z.object({
+  features: z.array(z.enum(FEATURE_NAMES)).default([]),
   log_level: z.enum(["debug", "info", "warn", "error"]).optional(),
   ollama_endpoint: z.string().url().optional(),
   default_embedding_model: z.string().optional(),
@@ -163,7 +165,7 @@ const MemoryConfigSchema = z.object({
 });
 
 const AppConfigSchema = z.object({
-  server: ServerConfigSchema.optional().default({}),
+  server: ServerConfigSchema.optional().default({ features: [] }),
   vaults: z.array(VaultConfigSchema).optional().default([]),
   memory: MemoryConfigSchema.optional(),
   memory_sinks: z.array(MemorySinkConfigSchema).optional().default([]),
@@ -180,6 +182,7 @@ const AppConfigSchema = z.object({
 
 const DEFAULT_CONFIG: AppConfig = {
   server: {
+    features: [],
     log_level: "info",
     ollama_endpoint: "http://localhost:11434",
     default_embedding_model: "qwen3-embedding",

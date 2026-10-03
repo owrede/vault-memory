@@ -2,6 +2,26 @@ import { describe, expect, it } from "vitest";
 import { patchBody, type TextPatch } from "./patch.js";
 
 describe("targeted text patches", () => {
+  it("does not treat a short fence as the end of a longer code fence", () => {
+    expect(
+      patchBody("# A\n````md\n```\n## Example\n````\n", {
+        kind: "section",
+        heading_path: ["A", "Example"],
+        content: "New",
+      }),
+    ).toEqual({ ok: false, reason: "target_not_found" });
+  });
+
+  it("recognizes legal indented ATX headings without rewriting the heading line", () => {
+    expect(
+      patchBody("# A\n  ## B\nOld\n## C\nKeep\n", {
+        kind: "section",
+        heading_path: ["A", "B"],
+        content: "New\n",
+      }),
+    ).toEqual({ ok: true, body: "# A\n  ## B\nNew\n## C\nKeep\n" });
+  });
+
   it.each([
     [
       "before old after",

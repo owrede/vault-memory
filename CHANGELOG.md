@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Opt-in `document_edit` module with hash-protected `edit_document` text and
+  heading-section patches, preserved frontmatter formatting and guarded no-ops.
+
 - Document locks: Boolean `locked: true` in stored frontmatter prevents
   overwrites, frontmatter changes, deletion and superseding through delivery
   adapters. A correct hash cannot bypass the lock. Unlock in Obsidian or a

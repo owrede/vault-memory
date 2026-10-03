@@ -106,6 +106,8 @@ import {
   handleRecentNotes,
 } from "./server/handlers/vault.js";
 import { makeNotesHandlers, handleReadNote } from "./server/handlers/notes.js";
+import { registerFeatureTools } from "./server/feature-tools.js";
+import { decomposeDocId } from "./adapters/registry.js";
 import { makeSearchHandlers, handleSearchHybrid } from "./server/handlers/search.js";
 import { makeGraphHandlers } from "./server/handlers/graph.js";
 import { makeMemoryHandlers } from "./server/handlers/memory.js";
@@ -1019,6 +1021,15 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
       },
     );
   }
+
+  registerFeatureTools(
+    server,
+    {
+      adapterRegistry,
+      onBeforeWrite: (id) => suppression.add(decomposeDocId(id).resource),
+    },
+    config.server.features ?? [],
+  );
 
   // ─── MCP Resources (Plan 02-06 / MEM-09) ─────────────────────────────────
   //

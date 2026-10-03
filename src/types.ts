@@ -36,6 +36,7 @@ export interface VaultConfig {
 }
 
 export interface ServerConfig {
+  features?: import("./features.js").FeatureName[];
   log_level?: "debug" | "info" | "warn" | "error";
   ollama_endpoint?: string;
   default_embedding_model?: string;

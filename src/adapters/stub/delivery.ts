@@ -125,6 +125,10 @@ export class StubDelivery implements DeliveryAdapter {
       hash: "",
     };
     merged.hash = computeStubHash(merged);
+    const existing = this.docs.get(id);
+    if (opts?.skipUnchanged && existing?.hash === merged.hash) {
+      return { ok: true, doc_id: id, newHash: existing.hash, created: false };
+    }
     opts?.onBeforeWrite?.();
     this.docs.set(id, merged);
     return { ok: true, doc_id: id, newHash: merged.hash, created };
@@ -148,6 +152,9 @@ export class StubDelivery implements DeliveryAdapter {
       hash: "",
     };
     next.hash = computeStubHash(next);
+    if (opts?.skipUnchanged && next.hash === existing.hash) {
+      return { ok: true, doc_id: id, newHash: existing.hash };
+    }
     opts?.onBeforeWrite?.();
     this.docs.set(id, next);
     return { ok: true, doc_id: id, newHash: next.hash };
