@@ -27,6 +27,7 @@ import { extractAllEdges } from "./extract-edges.js";
 import { extractSections, markdownToSectionBlocks } from "../sections/index.js";
 import { extractHeadings } from "../chunker/headings.js";
 import { errorMessage } from "../errors/format.js";
+import { syncObservationIndex } from "../observations/index.js";
 
 export interface IndexerOptions {
   mode?: "full" | "incremental";
@@ -268,10 +269,13 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
         vault.db.notes.invalidateIndex(upsert.id);
         parsedNotes.push({ parsed, noteId: upsert.id, needsReindex: true });
       } else if (frontmatterOnly) {
+        syncObservationIndex(vault, upsert.id, parsed);
         vault.db.wikilinks.deleteByNote(upsert.id);
         vault.db.edges.deleteByNote(upsert.id);
         insertWikilinks(vault, upsert.id, parsed.wikilinks, firstPassResolver);
         writeAllEdges(vault, upsert.id, parsed, firstPassResolver);
+      } else {
+        syncObservationIndex(vault, upsert.id, parsed);
       }
     }
 
@@ -295,6 +299,9 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
       const chunks = chunkNote(parsed.indexedContent);
 
       if (chunks.length === 0) {
+        syncObservationIndex(vault, noteId, parsed, () => {
+          buildSectionsForNote(vault, noteId, parsed.indexedContent, []);
+        });
         // empty note — record wikilinks anyway, but no chunks/embeddings
         insertWikilinks(vault, noteId, parsed.wikilinks, firstPassResolver);
         // Phase 4 / 04-02 / GRA-04 / D-02: also emit typed edges for
@@ -332,7 +339,9 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
       // any other unexpected failure — log and continue with the rest of the
       // vault (see ISSUE-indexer-duplicate-anchor.md "Notes for the agent").
       try {
-        buildSectionsForNote(vault, noteId, parsed.indexedContent, chunkIds);
+        syncObservationIndex(vault, noteId, parsed, () => {
+          buildSectionsForNote(vault, noteId, parsed.indexedContent, chunkIds);
+        });
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error(

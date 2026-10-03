@@ -18,6 +18,7 @@ import { atomicWriteFile, safeJoinInsideVault } from "./fs.js";
 import { formatDocId } from "../../registry.js";
 import type { MemorySinkRegistry } from "../../../memory/registry.js";
 import { getDocumentLockConflict } from "../document-lock.js";
+import { parseObservations } from "../../../observations/parse.js";
 
 export interface WriteSuccess {
   ok: true;
@@ -333,6 +334,7 @@ export async function writeNote(input: WriteNoteInput): Promise<WriteResult> {
         wordCount: countWords(written.content),
       });
       vault.db.aliases.setForNote(up.id, extractAliases(written.frontmatter));
+      vault.db.observations.replaceForNote(up.id, written.hash, parseObservations(written.content));
       if (input.skipUnchanged) {
         // Targeted edits cannot publish the new hash beside old citations.
         // Invalidate in the same transaction; a failed refresh remains

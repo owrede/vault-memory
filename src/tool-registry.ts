@@ -39,6 +39,11 @@
 //     `.describe()` chains).
 
 const PROJECTION_PROPERTIES = {
+  include_observations: {
+    type: "boolean",
+    description:
+      "Include explicitly categorized statements when the derived source hash is fresh; preserves provenance and shares the body budget.",
+  },
   projection: {
     type: "string",
     enum: ["full", "metadata", "sections"],
@@ -1156,6 +1161,10 @@ export type ToolName = (typeof TOOLS)[number]["name"];
 
 import { z, type ZodRawShape } from "zod";
 const PROJECTION_SCHEMA = {
+  include_observations: z
+    .boolean()
+    .optional()
+    .describe(PROJECTION_PROPERTIES.include_observations.description),
   projection: z
     .enum(["full", "metadata", "sections"])
     .optional()

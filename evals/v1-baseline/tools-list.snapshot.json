@@ -858,6 +858,10 @@
           "query"
         ],
         "properties": {
+          "include_observations": {
+            "type": "boolean",
+            "description": "Include explicitly categorized statements when the derived source hash is fresh; preserves provenance and shares the body budget."
+          },
           "projection": {
             "type": "string",
             "enum": [
@@ -985,6 +989,10 @@
           "doc_id"
         ],
         "properties": {
+          "include_observations": {
+            "type": "boolean",
+            "description": "Include explicitly categorized statements when the derived source hash is fresh; preserves provenance and shares the body budget."
+          },
           "projection": {
             "type": "string",
             "enum": [
@@ -1154,6 +1162,10 @@
           "key"
         ],
         "properties": {
+          "include_observations": {
+            "type": "boolean",
+            "description": "Include explicitly categorized statements when the derived source hash is fresh; preserves provenance and shares the body budget."
+          },
           "projection": {
             "type": "string",
             "enum": [

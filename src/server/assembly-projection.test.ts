@@ -63,6 +63,7 @@ describe("v2 assembly projection through MCP", () => {
   it("publishes additive projection options and transmits a smaller metadata response", async () => {
     const listed = (await client.listTools()).tools;
     expect(listed[0]!.inputSchema.properties).toHaveProperty("projection");
+    expect(listed[0]!.inputSchema.properties).toHaveProperty("include_observations");
     const full = await call({});
     const metadata = await call({ projection: "metadata" });
     expect(metadata.text).not.toContain("LINK_BODY_SECRET");

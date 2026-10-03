@@ -18,6 +18,7 @@ import { extractAliases, buildSectionsForNote } from "./indexer.js";
 import { WikilinkResolver } from "./resolver.js";
 import { extractAllEdges } from "./extract-edges.js";
 import type { ParsedNote, ParsedWikilink } from "../types.js";
+import { syncObservationIndex } from "../observations/index.js";
 
 export interface IndexNoteOptions {
   vault: Vault;
@@ -88,6 +89,7 @@ export async function indexNote(options: IndexNoteOptions): Promise<IndexNoteRes
 
   // 4. Fast path: hash unchanged → still re-apply aliases idempotently.
   if (existing && existing.body_hash !== null && existing.hash === parsed.hash) {
+    syncObservationIndex(vault, existing.id, parsed);
     vault.db.aliases.setForNote(existing.id, extractAliases(parsed.frontmatter));
     return {
       status: "unchanged",
@@ -122,6 +124,7 @@ export async function indexNote(options: IndexNoteOptions): Promise<IndexNoteRes
       wordCount: parsed.wordCount,
     });
     vault.db.aliases.setForNote(upsert.id, extractAliases(parsed.frontmatter));
+    syncObservationIndex(vault, upsert.id, parsed);
     vault.db.wikilinks.deleteByNote(upsert.id);
     // ── Phase 4 / 04-02 / GRA-04 / D-02 ──
     // Clear all typed edges and re-extract via the unified extractor.
@@ -203,6 +206,9 @@ export async function indexNote(options: IndexNoteOptions): Promise<IndexNoteRes
   const chunks = chunkNote(parsed.indexedContent);
 
   if (chunks.length === 0) {
+    syncObservationIndex(vault, upsert.id, parsed, () => {
+      buildSectionsForNote(vault, upsert.id, parsed.indexedContent, []);
+    });
     insertWikilinks(vault, upsert.id, parsed.wikilinks);
     // ── Phase 4 / 04-02 / GRA-04 / D-02 ──
     // Empty-body branch still gets the full extractor pass: a note
@@ -240,7 +246,9 @@ export async function indexNote(options: IndexNoteOptions): Promise<IndexNoteRes
   // embeddings. Defensive try/catch: one pathological note must not break the
   // watcher (mirrors the full indexer).
   try {
-    buildSectionsForNote(vault, upsert.id, parsed.indexedContent, chunkIds);
+    syncObservationIndex(vault, upsert.id, parsed, () => {
+      buildSectionsForNote(vault, upsert.id, parsed.indexedContent, chunkIds);
+    });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     process.stderr.write(

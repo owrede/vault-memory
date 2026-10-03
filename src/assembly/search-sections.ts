@@ -49,6 +49,11 @@ import type { DocId, Document, SearchHit, SourceHandle } from "../types.js";
 import type { CitationPacket } from "../memory/citation-packet.js";
 import { toCitationPacket } from "../memory/citation-packet.js";
 import {
+  retrieveObservations,
+  type ObservationIndex,
+  type ObservationResult,
+} from "../observations/retrieve.js";
+import {
   contextSelection,
   documentContext,
   sameHeading,
@@ -105,6 +110,7 @@ export interface SearchSectionsHybridInput {
 }
 
 export interface SearchSectionsDeps {
+  observationIndex?: (vaultName: string, notePath: string) => ObservationIndex;
   /** Inner chunk-level hybrid search. */
   searchHybrid: (input: SearchSectionsHybridInput) => Promise<SearchHit[]>;
   /**
@@ -141,6 +147,7 @@ export interface SearchSectionsDeps {
  * the plan's "Section hit shape" table.
  */
 export interface SectionHit extends CitationPacket {
+  observations?: ObservationResult;
   /** Section's canonical content-hash anchor (ADR-003 H-7). */
   anchor: string;
   /** MAX of the constituent chunk scores. */
@@ -326,6 +333,14 @@ export async function searchSectionsWithContext(
     } else if (!context && acc.bestHit.chunkText.length > 0) {
       hit.snippet = acc.bestHit.chunkText;
     }
+    if (args.include_observations)
+      hit.observations = retrieveObservations(
+        doc,
+        packet.display_url,
+        deps.observationIndex?.(acc.vaultName, acc.notePath) ?? { doc_hash: null, rows: [] },
+        context,
+        packet.heading_path,
+      );
     hits.push(hit);
   }
 

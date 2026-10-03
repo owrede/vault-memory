@@ -335,6 +335,32 @@ candidate sections. No files or provenance are changed. No configuration flag
 or database migration is required; the original 23 v1 input schemas are frozen
 separately from additive v2 schema snapshots.
 
+## Categorized statements
+
+Explicit Markdown list items such as `- [fact] The rollout starts in June`,
+`- [decision] Use a local model` and `- [preference] Write asynchronously` are
+indexed as statements within their source document. Indented continuation lines
+belong to the same statement; nested list items stay separate. Code examples,
+checkboxes and ordinary prose are ignored. Unknown explicit categories remain
+available. This parser performs no inference or provenance promotion.
+
+Pass `include_observations: true` to the three v2 assembly tools to retrieve
+statements with category, full source citation, document hash and body line
+range. The default responses stay unchanged. Selected section projections
+include only statements within the selected ranges; metadata projection returns
+counts and exclusions without statement text. Excerpts share the global body
+budget and disclose truncation or exclusion.
+
+SQLite migration 17 adds a derived statement table and a source-hash marker.
+Existing sources initially report `state: "unindexed"`; normal indexing/catchup
+fills the marker, including documents without statements. A source change not
+yet indexed reports `state: "stale"` and returns no old statements. Direct writes
+publish the note and statement snapshot together; delete/rename removes the old
+rows. Repeated identical snapshots preserve statement IDs. Markdown remains
+authoritative and its `source`, `evidence` and `confidence` are retained as-is.
+`record_observation` continues writing whole MemorySink documents under its
+existing provenance contract.
+
 ## License
 
 MIT.

@@ -57,6 +57,16 @@ export function makeAssemblyHandlers(
 
       return searchSectionsWithContext(
         {
+          observationIndex: (vaultName, notePath) => {
+            const db = manager.require(vaultName).db;
+            const note = db.notes.getByPath(notePath);
+            return note
+              ? {
+                  doc_hash: db.observations.indexedHash(note.id),
+                  rows: db.observations.listForNote(note.id),
+                }
+              : { doc_hash: null, rows: [] };
+          },
           searchHybrid: async (input) =>
             hybridSearch({
               query: input.query,

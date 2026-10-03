@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Categorized statements from explicit Markdown list items with stable repeated
+  snapshots, SQLite migration 17, source freshness diagnostics and optional
+  citation-preserving v2 retrieval. No inference or provenance promotion.
+
 - Compact v2 assembly projections: body-free metadata, selected source
   sections with complete citations, global character budgets and explicit
   truncation/exclusions. Preserve legacy defaults and original v1 schemas.

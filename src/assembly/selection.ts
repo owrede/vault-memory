@@ -4,6 +4,7 @@ import { toCitationPacket } from "../memory/citation-packet.js";
 import { sectionRanges } from "../sections/ranges.js";
 import { projectContext } from "./projection.js";
 export interface ProjectionArgs {
+  include_observations?: boolean;
   projection?: "full" | "metadata" | "sections";
   max_chars?: number;
   heading_paths?: string[][];

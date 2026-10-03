@@ -1026,6 +1026,24 @@ function runMigration016(db: BetterSqlite3Database, _ctx: MigrationContext): voi
   }
 }
 
+function runMigration017(db: BetterSqlite3Database, _ctx: MigrationContext): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS observations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+    doc_hash TEXT NOT NULL,
+    category TEXT NOT NULL CHECK(length(category) > 0),
+    text TEXT NOT NULL CHECK(length(trim(text)) > 0),
+    line_start INTEGER NOT NULL CHECK(line_start >= 1),
+    line_end INTEGER NOT NULL CHECK(line_end >= line_start),
+    UNIQUE(note_id, category, text, line_start, line_end)
+  );
+  CREATE INDEX IF NOT EXISTS idx_observations_note_category ON observations(note_id, category);`);
+  const cols = db.prepare("PRAGMA table_info(notes)").all() as Array<{ name: string }>;
+  if (!cols.some((column) => column.name === "observations_hash")) {
+    db.exec("ALTER TABLE notes ADD COLUMN observations_hash TEXT");
+  }
+}
+
 export const MIGRATIONS: readonly Migration[] = [
   {
     version: 1,
@@ -1112,5 +1130,10 @@ export const MIGRATIONS: readonly Migration[] = [
     description:
       "notes.rendered_source_hash — overlay marker for plugin-rendered Datacore content (ADR-033)",
     run: runMigration016,
+  },
+  {
+    version: 17,
+    description: "explicit categorized observations and source-hash index marker",
+    run: runMigration017,
   },
 ];

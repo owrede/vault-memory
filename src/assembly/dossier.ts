@@ -74,6 +74,7 @@ import {
 } from "../memory/citation-packet.js";
 import type { Document } from "../types.js";
 import type { Vault, VaultManager } from "../vault/index.js";
+import { retrieveObservations, type ObservationResult } from "../observations/retrieve.js";
 import {
   documentContext,
   validateProjection,
@@ -150,6 +151,7 @@ export interface DossierError {
  * Structured dossier result. `anchor === null` iff `error !== null`.
  */
 export interface DossierResult {
+  observations?: ObservationResult;
   context?: ContextSelection;
   anchor: DossierAnchor | null;
   linked_documents: LinkedDocument[];
@@ -436,8 +438,24 @@ export async function assembleDossier(
   }
 
   const context = documentContext(anchorDoc, anchorPacket.display_url, args);
+  const observationNoteId = anchorVault.db.notes.getByPath(anchorCandidate.notePath)?.id ?? -1;
   return {
     anchor: anchorPacket,
+    ...(args.include_observations
+      ? {
+          observations: retrieveObservations(
+            anchorDoc,
+            anchorPacket.display_url,
+            {
+              doc_hash: anchorVault.db.observations.indexedHash(observationNoteId),
+              rows: anchorVault.db.observations.listForNote(observationNoteId),
+            },
+            context,
+            [],
+            args.projection === "sections" ? args.heading_paths : undefined,
+          ),
+        }
+      : {}),
     ...(context ? { context } : {}),
     linked_documents: linkedDocuments,
     property_rollups: {

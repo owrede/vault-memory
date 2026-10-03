@@ -88,6 +88,7 @@ import { buildOutlineTree } from "./outline.js";
 import type { OutlineNode } from "./types.js";
 import type { BlockNode, ChunkRow, Document, SectionRow } from "../types.js";
 import type { Vault, VaultManager } from "../vault/index.js";
+import { retrieveObservations, type ObservationResult } from "../observations/retrieve.js";
 import {
   documentContext,
   takeContext,
@@ -216,6 +217,7 @@ export interface BundleRecentEdit {
  * Wire shape of the `get_document_bundle({doc_id})` MCP tool response.
  */
 export interface BundleResult {
+  observations?: ObservationResult;
   context?: ContextSelection;
   anchor: BundleAnchor;
   outline: OutlineNode[];
@@ -477,6 +479,21 @@ export async function getDocumentBundle(
   }
   return {
     anchor: anchorPacket,
+    ...(args.include_observations
+      ? {
+          observations: retrieveObservations(
+            anchorDoc,
+            anchorPacket.display_url,
+            {
+              doc_hash: vault.db.observations.indexedHash(noteRow.id),
+              rows: vault.db.observations.listForNote(noteRow.id),
+            },
+            context,
+            [],
+            args.projection === "sections" ? args.heading_paths : undefined,
+          ),
+        }
+      : {}),
     outline,
     backlinks,
     forward_links,
