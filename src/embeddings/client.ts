@@ -13,7 +13,7 @@ export class ProviderEmbeddingClient extends OllamaClient {
     this.modelName = embeddingNamespace(provider.identity);
   }
   owns(model: string): boolean {
-    return model === this.modelName || model === this.provider.identity.model;
+    return model === this.modelName;
   }
   override async embed(request: EmbedRequest): Promise<EmbedResponse> {
     return this.embedPurpose(request, "passage");
@@ -46,7 +46,8 @@ export function providerModel(
   client: OllamaClient | undefined,
   model: string,
 ): { name: string; provider: string } {
-  return client instanceof ProviderEmbeddingClient && client.owns(model)
+  return client instanceof ProviderEmbeddingClient &&
+    (client.owns(model) || model === client.provider.identity.model)
     ? { name: client.modelName, provider: client.provider.identity.provider }
     : { name: model, provider: "ollama" };
 }

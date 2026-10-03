@@ -205,7 +205,7 @@ export class VaultWatcher {
     const result = await indexNote({
       vault: this.opts.vault,
       absolutePath: event.path,
-      embeddingModel: this.opts.embeddingModel,
+      embeddingModel: this.opts.vault.db.models.getActive()?.name ?? this.opts.embeddingModel,
       secondaryEmbeddingModel: this.opts.secondaryEmbeddingModel,
       // ADR-008: ContextFit vaults build the SQLite layer without embeddings;
       // their search KB is refreshed by the debounced re-ingest below.

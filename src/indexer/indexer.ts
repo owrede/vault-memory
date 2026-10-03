@@ -67,6 +67,10 @@ export interface IndexRunResult {
 }
 
 export async function indexVault(vault: Vault, options: IndexerOptions): Promise<IndexRunResult> {
+  options = {
+    ...options,
+    embeddingModel: providerModel(options.ollama, options.embeddingModel).name,
+  };
   const startedAt = Date.now();
   const runId = randomUUID();
   const mode = options.mode ?? "incremental";

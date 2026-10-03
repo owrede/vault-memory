@@ -64,8 +64,14 @@ export interface IndexNoteResult {
  */
 export async function indexNote(options: IndexNoteOptions): Promise<IndexNoteResult> {
   const { vault, absolutePath, ollama } = options;
-  const embeddingModel = providerModel(ollama, options.embeddingModel).name;
-  const secondaryName = options.secondaryEmbeddingModel;
+  const registered = vault.db.models.getByName(options.embeddingModel);
+  const embeddingModel =
+    registered?.provider === "ollama"
+      ? options.embeddingModel
+      : providerModel(ollama, options.embeddingModel).name;
+  const secondaryName = options.secondaryEmbeddingModel
+    ? providerModel(ollama, options.secondaryEmbeddingModel).name
+    : undefined;
 
   // 1. Validate path is inside the vault.
   if (!isInsideVault(absolutePath, vault.config.path)) {

@@ -55,7 +55,8 @@ interface PendingChunkRow {
  * caller has independently verified the shadow index is complete.
  */
 export async function startShadowIndex(options: ShadowIndexOptions): Promise<ShadowIndexResult> {
-  const { vault, model, ollama } = options;
+  const { vault, ollama } = options;
+  const model = providerModel(ollama, options.model).name;
   const log = options.log ?? (() => {});
   const batchSize = options.batchSize ?? 16;
   const runId = randomUUID();

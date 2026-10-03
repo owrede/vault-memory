@@ -347,7 +347,8 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
       // need catchup + a watcher (they build the SQLite layer + refresh the KB).
       const isContextFit = vault.config.backend === "contextfit";
       if (!isContextFit && !vault.config.embedding_model && !vault.db.models.getActive()) continue;
-      const modelName = vault.config.embedding_model ?? defaultModel;
+      const modelName =
+        vault.db.models.getActive()?.name ?? vault.config.embedding_model ?? defaultModel;
 
       try {
         const result = await catchupVault({

@@ -69,7 +69,7 @@ export async function catchupVault(options: CatchupOptions): Promise<CatchupResu
     const result = await indexNote({
       vault,
       absolutePath: file,
-      embeddingModel: options.embeddingModel,
+      embeddingModel: options.vault.db.models.getActive()?.name ?? options.embeddingModel,
       ...(isContextFit ? { embeddings: "none" as const } : { ollama: options.ollama }),
     });
     if (result.status === "indexed") {

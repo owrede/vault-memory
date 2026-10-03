@@ -1,4 +1,4 @@
-import { afterEach, expect, it } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { loadOnnxProvider } from "../adapters/embeddings/onnx-runtime.js";
 import { embeddingNamespace } from "./types.js";
 import { indexVault } from "../indexer/indexer.js";
@@ -115,5 +115,108 @@ it("rejects modified assets and separates manifests with different tokenization 
     await expect(loadOnnxProvider(dir)).rejects.toThrow("checksum mismatch");
   } finally {
     await rm(dir, { recursive: true, force: true });
+  }
+});
+it("never resolves an existing Ollama model as ONNX merely because its bare name matches", async () => {
+  const { ProviderEmbeddingClient } = await import("./client.js");
+  const { embedQuery } = await import("./client.js");
+  const provider = await loadOnnxProvider(modelPath);
+  const client = new ProviderEmbeddingClient(provider, {
+    endpoint: "http://127.0.0.1:1",
+    retries: 0,
+    timeoutMs: 100,
+  });
+  try {
+    await expect(
+      embedQuery(client, { model: provider.identity.model, texts: ["Alpha"] }),
+    ).rejects.toThrow();
+  } finally {
+    await client.close();
+  }
+});
+it("keeps a canonically named ONNX shadow live during single-note refresh", async () => {
+  const { ProviderEmbeddingClient } = await import("./client.js");
+  const { startShadowIndex } = await import("../indexer/shadow.js");
+  const { indexNote } = await import("../indexer/single.js");
+  const f = await createVaultFixture();
+  const provider = await loadOnnxProvider(modelPath);
+  const client = new ProviderEmbeddingClient(provider);
+  const { OllamaClient } = await import("../ollama/index.js");
+  const remote = vi.spyOn(OllamaClient.prototype, "embed").mockImplementation(async (request) => {
+    if (request.model !== "legacy") throw new Error("Unexpected remote model");
+    return { vectors: request.texts.map(() => [1, 0]), dim: 2, model: "legacy" };
+  });
+  try {
+    await fs.writeFile(join(f.root, "Alpha.md"), "# Alpha\nAlpha");
+    await indexVault(f.vault, { embeddingModel: "unused", embeddings: "none" });
+    f.vault.db.models.upsert({ name: "legacy", provider: "ollama", dim: 2 });
+    const shadow = await startShadowIndex({
+      vault: f.vault,
+      model: provider.identity.model,
+      ollama: client,
+    });
+    await fs.writeFile(join(f.root, "Alpha.md"), "# Alpha\nAlpha changed");
+    const result = await indexNote({
+      vault: f.vault,
+      absolutePath: join(f.root, "Alpha.md"),
+      embeddingModel: "legacy",
+      secondaryEmbeddingModel: provider.identity.model,
+      ollama: client,
+    });
+    expect(result.status).toBe("indexed");
+    const note = f.vault.db.notes.getByPath("Alpha.md")!;
+    const chunk = f.vault.db.chunks.getByNote(note.id)[0]!;
+    expect(
+      f.vault.db.embeddings.searchSemantic(shadow.modelId, [1, 0], 10).map((v) => v.chunkId),
+    ).toContain(chunk.id);
+  } finally {
+    remote.mockRestore();
+    await client.close();
+    await f.cleanup();
+  }
+});
+it("refreshes with the newly active provider after a shadow switch in catchup and watcher", async () => {
+  const { ProviderEmbeddingClient } = await import("./client.js");
+  const { startShadowIndex, switchActiveModel } = await import("../indexer/shadow.js");
+  const { catchupVault } = await import("../indexer/catchup.js");
+  const { VaultWatcher } = await import("../adapters/change-feed/obsidian-fs/watcher.js");
+  const f = await createVaultFixture();
+  const provider = await loadOnnxProvider(modelPath);
+  const client = new ProviderEmbeddingClient(provider);
+  try {
+    await fs.writeFile(join(f.root, "Alpha.md"), "# Alpha\nAlpha");
+    await indexVault(f.vault, { embeddings: "none", embeddingModel: "unused" });
+    f.vault.db.models.upsert({ name: "legacy", provider: "ollama", dim: 2 });
+    const watcher = new VaultWatcher({
+      vault: f.vault,
+      embeddingModel: "legacy",
+      ollama: client,
+      suppression: f.suppression,
+    });
+    const shadow = await startShadowIndex({
+      vault: f.vault,
+      model: provider.identity.model,
+      ollama: client,
+    });
+    expect(switchActiveModel(f.vault, shadow.modelName).ok).toBe(true);
+    await fs.writeFile(join(f.root, "Alpha.md"), "# Alpha\nAlpha catchup");
+    expect(
+      (await catchupVault({ vault: f.vault, embeddingModel: "legacy", ollama: client })).reindexed,
+    ).toBe(1);
+    await fs.writeFile(join(f.root, "Alpha.md"), "# Alpha\nAlpha watcher");
+    await (
+      watcher as unknown as {
+        handleFlush: (event: { kind: "change"; path: string }) => Promise<void>;
+      }
+    ).handleFlush({ kind: "change", path: join(f.root, "Alpha.md") });
+    const note = f.vault.db.notes.getByPath("Alpha.md")!;
+    expect(note.content).toContain("watcher");
+    const chunk = f.vault.db.chunks.getByNote(note.id)[0]!;
+    expect(
+      f.vault.db.embeddings.searchSemantic(shadow.modelId, [1, 0], 10).map((v) => v.chunkId),
+    ).toContain(chunk.id);
+  } finally {
+    await client.close();
+    await f.cleanup();
   }
 });
