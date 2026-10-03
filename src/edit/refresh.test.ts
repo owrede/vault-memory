@@ -91,18 +91,32 @@ describe("edited-document refresh", () => {
     f.vault.db.models.upsert({ name: "test", provider: "ollama", dim: 2 });
     const ollama = new OllamaClient({ retries: 0 });
     const embed = vi.spyOn(ollama, "embed").mockRejectedValue(new Error("offline"));
-    await expect(refreshEditedDocument({ manager: f.manager, defaultModel: "test", ollama }, id)).rejects.toThrow("offline");
-    await expect(catchupVault({ vault: f.vault, embeddingModel: "test", ollama })).rejects.toThrow("offline");
+    await expect(
+      refreshEditedDocument({ manager: f.manager, defaultModel: "test", ollama }, id),
+    ).rejects.toThrow("offline");
+    await expect(catchupVault({ vault: f.vault, embeddingModel: "test", ollama })).rejects.toThrow(
+      "offline",
+    );
     expect(f.vault.db.notes.getByPath("a.md")!.body_hash).toBeNull();
-    embed.mockImplementation(async request => ({ dim: 2, vectors: request.texts.map(() => [1, 0]), model: "test" }));
-    expect((await catchupVault({ vault: f.vault, embeddingModel: "test", ollama })).reindexed).toBe(1);
+    embed.mockImplementation(async (request) => ({
+      dim: 2,
+      vectors: request.texts.map(() => [1, 0]),
+      model: "test",
+    }));
+    expect((await catchupVault({ vault: f.vault, embeddingModel: "test", ollama })).reindexed).toBe(
+      1,
+    );
     expect(f.vault.db.notes.getByPath("a.md")!.body_hash).not.toBeNull();
-    expect((await catchupVault({ vault: f.vault, embeddingModel: "test", ollama })).reindexed).toBe(0);
+    expect((await catchupVault({ vault: f.vault, embeddingModel: "test", ollama })).reindexed).toBe(
+      0,
+    );
   });
   it("retains invalidation after a failed catchup KB repair", async () => {
     await changed();
     f.vault.config.backend = "contextfit";
-    const ingest = vi.spyOn(contextFit, "indexVaultWithContextFit").mockResolvedValue({ status: "failed", stats: "", durationMs: 0, error: "offline" });
+    const ingest = vi
+      .spyOn(contextFit, "indexVaultWithContextFit")
+      .mockResolvedValue({ status: "failed", stats: "", durationMs: 0, error: "offline" });
     await catchupVault({ vault: f.vault, embeddingModel: "unused" });
     expect(f.vault.db.notes.getByPath("a.md")!.body_hash).toBeNull();
     ingest.mockResolvedValue({ status: "completed", stats: "", durationMs: 0 });

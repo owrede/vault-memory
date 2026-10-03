@@ -1,6 +1,6 @@
 # F02 Gezielte, hashgeschützte Änderungen Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Abschnitte oder eindeutige Textstellen ändern, ohne den Rest einer Notiz neu zu erzeugen.
 
@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-03-basic-memory-inspired-design.md`, F02; der Feature-Vertrag unten konkretisiert dessen Lieferung.
 
-**Status:** Geplant. Tests und Kommandos dieses Plans sind Abnahmevorgaben und wurden noch nicht als Implementierungsnachweis ausgeführt.
+**Status:** Implementiert, Gesamtprüfung und unabhängiges Re-review grün; Nachweis in `docs/superpowers/verification/2026-10-03-f02-targeted-edits.md`.
 
 **Voraussetzungen:** F01.
 
@@ -51,7 +51,7 @@ Keine DB-Migration. Neue opt-in Konfiguration `server.features: string[]`, defau
 
 **Interfaces:** Produziert die im Feature-Vertrag exakt definierten Typen und Funktionen. Konsumiert vorhandene Parser/Contract-Utilities nur über deren bestehende Exporte.
 
-- [ ] **Step 1: Folgenden primären Verhaltenstest zuerst anlegen.** Exporte mit Signaturen aus dem Feature-Vertrag zunächst als minimale Stubs anlegen (z.B. leere Ergebnislisten); der beobachtete RED muss eine falsche Ergebnisaussage sein, nicht bloß ein fehlender Import.
+- [x] **Step 1: Folgenden primären Verhaltenstest zuerst anlegen.** Exporte mit Signaturen aus dem Feature-Vertrag zunächst als minimale Stubs anlegen (z.B. leere Ergebnislisten); der beobachtete RED muss eine falsche Ergebnisaussage sein, nicht bloß ein fehlender Import.
 
 ```ts
 import {expect, it} from "vitest";
@@ -66,13 +66,13 @@ it("preserves surrounding sections", () => {
 });
 ```
 
-- [ ] **Step 2: RED prüfen.**
+- [x] **Step 2: RED prüfen.**
 
 Run: `npm test -- src/edit/patch.test.ts`
 
 Expected: mindestens der primäre Erwartungswert schlägt mit bisher fehlender/falscher Funktionalität fehl. Bei Import-/ABI-Fehler erst Umgebung korrigieren und erneut laufen lassen.
 
-- [ ] **Step 3: Kernlogik implementieren.** Folgender Kernbaustein legt das Verhalten fest; im Modul in die oben deklarierte Funktion einbetten und die genannten Fehlerfälle jeweils mit eigenem RED→GREEN bearbeiten.
+- [x] **Step 3: Kernlogik implementieren.** Folgender Kernbaustein legt das Verhalten fest; im Modul in die oben deklarierte Funktion einbetten und die genannten Fehlerfälle jeweils mit eigenem RED→GREEN bearbeiten.
 
 ```ts
 // Replace zählt nichtüberlappende Treffer; leerer Suchtext ist ungültig.
@@ -85,13 +85,13 @@ return {ok:true, body:body.slice(0, first) + patch.new_text + body.slice(first +
 
 Verbindliche Fallmatrix: Empty old_text → invalid_patch; kein Treffer → target_not_found; Markdown-Codefences enthalten keine echten Überschriften; doppelte Heading-Pfade → ambiguous_target; CRLF bleibt CRLF; gleiche Ersetzung → erfolgreicher No-op ohne Audit. Reuse `src/sections/extract.ts` für Heading-Bereiche statt zweitem Markdown-Parser.
 
-- [ ] **Step 4: GREEN und Refactor.**
+- [x] **Step 4: GREEN und Refactor.**
 
 Run: `npm test -- src/edit/patch.test.ts`
 
 Expected: sämtliche positiven und negativen Kernfälle bestehen. Bei Aufteilung in mehrere Kernmodule deren Tests zusätzlich in demselben Lauf angeben.
 
-- [ ] **Step 5: Commit.**
+- [x] **Step 5: Commit.**
 
 Run: `git add src && git commit -m "feat: add F02 targeted-edits core"`
 
@@ -103,17 +103,17 @@ Expected: nur Kernmodule und zugehörige Tests, keine ungeprüften Integrations�
 
 **Interfaces:** Konsumiert genau die Task-1-Signaturen. Produziert den unten festgelegten Nutzerpfad; keine separate Umsetzung derselben Fachlogik im MCP-/CLI-Handler.
 
-- [ ] **Step 1: Integrationstest vor Verdrahtung anlegen.** Echte temporäre Quellen/SQLite, deterministische Inputs, manuell erwartete Ausgaben und unveränderte Sideeffects im Fehlerfall verwenden.
+- [x] **Step 1: Integrationstest vor Verdrahtung anlegen.** Echte temporäre Quellen/SQLite, deterministische Inputs, manuell erwartete Ausgaben und unveränderte Sideeffects im Fehlerfall verwenden.
 
 `edit_document({doc_id,expected_hash,patch})` nur für `server.features=["document_edit"]` registrieren. `FEATURE_TOOLS.document_edit` definiert Name/Schema; `registerFeatureTools(server,deps,features): void` ist der einzige Registrar. Frischen Source-Hash mit expected_hash vergleichen, dann `delivery.update(id,{blocks:[{kind:"paragraph",text:patchedBody}],properties:originalProperties},{expectedHash:expected_hash})`; `wikilinks` wird wie bisher entfernt. Tests: echte FS-Notiz mit drei Abschnitten; nur mittlerer Abschnitt geändert; Frontmatter/Bytes anderer Bereiche erhalten; locked/hash mismatch/sink-invalid → keine Datei/DB/Audit/Suppression geändert. Registrierungs-Smoke über echten SDK-InMemoryTransport: deaktiviert unveränderter Standardkatalog; aktiviert genau edit_document zusätzlich; v1-Schemas bleiben unverändert.
 
-- [ ] **Step 2: RED beobachten.**
+- [x] **Step 2: RED beobachten.**
 
 Run: `npm test -- edit`
 
 Expected: neuer Integrationspfad ist noch nicht verdrahtet; konkrete Resultat-/Zustandsassertion scheitert. Bestehende Tests dürfen nicht wegen fehlender Infrastruktur ausfallen. Zusätzlich neue unter anderen Verzeichnissen angelegte Integrationstestdateien explizit angeben.
 
-- [ ] **Step 3: Verdrahten und dokumentieren.** Daten vom frisch gelesenen SourceConnector in Task-1-Kern geben, Resultat über bestehenden Controller zurückführen. Für Mutationen ausschließlich DeliveryAdapter mit echtem expectedHash. Neue SQL-Operationen verwenden gebundene Parameter/Transaktionen. Folgende gemeinsame Mutation ist verbindlich:
+- [x] **Step 3: Verdrahten und dokumentieren.** Daten vom frisch gelesenen SourceConnector in Task-1-Kern geben, Resultat über bestehenden Controller zurückführen. Für Mutationen ausschließlich DeliveryAdapter mit echtem expectedHash. Neue SQL-Operationen verwenden gebundene Parameter/Transaktionen. Folgende gemeinsame Mutation ist verbindlich:
 
 ```ts
 const original = await source.readDocument(docId);
@@ -124,13 +124,13 @@ if (!result.ok) return result; // document_locked/OCC/provenance bleiben unverä
 
 Bei reinen Abruf-/Inferenzfeatures entfällt dieser Mutationspfad vollständig. Dokumentation erklärt Aktivierung, Default, konkrete Beispielanfrage, Konfliktbehandlung und den oben beschriebenen Migrationsweg.
 
-- [ ] **Step 4: GREEN und Gesamtprüfung.**
+- [x] **Step 4: GREEN und Gesamtprüfung.**
 
 Run: `npm test && npm run lint && npm run lint:adapters && npm run build`
 
 Expected: alle lokalen Tests inklusive neuer Integrationstests und unveränderter v1-Eingabeschemas grün; keine Adapterimportverletzung; CLI-/Serverbundles erfolgreich. Migrationsfeatures zusätzlich auf frisch initialisierter und aktualisierter SQLite prüfen. ONNX-/Host-Netzwerktests dürfen die Standardtests nicht von externen Diensten abhängig machen.
 
-- [ ] **Step 5: Commit, Review und Nachweis.**
+- [x] **Step 5: Commit, Review und Nachweis.**
 
 Run: `git add src README.md CHANGELOG.md && git commit -m "feat: integrate F02 targeted-edits"`
 
