@@ -212,3 +212,48 @@ it("reads source metadata even when optional ONNX assets are unavailable", async
     0,
   );
 });
+it("records session checkpoints through the built opt-in CLI without embeddings and executes a neutral host hook", async () => {
+  const { provisionSink } = await import("../adapters/delivery/obsidian-fs/sentinel.js");
+  await f.memorySinkRegistry.registerMemorySinks(
+    [{ name: "memory", handle: "obsidian-fs://lab/_memory/", contract: "default-memory-v1" }],
+    {
+      resolveVaultAbsolutePath: () => f.root,
+      provisioner: (sink, root) => provisionSink(sink, root, { version: "test" }),
+    },
+  );
+  await fs.writeFile(
+    join(configDir, "config.toml"),
+    `[server]\nfeatures=["session_lifecycle"]\nembedding_provider="onnx"\nmodel_path="/missing-assets"\n[[vaults]]\nname="lab"\npath=${JSON.stringify(f.root)}\nwrite_enabled=true\n[[memory_sinks]]\nname="memory"\nhandle="obsidian-fs://lab/_memory/"\ncontract="default-memory-v1"\n`,
+  );
+  const input = {
+    session_id: "cli",
+    event_id: "checkpoint",
+    sink: "memory",
+    summary: "Finished a task",
+    source_doc_ids: [f.id("A B.md")],
+    observed_at: "2026-10-03T10:00:00Z",
+  };
+  const path = join(f.root, "checkpoint.json");
+  await fs.writeFile(path, JSON.stringify(input));
+  const first = run("session", "checkpoint", "--input", path, "--json");
+  expect(first.code).toBe(0);
+  const result = JSON.parse(first.stdout);
+  expect(result.ok).toBe(true);
+  expect(JSON.parse(run("session", "checkpoint", "--input", path, "--json").stdout)).toMatchObject({
+    doc_id: result.doc_id,
+    reused: true,
+  });
+  await fs.writeFile(
+    path,
+    JSON.stringify({ schema_version: 1, event: "session_checkpoint", input }),
+  );
+  const hook = spawnSync(process.execPath, ["examples/hooks/neutral-session.mjs", path], {
+    encoding: "utf8",
+    env: { ...process.env, VM_CONFIG_DIR: configDir },
+    timeout: 15000,
+  });
+  expect(hook.status).toBe(0);
+  expect(JSON.parse(hook.stdout)).toMatchObject({ doc_id: result.doc_id, reused: true });
+  const invalid = run("session", "start", "--topic", "x", "--max-chars", "-1", "--json");
+  expect(invalid.code).toBe(2);
+});

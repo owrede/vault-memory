@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { TOOLS } from "../tool-registry.js";
-import { FEATURE_TOOLS } from "../server/feature-tools.js";
+import { FEATURE_TOOLS, FEATURE_TOOL_GROUPS } from "../server/feature-tools.js";
 const mutations = new Set([
   "write_note",
   "update_frontmatter",
@@ -9,6 +9,8 @@ const mutations = new Set([
   "switch_active_model",
   "vacuum_embeddings",
   "record_observation",
+  "record_checkpoint",
+  "session-checkpoint",
   "supersede",
   "compile_brief",
   "register_contracts_as_tools",
@@ -32,14 +34,23 @@ export function operationAnnotations(name: string) {
       "supersede",
       "compile_brief",
     ].includes(name),
-    idempotentHint: readOnlyHint,
+    idempotentHint: readOnlyHint || ["record_checkpoint", "session-checkpoint"].includes(name),
     openWorldHint: ["register_contracts_as_tools", "instantiate_contract"].includes(name),
   };
 }
 export function manualTopic(topic: string) {
   const tool = TOOLS.find((t) => t.name === topic);
-  const feature = Object.entries(FEATURE_TOOLS).find(([, t]) => t.name === topic);
+  const feature = [
+    ...Object.entries(FEATURE_TOOLS),
+    ...Object.entries(FEATURE_TOOL_GROUPS).flatMap(([feature, tools]) =>
+      tools.map((tool) => [feature, tool] as const),
+    ),
+  ].find(([, t]) => t.name === topic);
   const cli: Record<string, string> = {
+    "session-start":
+      "Read existing brief context. session start --vault V --topic T [--sink S] [--max-chars N] [--as-of ISO] --json; requires session_lifecycle.",
+    "session-checkpoint":
+      "Record explicit idempotent summary. session checkpoint --input FILE --json; requires session_lifecycle and an existing sink.",
     index: "Build or update the derived local index; mutates SQLite and may request embeddings.",
     "add-vault": "Register a vault in local configuration.",
     search: "Search indexed knowledge. --query Q [--vault V] [--as-of ISO] [--json]",

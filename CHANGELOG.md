@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Opt-in session lifecycle tools and CLI: freshly verified brief context, explicit
+  agent summaries, per-sink session/event idempotence, recoverable SQLite v19
+  reservations and a versioned portable hook with a bounded process deadline.
+
 - Opt-in `schema_inspection` module: read-only candidate profiles, named
   MemoryContract validation, strict/permissive diagnostics and property/category/
   role drift with fresh citations; inference never weakens provenance requirements.

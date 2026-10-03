@@ -1,3 +1,5 @@
+import { SessionStartSchema, CheckpointSchema } from "../session/hooks.js";
+import { startSession, recordCheckpoint, type SessionDeps } from "../session/lifecycle.js";
 import { inspectSchema, type InspectSchemaDeps } from "../schema/inspect.js";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { AdapterRegistry } from "../adapters/registry.js";
@@ -38,7 +40,24 @@ export const FEATURE_TOOLS = {
     }),
   },
 } as const;
+export const FEATURE_TOOL_GROUPS = {
+  session_lifecycle: [
+    {
+      name: "start_session",
+      description:
+        "Session lifecycle v1: read an existing brief with fresh source-hash validation and a content budget.",
+      schema: SessionStartSchema,
+    },
+    {
+      name: "record_checkpoint",
+      description:
+        "Session lifecycle v1: record an explicit agent summary with source evidence in an existing sink. Idempotent per session/event and sink.",
+      schema: CheckpointSchema,
+    },
+  ],
+} as const;
 export interface FeatureToolDeps {
+  session?: SessionDeps;
   adapterRegistry: AdapterRegistry;
   resolveSchemaContract?: InspectSchemaDeps["resolveContract"];
   onBeforeWrite?: (id: DocId) => void;
@@ -49,6 +68,35 @@ export function registerFeatureTools(
   deps: FeatureToolDeps,
   features: readonly string[],
 ): void {
+  if (features.includes("session_lifecycle")) {
+    if (!deps.session) throw new Error("Session dependencies missing");
+    for (const tool of FEATURE_TOOL_GROUPS.session_lifecycle) {
+      server.registerTool(
+        tool.name,
+        {
+          description: tool.description,
+          inputSchema: tool.schema.shape,
+          annotations: {
+            readOnlyHint: tool.name === "start_session",
+            destructiveHint: false,
+            idempotentHint: true,
+            openWorldHint: false,
+          },
+        },
+        async (input: unknown) => {
+          try {
+            return ok(
+              tool.name === "start_session"
+                ? await startSession(SessionStartSchema.parse(input), deps.session!)
+                : await recordCheckpoint(CheckpointSchema.parse(input), deps.session!),
+            );
+          } catch (error) {
+            return errorResponse(errorMessage(error));
+          }
+        },
+      );
+    }
+  }
   if (features.includes("schema_inspection")) {
     const tool = FEATURE_TOOLS.schema_inspection;
     server.registerTool(

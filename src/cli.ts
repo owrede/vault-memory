@@ -8,6 +8,19 @@ const args = process.argv.slice(2);
 const command = args[0] ?? "serve";
 
 switch (command) {
+  case "session":
+    try {
+      const { parseSessionArgs } = await import("./cli/session.js");
+      const parsed = parseSessionArgs(args);
+      process.exitCode = await import("./adapters/source/obsidian-fs/session-runtime.js").then(
+        (m) => m.runLocalSession(parsed),
+      );
+    } catch (error) {
+      console.error(String(error));
+      if (args.includes("--json")) console.log(JSON.stringify({ ok: false, error: String(error) }));
+      process.exitCode = 2;
+    }
+    break;
   case "search":
   case "read":
   case "edit":
@@ -277,6 +290,8 @@ COMMANDS:
     --write                Allow MCP write operations (default: read-only)
     --no-index             Skip the initial index (you can run it later)
   init                   Interactive config wizard (Phase 5 — not yet)
+  session start         Read existing brief context with fresh source checks
+  session checkpoint    Record explicit idempotent checkpoint from --input FILE
   help, --help           Show this message
 
 CONFIG:

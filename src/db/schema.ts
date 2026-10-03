@@ -1207,4 +1207,14 @@ export const MIGRATIONS: readonly Migration[] = [
     description: "derived UTC validity intervals and diagnostic backfill for notes and statements",
     run: runMigration018,
   },
+  {
+    version: 19,
+    description: "Recoverable per-sink session checkpoint reservations",
+    sql: `CREATE TABLE IF NOT EXISTS checkpoint_reservations (
+    sink_handle TEXT NOT NULL, checkpoint_key TEXT NOT NULL, payload_hash TEXT NOT NULL,
+    owner TEXT NOT NULL, owner_pid INTEGER NOT NULL CHECK(owner_pid > 0), lease_until INTEGER NOT NULL,
+    state TEXT NOT NULL CHECK(state IN ('pending','complete')), doc_id TEXT,
+    PRIMARY KEY(sink_handle,checkpoint_key)
+  );`,
+  },
 ];

@@ -1051,6 +1051,15 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
     {
       adapterRegistry,
       resolveSchemaContract: (name, ids) => resolveInspectionContract(manager, name, ids),
+      session: {
+        manager,
+        memorySinkRegistry,
+        adapterRegistry,
+        deliveryAdapterFor: (name) =>
+          adapterRegistry.resolveDelivery(parseSourceHandle(`obsidian-fs://${name}`)),
+        sourceConnectorFor: (name) =>
+          adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${name}`)),
+      },
       onBeforeWrite: (id) => suppression.add(decomposeDocId(id).resource),
       onAfterWrite: (id) => refreshEditedDocument({ manager, ollama, defaultModel }, id),
     },

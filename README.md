@@ -456,3 +456,32 @@ Ollama remains the default. Set `[server] embedding_provider="onnx"` and `model_
 For multilingual-e5-small, the author's model card specifies `query: ` and `passage: ` prefixes, masked mean pooling and normalization; supply the chosen export's exact dimensions, revision and asset hashes. [Model instructions](https://huggingface.co/intfloat/multilingual-e5-small), [ONNX Runtime API](https://onnxruntime.ai/docs/api/js/interfaces/InferenceSession.html). The manifest hash is included in the revision namespace, preventing silent mixing after tokenization changes.
 
 On an existing index, build ONNX using `start_shadow_index` with the manifest model name (or full namespace); it returns the canonical modelName. Existing vectors and active model remain intact. Verify the shadow, then call `switch_active_model` explicitly. A direct reindex to a different ONNX identity is refused until this migration is complete. New vaults can index directly. ContextFit keeps its embedding-free path. Source-only CLI reads work without ONNX assets. No multilingual quality or speed claim is made: the default suite uses the original MIT tiny fixture; an optional local-model paraphrase test runs only with VM_ONNX_QUALITY_MODEL_PATH.
+
+### Explicit session lifecycle (F10)
+
+Enable `session_lifecycle` in `[server].features` to expose the additive `start_session` and `record_checkpoint` tools and local CLI commands. Existing tools and default configuration stay compatible. This feature reads existing briefs and records explicitly supplied summaries; it does not capture conversations or change host configuration.
+
+```sh
+vault-memory session start --vault main --topic project --sink _memory/_briefs --max-chars 3000 --json
+vault-memory session checkpoint --input checkpoint.json --json
+```
+
+`start_session` accepts `vault`, `topic`, optional brief `sink`, `max_chars` and `as_of`. It validates the brief's source chunk hashes against freshly read documents and the derived index. Missing/changed/unindexed sources make the result `stale:true` with an empty context body; citations remain available. A current brief's body is clipped to the character budget while retaining source IDs and hashes. No brief is compiled automatically. CLI vault selection is automatic only with one configured vault.
+
+Checkpoint input:
+
+```json
+{"session_id":"session-42","event_id":"checkpoint-1","sink":"memory","summary":"Implemented and verified the selected change.","source_doc_ids":["obsidian-fs://main/Project.md"],"observed_at":"2026-10-03T10:00:00Z"}
+```
+
+The existing `record_observation` controller and DeliveryAdapter author the summary inside an existing, provisioned MemorySink. Provenance is `source:agent`, `confidence:inferred`, `type:summary`, with explicit `observed_at`, source evidence and session/event IDs. Sources must be readable. Sentinel and readonly guards remain active. Commands do not provision sentinels or load embedding assets.
+
+The SHA256 session/event key is scoped to the sink. Repeating an identical event returns the canonical checkpoint with `reused:true`; changing its payload returns `checkpoint_mismatch`. Parallel events return `checkpoint_in_progress` for the contending caller: retry with the same IDs. SQLite migration 19 adds atomic derived reservations. On retry, canonical checkpoint properties reconstruct idempotence after index loss or a crash following an atomic Markdown write. Expired reservations are reclaimed only after the owning process has ended. A previously completed but deleted checkpoint returns `checkpoint_missing`; it is not recreated implicitly. CLI exit codes are 0 success, 2 invalid input, 4 checkpoint conflict, 5 configuration/backend error.
+
+The optional portable host adapter is [examples/hooks/neutral-session.mjs](examples/hooks/neutral-session.mjs). Run it explicitly with a JSON event file:
+
+```json
+{"schema_version":1,"event":"session_start","input":{"vault":"main","topic":"project","sink":"_memory/_briefs","max_chars":3000}}
+```
+
+For a checkpoint, use `event:"session_checkpoint"` and place the checkpoint input above in `input`. Unknown fields, unsupported versions and transcript fields are rejected. `node examples/hooks/neutral-session.mjs event.json` invokes the built CLI with a 25-second deadline (`VM_HOOK_TIMEOUT_MS`:100–25000); `VM_CONFIG_DIR` can isolate configuration. Timeout emits `hook_timeout`: retry the same event because the process may have completed an atomic write just before termination. Only this explicitly versioned neutral payload is supported; configure host-specific event translation yourself. No Claude/Codex config is edited and no background loop is installed.

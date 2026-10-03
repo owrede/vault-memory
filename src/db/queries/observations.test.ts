@@ -31,7 +31,7 @@ describe("derived observation SQL snapshots", () => {
     ).toContain("observations_hash");
     db.migrate();
     db.migrate();
-    expect(db.getSchemaVersion()).toBe(18);
+    expect(db.getSchemaVersion()).toBe(19);
   });
   it("upgrades a version-16 vault without inferring or changing its stored text", () => {
     const original = db.notes.getById(id)!;
@@ -40,7 +40,7 @@ describe("derived observation SQL snapshots", () => {
     );
     db.migrate();
     db.migrate();
-    expect(db.getSchemaVersion()).toBe(18);
+    expect(db.getSchemaVersion()).toBe(19);
     expect(db.notes.getById(id)).toMatchObject({
       content: original.content,
       hash: original.hash,
