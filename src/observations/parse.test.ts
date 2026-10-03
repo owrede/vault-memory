@@ -69,4 +69,12 @@ describe("explicit categorized observations", () => {
       parseObservations("```md\n    ```\n- [fact] Example only\n```\n- [fact] Real\n"),
     ).toEqual([{ category: "fact", text: "Real", line_start: 5, line_end: 5 }]);
   });
+  it("ignores an indented code example within a list container", () => {
+    expect(parseObservations("- Parent\n\n      - [fact] Code example\n")).toEqual([]);
+  });
+  it("ends a list fence when a sibling exits its container", () => {
+    expect(parseObservations("- ```md\n  example\n- [fact] Real\n")).toEqual([
+      { category: "fact", text: "Real", line_start: 3, line_end: 3 },
+    ]);
+  });
 });
