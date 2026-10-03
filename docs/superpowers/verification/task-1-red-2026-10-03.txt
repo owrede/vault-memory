@@ -1,0 +1,201 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/adapters/delivery/obsidian-fs/locked.test.ts src/adapters/delivery/conformance.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/adapters/delivery/obsidian-fs/locked.test.ts (15 tests | 8 failed) 143ms
+     × rejects an overwrite that removes the lock and preserves file, index and audit 38ms
+     × rejects an overwrite that sets locked false and preserves file, index and audit 9ms
+     × rejects an overwrite that retains the lock and preserves file, index and audit 8ms
+     × refuses deletion with the correct hash without any mutation or callback 7ms
+     × reports the lock before OCC for hash undefined 7ms
+     × reports the lock before OCC for hash stale-hash 8ms
+     × write reads a manually added lock instead of the stale index 9ms
+     × delete reads a manually added lock instead of the stale index 6ms
+ ❯ |unit| src/adapters/delivery/conformance.test.ts (45 tests | 6 failed) 179ms
+     × rejects write of a stored locked document even with a matching hash 22ms
+     × rejects update of a stored locked document even with a matching hash 9ms
+     × rejects delete of a stored locked document even with a matching hash 10ms
+     × rejects write of a stored locked document even with a matching hash 1ms
+     × rejects update of a stored locked document even with a matching hash 0ms
+     × rejects delete of a stored locked document even with a matching hash 0ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 14 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/adapters/delivery/conformance.test.ts > DeliveryAdapter conformance (obsidian-fs) > rejects write of a stored locked document even with a matching hash
+ FAIL  |unit| src/adapters/delivery/conformance.test.ts > DeliveryAdapter conformance (stub) > rejects write of a stored locked document even with a matching hash
+AssertionError: expected { ok: true, …(3) } to match object { Object (ok, reason) }
+(3 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "ok": false,
+-   "reason": "document_locked",
++   "ok": true,
+  }
+
+ ❯ src/adapters/delivery/conformance.test.ts:217:24
+    215|           ? await f.adapter.delete(id, opts)
+    216|           : await f.adapter[operation](id, patch, opts);
+    217|         expect(result).toMatchObject({ ok: false, reason: "document_lo…
+       |                        ^
+    218|         // The stored lock still prevents a second attempt; deletion c…
+    219|         // silently remove the document either.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/14]⎯
+
+ FAIL  |unit| src/adapters/delivery/conformance.test.ts > DeliveryAdapter conformance (obsidian-fs) > rejects update of a stored locked document even with a matching hash
+ FAIL  |unit| src/adapters/delivery/conformance.test.ts > DeliveryAdapter conformance (stub) > rejects update of a stored locked document even with a matching hash
+AssertionError: expected { ok: true, …(2) } to match object { Object (ok, reason) }
+(2 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "ok": false,
+-   "reason": "document_locked",
++   "ok": true,
+  }
+
+ ❯ src/adapters/delivery/conformance.test.ts:217:24
+    215|           ? await f.adapter.delete(id, opts)
+    216|           : await f.adapter[operation](id, patch, opts);
+    217|         expect(result).toMatchObject({ ok: false, reason: "document_lo…
+       |                        ^
+    218|         // The stored lock still prevents a second attempt; deletion c…
+    219|         // silently remove the document either.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/14]⎯
+
+ FAIL  |unit| src/adapters/delivery/conformance.test.ts > DeliveryAdapter conformance (obsidian-fs) > rejects delete of a stored locked document even with a matching hash
+ FAIL  |unit| src/adapters/delivery/conformance.test.ts > DeliveryAdapter conformance (stub) > rejects delete of a stored locked document even with a matching hash
+AssertionError: expected { ok: true, …(1) } to match object { Object (ok, reason) }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "ok": false,
+-   "reason": "document_locked",
++   "ok": true,
+  }
+
+ ❯ src/adapters/delivery/conformance.test.ts:217:24
+    215|           ? await f.adapter.delete(id, opts)
+    216|           : await f.adapter[operation](id, patch, opts);
+    217|         expect(result).toMatchObject({ ok: false, reason: "document_lo…
+       |                        ^
+    218|         // The stored lock still prevents a second attempt; deletion c…
+    219|         // silently remove the document either.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/14]⎯
+
+ FAIL  |unit| src/adapters/delivery/obsidian-fs/locked.test.ts > stored document locks > rejects an overwrite that removes the lock and preserves file, index and audit
+ FAIL  |unit| src/adapters/delivery/obsidian-fs/locked.test.ts > stored document locks > rejects an overwrite that sets locked false and preserves file, index and audit
+ FAIL  |unit| src/adapters/delivery/obsidian-fs/locked.test.ts > stored document locks > rejects an overwrite that retains the lock and preserves file, index and audit
+AssertionError: expected { ok: true, …(3) } to match object { Object (ok, reason) }
+(3 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "ok": false,
+-   "reason": "document_locked",
++   "ok": true,
+  }
+
+ ❯ src/adapters/delivery/obsidian-fs/locked.test.ts:65:20
+     63|       onBeforeFsWrite: beforeWrite,
+     64|     });
+     65|     expect(result).toMatchObject({ ok: false, reason: "document_locked…
+       |                    ^
+     66|     expect(await snapshot()).toEqual(before);
+     67|     expect(beforeWrite).not.toHaveBeenCalled();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/14]⎯
+
+ FAIL  |unit| src/adapters/delivery/obsidian-fs/locked.test.ts > stored document locks > refuses deletion with the correct hash without any mutation or callback
+AssertionError: expected { ok: true, …(3) } to match object { Object (ok, reason) }
+(3 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "ok": false,
+-   "reason": "document_locked",
++   "ok": true,
+  }
+
+ ❯ src/adapters/delivery/obsidian-fs/locked.test.ts:80:20
+     78|       onBeforeFsWrite: beforeWrite,
+     79|     });
+     80|     expect(result).toMatchObject({ ok: false, reason: "document_locked…
+       |                    ^
+     81|     expect(await snapshot()).toEqual(before);
+     82|     expect(beforeWrite).not.toHaveBeenCalled();
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/14]⎯
+
+ FAIL  |unit| src/adapters/delivery/obsidian-fs/locked.test.ts > stored document locks > reports the lock before OCC for hash undefined
+ FAIL  |unit| src/adapters/delivery/obsidian-fs/locked.test.ts > stored document locks > reports the lock before OCC for hash stale-hash
+AssertionError: expected { ok: false, …(4) } to match object { Object (ok, reason) }
+(3 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "ok": false,
+-   "reason": "document_locked",
++   "reason": "hash_mismatch",
+  }
+
+ ❯ src/adapters/delivery/obsidian-fs/locked.test.ts:94:20
+     92|       expectedHash,
+     93|     });
+     94|     expect(result).toMatchObject({ ok: false, reason: "document_locked…
+       |                    ^
+     95|     expect(await snapshot()).toEqual(before);
+     96|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/14]⎯
+
+ FAIL  |unit| src/adapters/delivery/obsidian-fs/locked.test.ts > stored document locks > write reads a manually added lock instead of the stale index
+ FAIL  |unit| src/adapters/delivery/obsidian-fs/locked.test.ts > stored document locks > delete reads a manually added lock instead of the stale index
+AssertionError: expected { ok: true, …(3) } to match object { Object (ok, reason) }
+(3 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "ok": false,
+-   "reason": "document_locked",
++   "ok": true,
+  }
+
+ ❯ src/adapters/delivery/obsidian-fs/locked.test.ts:109:20
+    107|       ? await deleteNote(input)
+    108|       : await writeNote({ ...input, content: "Changed" });
+    109|     expect(result).toMatchObject({ ok: false, reason: "document_locked…
+       |                    ^
+    110|     expect(await snapshot()).toEqual(before);
+    111|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/14]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  14 failed | 46 passed (60)
+   Start at  14:47:57
+   Duration  619ms (transform 348ms, setup 0ms, import 634ms, tests 322ms, environment 0ms)
+

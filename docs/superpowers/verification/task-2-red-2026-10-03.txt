@@ -1,0 +1,185 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/frontmatter/update.test.ts src/server/handlers/notes.locked.test.ts src/memory/tools/supersede.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/server/handlers/notes.locked.test.ts (14 tests | 7 failed) 114ms
+     × write_note returns document_locked with no file/index/audit/suppression changes 21ms
+     × update_frontmatter returns document_locked with no file/index/audit/suppression changes 10ms
+     × delete_note returns document_locked with no file/index/audit/suppression changes 8ms
+     × write_note with a stale hash does not hide the next external edit 7ms
+     × delete_note with a stale hash does not hide the next external edit 7ms
+     × write_note on a read-only vault does not suppress an external edit 6ms
+     × delete_note on a read-only vault does not suppress an external edit 6ms
+ ❯ |unit| src/frontmatter/update.test.ts (22 tests | 5 failed) 178ms
+     × refuses a locked document even for merge {}, without side effects 26ms
+     × refuses a locked document even for merge {"locked":{"$unset":true}}, without side effects 8ms
+     × refuses a locked document even for merge {"locked":false}, without side effects 7ms
+     × refuses a locked document even for merge {"status":"changed"}, without side effects 7ms
+     × preserves the delivery lock conflict if the editor locks after the source read 7ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 12 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/frontmatter/update.test.ts > updateFrontmatter > refuses a locked document even for merge {}, without side effects
+AssertionError: expected { ok: true, …(3) } to match object { Object (ok, reason) }
+(3 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "ok": false,
+-   "reason": "document_locked",
++   "ok": true,
+  }
+
+ ❯ src/frontmatter/update.test.ts:103:22
+    101|       const hook = vi.fn();
+    102|       const result = await updateFrontmatter({ vault: ctx.vault, relat…
+    103|       expect(result).toMatchObject({ ok: false, reason: "document_lock…
+       |                      ^
+    104|       expect(await fs.readFile(absPath, "utf8")).toBe(before);
+    105|       expect(ctx.vault.db.notes.getByPath("n.md")).toEqual(row);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/12]⎯
+
+ FAIL  |unit| src/frontmatter/update.test.ts > updateFrontmatter > refuses a locked document even for merge {"locked":{"$unset":true}}, without side effects
+ FAIL  |unit| src/frontmatter/update.test.ts > updateFrontmatter > refuses a locked document even for merge {"locked":false}, without side effects
+ FAIL  |unit| src/frontmatter/update.test.ts > updateFrontmatter > refuses a locked document even for merge {"status":"changed"}, without side effects
+AssertionError: expected { ok: false, …(2) } to match object { Object (ok, reason) }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "ok": false,
+-   "reason": "document_locked",
++   "reason": "hash_mismatch",
+  }
+
+ ❯ src/frontmatter/update.test.ts:103:22
+    101|       const hook = vi.fn();
+    102|       const result = await updateFrontmatter({ vault: ctx.vault, relat…
+    103|       expect(result).toMatchObject({ ok: false, reason: "document_lock…
+       |                      ^
+    104|       expect(await fs.readFile(absPath, "utf8")).toBe(before);
+    105|       expect(ctx.vault.db.notes.getByPath("n.md")).toEqual(row);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/12]⎯
+
+ FAIL  |unit| src/frontmatter/update.test.ts > updateFrontmatter > preserves the delivery lock conflict if the editor locks after the source read
+AssertionError: expected { ok: false, …(2) } to match object { Object (ok, reason) }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "ok": false,
+-   "reason": "document_locked",
++   "reason": "hash_mismatch",
+  }
+
+ ❯ src/frontmatter/update.test.ts:129:20
+    127|     const hook = vi.fn();
+    128|     const result = await updateFrontmatter({ vault: ctx.vault, registr…
+    129|     expect(result).toMatchObject({ ok: false, reason: "document_locked…
+       |                    ^
+    130|     expect(await fs.readFile(absPath, "utf8")).toBe("---\nlocked: true…
+    131|     expect(ctx.vault.db.audit.listWrites({})).toHaveLength(0);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/12]⎯
+
+ FAIL  |unit| src/server/handlers/notes.locked.test.ts > note handlers preserve document locks and watcher events > write_note returns document_locked with no file/index/audit/suppression changes
+ FAIL  |unit| src/server/handlers/notes.locked.test.ts > note handlers preserve document locks and watcher events > delete_note returns document_locked with no file/index/audit/suppression changes
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ src/server/handlers/notes.locked.test.ts:85:46
+     83|       expect(result).toMatchObject({ ok: false, reason: "document_lock…
+     84|       expect(await snapshot()).toEqual(before);
+     85|       expect(suppression.has("approved.md")).toBe(false);
+       |                                              ^
+     86|     },
+     87|   );
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/12]⎯
+
+ FAIL  |unit| src/server/handlers/notes.locked.test.ts > note handlers preserve document locks and watcher events > update_frontmatter returns document_locked with no file/index/audit/suppression changes
+AssertionError: expected { ok: false, …(2) } to match object { Object (ok, reason) }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "ok": false,
+-   "reason": "document_locked",
++   "reason": "hash_mismatch",
+  }
+
+ ❯ src/server/handlers/notes.locked.test.ts:83:22
+     81|       const before = await snapshot();
+     82|       const result = await handlers[operation]!(args(hash));
+     83|       expect(result).toMatchObject({ ok: false, reason: "document_lock…
+       |                      ^
+     84|       expect(await snapshot()).toEqual(before);
+     85|       expect(suppression.has("approved.md")).toBe(false);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/12]⎯
+
+ FAIL  |unit| src/server/handlers/notes.locked.test.ts > note handlers preserve document locks and watcher events > write_note with a stale hash does not hide the next external edit
+ FAIL  |unit| src/server/handlers/notes.locked.test.ts > note handlers preserve document locks and watcher events > delete_note with a stale hash does not hide the next external edit
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ src/server/handlers/notes.locked.test.ts:113:46
+    111|       const before = await snapshot();
+    112|       expect(await handlers[operation]!(args("stale-hash"))).toMatchOb…
+    113|       expect(suppression.has("approved.md")).toBe(false);
+       |                                              ^
+    114|       expect(await snapshot()).toEqual(before);
+    115|     },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/12]⎯
+
+ FAIL  |unit| src/server/handlers/notes.locked.test.ts > note handlers preserve document locks and watcher events > write_note on a read-only vault does not suppress an external edit
+ FAIL  |unit| src/server/handlers/notes.locked.test.ts > note handlers preserve document locks and watcher events > delete_note on a read-only vault does not suppress an external edit
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ src/server/handlers/notes.locked.test.ts:125:46
+    123|       const before = await snapshot();
+    124|       expect(await handlers[operation]!(args(hash))).toMatchObject({ o…
+    125|       expect(suppression.has("approved.md")).toBe(false);
+       |                                              ^
+    126|       expect(await snapshot()).toEqual(before);
+    127|     },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/12]⎯
+
+
+ Test Files  2 failed | 1 passed (3)
+      Tests  12 failed | 31 passed (43)
+   Start at  14:51:44
+   Duration  615ms (transform 632ms, setup 0ms, import 1.08s, tests 377ms, environment 0ms)
+
