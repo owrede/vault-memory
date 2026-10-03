@@ -14,6 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Explicit domain role declarations in Relations sections, additive v2 expand
+  role filters and incoming/outgoing aliases, source-line/hash provenance and
+  stale-relation diagnostics on the existing typed graph.
+
 - Categorized statements from explicit Markdown list items with stable repeated
   snapshots, SQLite migration 17, source freshness diagnostics and optional
   citation-preserving v2 retrieval. No inference or provenance promotion.

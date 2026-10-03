@@ -1074,7 +1074,9 @@
             "enum": [
               "forward",
               "backward",
-              "both"
+              "both",
+              "outgoing",
+              "incoming"
             ],
             "default": "both",
             "description": "Edge traversal direction; default 'both'."
@@ -1091,6 +1093,14 @@
               ]
             },
             "description": "Optional filter on edge types; default = all four types."
+          },
+          "rels": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Domain role filter; omitted = all, empty = no edges."
           },
           "filter_properties": {
             "type": "object",

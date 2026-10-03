@@ -361,6 +361,33 @@ authoritative and its `source`, `evidence` and `confidence` are retained as-is.
 `record_observation` continues writing whole MemorySink documents under its
 existing provenance contract.
 
+## Domain relation roles
+
+Declare directed roles in a `Relations` section, for example:
+
+```markdown
+## Relations
+- owns [[Atlas#Plan|Roadmap]]
+- depends_on [[Budget]]
+```
+
+Only complete explicit list declarations are roles. Ordinary wikilinks and
+code examples carry no inferred role; unknown underscore-separated role names
+are retained. Roles enrich `Edge.rel` on the existing wikilink edge, preserving
+anchors, source body lines, parallel roles and unresolved targets. Markdown is
+authoritative. Run a full reindex to backfill existing notes; no migration or
+configuration flag is needed.
+
+The v2 `expand` tool accepts `rels: ["owns"]` and `direction: "outgoing"` or
+`"incoming"`. Existing `forward`/`backward` remain equivalent aliases; omitted
+direction stays `both`. Omitted roles retain all edges; an empty role array
+selects none. Filters apply on every hop and combine with `edge_types`.
+`via` discloses the role, body line, declaring source DocId and canonical hash;
+the result packet still cites the reached document and preserves its provenance.
+A changed declaring source returns `stale_relation` and excludes its indexed
+role until reindexing. Traversal never invents an inverse role or confidence.
+The original v1 graph-tool schemas stay unchanged.
+
 ## License
 
 MIT.

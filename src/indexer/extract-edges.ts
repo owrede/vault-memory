@@ -1,3 +1,4 @@
+import { parseDomainRelations } from "../relations/parse.js";
 /**
  * Edge extractors — produce typed `EdgeInput[]` rows for the `edges`
  * table from a single `ParsedNote`.
@@ -126,6 +127,7 @@ export function extractAllEdges(
  * indexer write path stays a dual-write until v3 retires `wikilinks`.
  */
 export function extractWikilinkEdges(parsed: ParsedNote, resolver: WikilinkResolver): EdgeInput[] {
+  const roles = parseDomainRelations(parsed.content);
   const out: EdgeInput[] = [];
   for (const wl of parsed.wikilinks) {
     const hit = resolver.resolve(wl.normalizedTarget);
@@ -133,7 +135,12 @@ export function extractWikilinkEdges(parsed: ParsedNote, resolver: WikilinkResol
       targetNoteId: hit?.id ?? null,
       targetPath: wl.normalizedTarget,
       type: "wikilink",
-      rel: null,
+      rel:
+        roles.find(
+          (role) =>
+            role.line === wl.line &&
+            role.target === wl.rawTarget + (wl.anchor ? "#" + wl.anchor : ""),
+        )?.rel ?? null,
       anchor: wl.anchor,
       lineNumber: wl.line,
       linkText: wl.alias,

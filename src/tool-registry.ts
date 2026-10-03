@@ -932,7 +932,7 @@ export const TOOLS = [
         },
         direction: {
           type: "string",
-          enum: ["forward", "backward", "both"],
+          enum: ["forward", "backward", "both", "outgoing", "incoming"],
           default: "both",
           description: "Edge traversal direction; default 'both'.",
         },
@@ -943,6 +943,11 @@ export const TOOLS = [
             enum: ["wikilink", "mention", "frontmatter-ref", "hyperlink"],
           },
           description: "Optional filter on edge types; default = all four types.",
+        },
+        rels: {
+          type: "array",
+          items: { type: "string", minLength: 1 },
+          description: "Domain role filter; omitted = all, empty = no edges.",
         },
         filter_properties: {
           type: "object",
@@ -1585,7 +1590,7 @@ export const TOOL_SCHEMAS = {
       .union([z.literal(1), z.literal(2)])
       .describe("Hop cap (1 or 2). v2.0.0 hard-caps at 2."),
     direction: z
-      .enum(["forward", "backward", "both"])
+      .enum(["forward", "backward", "both", "outgoing", "incoming"])
       .optional()
       .default("both")
       .describe("Edge traversal direction; default 'both'."),
@@ -1593,6 +1598,10 @@ export const TOOL_SCHEMAS = {
       .array(z.enum(["wikilink", "mention", "frontmatter-ref", "hyperlink"]))
       .optional()
       .describe("Optional filter on edge types; default = all four types."),
+    rels: z
+      .array(z.string().min(1))
+      .optional()
+      .describe("Domain role filter; omitted = all, empty = no edges."),
     filter_properties: z
       .record(z.string(), z.unknown())
       .optional()
