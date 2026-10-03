@@ -9,7 +9,7 @@ Verbindliches Ziel: alle elf Feature-Upgrades gemäß Design und Einzelplänen i
 | F03 Kompakter Kontext | abgeschlossen | `2026-10-03-f03-compact-retrieval.md` |
 | F04 Beobachtungen | abgeschlossen | `2026-10-03-f04-categorized-observations.md` |
 | F05 Fachliche Relationen | abgeschlossen | `2026-10-03-f05-domain-relations.md` |
-| F06 Schemas/Drift | Gesamtprüfung grün, Review läuft | eigener Plan |
+| F06 Schemas/Drift | abgeschlossen | `2026-10-03-f06-schema-validation-drift.md` |
 | F07 Gültigkeitszeit | TDD in Arbeit | eigener Plan |
 | F08 CLI/Handbuch | geplant | eigener Plan |
 | F09 ONNX-Embeddings | geplant | eigener Plan |

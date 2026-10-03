@@ -1,0 +1,113 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/schema/body.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/schema/body.test.ts (4 tests | 4 failed) 8ms
+     × retains an exact flat-text body 5ms
+     × walks nested sections with headings and explicit list declarations 1ms
+     × keeps list item continuations without creating sibling declarations 1ms
+     × keeps code containing fence markers outside inference 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/schema/body.test.ts > inspection Markdown projection > retains an exact flat-text body
+AssertionError: expected { text: '', …(1) } to deeply equal { text: '# A\n- [fact] Real\n', …(1) }
+
+- Expected
++ Received
+
+  {
+-   "line_basis": "source_body",
+-   "text": "# A
+- - [fact] Real
+- ",
++   "line_basis": "rendered_markdown",
++   "text": "",
+  }
+
+ ❯ src/schema/body.test.ts:7:83
+      5| describe("inspection Markdown projection", () => {
+      6|   it("retains an exact flat-text body", () => {
+      7|     expect(inspectionBody([{ kind: "paragraph", text: "# A\n- [fact] R…
+       |                                                                                   ^
+      8|   });
+      9|   it("walks nested sections with headings and explicit list declaratio…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  |unit| src/schema/body.test.ts > inspection Markdown projection > walks nested sections with headings and explicit list declarations
+AssertionError: expected [] to deeply equal [ 'Real' ]
+
+- Expected
++ Received
+
+- [
+-   "Real",
+- ]
++ []
+
+ ❯ src/schema/body.test.ts:15:65
+     13|     ] }]);
+     14|     expect(result.line_basis).toBe("rendered_markdown");
+     15|     expect(parseObservations(result.text).map(row => row.text)).toEqua…
+       |                                                                 ^
+     16|     expect(parseDomainRelations(result.text).map(row => ({ rel: row.re…
+     17|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  |unit| src/schema/body.test.ts > inspection Markdown projection > keeps list item continuations without creating sibling declarations
+AssertionError: expected [] to deeply equal [ { category: 'fact', …(3) } ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "category": "fact",
+-     "line_end": 2,
+-     "line_start": 1,
+-     "text": "Real
+- Continued",
+-   },
+- ]
++ []
+
+ ❯ src/schema/body.test.ts:20:44
+     18|   it("keeps list item continuations without creating sibling declarati…
+     19|     const result = inspectionBody([{ kind: "list", ordered: false, ite…
+     20|     expect(parseObservations(result.text)).toEqual([{ category: "fact"…
+       |                                            ^
+     21|   });
+     22|   it("keeps code containing fence markers outside inference", () => {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  |unit| src/schema/body.test.ts > inspection Markdown projection > keeps code containing fence markers outside inference
+AssertionError: expected '' to contain 'Example'
+
+- Expected
++ Received
+
+- Example
+
+ ❯ src/schema/body.test.ts:24:25
+     22|   it("keeps code containing fence markers outside inference", () => {
+     23|     const result = inspectionBody([{ kind: "code", lang: "md", text: "…
+     24|     expect(result.text).toContain("Example");
+       |                         ^
+     25|     expect(parseObservations(result.text)).toEqual([]);
+     26|     expect(parseDomainRelations(result.text)).toEqual([]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed (4)
+   Start at  17:19:07
+   Duration  159ms (transform 38ms, setup 0ms, import 52ms, tests 8ms, environment 0ms)
+

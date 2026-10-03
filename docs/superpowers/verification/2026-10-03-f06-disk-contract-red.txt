@@ -1,0 +1,35 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/schema/inspect.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/schema/inspect.test.ts (8 tests | 1 failed) 92ms
+     × loads an explicitly named disk contract for one vault without storing inference 8ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/schema/inspect.test.ts > read-only schema inspection over real sources and contracts > loads an explicitly named disk contract for one vault without storing inference
+Error: Unknown memory contract: "inspection-auto-fixture". Known contracts: default-memory-v1, default-memory-v1, default-brief-v1. Call loadContractFromDisk(name, vaultPath) first to register a contract.
+ ❯ getContract src/memory/contract/index.ts:50:9
+     48|   const cached = __getCachedContract(name);
+     49|   if (cached) return cached;
+     50|   throw new Error(
+       |         ^
+     51|     `Unknown memory contract: "${name}". ` +
+     52|       `Known contracts: default-memory-v1${otherCachedNames(name)}. ` +
+ ❯ resolveInspectionContract src/schema/resolve-contract.ts:4:136
+ ❯ Object.resolveContract src/schema/inspect.test.ts:143:194
+ ❯ inspectSchema src/schema/inspect.ts:98:19
+ ❯ src/schema/inspect.test.ts:143:26
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 7 passed (8)
+   Start at  17:07:43
+   Duration  653ms (transform 259ms, setup 0ms, import 471ms, tests 92ms, environment 0ms)
+
