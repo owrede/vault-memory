@@ -1,0 +1,46 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/observations/parse.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/observations/parse.test.ts (18 tests | 1 failed) 8ms
+   × preserves literal inline-code and non-trailing validity examples 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/observations/parse.test.ts > preserves literal inline-code and non-trailing validity examples
+AssertionError: expected [ { category: 'fact', …(4) } ] to deeply equal [ { category: 'fact', …(3) } ]
+
+- Expected
++ Received
+
+  [
+    {
+      "category": "fact",
+      "line_end": 1,
+      "line_start": 1,
+-     "text": "The literal `<!-- validity: {} -->` is documentation.",
++     "text": "The literal `",
++     "validity_error": "annotation",
+    },
+  ]
+
+ ❯ src/observations/parse.test.ts:95:75
+     93| it("preserves literal inline-code and non-trailing validity examples",…
+     94|  const claims=['The literal `<!-- validity: {} -->` is documentation.'…
+     95|  for(const claim of claims)expect(parseObservations(`- [fact] ${claim}…
+       |                                                                           ^
+     96| });
+     97|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 17 passed (18)
+   Start at  17:54:38
+   Duration  147ms (transform 32ms, setup 0ms, import 44ms, tests 8ms, environment 0ms)
+

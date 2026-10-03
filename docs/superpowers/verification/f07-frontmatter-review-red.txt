@@ -1,0 +1,42 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/search/valid-time.integration.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/search/valid-time.integration.test.ts (10 tests | 1 failed) 166ms
+     × keeps invalid_validity distinct from OCC in frontmatter updates 17ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/search/valid-time.integration.test.ts > business validity in real SQLite search and source citations > keeps invalid_validity distinct from OCC in frontmatter updates
+AssertionError: expected { ok: false, …(2) } to match object { ok: false, …(1) }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "ok": false,
+-   "reason": "invalid_validity",
++   "reason": "hash_mismatch",
+  }
+
+ ❯ src/search/valid-time.integration.test.ts:100:20
+     98|     const doc=await f.source.readDocument(f.id("user.md"));
+     99|     const result=await updateFrontmatter({vault:f.vault,registry:f.ada…
+    100|     expect(result).toMatchObject({ok:false,reason:"invalid_validity"});
+       |                    ^
+    101|     expect((await f.source.readDocument(doc.id)).hash).toBe(doc.hash);
+    102|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 9 passed (10)
+   Start at  17:53:15
+   Duration  747ms (transform 343ms, setup 0ms, import 493ms, tests 166ms, environment 0ms)
+

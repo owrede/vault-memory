@@ -1,0 +1,70 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/search/valid-time.integration.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/search/valid-time.integration.test.ts (9 tests | 3 failed) 128ms
+     × pre-filters native vector nearest neighbours before K 26ms
+     × exposes validated as_of only on additive v2 retrieval schemas 11ms
+     × refuses invalid validity before delivery mutates a file 14ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/search/valid-time.integration.test.ts > business validity in real SQLite search and source citations > pre-filters native vector nearest neighbours before K
+SqliteError: no such column: rowid
+ ❯ Database.prepare ../../../Users/wrede/Documents/GitHub/vault-memory/node_modules/better-sqlite3/lib/methods/wrappers.js:5:21
+ ❯ EmbeddingsQueries.searchSemantic src/db/queries/embeddings.ts:164:35
+    162|     }
+    163|     const stmts = this.getStmts(modelId);
+    164|     const rows = filter ? this.db.prepare(`SELECT chunk_id, distance F…
+       |                                   ^
+    165|       WHERE vector MATCH ? AND k = ? AND rowid IN (
+    166|         SELECT chunks.id FROM chunks JOIN notes ON notes.id=chunks.not…
+ ❯ src/search/valid-time.integration.test.ts:35:34
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  |unit| src/search/valid-time.integration.test.ts > business validity in real SQLite search and source citations > exposes validated as_of only on additive v2 retrieval schemas
+AssertionError: expected { …(7) } to have property "as_of"
+ ❯ src/search/valid-time.integration.test.ts:39:68
+     37|   it("exposes validated as_of only on additive v2 retrieval schemas", …
+     38|     for (const name of ["recall", "search_sections", "get_document_bun…
+     39|       expect(TOOLS.find(t=>t.name===name)!.inputSchema.properties).toH…
+       |                                                                    ^
+     40|       const schema = z.object(TOOL_SCHEMAS[name]!);
+     41|       const input = name === "get_document_bundle" ? {doc_id:f.id("_me…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  |unit| src/search/valid-time.integration.test.ts > business validity in real SQLite search and source citations > refuses invalid validity before delivery mutates a file
+AssertionError: expected { ok: false, …(6) } to match object { ok: false, …(1) }
+(5 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "ok": false,
+-   "reason": "invalid_validity",
++   "reason": "invalid_provenance",
+  }
+
+ ❯ src/search/valid-time.integration.test.ts:49:20
+     47|     const doc = await f.source.readDocument(f.id("_memory/new.md"));
+     48|     const result = await f.delivery.update(doc.id,{...doc, properties:…
+     49|     expect(result).toMatchObject({ok:false,reason:"invalid_validity"});
+       |                    ^
+     50|     expect((await f.source.readDocument(doc.id)).hash).toBe(doc.hash);
+     51|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed | 6 passed (9)
+   Start at  17:45:52
+   Duration  648ms (transform 296ms, setup 0ms, import 433ms, tests 128ms, environment 0ms)
+
