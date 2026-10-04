@@ -12,7 +12,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [2.5.0] — 2026-10-04
+
 ### Added
+
+- Business validity intervals: UTC `valid_from`/`valid_to`, historical v2
+  `as_of` retrieval, inherited or explicit statement bounds, indexed filtering
+  before ranking/limits and SQLite migration 18. Observation time stays separate.
+
+- Scriptable search/read/edit CLI, `VM_CONFIG_DIR` isolation, versioned MCP
+  manuals and truthful operation annotations, preserving original v1 schemas.
+
+- Optional local CPU ONNX embedding provider with SHA256-pinned assets and
+  manifest identity, query/passage prefixes, masked pooling/normalization and
+  explicit shadow migration preserving existing Ollama vector namespaces.
 
 - Opt-in reviewed neutral-v1 conversation imports: deterministic manifests,
   imported provenance outside MemorySinks, hash/lock protected updates and
@@ -47,6 +62,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   text editor, then read the document again before retrying.
 
 ### Fixed
+
+- Embedding identity is preserved across bare-name collisions, secondary/shadow
+  index refreshes and active-model switches in catchup and watcher paths.
+
+- ContextFit searches use their configured backend; source-only reads require
+  no embedding assets and CLI reads do not provision memory sinks.
 
 - Targeted edit section boundaries, identical mixed-newline no-ops and
   derived-index refresh/retry after successful edits.
@@ -1550,9 +1571,3 @@ Pre-0.6 development built the core stack in roughly this order:
 
 **Every PR that ships a user-visible change MUST update `## [Unreleased]` in the same commit.**
 Reviewers should block merges that change behavior but don't touch this file.
-
-- F07: business validity intervals, historical v2 retrieval, inherited or explicit statement bounds, indexed pre-limit filtering and migration 18.
-
-- F08: scriptable search/read/edit CLI, isolated configuration seam, versioned MCP manual templates and operation annotations.
-
-- F09: optional local CPU ONNX embedding provider, SHA256-pinned manifest identity, query/passage prefixes, native fixture tests and explicit shadow migration preserving existing vectors.
