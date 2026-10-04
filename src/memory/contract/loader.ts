@@ -284,6 +284,10 @@ export async function loadContractFromDisk(
     propertiesSchema,
     requiredKeys: Object.keys(validated.required_properties),
     naming: validated.naming,
+    ...(validated.observation_categories
+      ? { observationCategories: validated.observation_categories }
+      : {}),
+    ...(validated.relation_roles ? { relationRoles: validated.relation_roles } : {}),
   };
   contractCache.set(name, contract);
   // ALSO cache under the contract's declared `name` field (which may

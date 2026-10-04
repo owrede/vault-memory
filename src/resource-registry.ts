@@ -161,3 +161,10 @@ export const RESOURCES: readonly ResourceEntry[] = [
     mimeType: "application/json",
   },
 ];
+
+export const MANUAL_TEMPLATE = {
+  name: "manual",
+  uriTemplate: "vault-memory://man/{topic}",
+  description:
+    "Versioned operation manual: schema, feature activation, examples and conflict semantics.",
+} as const;

@@ -54,6 +54,7 @@ export function makeGraphHandlers(deps: HandlerDeps): Partial<Record<ToolName, H
         hops: 1 | 2;
         direction: ExpandDirection;
         edge_types?: EdgeType[];
+        rels?: string[];
         filter_properties?: Record<string, unknown>;
         include_superseded: boolean;
       };
@@ -71,6 +72,7 @@ export function makeGraphHandlers(deps: HandlerDeps): Partial<Record<ToolName, H
           seed_doc_ids: seeds,
           hops: p.hops,
           direction: p.direction,
+          ...(p.rels !== undefined ? { rels: p.rels } : {}),
           ...(p.edge_types !== undefined ? { edge_types: p.edge_types } : {}),
           ...(p.filter_properties !== undefined ? { filter_properties: p.filter_properties } : {}),
           include_superseded: p.include_superseded,

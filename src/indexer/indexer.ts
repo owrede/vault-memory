@@ -13,6 +13,7 @@ import { scanVault } from "../adapters/source/obsidian-fs/scanner.js";
 import { parseNote } from "../adapters/source/obsidian-fs/parser.js";
 import { chunkNote } from "../chunker/index.js";
 import { computeChunkIdFragment } from "../chunker/chunk-id.js";
+import { providerModel } from "../embeddings/client.js";
 import { OllamaClient } from "../ollama/index.js";
 import type { Vault } from "../vault/index.js";
 import type {
@@ -27,6 +28,7 @@ import { extractAllEdges } from "./extract-edges.js";
 import { extractSections, markdownToSectionBlocks } from "../sections/index.js";
 import { extractHeadings } from "../chunker/headings.js";
 import { errorMessage } from "../errors/format.js";
+import { syncObservationIndex } from "../observations/index.js";
 
 export interface IndexerOptions {
   mode?: "full" | "incremental";
@@ -65,6 +67,13 @@ export interface IndexRunResult {
 }
 
 export async function indexVault(vault: Vault, options: IndexerOptions): Promise<IndexRunResult> {
+  options = {
+    ...options,
+    embeddingModel: providerModel(options.ollama, options.embeddingModel).name,
+    secondaryEmbeddingModel: options.secondaryEmbeddingModel
+      ? providerModel(options.ollama, options.secondaryEmbeddingModel).name
+      : undefined,
+  };
   const startedAt = Date.now();
   const runId = randomUUID();
   const mode = options.mode ?? "incremental";
@@ -84,6 +93,12 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
     if (!ollama) {
       throw new Error("indexVault: embeddings='ollama' requires an OllamaClient (options.ollama).");
     }
+    const identity = providerModel(ollama, options.embeddingModel);
+    const current = vault.db.models.getActive();
+    if (identity.provider === "onnx" && current && current.name !== identity.name)
+      throw new Error(
+        "Build the ONNX shadow index and switch active model explicitly before reindexing",
+      );
     log(`Probing Ollama model: ${options.embeddingModel}`);
     const health = await ollama.healthCheck();
     if (!health.ok) {
@@ -105,8 +120,7 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
     });
     dim = probe.dim;
     modelRow = vault.db.models.upsert({
-      name: options.embeddingModel,
-      provider: "ollama",
+      ...identity,
       dim,
     });
 
@@ -128,8 +142,7 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
         texts: ["probe"],
       });
       const row = vault.db.models.upsert({
-        name: secName,
-        provider: "ollama",
+        ...providerModel(ollama, secName),
         dim: secProbe.dim,
         active: false,
       });
@@ -215,7 +228,8 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
       //   - body_hash unchanged       → frontmatter-only edit: keep chunks
       //   - body changed / NULL body_hash → full re-embed
       const previous = vault.db.notes.getByPath(parsed.relativePath);
-      const hashUnchanged = previous != null && previous.hash === parsed.hash;
+      const hashUnchanged =
+        previous != null && previous.body_hash != null && previous.hash === parsed.hash;
       const bodyUnchanged =
         previous != null && previous.body_hash != null && previous.body_hash === parsed.bodyHash;
 
@@ -264,12 +278,16 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
       else if (needsReindex || frontmatterOnly) notesUpdated++;
 
       if (needsReindex) {
+        vault.db.notes.invalidateIndex(upsert.id);
         parsedNotes.push({ parsed, noteId: upsert.id, needsReindex: true });
       } else if (frontmatterOnly) {
+        syncObservationIndex(vault, upsert.id, parsed);
         vault.db.wikilinks.deleteByNote(upsert.id);
         vault.db.edges.deleteByNote(upsert.id);
         insertWikilinks(vault, upsert.id, parsed.wikilinks, firstPassResolver);
         writeAllEdges(vault, upsert.id, parsed, firstPassResolver);
+      } else {
+        syncObservationIndex(vault, upsert.id, parsed);
       }
     }
 
@@ -293,6 +311,9 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
       const chunks = chunkNote(parsed.indexedContent);
 
       if (chunks.length === 0) {
+        syncObservationIndex(vault, noteId, parsed, () => {
+          buildSectionsForNote(vault, noteId, parsed.indexedContent, []);
+        });
         // empty note — record wikilinks anyway, but no chunks/embeddings
         insertWikilinks(vault, noteId, parsed.wikilinks, firstPassResolver);
         // Phase 4 / 04-02 / GRA-04 / D-02: also emit typed edges for
@@ -324,19 +345,10 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
       // chunker's start_offset to find each chunk's owning heading
       // region. Sections of a heading with no body content get
       // chunk_id_first = chunk_id_last = NULL.
-      // Defensive: section building must never abort the whole vault index
-      // because of one pathological note. The duplicate-anchor crash is
-      // handled at the insert layer (insertOneResolving); this catch covers
-      // any other unexpected failure — log and continue with the rest of the
-      // vault (see ISSUE-indexer-duplicate-anchor.md "Notes for the agent").
-      try {
+      // Publication failures abort this run; dirty notes are repaired on retry.
+      syncObservationIndex(vault, noteId, parsed, () => {
         buildSectionsForNote(vault, noteId, parsed.indexedContent, chunkIds);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        console.error(
-          `[indexer:${vault.config.name}] section build failed for ${parsed.relativePath}: ${message} — skipping sections for this note`,
-        );
-      }
+      });
 
       // Embed — ONLY in the Ollama path. ContextFit vaults (embedMode "none")
       // skip this entirely: chunks + sections + links + edges are persisted
@@ -428,6 +440,9 @@ export async function indexVault(vault: Vault, options: IndexerOptions): Promise
     }
     if (resolved > 0) log(`Second pass resolved ${resolved} wikilinks`);
 
+    for (const { parsed, noteId } of parsedNotes) {
+      vault.db.notes.markIndexCurrent(noteId, parsed.bodyHash);
+    }
     vault.db.audit.finishRun(runId, {
       notesIndexed,
       chunksCreated,

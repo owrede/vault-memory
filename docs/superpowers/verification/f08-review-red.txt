@@ -1,0 +1,108 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/cli/knowledge.integration.test.ts src/manual/catalog.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/manual/catalog.test.ts (3 tests | 1 failed) 9ms
+   × describes overwrite operations as destructive and pure suggestions as readonly 4ms
+ ❯ |unit| src/cli/knowledge.integration.test.ts (5 tests | 3 failed) 2461ms
+   × refreshes edited semantic and FTS indexes with the configured embedding client 229ms
+   × routes ContextFit vaults through their configured backend 194ms
+   × does not provision a missing memory sink during source reads 199ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/cli/knowledge.integration.test.ts > refreshes edited semantic and FTS indexes with the configured embedding client
+AssertionError: expected 'pending' to be undefined
+
+- Expected:
+undefined
+
++ Received:
+"pending"
+
+ ❯ src/cli/knowledge.integration.test.ts:121:78
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  |unit| src/cli/knowledge.integration.test.ts > routes ContextFit vaults through their configured backend
+AssertionError: expected +0 to be 5 // Object.is equality
+
+- Expected
++ Received
+
+- 5
++ 0
+
+ ❯ src/cli/knowledge.integration.test.ts:127:93
+    125| it("routes ContextFit vaults through their configured backend",async()…
+    126|  await fs.writeFile(join(configDir,"config.toml"),`[[vaults]]\nname="l…
+    127|  const result=run("search","--vault","lab","--query","Budget","--json"…
+       |                                                                                             ^
+    128| });
+    129| it("does not provision a missing memory sink during source reads",asyn…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  |unit| src/cli/knowledge.integration.test.ts > does not provision a missing memory sink during source reads
+AssertionError: promise resolved "Stats{ dev: 16777230, …(13) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ Stats {
++   "atimeMs": 1791043576846.2915,
++   "birthtimeMs": 1791043576846.2915,
++   "blksize": 4096,
++   "blocks": 8,
++   "ctimeMs": 1791043576846.5017,
++   "dev": 16777230,
++   "gid": 20,
++   "ino": 223838469,
++   "mode": 33188,
++   "mtimeMs": 1791043576846.5017,
++   "nlink": 1,
++   "rdev": 0,
++   "size": 83,
++   "uid": 501,
+  }
+
+ ❯ src/cli/knowledge.integration.test.ts:132:62
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  |unit| src/manual/catalog.test.ts > describes overwrite operations as destructive and pure suggestions as readonly
+AssertionError: expected { readOnlyHint: false, …(3) } to match object { readOnlyHint: false, …(1) }
+(2 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "destructiveHint": true,
++   "destructiveHint": false,
+    "readOnlyHint": false,
+  }
+
+ ❯ src/manual/catalog.test.ts:30:124
+     28| });
+     29| it("describes overwrite operations as destructive and pure suggestions…
+     30|  for(const topic of ["edit_document","write_note","update_frontmatter"…
+       |                                                                                                                            ^
+     31|  expect(manualTopic("suggest_frontmatter").annotations).toMatchObject(…
+     32| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  4 failed | 4 passed (8)
+   Start at  18:06:13
+   Duration  2.95s (transform 364ms, setup 0ms, import 595ms, tests 2.47s, environment 0ms)

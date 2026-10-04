@@ -12,6 +12,29 @@ import { formatDocId } from "../registry.js";
 import type { Document, DocId } from "../../types.js";
 
 describe("StubDelivery", () => {
+  it.each(["write", "update", "delete"] as const)(
+    "%s leaves the shared document map untouched when locked",
+    async (operation) => {
+      const docs = new Map<DocId, Document>();
+      const delivery = new StubDelivery(docs);
+      const id = formatDocId("stub", "memory", "approved.md");
+      await delivery.write(id, {
+        blocks: [{ kind: "paragraph", text: "Approved" }],
+        properties: { locked: true },
+      });
+      const before = structuredClone(docs.get(id));
+      const result =
+        operation === "delete"
+          ? await delivery.delete(id)
+          : await delivery[operation](id, {
+              blocks: [{ kind: "paragraph", text: "Changed" }],
+              properties: { locked: false },
+            });
+      expect(result).toMatchObject({ ok: false, reason: "document_locked" });
+      expect(docs.get(id)).toEqual(before);
+    },
+  );
+
   it("publishes honest hashProtected=none capabilities", () => {
     const delivery = new StubDelivery(new Map());
     expect(delivery.capabilities).toEqual({

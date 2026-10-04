@@ -44,6 +44,7 @@
  * the day the benchmark requires it.
  */
 
+import { resolveAsOf, parseValidity, isValidAt } from "../valid-time.js";
 import type { SourceConnector } from "../../adapters/source/types.js";
 import { decomposeDocId, formatDocId } from "../../adapters/registry.js";
 import type { Document, SearchHit } from "../../types.js";
@@ -65,9 +66,12 @@ export interface RecallSearchHybridInput {
   query: string;
   vaults: readonly Vault[];
   topK: number;
+  asOf?: string;
+  includeSuperseded?: boolean;
 }
 
 export interface RecallDeps {
+  clock?: () => number;
   memorySinkRegistry: MemorySinkRegistry;
   manager: VaultManager;
   /** Resolve the `SourceConnector` instance for a vault name. */
@@ -77,6 +81,8 @@ export interface RecallDeps {
 }
 
 export interface RecallArgs {
+  as_of?: string;
+  include_superseded?: boolean;
   query: string;
   min_confidence?: "direct" | "inferred" | "uncertain";
   types?: string[];
@@ -130,6 +136,7 @@ function observedAtIso(value: unknown): string | null {
  * the full pipeline; this function is the public entry point.
  */
 export async function handleRecall(deps: RecallDeps, args: RecallArgs): Promise<CitationPacket[]> {
+  const asOf = resolveAsOf(args.as_of, deps.clock);
   // 1) Resolve sinks. Throws on unknown name — the server wraps the
   //    exception in errorResponse() at the dispatch boundary.
   const sinks = args.sink
@@ -155,6 +162,8 @@ export async function handleRecall(deps: RecallDeps, args: RecallArgs): Promise<
     query: args.query,
     vaults,
     topK: RECALL_HYBRID_TOP_K,
+    asOf,
+    includeSuperseded: args.include_superseded ?? false,
   });
 
   // 4) Post-filter to sink-resolved paths. A candidate matches a sink
@@ -197,7 +206,7 @@ export async function handleRecall(deps: RecallDeps, args: RecallArgs): Promise<
   }
 
   // 7) Apply provenance filters in the documented order.
-  const now = Date.now();
+  const now = Date.parse(asOf);
   const minRank = args.min_confidence ? confidenceRank(args.min_confidence) : 0;
   const typeSet = args.types && args.types.length > 0 ? new Set(args.types) : null;
   const maxAgeMs = args.max_age_days !== undefined ? args.max_age_days * 86_400_000 : null;
@@ -205,7 +214,9 @@ export async function handleRecall(deps: RecallDeps, args: RecallArgs): Promise<
   const filtered = docs.filter((doc) => {
     const props = (doc.properties ?? {}) as Record<string, unknown>;
     // 7a) Hide superseded by default.
-    if (props.status === "superseded") return false;
+    if (props.status === "superseded" && !args.include_superseded) return false;
+    const bounds = parseValidity(props);
+    if (!bounds.ok || !isValidAt(bounds.validity, asOf)) return false;
     // 7b) min_confidence ordinal compare.
     if (minRank > 0) {
       const docConf = typeof props.confidence === "string" ? props.confidence : undefined;
@@ -247,6 +258,12 @@ export async function handleRecall(deps: RecallDeps, args: RecallArgs): Promise<
   return top.map((doc) => {
     const { authority: vaultName } = decomposeDocId(doc.id);
     const source = deps.sourceConnectorFor(vaultName);
-    return toCitationPacket(doc, displayUrlFor(doc.id, source));
+    const bounds = parseValidity(doc.properties);
+    return {
+      ...toCitationPacket(doc, displayUrlFor(doc.id, source)),
+      ...(bounds.ok && (args.as_of !== undefined || Object.keys(bounds.validity).length)
+        ? { as_of: asOf, validity: bounds.validity }
+        : {}),
+    };
   });
 }

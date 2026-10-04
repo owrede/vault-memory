@@ -1,3 +1,4 @@
+import { resolveInspectionContract } from "./schema/resolve-contract.js";
 /**
  * MCP server.
  *
@@ -106,6 +107,14 @@ import {
   handleRecentNotes,
 } from "./server/handlers/vault.js";
 import { makeNotesHandlers, handleReadNote } from "./server/handlers/notes.js";
+import { registerFeatureTools } from "./server/feature-tools.js";
+import { refreshEditedDocument } from "./edit/refresh.js";
+import { configuredEmbeddingClient } from "./adapters/embeddings/configured.js";
+import { operationAnnotations } from "./manual/catalog.js";
+import { registerManualResources } from "./manual/resources.js";
+import { InvalidValidityError } from "./memory/valid-time.js";
+import { ProjectionError } from "./assembly/selection.js";
+import { decomposeDocId } from "./adapters/registry.js";
 import { makeSearchHandlers, handleSearchHybrid } from "./server/handlers/search.js";
 import { makeGraphHandlers } from "./server/handlers/graph.js";
 import { makeMemoryHandlers } from "./server/handlers/memory.js";
@@ -277,11 +286,12 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
     changeFeeds.set(vault.config.name, changeFeed);
   }
 
-  const ollama = new OllamaClient({
-    endpoint: config.server.ollama_endpoint,
-  });
-
-  const defaultModel = config.server.default_embedding_model ?? "qwen3-embedding:0.6b";
+  const embeddings = await configuredEmbeddingClient(
+    config.server,
+    manager.list().some((v) => v.config.backend !== "contextfit"),
+  );
+  const ollama = embeddings.client;
+  const defaultModel = embeddings.model;
 
   // Default search scope. When VAULT_MEMORY_ACTIVE_VAULT is set, search_*
   // tools default to that single vault unless the caller passes an explicit
@@ -337,7 +347,8 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
       // need catchup + a watcher (they build the SQLite layer + refresh the KB).
       const isContextFit = vault.config.backend === "contextfit";
       if (!isContextFit && !vault.config.embedding_model && !vault.db.models.getActive()) continue;
-      const modelName = vault.config.embedding_model ?? defaultModel;
+      const modelName =
+        vault.db.models.getActive()?.name ?? vault.config.embedding_model ?? defaultModel;
 
       try {
         const result = await catchupVault({
@@ -442,6 +453,7 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
     for (const cf of changeFeeds.values()) {
       await cf.close();
     }
+    await embeddings.close();
   };
   process.on("SIGINT", () => {
     void shutdown().finally(() => process.exit(0));
@@ -996,7 +1008,11 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
     const needsRefinementCheck = name === "suggest_frontmatter" || name === "cluster";
     server.registerTool(
       name,
-      { description: tool.description, inputSchema: schema },
+      {
+        description: tool.description,
+        inputSchema: schema,
+        annotations: operationAnnotations(name),
+      },
       async (args: unknown) => {
         try {
           let validated: unknown = args;
@@ -1013,12 +1029,44 @@ export async function serve(options: ServeOptions = {}): Promise<void> {
           if (err instanceof DocNotFoundError) {
             return errorResponseJson({ error: "doc_not_found", doc_id: err.doc_id });
           }
+          if (err instanceof InvalidValidityError)
+            return errorResponseJson({
+              isError: true,
+              error: err.code,
+              key: err.key,
+              doc_id: err.doc_id,
+            });
+          if (err instanceof ProjectionError) {
+            return errorResponseJson({ error: err.code, heading_path: err.heading_path });
+          }
           const message = errorMessage(err);
           return errorResponse(message);
         }
       },
     );
   }
+
+  registerFeatureTools(
+    server,
+    {
+      adapterRegistry,
+      resolveSchemaContract: (name, ids) => resolveInspectionContract(manager, name, ids),
+      session: {
+        manager,
+        memorySinkRegistry,
+        adapterRegistry,
+        deliveryAdapterFor: (name) =>
+          adapterRegistry.resolveDelivery(parseSourceHandle(`obsidian-fs://${name}`)),
+        sourceConnectorFor: (name) =>
+          adapterRegistry.resolveSource(parseSourceHandle(`obsidian-fs://${name}`)),
+      },
+      onBeforeWrite: (id) => suppression.add(decomposeDocId(id).resource),
+      onAfterWrite: (id) => refreshEditedDocument({ manager, ollama, defaultModel }, id),
+    },
+    config.server.features ?? [],
+  );
+
+  registerManualResources(server);
 
   // ─── MCP Resources (Plan 02-06 / MEM-09) ─────────────────────────────────
   //

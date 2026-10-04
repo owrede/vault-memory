@@ -31,3 +31,10 @@ export type {
   SuggestFrontmatterResult,
   SuggestFrontmatterInput,
 } from "./combiner.js";
+
+export { inferFieldProfile } from "./profile.js";
+export type { FieldProfile } from "./profile.js";
+export { diffSchema } from "./drift.js";
+export type { SchemaField, SchemaDrift } from "./drift.js";
+export { inspectSchema } from "./inspect.js";
+export type { InspectSchemaArgs, InspectSchemaDeps, InspectionResult } from "./inspect.js";

@@ -1,0 +1,69 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/cli/knowledge.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/cli/knowledge.test.ts (7 tests | 7 failed) 7ms
+   × requires an OCC hash for edits 3ms
+   × preserves unicode and space arguments 2ms
+   × rejects invalid or unsupported flags "search" 0ms
+   × rejects invalid or unsupported flags "read" 0ms
+   × rejects invalid or unsupported flags "edit" 0ms
+   × rejects invalid or unsupported flags "read" 0ms
+   × rejects invalid or unsupported flags "search" 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 7 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/cli/knowledge.test.ts > requires an OCC hash for edits
+AssertionError: expected [Function] to throw an error
+
+- Expected:
+null
+
++ Received:
+undefined
+
+ ❯ src/cli/knowledge.test.ts:3:148
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/7]⎯
+
+ FAIL  |unit| src/cli/knowledge.test.ts > preserves unicode and space arguments
+AssertionError: expected { command: 'edit', json: false } to deeply equal { command: 'search', …(3) }
+
+- Expected
++ Received
+
+  {
+-   "command": "search",
+-   "json": true,
+-   "query": "Über Jörg",
+-   "vault": "lab",
++   "command": "edit",
++   "json": false,
+  }
+
+ ❯ src/cli/knowledge.test.ts:4:134
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/7]⎯
+
+ FAIL  |unit| src/cli/knowledge.test.ts > rejects invalid or unsupported flags "search"
+ FAIL  |unit| src/cli/knowledge.test.ts > rejects invalid or unsupported flags "read"
+ FAIL  |unit| src/cli/knowledge.test.ts > rejects invalid or unsupported flags "edit"
+ FAIL  |unit| src/cli/knowledge.test.ts > rejects invalid or unsupported flags "read"
+ FAIL  |unit| src/cli/knowledge.test.ts > rejects invalid or unsupported flags "search"
+AssertionError: expected [Function] to throw an error
+ ❯ src/cli/knowledge.test.ts:5:300
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/7]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  7 failed (7)
+   Start at  17:51:00
+   Duration  137ms (transform 14ms, setup 0ms, import 22ms, tests 7ms, environment 0ms)

@@ -1,0 +1,51 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/assembly/search-projection.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/assembly/search-projection.test.ts (6 tests | 2 failed) 9ms
+     × diagnoses a missing selector for empty candidate sections 5ms
+     × diagnoses a missing selector for orphan candidate sections 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/assembly/search-projection.test.ts > section search projection > diagnoses a missing selector for empty candidate sections
+ FAIL  |unit| src/assembly/search-projection.test.ts > section search projection > diagnoses a missing selector for orphan candidate sections
+AssertionError: promise resolved "{ results: [], count: +0, …(1) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ {
++   "context": {
++     "budget_limit": 6000,
++     "budget_used": 0,
++     "excluded": [],
++     "projection": "sections",
++     "slices": [],
++     "truncated": false,
++   },
++   "count": 0,
++   "results": [],
+  }
+
+ ❯ src/assembly/search-projection.test.ts:38:135
+     36|   it.each(["empty", "orphan"])("diagnoses a missing selector for %s ca…
+     37|     const emptyDeps = { ...deps, ...(kind === "empty" ? { searchHybrid…
+     38|     await expect(searchSectionsWithContext(emptyDeps, { query: "x", li…
+       |                                                                                                                                       ^
+     39|       .rejects.toMatchObject({ code: "target_not_found", heading_path:…
+     40|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 4 passed (6)
+   Start at  15:58:21
+   Duration  153ms (transform 41ms, setup 0ms, import 56ms, tests 9ms, environment 0ms)

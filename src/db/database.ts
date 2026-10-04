@@ -15,6 +15,7 @@ import { SectionsQueries } from "./queries/sections.js";
 import { BriefSourcesQueries } from "./queries/brief_sources.js";
 import { DaemonStateQueries } from "./queries/daemon_state.js";
 import { ContractAuditQueries } from "./queries/contract-audit.js";
+import { ObservationQueries } from "./queries/observations.js";
 
 /**
  * SQLite wrapper for a single vault.
@@ -45,6 +46,7 @@ export class Database {
   readonly daemonState: DaemonStateQueries;
   /** Phase 6 / Q-AUD: task-contract orchestration audit query namespace. */
   readonly contractAudit: ContractAuditQueries;
+  readonly observations: ObservationQueries;
 
   /**
    * Name of the vault this DB belongs to, or `undefined` for `:memory:` /
@@ -86,6 +88,7 @@ export class Database {
     this.fts = new FtsQueries(this.handle);
     this.aliases = new AliasesQueries(this.handle);
     this.sections = new SectionsQueries(this.handle);
+    this.observations = new ObservationQueries(this.handle);
     // Phase 5 / BRF-* / D-06 + D-09: brief reverse-index + daemon
     // cursor. Construction is independent — only prepares statements
     // against tables already created by migration 013.

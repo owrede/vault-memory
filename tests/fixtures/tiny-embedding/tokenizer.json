@@ -1,0 +1,1 @@
+{"version":"1.0","truncation":null,"padding":null,"added_tokens":[{"id":0,"content":"[PAD]","special":true},{"id":1,"content":"[UNK]","special":true}],"normalizer":null,"pre_tokenizer":{"type":"Whitespace"},"post_processor":null,"decoder":null,"model":{"type":"WordLevel","vocab":{"[PAD]":0,"[UNK]":1,"query":2,":":3,"passage":4,"Alpha":5,"Beta":10},"unk_token":"[UNK]"}}

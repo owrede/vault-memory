@@ -1,0 +1,32 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/schema/inspect.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/schema/inspect.test.ts (9 tests | 1 failed) 101ms
+     × retains structured lists/headings and marks rendered declaration lines 9ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/schema/inspect.test.ts > read-only schema inspection over real sources and contracts > retains structured lists/headings and marks rendered declaration lines
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ src/schema/inspect.test.ts:172:27
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 8 passed (9)
+   Start at  17:17:50
+   Duration  639ms (transform 245ms, setup 0ms, import 446ms, tests 101ms, environment 0ms)

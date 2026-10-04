@@ -1,3 +1,5 @@
+import { extractWikilinks } from "../adapters/source/obsidian-fs/wikilinks.js";
+import { parseDomainRelations } from "../relations/parse.js";
 /**
  * Edge extractors — produce typed `EdgeInput[]` rows for the `edges`
  * table from a single `ParsedNote`.
@@ -126,19 +128,39 @@ export function extractAllEdges(
  * indexer write path stays a dual-write until v3 retires `wikilinks`.
  */
 export function extractWikilinkEdges(parsed: ParsedNote, resolver: WikilinkResolver): EdgeInput[] {
+  // Parse each validated declaration's link in isolation. This shares the
+  // adapter's target/anchor/alias normalization without its legacy fence mask.
+  const lines = parsed.content.split(/\r?\n/);
+  const declared = parseDomainRelations(parsed.content).flatMap((role) => {
+    const link = extractWikilinks(lines[role.line - 1] ?? "")[0];
+    return link ? [{ role, link: { ...link, line: role.line } }] : [];
+  });
+  const links = parsed.wikilinks.filter(
+    (wl) =>
+      !declared.some(
+        ({ link }) =>
+          wl.line === link.line &&
+          wl.normalizedTarget === link.normalizedTarget &&
+          wl.anchor === link.anchor,
+      ),
+  );
   const out: EdgeInput[] = [];
-  for (const wl of parsed.wikilinks) {
+  for (const { link: wl, rel } of [
+    ...links.map((link) => ({ link, rel: null as string | null })),
+    ...declared.map(({ role, link }) => ({ link, rel: role.rel })),
+  ]) {
     const hit = resolver.resolve(wl.normalizedTarget);
     out.push({
       targetNoteId: hit?.id ?? null,
       targetPath: wl.normalizedTarget,
       type: "wikilink",
-      rel: null,
+      rel,
       anchor: wl.anchor,
       lineNumber: wl.line,
       linkText: wl.alias,
     });
   }
+
   return out;
 }
 

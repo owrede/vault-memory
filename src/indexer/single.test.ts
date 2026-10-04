@@ -209,17 +209,13 @@ describe("single-indexer: indexNote", () => {
       embeddingModel: MODEL,
       ollama: ollama.client,
     });
-    // mtime touch doesn't change hash → falls through to the unchanged branch
-    // BEFORE reaching the body_hash check. That branch doesn't backfill
-    // body_hash. Acceptable for now (would need a "no-content-change but
-    // metadata-stale" path); the legacy row stays NULL until a real edit.
-    expect(second.status).toBe("unchanged");
-    expect(ollama.embed).toHaveBeenCalledTimes(1);
+    // NULL marks missing/invalidated derived data, even with the current
+    // canonical file hash. Rebuild and backfill it on an unchanged file.
+    expect(second.status).toBe("indexed");
+    expect(ollama.embed).toHaveBeenCalledTimes(2);
 
-    // Now actually edit frontmatter — combined hash changes, body_hash
-    // is still NULL on the DB row → falls through to full re-embed, NOT
-    // the short-circuit. After this, body_hash is populated.
-    await fs.writeFile(abs, "---\ntag: added\n---\n\n# Legacy\n\nbody body body.", "utf-8");
+    // Now a frontmatter-only edit can retain the repaired embeddings.
+    await fs.writeFile(abs, "---\ntag: added\n---\n# Legacy\n\nbody body body.", "utf-8");
     const third = await indexNote({
       vault,
       absolutePath: abs,
@@ -227,8 +223,7 @@ describe("single-indexer: indexNote", () => {
       ollama: ollama.client,
     });
     expect(third.status).toBe("indexed");
-    expect(third.chunksCreated).toBeGreaterThan(0);
-    // Full re-embed because legacy NULL body_hash short-circuit didn't fire.
+    expect(third.chunksCreated).toBe(0);
     expect(ollama.embed).toHaveBeenCalledTimes(2);
 
     // Self-healed: body_hash is now populated.

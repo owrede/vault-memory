@@ -1,3 +1,4 @@
+import { markdownLines } from "../markdown/list-items.js";
 /**
  * Heading extraction for Markdown content.
  *
@@ -18,8 +19,7 @@ export interface HeadingRef {
   startOffset: number;
 }
 
-const ATX_HEADING_RE = /^(#{1,6})\s+(.+?)\s*#*\s*$/;
-const FENCE_RE = /^(\s*)(`{3,}|~{3,})/;
+const ATX_HEADING_RE = /^ {0,3}(#{1,6})(?:[\t ]+(.*?))?[\t ]*\r?$/;
 
 /**
  * Extract all ATX headings from the content, ignoring anything inside fenced
@@ -29,39 +29,18 @@ export function extractHeadings(content: string): HeadingRef[] {
   const headings: HeadingRef[] = [];
   if (content.length === 0) return headings;
 
-  const lines = content.split("\n");
-  let offset = 0;
-  let inFence = false;
-  let fenceMarker: string | null = null;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i] ?? "";
-    const fenceMatch = FENCE_RE.exec(line);
-    if (fenceMatch) {
-      const marker = fenceMatch[2] ?? "";
-      if (!inFence) {
-        inFence = true;
-        fenceMarker = marker[0] ?? null; // remember whether it was ` or ~
-      } else if (fenceMarker && marker.startsWith(fenceMarker)) {
-        inFence = false;
-        fenceMarker = null;
-      }
-    } else if (!inFence) {
-      const m = ATX_HEADING_RE.exec(line);
-      if (m) {
-        const hashes = m[1] ?? "";
-        const text = m[2] ?? "";
-        headings.push({
-          level: hashes.length,
-          text: text.trim(),
-          line: i + 1,
-          startOffset: offset,
-        });
-      }
-    }
-    // +1 for the newline character (the last line may have no trailing newline,
-    // but we never read past the end of the lines array).
-    offset += line.length + 1;
+  for (const row of markdownLines(content)) {
+    if (row.code) continue;
+    const m = ATX_HEADING_RE.exec(row.text);
+    if (!m) continue;
+    const hashes = m[1] ?? "";
+    const text = (m[2] ?? "").replace(/(?:^|[\t ])#+[\t ]*$/, "");
+    headings.push({
+      level: hashes.length,
+      text: text.trim(),
+      line: row.line,
+      startOffset: row.offset,
+    });
   }
 
   return headings;

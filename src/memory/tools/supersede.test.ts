@@ -131,6 +131,29 @@ describe("handleSupersede — MEM-04 controller", () => {
     await fixture.cleanup();
   });
 
+  it("refuses to supersede a locked memory document and preserves both sources", async () => {
+    const { oldId, replacementId } = await seedTwoObservations();
+    const oldPath = join(fixture.vaultDir, oldId.replace(`obsidian-fs://${VAULT_NAME}/`, ""));
+    const replacementPath = join(
+      fixture.vaultDir,
+      replacementId.replace(`obsidian-fs://${VAULT_NAME}/`, ""),
+    );
+    const parsed = matter(await fs.readFile(oldPath, "utf8"));
+    await fs.writeFile(oldPath, matter.stringify(parsed.content, { ...parsed.data, locked: true }));
+    const oldBytes = await fs.readFile(oldPath, "utf8");
+    const replacementBytes = await fs.readFile(replacementPath, "utf8");
+    const beforeAudit = fixture.vault.db.audit.listWrites({});
+    const result = await handleSupersede(deps(), {
+      doc_id: oldId,
+      replacement_doc_id: replacementId,
+      reason: "New evidence",
+    });
+    expect(result).toMatchObject({ ok: false, reason: "document_locked" });
+    expect(await fs.readFile(oldPath, "utf8")).toBe(oldBytes);
+    expect(await fs.readFile(replacementPath, "utf8")).toBe(replacementBytes);
+    expect(fixture.vault.db.audit.listWrites({})).toEqual(beforeAudit);
+  });
+
   it("happy path: OLD doc gets status=superseded + back-reference; REPLACEMENT untouched", async () => {
     const { oldId, replacementId } = await seedTwoObservations();
     const oldResource = oldId.replace(`obsidian-fs://${VAULT_NAME}/`, "");

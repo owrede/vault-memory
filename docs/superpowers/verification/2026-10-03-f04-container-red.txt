@@ -1,0 +1,71 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/observations/parse.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/observations/parse.test.ts (16 tests | 2 failed) 8ms
+     × ignores an indented code example within a list container 4ms
+     × ends a list fence when a sibling exits its container 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/observations/parse.test.ts > explicit categorized observations > ignores an indented code example within a list container
+AssertionError: expected [ { category: 'fact', …(3) } ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   {
++     "category": "fact",
++     "line_end": 3,
++     "line_start": 3,
++     "text": "Code example",
++   },
++ ]
+
+ ❯ src/observations/parse.test.ts:73:76
+     71|   });
+     72|   it("ignores an indented code example within a list container", () =>…
+     73|     expect(parseObservations("- Parent\n\n      - [fact] Code example\…
+       |                                                                            ^
+     74|   });
+     75|   it("ends a list fence when a sibling exits its container", () => {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |unit| src/observations/parse.test.ts > explicit categorized observations > ends a list fence when a sibling exits its container
+AssertionError: expected [] to deeply equal [ { category: 'fact', …(3) } ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "category": "fact",
+-     "line_end": 3,
+-     "line_start": 3,
+-     "text": "Real",
+-   },
+- ]
++ []
+
+ ❯ src/observations/parse.test.ts:76:70
+     74|   });
+     75|   it("ends a list fence when a sibling exits its container", () => {
+     76|     expect(parseObservations("- ```md\n  example\n- [fact] Real\n")).t…
+       |                                                                      ^
+     77|       { category: "fact", text: "Real", line_start: 3, line_end: 3 },
+     78|     ]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 14 passed (16)
+   Start at  16:41:40
+   Duration  120ms (transform 19ms, setup 0ms, import 27ms, tests 8ms, environment 0ms)

@@ -1,0 +1,108 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/observations/index.integration.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/observations/index.integration.test.ts (11 tests | 2 failed) 106ms
+     × selected bundle sections exclude statements from other headings 10ms
+     × dossiers preserve statement provenance and share selected-section semantics 9ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/observations/index.integration.test.ts > observation index uses canonical files > selected bundle sections exclude statements from other headings
+AssertionError: expected [ 'First', 'Second' ] to deeply equal [ 'Second' ]
+
+- Expected
++ Received
+
+  [
++   "First",
+    "Second",
+  ]
+
+ ❯ src/observations/index.integration.test.ts:96:66
+     94|     await indexNote(opts());
+     95|     const result = await bundle({ projection: "sections", heading_path…
+     96|     expect(result.observations!.statements.map(row => row.text)).toEqu…
+       |                                                                  ^
+     97|   });
+     98|   it("dossiers preserve statement provenance and share selected-sectio…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |unit| src/observations/index.integration.test.ts > observation index uses canonical files > dossiers preserve statement provenance and share selected-section semantics
+AssertionError: expected [ { …(17) }, { …(17) } ] to match object [ { text: 'Second', …(1) } ]
+
+- Expected
++ Received
+
+  [
+    {
++     "category": "fact",
++     "display_url": "obsidian://open?vault=lab&file=a.md",
++     "doc_hash": "969fd0f3ef6757a90e945abd353cc68cada4c4f5920bb3ad3580e7c55007e3b9",
++     "doc_id": "obsidian-fs://lab/a.md",
++     "hash": "969fd0f3ef6757a90e945abd353cc68cada4c4f5920bb3ad3580e7c55007e3b9",
++     "heading_path": [],
++     "id": 1,
++     "line_end": 2,
++     "line_start": 2,
++     "mtime": 1791037144614,
++     "note_id": 1,
++     "original_chars": 5,
++     "properties": {
++       "confidence": "direct",
++       "evidence": [
++         "source-1",
++       ],
++       "source": "imported",
++       "type": "Project",
++       "wikilinks": [],
++     },
++     "source_handle": "obsidian-fs://lab",
++     "text": "First",
++     "title": "A",
++     "truncated": false,
++   },
++   {
++     "category": "decision",
++     "display_url": "obsidian://open?vault=lab&file=a.md",
++     "doc_hash": "969fd0f3ef6757a90e945abd353cc68cada4c4f5920bb3ad3580e7c55007e3b9",
++     "doc_id": "obsidian-fs://lab/a.md",
++     "hash": "969fd0f3ef6757a90e945abd353cc68cada4c4f5920bb3ad3580e7c55007e3b9",
++     "heading_path": [],
++     "id": 2,
++     "line_end": 4,
++     "line_start": 4,
++     "mtime": 1791037144614,
++     "note_id": 1,
++     "original_chars": 6,
+      "properties": {
+        "confidence": "direct",
+        "evidence": [
+          "source-1",
+        ],
+        "source": "imported",
++       "type": "Project",
++       "wikilinks": [],
+      },
++     "source_handle": "obsidian-fs://lab",
+      "text": "Second",
++     "title": "A",
++     "truncated": false,
+    },
+  ]
+
+ ❯ src/observations/index.integration.test.ts:102:45
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 9 passed (11)
+   Start at  16:19:04
+   Duration  530ms (transform 233ms, setup 0ms, import 340ms, tests 106ms, environment 0ms)

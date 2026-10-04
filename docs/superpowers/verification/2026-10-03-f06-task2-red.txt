@@ -1,0 +1,227 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/schema/inspect.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/schema/inspect.test.ts (7 tests | 7 failed) 77ms
+     × never makes required provenance optional, even in permissive mode 19ms
+     × makes extra properties warnings in permissive mode and errors in strict mode 7ms
+     × reports fresh source citations, sample size and non-mutating candidate profiles 10ms
+     × validates and diffs explicit category/role vocabularies from a real YAML contract 14ms
+     × returns required missing and changed types in diff without changing the contract 9ms
+     × fails closed for missing contracts and unavailable samples 7ms
+     × is opt-in through configuration and executes through the real MCP schema 8ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 7 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/schema/inspect.test.ts > read-only schema inspection over real sources and contracts > never makes required provenance optional, even in permissive mode
+AssertionError: expected {} to match object { passed: false, warning_count: +0 }
+
+- Expected
++ Received
+
+- {
+-   "passed": false,
+-   "warning_count": 0,
+- }
++ {}
+
+ ❯ src/schema/inspect.test.ts:21:20
+     19|     await fs.writeFile(join(f.root, "a.md"), valid.replace("evidence: …
+     20|     const result = await run({ strict: false });
+     21|     expect(result).toMatchObject({ passed: false, warning_count: 0 });
+       |                    ^
+     22|     expect(result.error_count).toBeGreaterThan(0);
+     23|     expect(result.errors).toEqual(expect.arrayContaining([expect.objec…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/7]⎯
+
+ FAIL  |unit| src/schema/inspect.test.ts > read-only schema inspection over real sources and contracts > makes extra properties warnings in permissive mode and errors in strict mode
+AssertionError: expected {} to match object { passed: true, error_count: +0, …(2) }
+
+- Expected
++ Received
+
+- {
+-   "error_count": 0,
+-   "passed": true,
+-   "warning_count": 1,
+-   "warnings": [
+-     {
+-       "code": "unexpected_field",
+-       "path": [
+-         "extra",
+-       ],
+-     },
+-   ],
+- }
++ {}
+
+ ❯ src/schema/inspect.test.ts:29:42
+     27|   it("makes extra properties warnings in permissive mode and errors in…
+     28|     await fs.writeFile(join(f.root, "a.md"), valid.replace("type: obse…
+     29|     expect(await run({ strict: false })).toMatchObject({ passed: true,…
+       |                                          ^
+     30|     expect(await run({ strict: true })).toMatchObject({ passed: false,…
+     31|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/7]⎯
+
+ FAIL  |unit| src/schema/inspect.test.ts > read-only schema inspection over real sources and contracts > reports fresh source citations, sample size and non-mutating candidate profiles
+AssertionError: expected {} to match object { sample_size: 1, …(4) }
+
+- Expected
++ Received
+
+- {
+-   "candidate_only": true,
+-   "categories": [
+-     {
+-       "present": 1,
+-       "total": 1,
+-       "value": "custom_fact",
+-     },
+-   ],
+-   "relations": [
+-     {
+-       "present": 1,
+-       "total": 1,
+-       "value": "custom_role",
+-     },
+-   ],
+-   "sample_size": 1,
+-   "sources": [
+-     {
+-       "doc_id": "obsidian-fs://lab/a.md",
+-       "hash": "0a46e9714c1e9cc63573a4ce0f7fc0505adc7baac1594685a95b70a59b94fb05",
+-       "properties": {
+-         "evidence": [
+-           "original",
+-         ],
+-         "source": "imported",
+-       },
+-     },
+-   ],
+- }
++ {}
+
+ ❯ src/schema/inspect.test.ts:35:20
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/7]⎯
+
+ FAIL  |unit| src/schema/inspect.test.ts > read-only schema inspection over real sources and contracts > validates and diffs explicit category/role vocabularies from a real YAML contract
+AssertionError: expected {} to match object { passed: true, error_count: +0, …(2) }
+
+- Expected
++ Received
+
+- {
+-   "error_count": 0,
+-   "passed": true,
+-   "warning_count": 2,
+-   "warnings": [
+-     {
+-       "code": "unknown_category",
+-       "line": 2,
+-       "value": "custom_fact",
+-     },
+-     {
+-       "code": "unknown_relation",
+-       "line": 4,
+-       "value": "custom_role",
+-     },
+-   ],
+- }
++ {}
+
+ ❯ src/schema/inspect.test.ts:47:24
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/7]⎯
+
+ FAIL  |unit| src/schema/inspect.test.ts > read-only schema inspection over real sources and contracts > returns required missing and changed types in diff without changing the contract
+AssertionError: expected {} to match object { drift: ArrayContaining{…}, …(1) }
+
+- Expected
++ Received
+
+- {
+-   "drift": ArrayContaining [
+-     {
+-       "key": "evidence",
+-       "kind": "missing",
+-     },
+-     {
+-       "key": "type",
+-       "kind": "type_changed",
+-     },
+-   ],
+-   "sources": [
+-     {
+-       "doc_id": "obsidian-fs://lab/a.md",
+-     },
+-   ],
+- }
++ {}
+
+ ❯ src/schema/inspect.test.ts:55:41
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/7]⎯
+
+ FAIL  |unit| src/schema/inspect.test.ts > read-only schema inspection over real sources and contracts > fails closed for missing contracts and unavailable samples
+AssertionError: promise resolved "{}" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
+- }
++ {}
+
+ ❯ src/schema/inspect.test.ts:58:47
+     56|   });
+     57|   it("fails closed for missing contracts and unavailable samples", asy…
+     58|     await expect(run({ contract: "unknown" })).rejects.toThrow("Unknow…
+       |                                               ^
+     59|     await expect(run({ contract: undefined })).rejects.toThrow("contra…
+     60|     await expect(run({ doc_ids: [f.id("missing.md")] })).rejects.toThr…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/7]⎯
+
+ FAIL  |unit| src/schema/inspect.test.ts > read-only schema inspection over real sources and contracts > is opt-in through configuration and executes through the real MCP schema
+ZodError: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "document_edit"
+    ],
+    "path": [
+      "server",
+      "features",
+      0
+    ],
+    "message": "Invalid input: expected \"document_edit\""
+  }
+]
+ ❯ loadConfig src/config/loader.ts:219:37
+    217|   }
+    218|
+    219|   const validated = AppConfigSchema.parse(parsed);
+       |                                     ^
+    220|
+    221|   return {
+ ❯ src/schema/inspect.test.ts:65:13
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/7]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  7 failed (7)
+   Start at  16:57:33
+   Duration  602ms (transform 245ms, setup 0ms, import 425ms, tests 77ms, environment 0ms)

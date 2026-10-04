@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "provider": "onnx",
+  "model": "vault-memory/tiny-original",
+  "revision": "test-v1",
+  "dimensions": 2,
+  "pooling": "mean",
+  "normalize": true,
+  "max_tokens": 8,
+  "pad_token_id": 0,
+  "query_prefix": "query: ",
+  "passage_prefix": "passage: ",
+  "output": "last_hidden_state",
+  "license": "MIT",
+  "files": {
+    "model.onnx": {
+      "path": "model.onnx",
+      "sha256": "73a71d904bd2adc587c891d94348589103c63738b6a0320cbe8fb335164b188a"
+    },
+    "tokenizer.json": {
+      "path": "tokenizer.json",
+      "sha256": "baed586a3e7ab72948bb774e92002b78de79080ec441eb2971a21faf57fdd5cb"
+    },
+    "tokenizer_config.json": {
+      "path": "tokenizer_config.json",
+      "sha256": "1595485c55fe9c9bb398d6f852d96ece2ebe6d6b127a8d3fc59c0ef9e2ca9d66"
+    }
+  }
+}

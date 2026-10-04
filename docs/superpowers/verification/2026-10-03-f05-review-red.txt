@@ -1,0 +1,104 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/relations/graph.integration.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/relations/graph.integration.test.ts (12 tests | 4 failed) 171ms
+     × invalidates ordinary delivery writes and repairs changed role edges on retry 16ms
+     × indexes actual declarations despite legacy wikilink fence/whitespace differences: - ```md
+  example
+  ```
+- owns [[Atlas]]
+ 10ms
+     × indexes actual declarations despite legacy wikilink fence/whitespace differences: ```bad`info
+- owns [[Atlas]]
+ 9ms
+     × indexes actual declarations despite legacy wikilink fence/whitespace differences: - owns [[Atlas # Plan | Roadmap]]
+ 10ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/relations/graph.integration.test.ts > domain relations on the real file/SQLite graph > invalidates ordinary delivery writes and repairs changed role edges on retry
+AssertionError: expected [ { …(9) } ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   {
++     "display_url": "obsidian://open?vault=lab&file=Atlas.md",
++     "doc_id": "obsidian-fs://lab/Atlas.md",
++     "hash": "4487ff4131f62bfb0b4af73b554370c28c97b160fcac1bc4304c22154ad3c262",
++     "heading_path": [],
++     "mtime": 1791039620303,
++     "properties": {
++       "wikilinks": [
++         {
++           "target": "Budget",
++         },
++       ],
++     },
++     "source_handle": "obsidian-fs://lab",
++     "title": "Atlas",
++     "via": {
++       "direction": "forward",
++       "edge_type": "wikilink",
++       "hop": 1,
++       "line_number": 3,
++       "rel": "owns",
++       "seed_doc_id": "obsidian-fs://lab/Oliver.md",
++       "source_doc_id": "obsidian-fs://lab/Oliver.md",
++       "source_hash": "6f57133a3afaf0d1a578c6c57794508cc265f3c8f864a13c603e0c1191afaf91",
++     },
++   },
++ ]
+
+ ❯ src/relations/graph.integration.test.ts:154:91
+    152|     const update = await f.delivery.update(id, { blocks: [{ kind: "par…
+    153|     expect(update.ok).toBe(true);
+    154|     expect((await run("Oliver.md", { direction: "outgoing", rels: ["ow…
+       |                                                                                           ^
+    155|     expect(f.vault.db.notes.getByPath("Oliver.md")!.body_hash).toBeNul…
+    156|     await indexNote({ vault: f.vault, absolutePath: join(f.root, "Oliv…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  |unit| src/relations/graph.integration.test.ts > domain relations on the real file/SQLite graph > indexes actual declarations despite legacy wikilink fence/whitespace differences: - ```md
+  example
+  ```
+- owns [[Atlas]]
+
+ FAIL  |unit| src/relations/graph.integration.test.ts > domain relations on the real file/SQLite graph > indexes actual declarations despite legacy wikilink fence/whitespace differences: ```bad`info
+- owns [[Atlas]]
+
+ FAIL  |unit| src/relations/graph.integration.test.ts > domain relations on the real file/SQLite graph > indexes actual declarations despite legacy wikilink fence/whitespace differences: - owns [[Atlas # Plan | Roadmap]]
+
+AssertionError: expected [] to deeply equal [ 'Atlas' ]
+
+- Expected
++ Received
+
+- [
+-   "Atlas",
+- ]
++ []
+
+ ❯ src/relations/graph.integration.test.ts:167:113
+    165|     await fs.writeFile(join(f.root, "Oliver.md"), "# Relations\n" + bo…
+    166|     await indexNote({ vault: f.vault, absolutePath: join(f.root, "Oliv…
+    167|     expect((await run("Oliver.md", { direction: "outgoing", rels: ["ow…
+       |                                                                                                                 ^
+    168|   });
+    169|   it("refuses edits to locked relation sources without changing graph …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed | 8 passed (12)
+   Start at  17:00:19
+   Duration  791ms (transform 294ms, setup 0ms, import 528ms, tests 171ms, environment 0ms)

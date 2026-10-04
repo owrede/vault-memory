@@ -28,6 +28,7 @@ import {
 } from "../utils.js";
 import type { ToolName } from "../../tool-registry.js";
 import type { Handler, HandlerDeps } from "../deps.js";
+import type { WriteOptions } from "../../adapters/delivery/types.js";
 
 /**
  * Read a note via the v2 SourceConnector seam (Plan 01-03 Task 06).
@@ -111,6 +112,7 @@ async function handleWriteNote(
     expected_hash?: string;
     client_id?: string;
   },
+  onBeforeWrite?: () => void,
 ): Promise<object> {
   const handle = parseSourceHandle(`obsidian-fs://${parsed.vault}`);
   const delivery = registry.resolveDelivery(handle);
@@ -120,7 +122,7 @@ async function handleWriteNote(
     blocks: [{ kind: "paragraph", text: parsed.content }],
     properties: parsed.frontmatter ?? {},
   };
-  const opts: { expectedHash?: string; clientId?: string } = {};
+  const opts: WriteOptions = { onBeforeWrite };
   if (parsed.expected_hash !== undefined) opts.expectedHash = parsed.expected_hash;
   if (parsed.client_id !== undefined) opts.clientId = parsed.client_id;
 
@@ -185,6 +187,7 @@ async function handleDeleteNote(
     expected_hash: string;
     client_id?: string;
   },
+  onBeforeWrite?: () => void,
 ): Promise<object> {
   // Capture the v1 noteId + existing hash BEFORE we ask the delivery to
   // delete (after success, getByPath returns null).
@@ -195,8 +198,9 @@ async function handleDeleteNote(
   const delivery = registry.resolveDelivery(handle);
   const docId = formatDocId("obsidian-fs", parsed.vault, parsed.path);
 
-  const opts: { expectedHash?: string; clientId?: string } = {
+  const opts: WriteOptions = {
     expectedHash: parsed.expected_hash,
+    onBeforeWrite,
   };
   if (parsed.client_id !== undefined) opts.clientId = parsed.client_id;
 
@@ -295,7 +299,9 @@ function handleSuggestFrontmatter(
   };
 }
 
-export function makeNotesHandlers(deps: HandlerDeps): Partial<Record<ToolName, Handler>> {
+export function makeNotesHandlers(
+  deps: Pick<HandlerDeps, "manager" | "adapterRegistry" | "suppression" | "memorySinkRegistry">,
+): Partial<Record<ToolName, Handler>> {
   const { manager, adapterRegistry, suppression, memorySinkRegistry } = deps;
   return {
     read_note: async (a) => {
@@ -329,13 +335,7 @@ export function makeNotesHandlers(deps: HandlerDeps): Partial<Record<ToolName, H
         client_id?: string;
       };
       const vault = manager.require(p.vault);
-      // Suppress the watcher event triggered by our own atomic rename.
-      // We call suppression BEFORE delivery.write() so the event is
-      // pre-filtered. Worst case (permission_denied / hash_mismatch):
-      // we suppress an event that never fires — harmless beyond the
-      // ~2s TTL.
-      suppression.add(p.path);
-      return handleWriteNote(adapterRegistry, vault, p);
+      return handleWriteNote(adapterRegistry, vault, p, () => suppression.add(p.path));
     },
     update_frontmatter: async (a) => {
       const p = a as {
@@ -365,8 +365,7 @@ export function makeNotesHandlers(deps: HandlerDeps): Partial<Record<ToolName, H
         client_id?: string;
       };
       const vault = manager.require(p.vault);
-      suppression.add(p.path);
-      return handleDeleteNote(adapterRegistry, vault, p);
+      return handleDeleteNote(adapterRegistry, vault, p, () => suppression.add(p.path));
     },
     suggest_frontmatter: async (a) => {
       const p = a as {

@@ -1,0 +1,31 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/embeddings/provider.integration.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+[watcher] indexed Alpha.md (updated, 1 chunks)
+ ❯ |unit| src/embeddings/provider.integration.test.ts (9 tests | 1 failed) 295ms
+   × routes a bare ONNX secondary name to native inference during a full legacy index 37ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/embeddings/provider.integration.test.ts > routes a bare ONNX secondary name to native inference during a full legacy index
+AssertionError: expected 0.8760042786598206 to be close to +0, received difference is 0.8760042786598206, but expected 0.000005
+ ❯ src/embeddings/provider.integration.test.ts:237:83
+    235|   const shadow=f.vault.db.models.getByName(embeddingNamespace(provider…
+    236|   const expected=(await provider.embed(['# Alpha\nAlpha']))[0]!;
+    237|   expect(f.vault.db.embeddings.searchSemantic(shadow.id,expected,1)[0]…
+       |                                                                                   ^
+    238|   expect(remoteModels.every(model=>model==='legacy')).toBe(true);
+    239|  }finally{await client.close();await f.cleanup();await new Promise<voi…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 8 passed (9)
+   Start at  18:36:32
+   Duration  837ms (transform 314ms, setup 0ms, import 437ms, tests 295ms, environment 0ms)

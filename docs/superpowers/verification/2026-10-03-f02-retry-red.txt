@@ -1,0 +1,57 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/edit/refresh.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/edit/refresh.test.ts (6 tests | 2 failed) 61ms
+     × retries after both edit refresh and ordinary catchup fail 10ms
+     × retains invalidation after a failed catchup KB repair 7ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/edit/refresh.test.ts > edited-document refresh > retries after both edit refresh and ordinary catchup fail
+AssertionError: expected '18fdd549b2ed367ac0c74cbec121464472851…' to be null
+
+- Expected:
+null
+
++ Received:
+"18fdd549b2ed367ac0c74cbec1214644728515b30edbcb78e7d322757a7c8359"
+
+ ❯ src/edit/refresh.test.ts:96:59
+     94|     await expect(refreshEditedDocument({ manager: f.manager, defaultMo…
+     95|     await expect(catchupVault({ vault: f.vault, embeddingModel: "test"…
+     96|     expect(f.vault.db.notes.getByPath("a.md")!.body_hash).toBeNull();
+       |                                                           ^
+     97|     embed.mockImplementation(async request => ({ dim: 2, vectors: requ…
+     98|     expect((await catchupVault({ vault: f.vault, embeddingModel: "test…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |unit| src/edit/refresh.test.ts > edited-document refresh > retains invalidation after a failed catchup KB repair
+AssertionError: expected '18fdd549b2ed367ac0c74cbec121464472851…' to be null
+
+- Expected:
+null
+
++ Received:
+"18fdd549b2ed367ac0c74cbec1214644728515b30edbcb78e7d322757a7c8359"
+
+ ❯ src/edit/refresh.test.ts:107:59
+    105|     const ingest = vi.spyOn(contextFit, "indexVaultWithContextFit").mo…
+    106|     await catchupVault({ vault: f.vault, embeddingModel: "unused" });
+    107|     expect(f.vault.db.notes.getByPath("a.md")!.body_hash).toBeNull();
+       |                                                           ^
+    108|     ingest.mockResolvedValue({ status: "completed", stats: "", duratio…
+    109|     expect((await catchupVault({ vault: f.vault, embeddingModel: "unus…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 4 passed (6)
+   Start at  15:42:21
+   Duration  452ms (transform 207ms, setup 0ms, import 311ms, tests 61ms, environment 0ms)

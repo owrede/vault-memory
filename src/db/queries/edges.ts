@@ -279,6 +279,49 @@ export class EdgesQueries {
     }));
   }
 
+  /** Bound traversal query; role filters use the existing rel column/unique key. */
+  getTraversalLinks(
+    noteId: number,
+    direction: "forward" | "backward",
+    edgeTypes?: readonly EdgeType[],
+    rels?: readonly string[],
+  ): Array<{
+    sourceNoteId: number;
+    targetNoteId: number | null;
+    type: EdgeType;
+    rel: string | null;
+    lineNumber: number | null;
+  }> {
+    if (rels?.length === 0) return [];
+    const params: (string | number)[] = [noteId];
+    const clauses = [direction === "forward" ? "source_doc = ?" : "target_doc = ?"];
+    if (edgeTypes?.length) {
+      clauses.push(`type IN (${edgeTypes.map(() => "?").join(",")})`);
+      params.push(...edgeTypes);
+    }
+    if (rels) {
+      clauses.push(`rel IN (${rels.map(() => "?").join(",")})`);
+      params.push(...rels);
+    }
+    const rows = this.db
+      .prepare(
+        `SELECT source_doc, target_doc, type, rel, line_number FROM edges WHERE ${clauses.join(" AND ")} ORDER BY source_doc,target_doc,type,rel,line_number`,
+      )
+      .all(...params) as {
+      source_doc: number;
+      target_doc: number | null;
+      type: EdgeType;
+      rel: string | null;
+      line_number: number | null;
+    }[];
+    return rows.map((row) => ({
+      sourceNoteId: row.source_doc,
+      targetNoteId: row.target_doc,
+      type: row.type,
+      rel: row.rel,
+      lineNumber: row.line_number,
+    }));
+  }
   resolveBrokenLinks(): EdgeBrokenLinkRow[] {
     return this._broken.all().map((r) => ({
       sourceNoteId: r.source_doc,

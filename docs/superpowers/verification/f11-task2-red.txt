@@ -1,0 +1,95 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/imports/commit.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/imports/commit.test.ts (4 tests | 4 failed) 49ms
+   × previews without side effects, commits imported provenance and skips identical reimports 24ms
+   × requires a preview source hash for updates and preserves locks, canonical IDs and imported_at 9ms
+   × rejects imports into memory sinks, modified preview content and stale source snapshots without writes 9ms
+   × promotes selected messages separately with concrete evidence and preserves source roles 7ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 4 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/imports/commit.test.ts > previews without side effects, commits imported provenance and skips identical reimports
+AssertionError: expected [] to have a length of 1 but got +0
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ src/imports/commit.test.ts:12:56
+     10| const preview=()=>prepareImport(c(),'obsidian-fs://lab/imports/','2026…
+     11| it('previews without side effects, commits imported provenance and ski…
+     12|  const manifest=await preview();expect(manifest.items).toHaveLength(1)…
+       |                                                        ^
+     13|  expect((await commitImport(manifest,deps)).ok).toBe(true);const doc=a…
+     14|  expect(doc.properties).toMatchObject({source:'imported',import_hash:m…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/4]⎯
+
+ FAIL  |unit| src/imports/commit.test.ts > requires a preview source hash for updates and preserves locks, canonical IDs and imported_at
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/imports/commit.test.ts:18:74
+     16| });
+     17| it('requires a preview source hash for updates and preserves locks, ca…
+     18|  const first=await preview();expect((await commitImport(first,deps)).o…
+       |                                                                          ^
+     19|  const updated=await prepareImport(c('Changed export'),'obsidian-fs://…
+     20|  const unsafe=structuredClone(updated);unsafe.expected_hashes[original…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/4]⎯
+
+ FAIL  |unit| src/imports/commit.test.ts > rejects imports into memory sinks, modified preview content and stale source snapshots without writes
+AssertionError: expected { Object (ok, reason) } to match object { ok: false, …(1) }
+
+- Expected
++ Received
+
+  {
+    "ok": false,
+-   "reason": "non_agent_write_inside_sink",
++   "reason": "not_implemented",
+  }
+
+ ❯ src/imports/commit.test.ts:28:133
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/4]⎯
+
+ FAIL  |unit| src/imports/commit.test.ts > promotes selected messages separately with concrete evidence and preserves source roles
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ src/imports/commit.test.ts:32:80
+     30| });
+     31| it('promotes selected messages separately with concrete evidence and p…
+     32|  const manifest=await preview();expect((await commitImport(manifest,de…
+       |                                                                                ^
+     33|  const args={doc_id:doc.id,expected_hash:doc.hash,message_ids:['tool1'…
+     34|  const result=await promoteConversation(args,deps);expect(result.ok).t…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/4]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  4 failed (4)
+   Start at  18:54:25
+   Duration  582ms (transform 288ms, setup 0ms, import 442ms, tests 49ms, environment 0ms)

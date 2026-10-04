@@ -1,0 +1,200 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/relations/graph.integration.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/relations/graph.integration.test.ts (6 tests | 6 failed) 85ms
+     × keeps parallel roles, anchors, source lines and unresolved targets 32ms
+     × distinguishes incoming/outgoing roles and cites the actual declaring source 9ms
+     × preserves unfiltered traversal and binds arbitrary role filters safely 9ms
+     × rebuilds deterministically and removes only the removed relation 10ms
+     × refuses edits to locked relation sources without changing graph rows 9ms
+     × exposes and forwards additive role options through the MCP SDK 17ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/relations/graph.integration.test.ts > domain relations on the real file/SQLite graph > keeps parallel roles, anchors, source lines and unresolved targets
+AssertionError: expected [] to match object [ { source: 'Atlas.md', …(3) }, …(3) ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "line": 5,
+-     "rel": "depends_on",
+-     "source": "Atlas.md",
+-     "target": "Budget",
+-   },
+-   {
+-     "anchor": "Plan",
+-     "line": 3,
+-     "rel": "owns",
+-     "source": "Oliver.md",
+-     "target": "Atlas",
+-   },
+-   {
+-     "line": 4,
+-     "rel": "manages",
+-     "source": "Oliver.md",
+-     "target": "Atlas",
+-   },
+-   {
+-     "line": 5,
+-     "rel": "custom_role",
+-     "source": "Oliver.md",
+-     "target": "Missing",
+-     "target_doc": null,
+-   },
+- ]
++ []
+
+ ❯ src/relations/graph.integration.test.ts:33:21
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  |unit| src/relations/graph.integration.test.ts > domain relations on the real file/SQLite graph > distinguishes incoming/outgoing roles and cites the actual declaring source
+AssertionError: expected [] to deeply equal [ 'obsidian-fs://lab/Atlas.md' ]
+
+- Expected
++ Received
+
+- [
+-   "obsidian-fs://lab/Atlas.md",
+- ]
++ []
+
+ ❯ src/relations/graph.integration.test.ts:42:55
+     40|   it("distinguishes incoming/outgoing roles and cites the actual decla…
+     41|     const outgoing = await run("Oliver.md", { direction: "outgoing", r…
+     42|     expect(outgoing.documents.map(doc => doc.doc_id)).toEqual([f.id("A…
+       |                                                       ^
+     43|     expect(outgoing.documents[0]!.via).toMatchObject({ rel: "owns", li…
+     44|       source_doc_id: f.id("Oliver.md"), source_hash: (await f.source.r…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+ FAIL  |unit| src/relations/graph.integration.test.ts > domain relations on the real file/SQLite graph > preserves unfiltered traversal and binds arbitrary role filters safely
+AssertionError: expected [ { …(9) }, { …(9) } ] to deeply equal []
+
+- Expected
++ Received
+
+- []
++ [
++   {
++     "display_url": "obsidian://open?vault=lab&file=Atlas.md",
++     "doc_id": "obsidian-fs://lab/Atlas.md",
++     "hash": "4487ff4131f62bfb0b4af73b554370c28c97b160fcac1bc4304c22154ad3c262",
++     "heading_path": [],
++     "mtime": 1791038839970,
++     "properties": {
++       "wikilinks": [
++         {
++           "target": "Budget",
++         },
++       ],
++     },
++     "source_handle": "obsidian-fs://lab",
++     "title": "Atlas",
++     "via": {
++       "direction": "forward",
++       "edge_type": "wikilink",
++       "hop": 1,
++       "seed_doc_id": "obsidian-fs://lab/Oliver.md",
++     },
++   },
++   {
++     "display_url": "obsidian://open?vault=lab&file=Budget.md",
++     "doc_id": "obsidian-fs://lab/Budget.md",
++     "hash": "a032fa94ed96ffba9ee72eed2d556ad3d851eccb0fbe328bb1be8fca519237d4",
++     "heading_path": [],
++     "mtime": 1791038839970,
++     "properties": {
++       "wikilinks": [],
++     },
++     "source_handle": "obsidian-fs://lab",
++     "title": "Budget",
++     "via": {
++       "direction": "forward",
++       "edge_type": "wikilink",
++       "hop": 1,
++       "seed_doc_id": "obsidian-fs://lab/Oliver.md",
++     },
++   },
++ ]
+
+ ❯ src/relations/graph.integration.test.ts:55:102
+     53|     expect((await run("Oliver.md", { direction: "forward" })).document…
+     54|     expect((await run("Atlas.md")).documents.map(doc => doc.title).sor…
+     55|     expect((await run("Oliver.md", { direction: "forward", rels: ["own…
+       |                                                                                                      ^
+     56|     expect((await run("Oliver.md", { direction: "forward", rels: [] })…
+     57|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯
+
+ FAIL  |unit| src/relations/graph.integration.test.ts > domain relations on the real file/SQLite graph > rebuilds deterministically and removes only the removed relation
+AssertionError: expected [] to match object [ { rel: 'depends_on' }, …(2) ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "rel": "depends_on",
+-   },
+-   {
+-     "rel": "manages",
+-   },
+-   {
+-     "rel": "custom_role",
+-   },
+- ]
++ []
+
+ ❯ src/relations/graph.integration.test.ts:64:21
+     62|     await fs.writeFile(join(f.root, "Oliver.md"), oliver.replace("- ow…
+     63|     await indexNote({ vault: f.vault, absolutePath: join(f.root, "Oliv…
+     64|     expect(roles()).toMatchObject([{ rel: "depends_on" }, { rel: "mana…
+       |                     ^
+     65|     expect((await run("Atlas.md", { direction: "backward", rels: ["own…
+     66|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/6]⎯
+
+ FAIL  |unit| src/relations/graph.integration.test.ts > domain relations on the real file/SQLite graph > refuses edits to locked relation sources without changing graph rows
+TypeError: Cannot read properties of undefined (reading 'length')
+ ❯ patchBody src/edit/patch.ts:26:26
+     24|     };
+     25|   }
+     26|   if (patch.heading_path.length === 0 || patch.heading_path.some((part…
+       |                          ^
+     27|     return { ok: false, reason: "invalid_patch" };
+     28|   }
+ ❯ applyDocumentPatch src/edit/apply.ts:31:19
+ ❯ src/relations/graph.integration.test.ts:72:12
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯
+
+ FAIL  |unit| src/relations/graph.integration.test.ts > domain relations on the real file/SQLite graph > exposes and forwards additive role options through the MCP SDK
+AssertionError: expected { seed_doc_ids: { …(4) }, …(5) } to have property "rels"
+ ❯ src/relations/graph.integration.test.ts:84:75
+     82|     await server.connect(a); await client.connect(b);
+     83|     try {
+     84|       expect((await client.listTools()).tools[0]!.inputSchema.properti…
+       |                                                                           ^
+     85|       const response = await client.callTool({ name: "expand", argumen…
+     86|       expect(response.isError).not.toBe(true);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/6]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  6 failed (6)
+   Start at  16:47:19
+   Duration  673ms (transform 280ms, setup 0ms, import 493ms, tests 85ms, environment 0ms)

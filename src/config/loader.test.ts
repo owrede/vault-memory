@@ -29,6 +29,20 @@ describe("loadConfig — Phase 2 memory blocks", () => {
     return path;
   }
 
+  it("keeps feature modules disabled by default", async () => {
+    expect((await loadConfig(await seed("[server]\n"))).server.features).toEqual([]);
+  });
+
+  it("accepts explicitly enabled feature modules", async () => {
+    expect(
+      (await loadConfig(await seed('[server]\nfeatures = ["document_edit"]\n'))).server.features,
+    ).toEqual(["document_edit"]);
+  });
+
+  it("rejects unknown feature modules rather than ignoring them", async () => {
+    await expect(loadConfig(await seed('[server]\nfeatures = ["typo"]\n'))).rejects.toThrow();
+  });
+
   it("parses a v1-style TOML without [memory] / [[memory_sinks]]", async () => {
     const path = await seed(["[[vaults]]", "name = 'atlas'", "path = '/vaults/atlas'"].join("\n"));
     const config = await loadConfig(path);

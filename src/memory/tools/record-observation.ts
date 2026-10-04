@@ -25,6 +25,7 @@
  * collisions.
  */
 
+import { timestampMillis } from "../valid-time.js";
 import { createHash, randomBytes } from "node:crypto";
 import type { DeliveryAdapter, WriteResult } from "../../adapters/delivery/types.js";
 import { formatDocId } from "../../adapters/registry.js";
@@ -87,6 +88,8 @@ export interface RecordObservationDeps {
 
 export interface RecordObservationArgs {
   vault: string;
+  /** Internal lifecycle/import controller timestamp. Existing MCP schemas are unchanged. */
+  observed_at?: string;
   claim: string;
   evidence: string[];
   confidence: "direct" | "inferred" | "uncertain";
@@ -179,7 +182,9 @@ export async function handleRecordObservation(
   // by the caller. Non-provenance extras (tags, expires_at, priority,
   // custom_tag, etc.) still win over absent sugar defaults — the D-02
   // escape-hatch is preserved for contract-allowed extras.
-  const observedAtDefault = new Date().toISOString();
+  if (args.observed_at !== undefined && timestampMillis(args.observed_at) === null)
+    throw new Error("Invalid observed_at");
+  const observedAtDefault = args.observed_at ?? new Date().toISOString();
   const sugarProps: Record<string, unknown> = {
     source: "agent",
     observed_at: observedAtDefault,

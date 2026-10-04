@@ -1,0 +1,360 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/edit/patch.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/edit/patch.test.ts (16 tests | 14 failed) 10ms
+     × patches fixture before old after without unrelated changes 5ms
+     × patches fixture old / old without unrelated changes 1ms
+     × patches fixture original without unrelated changes 0ms
+     × patches fixture original without unrelated changes 0ms
+     × patches fixture # A
+Keep
+## B
+Old
+## C
+Keep
+ without unrelated changes 1ms
+     × patches fixture # A
+Keep
+## B
+Old
+## C
+Keep
+ without unrelated changes 0ms
+     × patches fixture # A
+Old
+# A
+Other
+ without unrelated changes 0ms
+     × patches fixture # A
+```md
+## Example
+```
+ without unrelated changes 0ms
+     × patches fixture # A
+~~~md
+## Example
+~~~
+ without unrelated changes 0ms
+     × patches fixture # A
+Old
+# B
+Keep without unrelated changes 0ms
+     × patches fixture # A without unrelated changes 0ms
+     × patches fixture # A
+Old
+## Child
+Old child
+# B
+Keep
+ without unrelated changes 0ms
+     × patches fixture # A
+Old
+# B
+Keep without unrelated changes 0ms
+     × patches fixture # A
+Old without unrelated changes 0ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 14 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/edit/patch.test.ts > targeted text patches > patches fixture before old after without unrelated changes
+AssertionError: expected { ok: false, reason: 'invalid_patch' } to deeply equal { ok: true, body: 'before new after' }
+
+- Expected
++ Received
+
+  {
+-   "body": "before new after",
+-   "ok": true,
++   "ok": false,
++   "reason": "invalid_patch",
+  }
+
+ ❯ src/edit/patch.test.ts:23:49
+     21|     ["# A\nOld", { kind: "section", heading_path: ["Missing"], content…
+     22|   ] as const)("patches fixture %s without unrelated changes", (body, p…
+     23|     expect(patchBody(body, patch as TextPatch)).toEqual(expected);
+       |                                                 ^
+     24|   });
+     25| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/14]⎯
+
+ FAIL  |unit| src/edit/patch.test.ts > targeted text patches > patches fixture old / old without unrelated changes
+ FAIL  |unit| src/edit/patch.test.ts > targeted text patches > patches fixture # A
+Old
+# A
+Other
+ without unrelated changes
+AssertionError: expected { ok: false, reason: 'invalid_patch' } to deeply equal { ok: false, …(1) }
+
+- Expected
++ Received
+
+  {
+    "ok": false,
+-   "reason": "ambiguous_target",
++   "reason": "invalid_patch",
+  }
+
+ ❯ src/edit/patch.test.ts:23:49
+     21|     ["# A\nOld", { kind: "section", heading_path: ["Missing"], content…
+     22|   ] as const)("patches fixture %s without unrelated changes", (body, p…
+     23|     expect(patchBody(body, patch as TextPatch)).toEqual(expected);
+       |                                                 ^
+     24|   });
+     25| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/14]⎯
+
+ FAIL  |unit| src/edit/patch.test.ts > targeted text patches > patches fixture original without unrelated changes
+ FAIL  |unit| src/edit/patch.test.ts > targeted text patches > patches fixture # A
+```md
+## Example
+```
+ without unrelated changes
+ FAIL  |unit| src/edit/patch.test.ts > targeted text patches > patches fixture # A
+~~~md
+## Example
+~~~
+ without unrelated changes
+ FAIL  |unit| src/edit/patch.test.ts > targeted text patches > patches fixture # A
+Old without unrelated changes
+AssertionError: expected { ok: false, reason: 'invalid_patch' } to deeply equal { ok: false, …(1) }
+
+- Expected
++ Received
+
+  {
+    "ok": false,
+-   "reason": "target_not_found",
++   "reason": "invalid_patch",
+  }
+
+ ❯ src/edit/patch.test.ts:23:49
+     21|     ["# A\nOld", { kind: "section", heading_path: ["Missing"], content…
+     22|   ] as const)("patches fixture %s without unrelated changes", (body, p…
+     23|     expect(patchBody(body, patch as TextPatch)).toEqual(expected);
+       |                                                 ^
+     24|   });
+     25| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/14]⎯
+
+ FAIL  |unit| src/edit/patch.test.ts > targeted text patches > patches fixture original without unrelated changes
+AssertionError: expected { ok: false, reason: 'invalid_patch' } to deeply equal { ok: true, body: 'original' }
+
+- Expected
++ Received
+
+  {
+-   "body": "original",
+-   "ok": true,
++   "ok": false,
++   "reason": "invalid_patch",
+  }
+
+ ❯ src/edit/patch.test.ts:23:49
+     21|     ["# A\nOld", { kind: "section", heading_path: ["Missing"], content…
+     22|   ] as const)("patches fixture %s without unrelated changes", (body, p…
+     23|     expect(patchBody(body, patch as TextPatch)).toEqual(expected);
+       |                                                 ^
+     24|   });
+     25| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/14]⎯
+
+ FAIL  |unit| src/edit/patch.test.ts > targeted text patches > patches fixture # A
+Keep
+## B
+Old
+## C
+Keep
+ without unrelated changes
+AssertionError: expected { ok: false, reason: 'invalid_patch' } to deeply equal { ok: true, …(1) }
+
+- Expected
++ Received
+
+  {
+-   "body": "# A
+- Keep
+- ## B
+- New
+- ## C
+- Keep
+- ",
+-   "ok": true,
++   "ok": false,
++   "reason": "invalid_patch",
+  }
+
+ ❯ src/edit/patch.test.ts:23:49
+     21|     ["# A\nOld", { kind: "section", heading_path: ["Missing"], content…
+     22|   ] as const)("patches fixture %s without unrelated changes", (body, p…
+     23|     expect(patchBody(body, patch as TextPatch)).toEqual(expected);
+       |                                                 ^
+     24|   });
+     25| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/14]⎯
+
+ FAIL  |unit| src/edit/patch.test.ts > targeted text patches > patches fixture # A
+Keep
+## B
+Old
+## C
+Keep
+ without unrelated changes
+AssertionError: expected { ok: false, reason: 'invalid_patch' } to deeply equal { ok: true, …(1) }
+
+- Expected
++ Received
+
+  {
+-   "body": "# A
+- Keep
+- ## B
+- New
+- Lines
+- ## C
+- Keep
+- ",
+-   "ok": true,
++   "ok": false,
++   "reason": "invalid_patch",
+  }
+
+ ❯ src/edit/patch.test.ts:23:49
+     21|     ["# A\nOld", { kind: "section", heading_path: ["Missing"], content…
+     22|   ] as const)("patches fixture %s without unrelated changes", (body, p…
+     23|     expect(patchBody(body, patch as TextPatch)).toEqual(expected);
+       |                                                 ^
+     24|   });
+     25| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/14]⎯
+
+ FAIL  |unit| src/edit/patch.test.ts > targeted text patches > patches fixture # A
+Old
+# B
+Keep without unrelated changes
+AssertionError: expected { ok: false, reason: 'invalid_patch' } to deeply equal { ok: true, …(1) }
+
+- Expected
++ Received
+
+  {
+-   "body": "# A
+- New
+- # B
+- Keep",
+-   "ok": true,
++   "ok": false,
++   "reason": "invalid_patch",
+  }
+
+ ❯ src/edit/patch.test.ts:23:49
+     21|     ["# A\nOld", { kind: "section", heading_path: ["Missing"], content…
+     22|   ] as const)("patches fixture %s without unrelated changes", (body, p…
+     23|     expect(patchBody(body, patch as TextPatch)).toEqual(expected);
+       |                                                 ^
+     24|   });
+     25| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/14]⎯
+
+ FAIL  |unit| src/edit/patch.test.ts > targeted text patches > patches fixture # A without unrelated changes
+AssertionError: expected { ok: false, reason: 'invalid_patch' } to deeply equal { ok: true, body: '# A\nNew' }
+
+- Expected
++ Received
+
+  {
+-   "body": "# A
+- New",
+-   "ok": true,
++   "ok": false,
++   "reason": "invalid_patch",
+  }
+
+ ❯ src/edit/patch.test.ts:23:49
+     21|     ["# A\nOld", { kind: "section", heading_path: ["Missing"], content…
+     22|   ] as const)("patches fixture %s without unrelated changes", (body, p…
+     23|     expect(patchBody(body, patch as TextPatch)).toEqual(expected);
+       |                                                 ^
+     24|   });
+     25| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[8/14]⎯
+
+ FAIL  |unit| src/edit/patch.test.ts > targeted text patches > patches fixture # A
+Old
+## Child
+Old child
+# B
+Keep
+ without unrelated changes
+AssertionError: expected { ok: false, reason: 'invalid_patch' } to deeply equal { ok: true, …(1) }
+
+- Expected
++ Received
+
+  {
+-   "body": "# A
+- New
+- # B
+- Keep
+- ",
+-   "ok": true,
++   "ok": false,
++   "reason": "invalid_patch",
+  }
+
+ ❯ src/edit/patch.test.ts:23:49
+     21|     ["# A\nOld", { kind: "section", heading_path: ["Missing"], content…
+     22|   ] as const)("patches fixture %s without unrelated changes", (body, p…
+     23|     expect(patchBody(body, patch as TextPatch)).toEqual(expected);
+       |                                                 ^
+     24|   });
+     25| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[9/14]⎯
+
+ FAIL  |unit| src/edit/patch.test.ts > targeted text patches > patches fixture # A
+Old
+# B
+Keep without unrelated changes
+AssertionError: expected { ok: false, reason: 'invalid_patch' } to deeply equal { ok: true, body: '# A\n# B\nKeep' }
+
+- Expected
++ Received
+
+  {
+-   "body": "# A
+- # B
+- Keep",
+-   "ok": true,
++   "ok": false,
++   "reason": "invalid_patch",
+  }
+
+ ❯ src/edit/patch.test.ts:23:49
+     21|     ["# A\nOld", { kind: "section", heading_path: ["Missing"], content…
+     22|   ] as const)("patches fixture %s without unrelated changes", (body, p…
+     23|     expect(patchBody(body, patch as TextPatch)).toEqual(expected);
+       |                                                 ^
+     24|   });
+     25| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[10/14]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  14 failed | 2 passed (16)
+   Start at  15:09:41
+   Duration  153ms (transform 17ms, setup 0ms, import 25ms, tests 10ms, environment 0ms)

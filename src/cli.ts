@@ -8,6 +8,49 @@ const args = process.argv.slice(2);
 const command = args[0] ?? "serve";
 
 switch (command) {
+  case "import":
+  case "promote-conversation":
+    try {
+      const { parseImportArgs } = await import("./cli/import.js");
+      const parsed = parseImportArgs(args);
+      process.exitCode = await import("./adapters/source/obsidian-fs/import-runtime.js").then((m) =>
+        m.runLocalImport(parsed),
+      );
+    } catch (error) {
+      console.error(String(error));
+      if (args.includes("--json")) console.log(JSON.stringify({ ok: false, error: String(error) }));
+      process.exitCode = 2;
+    }
+    break;
+  case "session":
+    try {
+      const { parseSessionArgs } = await import("./cli/session.js");
+      const parsed = parseSessionArgs(args);
+      process.exitCode = await import("./adapters/source/obsidian-fs/session-runtime.js").then(
+        (m) => m.runLocalSession(parsed),
+      );
+    } catch (error) {
+      console.error(String(error));
+      if (args.includes("--json")) console.log(JSON.stringify({ ok: false, error: String(error) }));
+      process.exitCode = 2;
+    }
+    break;
+  case "search":
+  case "read":
+  case "edit":
+  case "man":
+    try {
+      const { parseKnowledgeArgs } = await import("./cli/knowledge.js");
+      const parsed = parseKnowledgeArgs(args);
+      process.exitCode = await import("./adapters/source/obsidian-fs/cli-runtime.js").then((m) =>
+        m.runLocalKnowledge(parsed),
+      );
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      if (args.includes("--json")) console.log(JSON.stringify({ ok: false, error: String(error) }));
+      process.exitCode = 2;
+    }
+    break;
   case "serve":
     await import("./server.js").then((m) => m.serve());
     break;
@@ -62,80 +105,85 @@ async function runIndex(rest: string[]): Promise<void> {
   const manager = new VaultManager();
   await manager.loadAll(config.vaults);
 
-  const ollama = new OllamaClient({
-    endpoint: config.server.ollama_endpoint,
-  });
-
+  const { configuredEmbeddingClient } = await import("./adapters/embeddings/configured.js");
   const targets = vaultName ? [manager.require(vaultName)] : manager.list();
+  const embeddings = await configuredEmbeddingClient(
+    config.server,
+    targets.some((v) => v.config.backend !== "contextfit"),
+  );
+  const ollama = embeddings.client;
 
-  for (const vault of targets) {
-    // ADR-008: ContextFit-backed vaults use the CPU-only token-native engine.
-    // Two-part index: (1) build the full SQLite content layer WITHOUT embeddings
-    // (powers graph/sections/frontmatter/stats tools, the watcher, catchup, and
-    // write re-index) and (2) build the ContextFit search KB. No Ollama, no GPU.
-    if (vault.config.backend === "contextfit") {
-      const { indexVaultWithContextFit } = await import("./adapters/retrieval/contextfit/index.js");
-      console.error(
-        `\n→ Indexing "${vault.config.name}" with ContextFit (CPU-only, no embeddings)`,
-      );
-      // (1) SQLite content layer — embeddings:"none" skips Ollama entirely.
-      const sqlite = await indexVault(vault, {
-        mode,
-        embeddingModel: "contextfit",
-        embeddings: "none",
-        onProgress: (msg) => console.error(`  ${msg}`),
-      });
-      if (sqlite.status !== "completed") {
-        console.error(`✗ ${vault.config.name}: SQLite layer failed — ${sqlite.error}`);
-        process.exitCode = 1;
+  try {
+    for (const vault of targets) {
+      // ADR-008: ContextFit-backed vaults use the CPU-only token-native engine.
+      // Two-part index: (1) build the full SQLite content layer WITHOUT embeddings
+      // (powers graph/sections/frontmatter/stats tools, the watcher, catchup, and
+      // write re-index) and (2) build the ContextFit search KB. No Ollama, no GPU.
+      if (vault.config.backend === "contextfit") {
+        const { indexVaultWithContextFit } =
+          await import("./adapters/retrieval/contextfit/index.js");
+        console.error(
+          `\n→ Indexing "${vault.config.name}" with ContextFit (CPU-only, no embeddings)`,
+        );
+        // (1) SQLite content layer — embeddings:"none" skips Ollama entirely.
+        const sqlite = await indexVault(vault, {
+          mode,
+          embeddingModel: "contextfit",
+          embeddings: "none",
+          onProgress: (msg) => console.error(`  ${msg}`),
+        });
+        if (sqlite.status !== "completed") {
+          console.error(`✗ ${vault.config.name}: SQLite layer failed — ${sqlite.error}`);
+          process.exitCode = 1;
+          continue;
+        }
+        // (2) ContextFit search KB.
+        const cfResult = await indexVaultWithContextFit(vault.config, {
+          onProgress: (msg) => console.error(`  ${msg}`),
+        });
+        if (cfResult.status === "completed") {
+          console.error(
+            `✓ ${vault.config.name}: ${sqlite.notesIndexed} notes (SQLite) + ContextFit KB · ${sqlite.durationMs + cfResult.durationMs}ms`,
+          );
+        } else if (cfResult.status === "skipped") {
+          // Issue #17: another process held the ingest lock. Not an error — the
+          // holder will do a trailing re-ingest that captures our changes.
+          console.error(
+            `↷ ${vault.config.name}: ${sqlite.notesIndexed} notes (SQLite); ContextFit KB re-ingest already in progress in another process — flagged for retry, skipping`,
+          );
+        } else {
+          console.error(`✗ ${vault.config.name}: ContextFit KB failed — ${cfResult.error}`);
+          process.exitCode = 1;
+        }
         continue;
       }
-      // (2) ContextFit search KB.
-      const cfResult = await indexVaultWithContextFit(vault.config, {
+
+      const model = vault.config.embedding_model ?? embeddings.model;
+
+      console.error(`\n→ Indexing "${vault.config.name}" (${mode}) with ${model}`);
+      const result = await indexVault(vault, {
+        mode,
+        embeddingModel: model,
+        ollama,
         onProgress: (msg) => console.error(`  ${msg}`),
       });
-      if (cfResult.status === "completed") {
+
+      if (result.status === "completed") {
+        const skipSuffix = result.notesSkipped > 0 ? `, ${result.notesSkipped} skipped` : "";
         console.error(
-          `✓ ${vault.config.name}: ${sqlite.notesIndexed} notes (SQLite) + ContextFit KB · ${sqlite.durationMs + cfResult.durationMs}ms`,
-        );
-      } else if (cfResult.status === "skipped") {
-        // Issue #17: another process held the ingest lock. Not an error — the
-        // holder will do a trailing re-ingest that captures our changes.
-        console.error(
-          `↷ ${vault.config.name}: ${sqlite.notesIndexed} notes (SQLite); ContextFit KB re-ingest already in progress in another process — flagged for retry, skipping`,
+          `✓ ${vault.config.name}: ${result.notesIndexed} new, ` +
+            `${result.notesUpdated} updated, ${result.notesDeleted} deleted${skipSuffix}, ` +
+            `${result.chunksCreated} chunks · ${result.durationMs}ms`,
         );
       } else {
-        console.error(`✗ ${vault.config.name}: ContextFit KB failed — ${cfResult.error}`);
+        console.error(`✗ ${vault.config.name}: ${result.error}`);
         process.exitCode = 1;
       }
-      continue;
     }
-
-    const model =
-      vault.config.embedding_model ?? config.server.default_embedding_model ?? "qwen3-embedding";
-
-    console.error(`\n→ Indexing "${vault.config.name}" (${mode}) with ${model}`);
-    const result = await indexVault(vault, {
-      mode,
-      embeddingModel: model,
-      ollama,
-      onProgress: (msg) => console.error(`  ${msg}`),
-    });
-
-    if (result.status === "completed") {
-      const skipSuffix = result.notesSkipped > 0 ? `, ${result.notesSkipped} skipped` : "";
-      console.error(
-        `✓ ${vault.config.name}: ${result.notesIndexed} new, ` +
-          `${result.notesUpdated} updated, ${result.notesDeleted} deleted${skipSuffix}, ` +
-          `${result.chunksCreated} chunks · ${result.durationMs}ms`,
-      );
-    } else {
-      console.error(`✗ ${vault.config.name}: ${result.error}`);
-      process.exitCode = 1;
-    }
+  } finally {
+    await embeddings.close();
+    manager.closeAll();
   }
-
-  manager.closeAll();
 }
 
 /**
@@ -256,6 +304,10 @@ COMMANDS:
     --write                Allow MCP write operations (default: read-only)
     --no-index             Skip the initial index (you can run it later)
   init                   Interactive config wizard (Phase 5 — not yet)
+  session start         Read existing brief context with fresh source checks
+  session checkpoint    Record explicit idempotent checkpoint from --input FILE
+  import                Preview conversations; --commit FILE applies a saved manifest
+  promote-conversation  Explicitly derive agent memory from selected messages
   help, --help           Show this message
 
 CONFIG:

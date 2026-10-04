@@ -72,6 +72,13 @@
  * existing query layer — fine.
  */
 
+import {
+  resolveAsOf,
+  parseValidity,
+  isValidAt,
+  InvalidValidityError,
+  type Validity,
+} from "../memory/valid-time.js";
 import { decomposeDocId, formatDocId, parseDocId } from "../adapters/registry.js";
 import type { SourceConnector } from "../adapters/source/types.js";
 import { getAuditLog } from "../audit/audit.js";
@@ -88,6 +95,14 @@ import { buildOutlineTree } from "./outline.js";
 import type { OutlineNode } from "./types.js";
 import type { BlockNode, ChunkRow, Document, SectionRow } from "../types.js";
 import type { Vault, VaultManager } from "../vault/index.js";
+import { retrieveObservations, type ObservationResult } from "../observations/retrieve.js";
+import {
+  documentContext,
+  takeContext,
+  validateProjection,
+  type ContextSelection,
+  type ProjectionArgs,
+} from "./selection.js";
 
 /**
  * Maximum number of audit-log rows surfaced in `recent_edits`.
@@ -109,6 +124,7 @@ const PROPERTY_SNIPPET_MAX = 200;
  * shape.
  */
 export interface GetDocumentBundleDeps {
+  clock?: () => number;
   manager: VaultManager;
   sourceConnectorFor: (vaultName: string) => SourceConnector;
 }
@@ -117,7 +133,8 @@ export interface GetDocumentBundleDeps {
  * Validated input shape for `get_document_bundle`. Matches the Zod
  * `GetDocumentBundleArgs` schema in `src/tool-registry.ts`.
  */
-export interface GetDocumentBundleArgs {
+export interface GetDocumentBundleArgs extends ProjectionArgs {
+  as_of?: string;
   /** Opaque DocId — `<scheme>://<authority>/<resource>`. */
   doc_id: string;
   /**
@@ -209,6 +226,8 @@ export interface BundleRecentEdit {
  * Wire shape of the `get_document_bundle({doc_id})` MCP tool response.
  */
 export interface BundleResult {
+  observations?: ObservationResult;
+  context?: ContextSelection;
   anchor: BundleAnchor;
   outline: OutlineNode[];
   backlinks: BacklinkEntry[];
@@ -282,6 +301,8 @@ export async function getDocumentBundle(
   deps: GetDocumentBundleDeps,
   args: GetDocumentBundleArgs,
 ): Promise<BundleResult> {
+  const asOf = resolveAsOf(args.as_of, deps.clock);
+  validateProjection(args);
   // 1) Validate-decompose the DocId. `parseDocId` throws on malformed
   //    input — surface as `doc_not_found` (callers gave us a bad id).
   let parsed: { scheme: string; authority: string; resource: string };
@@ -331,6 +352,15 @@ export async function getDocumentBundle(
   const anchorPacket: BundleAnchor = withPropertyExtras(
     toCitationPacket(anchorDoc, displayUrlFor(docId, source)),
   );
+
+  const bounds = parseValidity(anchorDoc.properties);
+  if (!bounds.ok) throw new InvalidValidityError(bounds.key, args.doc_id);
+  if (args.as_of !== undefined || Object.keys(bounds.validity).length)
+    Object.assign(anchorPacket, {
+      as_of: asOf,
+      validity: bounds.validity,
+      valid_at: isValidAt(bounds.validity, asOf),
+    });
 
   // 5) Build the outline tree via 03-02's helper. Re-use, do NOT
   //    duplicate. Sections are returned in parent-NULL-first order,
@@ -445,11 +475,49 @@ export async function getDocumentBundle(
   //    forward-link entry carries its own (same vault in v2.0.0, but
   //    Phase 4 cross-adapter graph walks may surface heterogeneous
   //    source handles).
+  const context = documentContext(anchorDoc, anchorPacket.display_url, args);
+  if (context) {
+    for (const link of [...backlinks, ...forward_links]) {
+      if (context.projection !== "full") link.property_snippet = "";
+      else {
+        const excerpt = takeContext(context, link.property_snippet);
+        if (!excerpt.text.length && excerpt.original_chars) {
+          context.excluded.push({
+            doc_id: link.doc_id,
+            heading_path: link.heading_path,
+            reason: "budget_exhausted",
+          });
+        }
+        Object.assign(link, {
+          property_snippet: excerpt.text,
+          truncated: excerpt.truncated,
+          original_chars: excerpt.original_chars,
+        });
+      }
+    }
+  }
   return {
     anchor: anchorPacket,
+    ...(args.include_observations
+      ? {
+          observations: retrieveObservations(
+            anchorDoc,
+            anchorPacket.display_url,
+            {
+              doc_hash: vault.db.observations.indexedHash(noteRow.id),
+              rows: vault.db.observations.listForNote(noteRow.id),
+            },
+            context,
+            [],
+            args.projection === "sections" ? args.heading_paths : undefined,
+            { as_of: asOf, explicit: args.as_of !== undefined },
+          ),
+        }
+      : {}),
     outline,
     backlinks,
     forward_links,
     recent_edits,
+    ...(context ? { context } : {}),
   };
 }

@@ -17,6 +17,9 @@ import { extractAliases } from "../../../indexer/index.js";
 import { atomicWriteFile, safeJoinInsideVault } from "./fs.js";
 import { formatDocId } from "../../registry.js";
 import type { MemorySinkRegistry } from "../../../memory/registry.js";
+import { parseValidity } from "../../../memory/valid-time.js";
+import { getDocumentLockConflict } from "../document-lock.js";
+import { parseObservations } from "../../../observations/parse.js";
 
 export interface WriteSuccess {
   ok: true;
@@ -28,7 +31,12 @@ export interface WriteSuccess {
 
 export interface WriteConflict {
   ok: false;
-  reason: "hash_mismatch" | "permission_denied" | "sink_write_blocked";
+  reason:
+    | "hash_mismatch"
+    | "permission_denied"
+    | "sink_write_blocked"
+    | "document_locked"
+    | "invalid_validity";
   currentHash?: string;
   currentContent?: string;
   message: string;
@@ -41,6 +49,10 @@ export interface WriteConflict {
 export type WriteResult = WriteSuccess | WriteConflict;
 
 export interface WriteNoteInput {
+  /** Internal targeted-edit option: keep original YAML bytes when properties match. */
+  preserveFrontmatter?: boolean;
+  /** Internal targeted-edit option: guards still run for identical content. */
+  skipUnchanged?: boolean;
   vault: Vault;
   /** Vault-relative path with forward slashes, ending in .md */
   relativePath: string;
@@ -200,6 +212,9 @@ export async function writeNote(input: WriteNoteInput): Promise<WriteResult> {
   const { vault, relativePath, content, registry } = input;
   const frontmatter = input.frontmatter ?? null;
   const clientId = input.clientId ?? UNKNOWN_CLIENT_ID;
+  const validity = parseValidity(frontmatter ?? {});
+  if (!validity.ok)
+    return { ok: false, reason: "invalid_validity", message: `invalid_validity: ${validity.key}` };
 
   // Plan 02-03b — defense-in-depth entry-point Guard. Runs BEFORE the
   // write_enabled check and BEFORE any FS read. When the optional registry
@@ -233,6 +248,9 @@ export async function writeNote(input: WriteNoteInput): Promise<WriteResult> {
   const created = existing === null;
 
   if (existing !== null) {
+    const lock = getDocumentLockConflict(existing.frontmatter);
+    if (lock) return lock;
+
     if (input.expectedHash === undefined) {
       return {
         ok: false,
@@ -267,10 +285,29 @@ export async function writeNote(input: WriteNoteInput): Promise<WriteResult> {
   // (see gray-matter/lib/stringify.js), but @types/gray-matter's option type
   // doesn't list the js-yaml keys — hence the narrow cast.
   const yamlDumpOptions = { lineWidth: -1 } as Parameters<typeof matter.stringify>[2];
+  if (
+    input.skipUnchanged &&
+    existing !== null &&
+    existing.hash === computeHash(content, frontmatter)
+  ) {
+    return {
+      ok: true,
+      newHash: existing.hash,
+      noteId: vault.db.notes.getByPath(relativePath)?.id ?? 0,
+      created: false,
+    };
+  }
+
+  const preservePrefix =
+    input.preserveFrontmatter &&
+    existing !== null &&
+    computeHash("", existing.frontmatter) === computeHash("", frontmatter);
   const fileText =
-    frontmatter !== null && Object.keys(frontmatter).length > 0
-      ? matter.stringify(content, frontmatter, yamlDumpOptions)
-      : content;
+    preservePrefix && existing !== null
+      ? existing.raw.slice(0, existing.raw.length - existing.content.length) + content
+      : frontmatter !== null && Object.keys(frontmatter).length > 0
+        ? matter.stringify(content, frontmatter, yamlDumpOptions)
+        : content;
 
   input.onBeforeFsWrite?.();
   await atomicWriteFile(absPath, fileText);
@@ -306,6 +343,17 @@ export async function writeNote(input: WriteNoteInput): Promise<WriteResult> {
         wordCount: countWords(written.content),
       });
       vault.db.aliases.setForNote(up.id, extractAliases(written.frontmatter));
+      vault.db.observations.replaceForNote(up.id, written.hash, parseObservations(written.content));
+      if (input.skipUnchanged || previousHash !== written.hash) {
+        // Every changed canonical write must invalidate old derived citations.
+        // Invalidate in the same transaction; a failed refresh remains
+        // repairable by normal single/full/catchup indexing.
+        vault.db.notes.invalidateIndex(up.id);
+        vault.db.sections.deleteByNote(up.id);
+        vault.db.chunks.deleteByNote(up.id);
+        vault.db.wikilinks.deleteByNote(up.id);
+        vault.db.edges.deleteByNote(up.id);
+      }
       vault.db.audit.recordWrite({
         noteId: up.id,
         op: created ? "create" : "update",
@@ -387,6 +435,9 @@ export async function deleteNote(input: DeleteNoteInput): Promise<WriteResult> {
       message: `File "${relativePath}" does not exist — nothing to delete.`,
     };
   }
+  const lock = getDocumentLockConflict(existing.frontmatter);
+  if (lock) return lock;
+
   if (existing.hash !== expectedHash) {
     return {
       ok: false,

@@ -1,0 +1,30 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/server/assembly-projection.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/server/assembly-projection.test.ts (2 tests | 1 failed) 43ms
+     × publishes additive projection options and transmits a smaller metadata response 30ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/server/assembly-projection.test.ts > v2 assembly projection through MCP > publishes additive projection options and transmits a smaller metadata response
+AssertionError: expected { …(3) } to have property "projection"
+ ❯ src/server/assembly-projection.test.ts:43:47
+     41|   it("publishes additive projection options and transmits a smaller me…
+     42|     const listed = (await client.listTools()).tools;
+     43|     expect(listed[0]!.inputSchema.properties).toHaveProperty("projecti…
+       |                                               ^
+     44|     const full = await call({}); const metadata = await call({ project…
+     45|     expect(metadata.text).not.toContain("LINK_BODY_SECRET");
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 1 passed (2)
+   Start at  15:48:42
+   Duration  632ms (transform 282ms, setup 0ms, import 499ms, tests 43ms, environment 0ms)

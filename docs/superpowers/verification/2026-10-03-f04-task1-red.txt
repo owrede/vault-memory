@@ -1,0 +1,219 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/observations/parse.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/observations/parse.test.ts (11 tests | 9 failed) 10ms
+     × anchors statements and ignores fenced examples 5ms
+     × keeps indented continuation and nested explicit items distinct 1ms
+     × retains unknown explicit categories with CRLF source lines 1ms
+     × ignores code fenced with ``` 0ms
+     × ignores code fenced with ~~~~ 0ms
+     × ignores code fenced with   ````md 1ms
+     × does not open an invalid backtick info fence 0ms
+     × ignores standalone indented code but permits nested list depth 0ms
+     × never attaches unindented prose or unmarked sibling content 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 9 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/observations/parse.test.ts > explicit categorized observations > anchors statements and ignores fenced examples
+AssertionError: expected [] to deeply equal [ { category: 'preference', …(3) } ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "category": "preference",
+-     "line_end": 2,
+-     "line_start": 2,
+-     "text": "Async writing",
+-   },
+- ]
++ []
+
+ ❯ src/observations/parse.test.ts:6:8
+      4|   it("anchors statements and ignores fenced examples", () => {
+      5|     expect(parseObservations("# Oliver\n- [preference] Async writing\n…
+      6|       .toEqual([{ category: "preference", text: "Async writing", line_…
+       |        ^
+      7|   });
+      8|   it("keeps indented continuation and nested explicit items distinct",…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/9]⎯
+
+ FAIL  |unit| src/observations/parse.test.ts > explicit categorized observations > keeps indented continuation and nested explicit items distinct
+AssertionError: expected [] to deeply equal [ Array(2) ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "category": "decision",
+-     "line_end": 2,
+-     "line_start": 1,
+-     "text": "First
+- continuation",
+-   },
+-   {
+-     "category": "fact",
+-     "line_end": 4,
+-     "line_start": 3,
+-     "text": "Nested
+- extra",
+-   },
+- ]
++ []
+
+ ❯ src/observations/parse.test.ts:10:8
+      8|   it("keeps indented continuation and nested explicit items distinct",…
+      9|     expect(parseObservations("- [decision] First\n  continuation\n  - …
+     10|       .toEqual([
+       |        ^
+     11|         { category: "decision", text: "First\ncontinuation", line_star…
+     12|         { category: "fact", text: "Nested\nextra", line_start: 3, line…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/9]⎯
+
+ FAIL  |unit| src/observations/parse.test.ts > explicit categorized observations > retains unknown explicit categories with CRLF source lines
+AssertionError: expected [] to deeply equal [ { category: 'custom_kind-2', …(3) } ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "category": "custom_kind-2",
+-     "line_end": 3,
+-     "line_start": 2,
+-     "text": "Specific claim
+- continued",
+-   },
+- ]
++ []
+
+ ❯ src/observations/parse.test.ts:17:8
+     15|   it("retains unknown explicit categories with CRLF source lines", () …
+     16|     expect(parseObservations("Title\r\n+ [custom_kind-2] Specific clai…
+     17|       .toEqual([{ category: "custom_kind-2", text: "Specific claim\nco…
+       |        ^
+     18|   });
+     19|   it("ignores checkboxes, empty entries and unmarked text", () => {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/9]⎯
+
+ FAIL  |unit| src/observations/parse.test.ts > explicit categorized observations > ignores code fenced with ```
+ FAIL  |unit| src/observations/parse.test.ts > explicit categorized observations > ignores code fenced with ~~~~
+ FAIL  |unit| src/observations/parse.test.ts > explicit categorized observations > ignores code fenced with   ````md
+AssertionError: expected [] to deeply equal [ { category: 'fact', …(3) } ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "category": "fact",
+-     "line_end": 4,
+-     "line_start": 4,
+-     "text": "Real",
+-   },
+- ]
++ []
+
+ ❯ src/observations/parse.test.ts:26:8
+     24|     const close = marker.includes("~") ? "~~~~" : marker.includes("```…
+     25|     expect(parseObservations(`${marker}\n- [fact] Not real\n${close}\n…
+     26|       .toEqual([{ category: "fact", text: "Real", line_start: 4, line_…
+       |        ^
+     27|   });
+     28|   it("ignores short closers inside a longer fence", () => {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/9]⎯
+
+ FAIL  |unit| src/observations/parse.test.ts > explicit categorized observations > does not open an invalid backtick info fence
+AssertionError: expected [] to deeply equal [ { category: 'fact', …(3) } ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "category": "fact",
+-     "line_end": 2,
+-     "line_start": 2,
+-     "text": "Real",
+-   },
+- ]
++ []
+
+ ❯ src/observations/parse.test.ts:33:8
+     31|   it("does not open an invalid backtick info fence", () => {
+     32|     expect(parseObservations("```bad`info\n- [fact] Real\n"))
+     33|       .toEqual([{ category: "fact", text: "Real", line_start: 2, line_…
+       |        ^
+     34|   });
+     35|   it("ignores standalone indented code but permits nested list depth",…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/9]⎯
+
+ FAIL  |unit| src/observations/parse.test.ts > explicit categorized observations > ignores standalone indented code but permits nested list depth
+AssertionError: expected [] to deeply equal [ { category: 'fact', …(3) } ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "category": "fact",
+-     "line_end": 3,
+-     "line_start": 3,
+-     "text": "Nested",
+-   },
+- ]
++ []
+
+ ❯ src/observations/parse.test.ts:37:8
+     35|   it("ignores standalone indented code but permits nested list depth",…
+     36|     expect(parseObservations("    - [fact] Code\n- Parent\n    - [fact…
+     37|       .toEqual([{ category: "fact", text: "Nested", line_start: 3, lin…
+       |        ^
+     38|   });
+     39|   it("never attaches unindented prose or unmarked sibling content", ()…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/9]⎯
+
+ FAIL  |unit| src/observations/parse.test.ts > explicit categorized observations > never attaches unindented prose or unmarked sibling content
+AssertionError: expected [] to deeply equal [ { category: 'fact', …(3) } ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "category": "fact",
+-     "line_end": 1,
+-     "line_start": 1,
+-     "text": "Real",
+-   },
+- ]
++ []
+
+ ❯ src/observations/parse.test.ts:41:8
+     39|   it("never attaches unindented prose or unmarked sibling content", ()…
+     40|     expect(parseObservations("- [fact] Real\nUnrelated\n- Other\n  con…
+     41|       .toEqual([{ category: "fact", text: "Real", line_start: 1, line_…
+       |        ^
+     42|   });
+     43| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/9]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  9 failed | 2 passed (11)
+   Start at  15:56:49
+   Duration  143ms (transform 17ms, setup 0ms, import 25ms, tests 10ms, environment 0ms)

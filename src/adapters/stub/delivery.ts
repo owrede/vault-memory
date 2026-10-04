@@ -35,6 +35,7 @@ import { parseSourceHandle } from "../registry.js";
 import { validateAgentWrite } from "../../memory/validator.js";
 import { getContract } from "../../memory/contract/index.js";
 import type { MemorySinkRegistry } from "../../memory/registry.js";
+import { getDocumentLockConflict } from "../delivery/document-lock.js";
 
 function fnv1a(s: string): string {
   // Tiny deterministic hash so write/update results carry a stable
@@ -108,6 +109,8 @@ export class StubDelivery implements DeliveryAdapter {
   async write(id: DocId, doc: Partial<Document>, opts?: WriteOptions): Promise<WriteResult> {
     const guard = this.preflight(id, doc, opts);
     if (guard) return guard;
+    const lock = getDocumentLockConflict(this.docs.get(id)?.properties);
+    if (lock) return lock;
     // hashProtected="none" ⇒ expectedHash is ignored by contract. The
     // conformance test gates this assertion on the capability descriptor.
     const created = !this.docs.has(id);
@@ -122,6 +125,11 @@ export class StubDelivery implements DeliveryAdapter {
       hash: "",
     };
     merged.hash = computeStubHash(merged);
+    const existing = this.docs.get(id);
+    if (opts?.skipUnchanged && existing?.hash === merged.hash) {
+      return { ok: true, doc_id: id, newHash: existing.hash, created: false };
+    }
+    opts?.onBeforeWrite?.();
     this.docs.set(id, merged);
     return { ok: true, doc_id: id, newHash: merged.hash, created };
   }
@@ -133,6 +141,8 @@ export class StubDelivery implements DeliveryAdapter {
     if (!existing) {
       return { ok: false, reason: "not_found", message: `Document not found: ${id}` };
     }
+    const lock = getDocumentLockConflict(existing.properties);
+    if (lock) return lock;
     const next: Document = {
       ...existing,
       ...patch,
@@ -142,11 +152,15 @@ export class StubDelivery implements DeliveryAdapter {
       hash: "",
     };
     next.hash = computeStubHash(next);
+    if (opts?.skipUnchanged && next.hash === existing.hash) {
+      return { ok: true, doc_id: id, newHash: existing.hash };
+    }
+    opts?.onBeforeWrite?.();
     this.docs.set(id, next);
     return { ok: true, doc_id: id, newHash: next.hash };
   }
 
-  async delete(id: DocId, _opts?: WriteOptions): Promise<DeleteResult> {
+  async delete(id: DocId, opts?: WriteOptions): Promise<DeleteResult> {
     // Hard-deletion of memory documents is forbidden in v2.0.0
     // (parity with ObsidianFsDelivery; see Plan 02-03 RESEARCH Pitfall 5).
     if (this.memorySinkRegistry) {
@@ -164,6 +178,9 @@ export class StubDelivery implements DeliveryAdapter {
         };
       }
     }
+    const lock = getDocumentLockConflict(this.docs.get(id)?.properties);
+    if (lock) return lock;
+    if (this.docs.has(id)) opts?.onBeforeWrite?.();
     const existed = this.docs.delete(id);
     if (!existed) {
       return { ok: false, reason: "not_found", message: `Document not found: ${id}` };

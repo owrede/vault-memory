@@ -1,0 +1,9 @@
+# F09 Lokale ONNX-Embeddings — TDD und Abnahme
+
+Core dd67605, Integration 6774c21; Reviewkorrekturen 8c879d0 und 3e0dbbd. Lokale CPU-Inferenz mit explizitem Manifest, SHA256-Assetprüfung, Pfadbegrenzung, Masked Mean Pooling, Normalisierung, Query-/Passage-Präfixen und eigener Provider/Modell/Revision/Dimensionsidentität. Kein automatischer Download. ContextFit und reine Quellleseaufrufe benötigen keine ONNX-Assets.
+
+RED: acht falsche Kernassertionen (ein bestehender Namespacefall bereits grün); echte Integration reproduzierte fehlenden Loader, falsche Modellmetadaten und Source-Read-Fehler bei fehlenden Assets. Review: bare Namenskollision, Single-Index-Shadowverlust, veraltete aktive Identität nach Switch und Full-Index-Secondary-Routing. Regressionen mit nativem ONNX, echter SQLite und lokalem HTTP-Fixtureserver liefen vor den Korrekturen rot. Der Full-Index-Test erwartete Distanz 0 und erhielt 0.876; nach Kanonisierung grün.
+
+Vollständige Regression nach erster Reviewkorrektur: 2056 bestanden,17 übersprungen (enthält F10-Core); TypeScript, Adapter-Lint und Build erfolgreich. Zusätzlicher Secondary-Test:9 bestanden. Unabhängige endgültige Prüfung3e0dbbd:80 bestanden,1 optionaler Qualitätstest übersprungen; keine offenen Findings. Letzte gemeinsame Gesamtprüfung wird im abschließenden F11-Nachweis dokumentiert.
+
+Die kleine originale MIT-Testfixture prüft Runtime, Form, Routing, Prefix und Speicheridentität; sie belegt keine semantische Modellqualität. Ein optionaler deutschsprachiger Qualitätslauf benötigt VM_ONNX_QUALITY_MODEL_PATH und ein lokal gepinntes kompatibles Modell; dieser Lauf wurde nicht aktiviert. Vorhandene Ollama-Vektoren bleiben in ihrer bisherigen Identität. ONNX für vorhandene Vektoren über expliziten Shadow-Aufbau und Switch migrieren. Modelle mit externen ONNX-Tensordateien werden nicht unterstützt.

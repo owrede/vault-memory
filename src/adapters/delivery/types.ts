@@ -128,10 +128,12 @@ export interface WriteConflict {
   reason:
     | "hash_mismatch"
     | "permission_denied"
+    | "document_locked"
     | "not_found"
     // Phase 2 — Guard A / B / sentinel / v1 entry-point refusals:
     | "missing_provenance"
     | "invalid_provenance"
+    | "invalid_validity"
     | "supersede_mismatch"
     | "agent_write_outside_sink"
     | "non_agent_write_inside_sink"
@@ -190,6 +192,10 @@ export type DeleteResult = DeleteSuccess | WriteConflict;
  * a successful write would.
  */
 export interface WriteOptions {
+  /** After all guards/OCC, return success without audit or mutation if identical. */
+  skipUnchanged?: boolean;
+  /** Called immediately before an actual backing-store mutation, after guards. */
+  onBeforeWrite?: () => void;
   /** OCC token — refuse write if on-store hash differs. */
   expectedHash?: string;
   /** Audit-log attribution; defaults at constructor level (D-02). */

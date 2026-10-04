@@ -1,0 +1,73 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/embeddings/provider.integration.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/embeddings/provider.integration.test.ts (2 tests | 2 failed) 7ms
+   × uses local native ONNX inference with deterministic order, shape and prefix 3ms
+   × never downloads missing assets or accepts unpinned models 3ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/embeddings/provider.integration.test.ts > uses local native ONNX inference with deterministic order, shape and prefix
+AssertionError: expected 0.7071067811865475 to be less than 0.7071067811865475
+ ❯ src/embeddings/provider.integration.test.ts:13:24
+     11|  try{expect(await provider.embed([])).toEqual([]);const result=await p…
+     12|  expect(result).toHaveLength(2);for(const v of result){expect(v).toHav…
+     13|  expect(result[0]![0]).toBeLessThan(result[1]![0]);expect(await provid…
+       |                        ^
+     14|  expect((await provider.embed(["Alpha"],"query"))[0]).not.toEqual(resu…
+     15|  expect(await provider.embed(["Alpha ".repeat(50)])).toEqual(await pro…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  |unit| src/embeddings/provider.integration.test.ts > never downloads missing assets or accepts unpinned models
+AssertionError: promise resolved "OnnxEmbeddingProvider{ …(3) }" instead of rejecting
+
+- Expected
++ Received
+
+- Error {
+-   "message": "rejected promise",
++ OnnxEmbeddingProvider {
++   "closed": false,
++   "identity": {
++     "dimensions": 2,
++     "model": "stub",
++     "provider": "onnx",
++     "revision": "stub",
++   },
++   "runtime": {
++     "close": [Function close],
++     "encode": [Function encode],
++     "identity": {
++       "dimensions": 2,
++       "model": "stub",
++       "provider": "onnx",
++       "revision": "stub",
++     },
++     "maxTokens": 8,
++     "passagePrefix": "",
++     "queryPrefix": "",
++     "run": [Function run],
++   },
+  }
+
+ ❯ src/embeddings/provider.integration.test.ts:21:64
+     19| });
+     20| it("never downloads missing assets or accepts unpinned models",async()…
+     21|  await expect(loadOnnxProvider("/missing-local-model-fixture")).reject…
+       |                                                                ^
+     22| });
+     23|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed (2)
+   Start at  18:09:18
+   Duration  138ms (transform 21ms, setup 0ms, import 30ms, tests 7ms, environment 0ms)

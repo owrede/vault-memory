@@ -1,0 +1,136 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/assembly/projection.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/assembly/projection.test.ts (11 tests | 8 failed) 9ms
+     × projects abcdef with budget 3 5ms
+     × projects abc with budget 0 1ms
+     × projects A😀B with budget 2 0ms
+     × projects A😀B with budget 3 0ms
+     × rejects invalid budget -1 0ms
+     × rejects invalid budget NaN 1ms
+     × rejects invalid budget Infinity 0ms
+     × rejects invalid budget 0.5 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 8 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/assembly/projection.test.ts > context character budget > projects abcdef with budget 3
+AssertionError: expected { text: 'abcdef', …(2) } to deeply equal { text: 'abc', truncated: true, …(1) }
+
+- Expected
++ Received
+
+  {
+    "original_chars": 6,
+-   "text": "abc",
+-   "truncated": true,
++   "text": "abcdef",
++   "truncated": false,
+  }
+
+ ❯ src/assembly/projection.test.ts:14:42
+     12|     ["😀", 2, { text: "😀", truncated: false, original_chars: 2 }],
+     13|   ] as const)("projects %s with budget %s", (text, budget, expected) =…
+     14|     expect(projectContext(text, budget)).toEqual(expected);
+       |                                          ^
+     15|   });
+     16|   it.each([-1, NaN, Infinity, 0.5])("rejects invalid budget %s", (budg…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/8]⎯
+
+ FAIL  |unit| src/assembly/projection.test.ts > context character budget > projects abc with budget 0
+AssertionError: expected { text: 'abc', truncated: false, …(1) } to deeply equal { text: '', truncated: true, …(1) }
+
+- Expected
++ Received
+
+  {
+    "original_chars": 3,
+-   "text": "",
+-   "truncated": true,
++   "text": "abc",
++   "truncated": false,
+  }
+
+ ❯ src/assembly/projection.test.ts:14:42
+     12|     ["😀", 2, { text: "😀", truncated: false, original_chars: 2 }],
+     13|   ] as const)("projects %s with budget %s", (text, budget, expected) =…
+     14|     expect(projectContext(text, budget)).toEqual(expected);
+       |                                          ^
+     15|   });
+     16|   it.each([-1, NaN, Infinity, 0.5])("rejects invalid budget %s", (budg…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/8]⎯
+
+ FAIL  |unit| src/assembly/projection.test.ts > context character budget > projects A😀B with budget 2
+AssertionError: expected { Object (text, truncated, ...) } to deeply equal { text: 'A', truncated: true, …(1) }
+
+- Expected
++ Received
+
+  {
+    "original_chars": 4,
+-   "text": "A",
+-   "truncated": true,
++   "text": "A😀B",
++   "truncated": false,
+  }
+
+ ❯ src/assembly/projection.test.ts:14:42
+     12|     ["😀", 2, { text: "😀", truncated: false, original_chars: 2 }],
+     13|   ] as const)("projects %s with budget %s", (text, budget, expected) =…
+     14|     expect(projectContext(text, budget)).toEqual(expected);
+       |                                          ^
+     15|   });
+     16|   it.each([-1, NaN, Infinity, 0.5])("rejects invalid budget %s", (budg…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/8]⎯
+
+ FAIL  |unit| src/assembly/projection.test.ts > context character budget > projects A😀B with budget 3
+AssertionError: expected { Object (text, truncated, ...) } to deeply equal { text: 'A😀', truncated: true, …(1) }
+
+- Expected
++ Received
+
+  {
+    "original_chars": 4,
+-   "text": "A😀",
+-   "truncated": true,
++   "text": "A😀B",
++   "truncated": false,
+  }
+
+ ❯ src/assembly/projection.test.ts:14:42
+     12|     ["😀", 2, { text: "😀", truncated: false, original_chars: 2 }],
+     13|   ] as const)("projects %s with budget %s", (text, budget, expected) =…
+     14|     expect(projectContext(text, budget)).toEqual(expected);
+       |                                          ^
+     15|   });
+     16|   it.each([-1, NaN, Infinity, 0.5])("rejects invalid budget %s", (budg…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/8]⎯
+
+ FAIL  |unit| src/assembly/projection.test.ts > context character budget > rejects invalid budget -1
+ FAIL  |unit| src/assembly/projection.test.ts > context character budget > rejects invalid budget NaN
+ FAIL  |unit| src/assembly/projection.test.ts > context character budget > rejects invalid budget Infinity
+ FAIL  |unit| src/assembly/projection.test.ts > context character budget > rejects invalid budget 0.5
+AssertionError: expected function to throw an error, but it didn't
+ ❯ src/assembly/projection.test.ts:17:49
+     15|   });
+     16|   it.each([-1, NaN, Infinity, 0.5])("rejects invalid budget %s", (budg…
+     17|     expect(() => projectContext("abc", budget)).toThrow(RangeError);
+       |                                                 ^
+     18|   });
+     19| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/8]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  8 failed | 3 passed (11)
+   Start at  15:24:32
+   Duration  128ms (transform 14ms, setup 0ms, import 22ms, tests 9ms, environment 0ms)

@@ -858,6 +858,42 @@
           "query"
         ],
         "properties": {
+          "as_of": {
+            "type": "string",
+            "description": "Business validity at an ISO timestamp with explicit timezone; defaults to current time."
+          },
+          "include_observations": {
+            "type": "boolean",
+            "description": "Include explicitly categorized statements when the derived source hash is fresh; preserves provenance and shares the body budget."
+          },
+          "projection": {
+            "type": "string",
+            "enum": [
+              "full",
+              "metadata",
+              "sections"
+            ],
+            "description": "Optional v2 projection; sections requires heading_paths. Defaults to the legacy response."
+          },
+          "max_chars": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Global UTF-16 body character budget. Sections defaults to 6000; zero excludes body text. Metadata is always body-free."
+          },
+          "heading_paths": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "description": "Exact heading paths on the anchor, or filters on section-search results."
+          },
           "query": {
             "type": "string"
           },
@@ -902,6 +938,15 @@
           "query"
         ],
         "properties": {
+          "include_superseded": {
+            "type": "boolean",
+            "default": false,
+            "description": "Explicit historical opt-in for superseded memories."
+          },
+          "as_of": {
+            "type": "string",
+            "description": "Business validity at an ISO timestamp with explicit timezone; defaults to current time."
+          },
           "query": {
             "type": "string",
             "description": "Natural-language query; routes through hybrid (semantic + BM25) search."
@@ -957,6 +1002,42 @@
           "doc_id"
         ],
         "properties": {
+          "as_of": {
+            "type": "string",
+            "description": "Business validity at an ISO timestamp with explicit timezone; defaults to current time."
+          },
+          "include_observations": {
+            "type": "boolean",
+            "description": "Include explicitly categorized statements when the derived source hash is fresh; preserves provenance and shares the body budget."
+          },
+          "projection": {
+            "type": "string",
+            "enum": [
+              "full",
+              "metadata",
+              "sections"
+            ],
+            "description": "Optional v2 projection; sections requires heading_paths. Defaults to the legacy response."
+          },
+          "max_chars": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Global UTF-16 body character budget. Sections defaults to 6000; zero excludes body text. Metadata is always body-free."
+          },
+          "heading_paths": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "description": "Exact heading paths on the anchor, or filters on section-search results."
+          },
           "doc_id": {
             "type": "string",
             "description": "Opaque DocId (obsidian-fs://<vault>/<path>) of the anchor document."
@@ -1010,7 +1091,9 @@
             "enum": [
               "forward",
               "backward",
-              "both"
+              "both",
+              "outgoing",
+              "incoming"
             ],
             "default": "both",
             "description": "Edge traversal direction; default 'both'."
@@ -1027,6 +1110,14 @@
               ]
             },
             "description": "Optional filter on edge types; default = all four types."
+          },
+          "rels": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "description": "Domain role filter; omitted = all, empty = no edges."
           },
           "filter_properties": {
             "type": "object",
@@ -1098,6 +1189,38 @@
           "key"
         ],
         "properties": {
+          "include_observations": {
+            "type": "boolean",
+            "description": "Include explicitly categorized statements when the derived source hash is fresh; preserves provenance and shares the body budget."
+          },
+          "projection": {
+            "type": "string",
+            "enum": [
+              "full",
+              "metadata",
+              "sections"
+            ],
+            "description": "Optional v2 projection; sections requires heading_paths. Defaults to the legacy response."
+          },
+          "max_chars": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991,
+            "description": "Global UTF-16 body character budget. Sections defaults to 6000; zero excludes body text. Metadata is always body-free."
+          },
+          "heading_paths": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "description": "Exact heading paths on the anchor, or filters on section-search results."
+          },
           "type": {
             "type": "string",
             "description": "Exact-match value for properties.type on the anchor document (e.g. 'Person', 'Project', 'Meeting'). No fuzzy / synonym matching."

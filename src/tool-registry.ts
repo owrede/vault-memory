@@ -38,6 +38,32 @@
 //     pass through both the top-level `description` and per-field
 //     `.describe()` chains).
 
+const PROJECTION_PROPERTIES = {
+  include_observations: {
+    type: "boolean",
+    description:
+      "Include explicitly categorized statements when the derived source hash is fresh; preserves provenance and shares the body budget.",
+  },
+  projection: {
+    type: "string",
+    enum: ["full", "metadata", "sections"],
+    description:
+      "Optional v2 projection; sections requires heading_paths. Defaults to the legacy response.",
+  },
+  max_chars: {
+    type: "integer",
+    minimum: 0,
+    maximum: Number.MAX_SAFE_INTEGER,
+    description:
+      "Global UTF-16 body character budget. Sections defaults to 6000; zero excludes body text. Metadata is always body-free.",
+  },
+  heading_paths: {
+    type: "array",
+    minItems: 1,
+    items: { type: "array", minItems: 1, items: { type: "string", minLength: 1 } },
+    description: "Exact heading paths on the anchor, or filters on section-search results.",
+  },
+} as const;
 export const TOOLS = [
   {
     name: "list_vaults",
@@ -742,6 +768,12 @@ export const TOOLS = [
       type: "object",
       required: ["query"],
       properties: {
+        as_of: {
+          type: "string",
+          description:
+            "Business validity at an ISO timestamp with explicit timezone; defaults to current time.",
+        },
+        ...PROJECTION_PROPERTIES,
         query: { type: "string" },
         limit: {
           type: "integer",
@@ -789,6 +821,16 @@ export const TOOLS = [
       type: "object",
       required: ["query"],
       properties: {
+        include_superseded: {
+          type: "boolean",
+          default: false,
+          description: "Explicit historical opt-in for superseded memories.",
+        },
+        as_of: {
+          type: "string",
+          description:
+            "Business validity at an ISO timestamp with explicit timezone; defaults to current time.",
+        },
         query: {
           type: "string",
           description: "Natural-language query; routes through hybrid (semantic + BM25) search.",
@@ -848,6 +890,12 @@ export const TOOLS = [
       type: "object",
       required: ["doc_id"],
       properties: {
+        as_of: {
+          type: "string",
+          description:
+            "Business validity at an ISO timestamp with explicit timezone; defaults to current time.",
+        },
+        ...PROJECTION_PROPERTIES,
         doc_id: {
           type: "string",
           description: "Opaque DocId (obsidian-fs://<vault>/<path>) of the anchor document.",
@@ -904,7 +952,7 @@ export const TOOLS = [
         },
         direction: {
           type: "string",
-          enum: ["forward", "backward", "both"],
+          enum: ["forward", "backward", "both", "outgoing", "incoming"],
           default: "both",
           description: "Edge traversal direction; default 'both'.",
         },
@@ -915,6 +963,11 @@ export const TOOLS = [
             enum: ["wikilink", "mention", "frontmatter-ref", "hyperlink"],
           },
           description: "Optional filter on edge types; default = all four types.",
+        },
+        rels: {
+          type: "array",
+          items: { type: "string", minLength: 1 },
+          description: "Domain role filter; omitted = all, empty = no edges.",
         },
         filter_properties: {
           type: "object",
@@ -1011,6 +1064,7 @@ export const TOOLS = [
       type: "object",
       required: ["type", "key"],
       properties: {
+        ...PROJECTION_PROPERTIES,
         type: {
           type: "string",
           description:
@@ -1130,7 +1184,30 @@ export type ToolName = (typeof TOOLS)[number]["name"];
 // TOOL_SCHEMAS — Zod 4 raw shapes per tool (passed to McpServer.registerTool)
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { timestampMillis } from "./memory/valid-time.js";
 import { z, type ZodRawShape } from "zod";
+const PROJECTION_SCHEMA = {
+  include_observations: z
+    .boolean()
+    .optional()
+    .describe(PROJECTION_PROPERTIES.include_observations.description),
+  projection: z
+    .enum(["full", "metadata", "sections"])
+    .optional()
+    .describe(PROJECTION_PROPERTIES.projection.description),
+  max_chars: z
+    .number()
+    .int()
+    .min(0)
+    .max(Number.MAX_SAFE_INTEGER)
+    .optional()
+    .describe(PROJECTION_PROPERTIES.max_chars.description),
+  heading_paths: z
+    .array(z.array(z.string().min(1)).min(1))
+    .min(1)
+    .optional()
+    .describe(PROJECTION_PROPERTIES.heading_paths.description),
+};
 
 /**
  * Canonical DocId pattern (mirrors `DOC_ID_PATTERN` in
@@ -1446,6 +1523,11 @@ export const TOOL_SCHEMAS = {
 
   // ── Phase 3 assembly tools (Plan 03-03) ─────────────────────────────────
   search_sections: {
+    as_of: z
+      .string()
+      .refine((value) => timestampMillis(value) !== null, "invalid as_of")
+      .optional(),
+    ...PROJECTION_SCHEMA,
     query: z.string().min(1),
     limit: z.number().int().positive().max(50).optional().default(10),
     vaults: z.array(z.string().min(1)).optional(),
@@ -1459,6 +1541,11 @@ export const TOOL_SCHEMAS = {
 
   // ── Phase 2 memory tools (Plan 02-05) ───────────────────────────────────
   recall: {
+    include_superseded: z.boolean().optional().default(false),
+    as_of: z
+      .string()
+      .refine((value) => timestampMillis(value) !== null, "invalid as_of")
+      .optional(),
     query: z
       .string()
       .min(1)
@@ -1501,6 +1588,11 @@ export const TOOL_SCHEMAS = {
 
   // ── Phase 3 assembly tools (Plan 03-04 / ASM-01) ────────────────────────
   get_document_bundle: {
+    as_of: z
+      .string()
+      .refine((value) => timestampMillis(value) !== null, "invalid as_of")
+      .optional(),
+    ...PROJECTION_SCHEMA,
     doc_id: z
       .string()
       .regex(DOC_ID_PATTERN)
@@ -1532,7 +1624,7 @@ export const TOOL_SCHEMAS = {
       .union([z.literal(1), z.literal(2)])
       .describe("Hop cap (1 or 2). v2.0.0 hard-caps at 2."),
     direction: z
-      .enum(["forward", "backward", "both"])
+      .enum(["forward", "backward", "both", "outgoing", "incoming"])
       .optional()
       .default("both")
       .describe("Edge traversal direction; default 'both'."),
@@ -1540,6 +1632,10 @@ export const TOOL_SCHEMAS = {
       .array(z.enum(["wikilink", "mention", "frontmatter-ref", "hyperlink"]))
       .optional()
       .describe("Optional filter on edge types; default = all four types."),
+    rels: z
+      .array(z.string().min(1))
+      .optional()
+      .describe("Domain role filter; omitted = all, empty = no edges."),
     filter_properties: z
       .record(z.string(), z.unknown())
       .optional()
@@ -1576,6 +1672,7 @@ export const TOOL_SCHEMAS = {
 
   // ── Phase 3 assembly tools (Plan 03-06) ─────────────────────────────────
   assemble_dossier: {
+    ...PROJECTION_SCHEMA,
     type: z
       .string()
       .min(1)

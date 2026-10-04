@@ -1,0 +1,71 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/embeddings/onnx.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/embeddings/onnx.test.ts (9 tests | 8 failed) 9ms
+   × ignores padding and normalizes pooled vectors 4ms
+   × averages only attended tokens in order 1ms
+   × rejects invalid output and shapes 1ms
+   × rejects invalid output and shapes 0ms
+   × rejects invalid output and shapes 0ms
+   × rejects invalid output and shapes 0ms
+   × rejects invalid output and shapes 0ms
+   × rejects invalid output and shapes 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 8 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/embeddings/onnx.test.ts > ignores padding and normalizes pooled vectors
+AssertionError: expected [] to deeply equal [ 3, 4 ]
+
+- Expected
++ Received
+
+- [
+-   3,
+-   4,
+- ]
++ []
+
+ ❯ src/embeddings/onnx.test.ts:4:117
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/8]⎯
+
+ FAIL  |unit| src/embeddings/onnx.test.ts > averages only attended tokens in order
+AssertionError: expected [] to deeply equal [ 5, 7 ]
+
+- Expected
++ Received
+
+- [
+-   5,
+-   7,
+- ]
++ []
+
+ ❯ src/embeddings/onnx.test.ts:5:108
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/8]⎯
+
+ FAIL  |unit| src/embeddings/onnx.test.ts > rejects invalid output and shapes
+ FAIL  |unit| src/embeddings/onnx.test.ts > rejects invalid output and shapes
+ FAIL  |unit| src/embeddings/onnx.test.ts > rejects invalid output and shapes
+ FAIL  |unit| src/embeddings/onnx.test.ts > rejects invalid output and shapes
+ FAIL  |unit| src/embeddings/onnx.test.ts > rejects invalid output and shapes
+ FAIL  |unit| src/embeddings/onnx.test.ts > rejects invalid output and shapes
+AssertionError: expected [Function] to throw an error
+ ❯ src/embeddings/onnx.test.ts:6:287
+
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/8]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  8 failed | 1 passed (9)
+   Start at  18:04:01
+   Duration  143ms (transform 18ms, setup 0ms, import 27ms, tests 9ms, environment 0ms)

@@ -1,3 +1,4 @@
+import { frontmatterValidity } from "../../memory/valid-time.js";
 import type BetterSqlite3 from "better-sqlite3";
 import type { NoteRow } from "../../types.js";
 
@@ -57,8 +58,8 @@ export class NotesQueries {
     this._selectByPath = db.prepare<[string], NoteRow>("SELECT * FROM notes WHERE path = ?");
     this._selectById = db.prepare<[number], NoteRow>("SELECT * FROM notes WHERE id = ?");
     this._insert = db.prepare(`
-      INSERT INTO notes (path, content, frontmatter, title, hash, body_hash, doc_uri, mtime, word_count, created_at, updated_at)
-      VALUES (@path, @content, @frontmatter, @title, @hash, @body_hash, @doc_uri, @mtime, @word_count, @now, @now)
+      INSERT INTO notes (path, content, frontmatter, title, hash, body_hash, doc_uri, mtime, word_count, created_at, updated_at, valid_from_ms, valid_to_ms, validity_error)
+      VALUES (@path, @content, @frontmatter, @title, @hash, @body_hash, @doc_uri, @mtime, @word_count, @now, @now, @valid_from_ms, @valid_to_ms, @validity_error)
     `);
     // doc_uri uses COALESCE(@doc_uri, doc_uri) so that a caller passing
     // undefined / null PRESERVES the existing value instead of clobbering it.
@@ -73,7 +74,10 @@ export class NotesQueries {
           doc_uri = COALESCE(@doc_uri, doc_uri),
           mtime = @mtime,
           word_count = @word_count,
-          updated_at = @now
+          updated_at = @now,
+          valid_from_ms = @valid_from_ms,
+          valid_to_ms = @valid_to_ms,
+          validity_error = @validity_error
       WHERE id = @id
     `);
     this._delete = db.prepare("DELETE FROM notes WHERE path = ?");
@@ -94,6 +98,7 @@ export class NotesQueries {
   upsertByPath(input: UpsertNoteInput): { id: number; isNew: boolean } {
     const existing = this._selectByPath.get(input.path);
     const now = Date.now();
+    const validity = frontmatterValidity(input.frontmatter);
     // doc_uri resolution: explicit > synthesized-from-vaultName > NULL.
     // NULL is acceptable during the Phase 1 dual-column window — migration
     // 008 backfills it on the next replay, and Phase 3+ flips reads.
@@ -105,6 +110,7 @@ export class NotesQueries {
         return { id: existing.id, isNew: false };
       }
       this._update.run({
+        ...validity,
         id: existing.id,
         content: input.content,
         frontmatter: input.frontmatter,
@@ -121,6 +127,7 @@ export class NotesQueries {
       return { id: existing.id, isNew: false };
     }
     const info = this._insert.run({
+      ...validity,
       path: input.path,
       content: input.content,
       frontmatter: input.frontmatter,
@@ -135,8 +142,24 @@ export class NotesQueries {
     return { id: Number(info.lastInsertRowid), isNew: true };
   }
 
+  hasValidity(): boolean {
+    return !!this.db
+      .prepare(
+        "SELECT 1 FROM notes WHERE valid_from_ms IS NOT NULL OR valid_to_ms IS NOT NULL OR validity_error IS NOT NULL LIMIT 1",
+      )
+      .get();
+  }
   getById(id: number): NoteRow | null {
     return this._selectById.get(id) ?? null;
+  }
+
+  /** Keep canonical file hash while making ordinary index/catchup rebuild
+   * derived data. NULL body_hash already denotes an unindexed/legacy body. */
+  invalidateIndex(noteId: number): void {
+    this.db.prepare("UPDATE notes SET body_hash = NULL WHERE id = ?").run(noteId);
+  }
+  markIndexCurrent(noteId: number, bodyHash: string): void {
+    this.db.prepare("UPDATE notes SET body_hash = ? WHERE id = ?").run(bodyHash, noteId);
   }
 
   getByPath(path: string): NoteRow | null {

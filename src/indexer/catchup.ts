@@ -44,6 +44,7 @@ export async function catchupVault(options: CatchupOptions): Promise<CatchupResu
   });
 
   let reindexed = 0;
+  const repairedNoteIds: number[] = [];
   const knownPaths = new Set<string>();
   // ADR-008: ContextFit vaults reconcile the SQLite layer without embeddings.
   const isContextFit = vault.config.backend === "contextfit";
@@ -56,17 +57,23 @@ export async function catchupVault(options: CatchupOptions): Promise<CatchupResu
     knownPaths.add(parsed.relativePath);
 
     const dbRow = vault.db.notes.getByPath(parsed.relativePath);
-    if (dbRow && dbRow.hash === parsed.hash) {
+    if (
+      dbRow &&
+      dbRow.body_hash !== null &&
+      dbRow.hash === parsed.hash &&
+      vault.db.observations.indexedHash(dbRow.id) === parsed.hash
+    ) {
       continue;
     }
 
     const result = await indexNote({
       vault,
       absolutePath: file,
-      embeddingModel: options.embeddingModel,
+      embeddingModel: options.vault.db.models.getActive()?.name ?? options.embeddingModel,
       ...(isContextFit ? { embeddings: "none" as const } : { ollama: options.ollama }),
     });
     if (result.status === "indexed") {
+      if (result.noteId !== null) repairedNoteIds.push(result.noteId);
       reindexed++;
       log(`catch-up indexed ${parsed.relativePath} (${result.isNew ? "new" : "updated"})`);
     }
@@ -95,6 +102,9 @@ export async function catchupVault(options: CatchupOptions): Promise<CatchupResu
     ).isIngestDirty(vault.config.name);
     if (reindexed > 0 || removed > 0 || dirty) {
       const r = await cf.indexVaultWithContextFit(vault.config, { onProgress: log });
+      if (r.status !== "completed") {
+        for (const id of repairedNoteIds) vault.db.notes.invalidateIndex(id);
+      }
       log(
         r.status === "completed"
           ? `catch-up: ContextFit KB rebuilt (${r.durationMs}ms)`

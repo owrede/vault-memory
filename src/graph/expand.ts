@@ -61,7 +61,7 @@ import type { Vault, VaultManager } from "../vault/index.js";
  *   - `"both"`     — both directions; results merge with shortest-path
  *                    dedup applied per D-07.
  */
-export type ExpandDirection = "forward" | "backward" | "both";
+export type ExpandDirection = "forward" | "backward" | "both" | "outgoing" | "incoming";
 
 /**
  * Input shape for `expand()`. The Zod schema in `tool-registry.ts`
@@ -76,6 +76,8 @@ export interface ExpandOptions {
   direction?: ExpandDirection;
   /** Optional edge-type filter; default = all four types. */
   edge_types?: EdgeType[];
+  /** Explicit domain roles; omitted = all, empty = no edges. */
+  rels?: string[];
   /**
    * Strict-equality predicate on `Document.properties`. No operators.
    * D-08 mirrors Phase 3 dossier convention.
@@ -98,6 +100,10 @@ export interface ViaTrace {
   hop: 1 | 2;
   edge_type: EdgeType;
   direction: "forward" | "backward";
+  rel?: string;
+  line_number?: number | null;
+  source_doc_id?: DocId;
+  source_hash?: string;
 }
 
 /**
@@ -115,7 +121,11 @@ export interface CitationPacketWithVia extends CitationPacket {
  */
 export interface ExpansionResult {
   documents: CitationPacketWithVia[];
-  warnings: Array<{ seed_doc_id: string; reason: "unknown_doc" }>;
+  warnings: Array<{
+    seed_doc_id: string;
+    reason: "unknown_doc" | "stale_relation";
+    source_doc_id?: DocId;
+  }>;
 }
 
 /**
@@ -154,6 +164,7 @@ export function isShorterPath(a: ViaTrace, b: ViaTrace): boolean {
   if (a.edge_type !== b.edge_type) return a.edge_type < b.edge_type;
   // 4) direction — forward beats backward
   if (a.direction !== b.direction) return a.direction === "forward";
+  if (a.rel !== b.rel) return (a.rel ?? "") < (b.rel ?? "");
   return false; // identical → not strictly shorter
 }
 
@@ -230,7 +241,13 @@ export async function expand(deps: ExpandDeps, opts: ExpandOptions): Promise<Exp
     return { documents: [], warnings };
   }
 
-  const direction: ExpandDirection = opts.direction ?? "both";
+  const direction =
+    opts.direction === "outgoing"
+      ? "forward"
+      : opts.direction === "incoming"
+        ? "backward"
+        : (opts.direction ?? "both");
+  const declaringSources = new Map<string, Document | null>();
   const hops = opts.hops;
   const edgeTypeFilter =
     opts.edge_types && opts.edge_types.length > 0 ? opts.edge_types : undefined;
@@ -319,10 +336,12 @@ export async function expand(deps: ExpandDeps, opts: ExpandOptions): Promise<Exp
         for (const node of frontier) {
           const newHop: 1 | 2 = (node.depth + 1) as 1 | 2;
           if (newHop > hops) continue; // depth bound
-          const rows =
-            dir === "forward"
-              ? seed.vault.db.edges.getForwardLinks(node.noteId, edgeTypeFilter)
-              : seed.vault.db.edges.getBacklinks(node.noteId, edgeTypeFilter);
+          const rows = seed.vault.db.edges.getTraversalLinks(
+            node.noteId,
+            dir,
+            edgeTypeFilter,
+            opts.rels,
+          );
           for (const row of rows) {
             // Resolve the neighbor noteId. For forward edges, the
             // neighbor is `target_doc` (null = unresolved hyperlink —
@@ -354,11 +373,57 @@ export async function expand(deps: ExpandDeps, opts: ExpandOptions): Promise<Exp
             // expected behavior (and matches recall/dossier semantics
             // where the query input is never echoed back).
             if (state.seedNoteIdsInVault.has(targetNoteId)) continue;
+            let declaration: Pick<
+              ViaTrace,
+              "rel" | "line_number" | "source_doc_id" | "source_hash"
+            > = {};
+            if (row.rel !== null) {
+              const sourceRow = seed.vault.db.notes.getById(row.sourceNoteId);
+              if (!sourceRow) continue;
+              const sourceId = formatDocId(seed.scheme, seed.vaultName, sourceRow.path);
+              if (!declaringSources.has(sourceId)) {
+                try {
+                  const sourceDoc = await deps
+                    .sourceConnectorFor(seed.vaultName)
+                    .readDocument(sourceId);
+                  declaringSources.set(
+                    sourceId,
+                    sourceRow.body_hash !== null && sourceDoc.hash === sourceRow.hash
+                      ? sourceDoc
+                      : null,
+                  );
+                } catch {
+                  declaringSources.set(sourceId, null);
+                }
+              }
+              const sourceDoc = declaringSources.get(sourceId);
+              if (!sourceDoc) {
+                if (
+                  !warnings.some(
+                    (warning) =>
+                      warning.reason === "stale_relation" && warning.source_doc_id === sourceId,
+                  )
+                )
+                  warnings.push({
+                    seed_doc_id: seed.seedDocId,
+                    source_doc_id: sourceId,
+                    reason: "stale_relation",
+                  });
+                continue;
+              }
+              declaration = {
+                rel: row.rel,
+                line_number: row.lineNumber,
+                source_doc_id: sourceId,
+                source_hash: sourceDoc.hash,
+              };
+            }
             const candidate: ViaTrace = {
               seed_doc_id: seed.seedDocId,
               hop: newHop,
               edge_type: row.type,
               direction: dir,
+              ...declaration,
             };
             const existing = state.visited.get(targetNoteId);
             if (!existing || isShorterPath(candidate, existing.via)) {

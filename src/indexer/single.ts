@@ -11,6 +11,7 @@
 import * as path from "node:path";
 import type { Vault } from "../vault/index.js";
 import type { OllamaClient } from "../ollama/index.js";
+import { providerModel } from "../embeddings/client.js";
 import { parseNote } from "../adapters/source/obsidian-fs/parser.js";
 import { chunkNote } from "../chunker/index.js";
 import { computeChunkIdFragment } from "../chunker/chunk-id.js";
@@ -18,6 +19,7 @@ import { extractAliases, buildSectionsForNote } from "./indexer.js";
 import { WikilinkResolver } from "./resolver.js";
 import { extractAllEdges } from "./extract-edges.js";
 import type { ParsedNote, ParsedWikilink } from "../types.js";
+import { syncObservationIndex } from "../observations/index.js";
 
 export interface IndexNoteOptions {
   vault: Vault;
@@ -61,8 +63,15 @@ export interface IndexNoteResult {
  *     update aliases, persist wikilinks
  */
 export async function indexNote(options: IndexNoteOptions): Promise<IndexNoteResult> {
-  const { vault, absolutePath, embeddingModel, ollama } = options;
-  const secondaryName = options.secondaryEmbeddingModel;
+  const { vault, absolutePath, ollama } = options;
+  const registered = vault.db.models.getByName(options.embeddingModel);
+  const embeddingModel =
+    registered?.provider === "ollama"
+      ? options.embeddingModel
+      : providerModel(ollama, options.embeddingModel).name;
+  const secondaryName = options.secondaryEmbeddingModel
+    ? providerModel(ollama, options.secondaryEmbeddingModel).name
+    : undefined;
 
   // 1. Validate path is inside the vault.
   if (!isInsideVault(absolutePath, vault.config.path)) {
@@ -87,7 +96,8 @@ export async function indexNote(options: IndexNoteOptions): Promise<IndexNoteRes
   const existing = vault.db.notes.getByPath(parsed.relativePath);
 
   // 4. Fast path: hash unchanged → still re-apply aliases idempotently.
-  if (existing && existing.hash === parsed.hash) {
+  if (existing && existing.body_hash !== null && existing.hash === parsed.hash) {
+    syncObservationIndex(vault, existing.id, parsed);
     vault.db.aliases.setForNote(existing.id, extractAliases(parsed.frontmatter));
     return {
       status: "unchanged",
@@ -122,6 +132,7 @@ export async function indexNote(options: IndexNoteOptions): Promise<IndexNoteRes
       wordCount: parsed.wordCount,
     });
     vault.db.aliases.setForNote(upsert.id, extractAliases(parsed.frontmatter));
+    syncObservationIndex(vault, upsert.id, parsed);
     vault.db.wikilinks.deleteByNote(upsert.id);
     // ── Phase 4 / 04-02 / GRA-04 / D-02 ──
     // Clear all typed edges and re-extract via the unified extractor.
@@ -187,6 +198,7 @@ export async function indexNote(options: IndexNoteOptions): Promise<IndexNoteRes
   // while sections still point at them trips a FOREIGN KEY constraint. (This
   // ordering matches the full indexer; single-indexer historically skipped
   // section maintenance — now fixed so live re-index keeps sections correct.)
+  vault.db.notes.invalidateIndex(upsert.id);
   vault.db.sections.deleteByNote(upsert.id);
   vault.db.chunks.deleteByNote(upsert.id);
   vault.db.wikilinks.deleteByNote(upsert.id);
@@ -202,12 +214,16 @@ export async function indexNote(options: IndexNoteOptions): Promise<IndexNoteRes
   const chunks = chunkNote(parsed.indexedContent);
 
   if (chunks.length === 0) {
+    syncObservationIndex(vault, upsert.id, parsed, () => {
+      buildSectionsForNote(vault, upsert.id, parsed.indexedContent, []);
+    });
     insertWikilinks(vault, upsert.id, parsed.wikilinks);
     // ── Phase 4 / 04-02 / GRA-04 / D-02 ──
     // Empty-body branch still gets the full extractor pass: a note
     // with only frontmatter (e.g. a person stub with `owner:` /
     // `attendees:` arrays) can still emit frontmatter-ref edges.
     writeAllEdges(vault, upsert.id, parsed);
+    vault.db.notes.markIndexCurrent(upsert.id, parsed.bodyHash);
     return {
       status: "indexed",
       notePath: parsed.relativePath,
@@ -235,16 +251,10 @@ export async function indexNote(options: IndexNoteOptions): Promise<IndexNoteRes
   // Rebuild this note's sections (was previously skipped by the single-indexer,
   // so live-reindexed notes silently lost their section rows). Runs for BOTH
   // backends — sections power outline/search_sections/bundle and need no
-  // embeddings. Defensive try/catch: one pathological note must not break the
-  // watcher (mirrors the full indexer).
-  try {
+  // embeddings. Publication failures propagate and retain the dirty marker for retry.
+  syncObservationIndex(vault, upsert.id, parsed, () => {
     buildSectionsForNote(vault, upsert.id, parsed.indexedContent, chunkIds);
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    process.stderr.write(
-      `[single-indexer:${vault.config.name}] section build failed for ${parsed.relativePath}: ${message}\n`,
-    );
-  }
+  });
 
   // Embed — Ollama path only. ContextFit vaults skip; the chunks + links +
   // edges persisted here power the SQLite-backed tools, and search runs via
@@ -302,6 +312,8 @@ export async function indexNote(options: IndexNoteOptions): Promise<IndexNoteRes
   // ── Phase 4 / 04-02 / GRA-04 / D-02 ──
   // Full re-embed branch — emit the typed-edge mix into `edges`.
   writeAllEdges(vault, upsert.id, parsed);
+
+  vault.db.notes.markIndexCurrent(upsert.id, parsed.bodyHash);
 
   return {
     status: "indexed",

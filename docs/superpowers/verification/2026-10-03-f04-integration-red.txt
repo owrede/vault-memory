@@ -1,0 +1,173 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/observations/index.integration.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/observations/index.integration.test.ts (6 tests | 6 failed) 60ms
+     × indexes explicit statements with canonical hashes and stable repeated snapshots 21ms
+     × publishes statements on direct writes, removes obsolete statements and cascades delete 9ms
+     × surfaces fresh citations/provenance and suppresses stale indexed statements 8ms
+     × marks a pre-backfill source unindexed even when no statements are found 7ms
+     × keeps metadata body-free and counts statement excerpts in the global budget 7ms
+     × does not infer provenance or bypass a locked source for statement edits 8ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/observations/index.integration.test.ts > observation index uses canonical files > indexes explicit statements with canonical hashes and stable repeated snapshots
+AssertionError: expected [] to match object [ { category: 'fact', …(3) }, …(1) ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "category": "fact",
+-     "line_end": 2,
+-     "line_start": 2,
+-     "text": "First",
+-   },
+-   {
+-     "category": "decision",
+-     "line_end": 4,
+-     "line_start": 4,
+-     "text": "Second",
+-   },
+- ]
++ []
+
+ ❯ src/observations/index.integration.test.ts:23:18
+     21|     const noteId = f.vault.db.notes.getByPath("a.md")!.id;
+     22|     const rows = f.vault.db.observations.listForNote(noteId);
+     23|     expect(rows).toMatchObject([
+       |                  ^
+     24|       { category: "fact", text: "First", line_start: 2, line_end: 2 },
+     25|       { category: "decision", text: "Second", line_start: 4, line_end:…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  |unit| src/observations/index.integration.test.ts > observation index uses canonical files > publishes statements on direct writes, removes obsolete statements and cascades delete
+AssertionError: expected [] to have a length of 2 but got +0
+
+- Expected
++ Received
+
+- 2
++ 0
+
+ ❯ src/observations/index.integration.test.ts:37:57
+     35|     if (!initial.ok) throw new Error("seed failed");
+     36|     const noteId = f.vault.db.notes.getByPath("written.md")!.id;
+     37|     expect(f.vault.db.observations.listForNote(noteId)).toHaveLength(2…
+       |                                                         ^
+     38|     const result = await f.delivery.update(id, { blocks: [{ kind: "par…
+     39|     expect(result.ok).toBe(true);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+ FAIL  |unit| src/observations/index.integration.test.ts > observation index uses canonical files > surfaces fresh citations/provenance and suppresses stale indexed statements
+AssertionError: expected undefined to match object { state: 'fresh', …(2) }
+
+- Expected:
+{
+  "available_count": 2,
+  "state": "fresh",
+  "statements": [
+    {
+      "category": "fact",
+      "doc_id": "obsidian-fs://lab/a.md",
+      "properties": {
+        "confidence": "direct",
+        "evidence": [
+          "source-1",
+        ],
+        "source": "imported",
+      },
+      "source_handle": "obsidian-fs://lab",
+      "text": "First",
+    },
+    {
+      "category": "decision",
+      "text": "Second",
+    },
+  ],
+}
+
++ Received:
+undefined
+
+ ❯ src/observations/index.integration.test.ts:48:33
+     46|     await indexNote(opts());
+     47|     const result = await bundle();
+     48|     expect(result.observations).toMatchObject({ state: "fresh", availa…
+       |                                 ^
+     49|       { doc_id: f.id("a.md"), source_handle: f.source.handle, category…
+     50|       { category: "decision", text: "Second" },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯
+
+ FAIL  |unit| src/observations/index.integration.test.ts > observation index uses canonical files > marks a pre-backfill source unindexed even when no statements are found
+AssertionError: expected undefined to match object { state: 'unindexed', statements: [] }
+
+- Expected:
+{
+  "state": "unindexed",
+  "statements": [],
+}
+
++ Received:
+undefined
+
+ ❯ src/observations/index.integration.test.ts:60:43
+     58|     const doc = await f.source.readDocument(f.id("a.md"));
+     59|     f.vault.db.notes.upsertByPath({ path: "a.md", content: body, front…
+     60|     expect((await bundle()).observations).toMatchObject({ state: "unin…
+       |                                           ^
+     61|     await indexNote(opts());
+     62|     expect((await bundle()).observations).toMatchObject({ state: "fres…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/6]⎯
+
+ FAIL  |unit| src/observations/index.integration.test.ts > observation index uses canonical files > keeps metadata body-free and counts statement excerpts in the global budget
+AssertionError: expected { projection: 'full', …(5) } to match object { budget_used: 3, truncated: true }
+(4 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+-   "budget_used": 3,
+-   "truncated": true,
++   "budget_used": 0,
++   "truncated": false,
+  }
+
+ ❯ src/observations/index.integration.test.ts:68:28
+     66|     expect(JSON.stringify(await bundle({ projection: "metadata" }))).n…
+     67|     const result = await bundle({ projection: "full", max_chars: 3 });
+     68|     expect(result.context).toMatchObject({ budget_used: 3, truncated: …
+       |                            ^
+     69|     expect(result.observations!.statements).toMatchObject([{ text: "Fi…
+     70|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯
+
+ FAIL  |unit| src/observations/index.integration.test.ts > observation index uses canonical files > does not infer provenance or bypass a locked source for statement edits
+TypeError: Cannot read properties of undefined (reading 'statements')
+ ❯ src/observations/index.integration.test.ts:81:43
+     79|     })).toMatchObject({ ok: false, reason: "document_locked" });
+     80|     expect(f.vault.db.observations.listForNote(noteId)).toEqual(rows);
+     81|     expect((await bundle()).observations!.statements[0]!.properties).n…
+       |                                           ^
+     82|   });
+     83| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/6]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  6 failed (6)
+   Start at  16:08:15
+   Duration  514ms (transform 228ms, setup 0ms, import 361ms, tests 60ms, environment 0ms)

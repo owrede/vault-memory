@@ -14,6 +14,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 _Nothing yet._
 
+## [2.5.0] — 2026-10-04
+
+### Added
+
+- Business validity intervals: UTC `valid_from`/`valid_to`, historical v2
+  `as_of` retrieval, inherited or explicit statement bounds, indexed filtering
+  before ranking/limits and SQLite migration 18. Observation time stays separate.
+
+- Scriptable search/read/edit CLI, `VM_CONFIG_DIR` isolation, versioned MCP
+  manuals and truthful operation annotations, preserving original v1 schemas.
+
+- Optional local CPU ONNX embedding provider with SHA256-pinned assets and
+  manifest identity, query/passage prefixes, masked pooling/normalization and
+  explicit shadow migration preserving existing Ollama vector namespaces.
+
+- Opt-in reviewed neutral-v1 conversation imports: deterministic manifests,
+  imported provenance outside MemorySinks, hash/lock protected updates and
+  separate message-evidence promotion through the existing agent write path.
+
+- Opt-in session lifecycle tools and CLI: freshly verified brief context, explicit
+  agent summaries, per-sink session/event idempotence, recoverable SQLite v19
+  reservations and a versioned portable hook with a bounded process deadline.
+
+- Opt-in `schema_inspection` module: read-only candidate profiles, named
+  MemoryContract validation, strict/permissive diagnostics and property/category/
+  role drift with fresh citations; inference never weakens provenance requirements.
+
+- Explicit domain role declarations in Relations sections, additive v2 expand
+  role filters and incoming/outgoing aliases, source-line/hash provenance and
+  stale-relation diagnostics on the existing typed graph.
+
+- Categorized statements from explicit Markdown list items with stable repeated
+  snapshots, SQLite migration 17, source freshness diagnostics and optional
+  citation-preserving v2 retrieval. No inference or provenance promotion.
+
+- Compact v2 assembly projections: body-free metadata, selected source
+  sections with complete citations, global character budgets and explicit
+  truncation/exclusions. Preserve legacy defaults and original v1 schemas.
+
+- Opt-in `document_edit` module with hash-protected `edit_document` text and
+  heading-section patches, preserved frontmatter formatting and guarded no-ops.
+
+- Document locks: Boolean `locked: true` in stored frontmatter prevents
+  overwrites, frontmatter changes, deletion and superseding through delivery
+  adapters. A correct hash cannot bypass the lock. Unlock in Obsidian or a
+  text editor, then read the document again before retrying.
+
+### Fixed
+
+- Embedding identity is preserved across bare-name collisions, secondary/shadow
+  index refreshes and active-model switches in catchup and watcher paths.
+
+- ContextFit searches use their configured backend; source-only reads require
+  no embedding assets and CLI reads do not provision memory sinks.
+
+- Targeted edit section boundaries, identical mixed-newline no-ops and
+  derived-index refresh/retry after successful edits.
+
+- Locked documents return `document_locked` consistently through note and
+  frontmatter handlers. Rejected writes no longer suppress later external
+  editor events; watcher suppression runs only immediately before a mutation.
+
 ## [2.4.1] — 2026-08-09
 
 ### Fixed

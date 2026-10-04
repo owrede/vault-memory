@@ -1,0 +1,215 @@
+
+> @owrede/vault-memory@2.4.1 test
+> vitest run src/schema/profile.test.ts src/schema/drift.test.ts
+
+ DEPRECATED  `test.poolOptions` was removed in Vitest 4. All previous `poolOptions` are now top-level options. Please, refer to the migration guide: https://vitest.dev/guide/migration#pool-rework
+
+ RUN  v4.1.10 /private/tmp/vault-memory-basic-memory-features
+
+ ❯ |unit| src/schema/profile.test.ts (4 tests | 3 failed) 7ms
+     × reports prevalence without inventing required fields 5ms
+     × distinguishes null, arrays and missing values with deterministic ordering 1ms
+     × ignores inherited properties and counts own undefined as present 0ms
+ ❯ |unit| src/schema/drift.test.ts (4 tests | 3 failed) 6ms
+     × reports required missing in any sampled document, unexpected keys and new types 4ms
+     × reports an entirely absent required field even for an empty sample 0ms
+     × compares null to the explicit allowed types 0ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 6 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  |unit| src/schema/drift.test.ts > explicit schema drift > reports required missing in any sampled document, unexpected keys and new types
+AssertionError: expected [] to deeply equal [ { key: 'evidence', …(1) }, …(2) ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "key": "evidence",
+-     "kind": "missing",
+-   },
+-   {
+-     "key": "extra",
+-     "kind": "unexpected",
+-   },
+-   {
+-     "key": "name",
+-     "kind": "type_changed",
+-   },
+- ]
++ []
+
+ ❯ src/schema/drift.test.ts:7:112
+      5|   const expected = [{ key: "evidence", types: ["array"], required: tru…
+      6|   it("reports required missing in any sampled document, unexpected key…
+      7|     expect(diffSchema(expected, inferFieldProfile([{ evidence: [], nam…
+       |                                                                                                                ^
+      8|       { key: "evidence", kind: "missing" }, { key: "extra", kind: "une…
+      9|     ]);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/6]⎯
+
+ FAIL  |unit| src/schema/drift.test.ts > explicit schema drift > reports an entirely absent required field even for an empty sample
+AssertionError: expected [] to deeply equal [ Array(1) ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "key": "evidence",
+-     "kind": "missing",
+-   },
+- ]
++ []
+
+ ❯ src/schema/drift.test.ts:16:38
+     14|   });
+     15|   it("reports an entirely absent required field even for an empty samp…
+     16|     expect(diffSchema(expected, [])).toEqual([{ key: "evidence", kind:…
+       |                                      ^
+     17|   });
+     18|   it("compares null to the explicit allowed types", () => {
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/6]⎯
+
+ FAIL  |unit| src/schema/drift.test.ts > explicit schema drift > compares null to the explicit allowed types
+AssertionError: expected [] to deeply equal [ { key: 'evidence', …(1) } ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "key": "evidence",
+-     "kind": "type_changed",
+-   },
+- ]
++ []
+
+ ❯ src/schema/drift.test.ts:19:75
+     17|   });
+     18|   it("compares null to the explicit allowed types", () => {
+     19|     expect(diffSchema(expected, inferFieldProfile([{ evidence: null }]…
+       |                                                                           ^
+     20|   });
+     21| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/6]⎯
+
+ FAIL  |unit| src/schema/profile.test.ts > empirical field prevalence > reports prevalence without inventing required fields
+AssertionError: expected [] to deeply equal [ { key: 'name', …(3) }, …(1) ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "key": "name",
+-     "present": 2,
+-     "total": 2,
+-     "types": [
+-       "string",
+-     ],
+-   },
+-   {
+-     "key": "team",
+-     "present": 1,
+-     "total": 2,
+-     "types": [
+-       "string",
+-     ],
+-   },
+- ]
++ []
+
+ ❯ src/schema/profile.test.ts:5:82
+      3| describe("empirical field prevalence", () => {
+      4|   it("reports prevalence without inventing required fields", () => {
+      5|     expect(inferFieldProfile([{ name: "Oliver", team: "IA" }, { name: …
+       |                                                                                  ^
+      6|       { key: "name", types: ["string"], present: 2, total: 2 },
+      7|       { key: "team", types: ["string"], present: 1, total: 2 },
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/6]⎯
+
+ FAIL  |unit| src/schema/profile.test.ts > empirical field prevalence > distinguishes null, arrays and missing values with deterministic ordering
+AssertionError: expected [] to deeply equal [ { key: 'a', …(3) }, …(2) ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "key": "a",
+-     "present": 2,
+-     "total": 2,
+-     "types": [
+-       "array",
+-       "object",
+-     ],
+-   },
+-   {
+-     "key": "mix",
+-     "present": 2,
+-     "total": 2,
+-     "types": [
+-       "boolean",
+-       "string",
+-     ],
+-   },
+-   {
+-     "key": "z",
+-     "present": 2,
+-     "total": 2,
+-     "types": [
+-       "null",
+-       "number",
+-     ],
+-   },
+- ]
++ []
+
+ ❯ src/schema/profile.test.ts:11:95
+      9|   });
+     10|   it("distinguishes null, arrays and missing values with deterministic…
+     11|     expect(inferFieldProfile([{ z: null, a: [1], mix: "yes" }, { mix: …
+       |                                                                                               ^
+     12|       { key: "a", types: ["array", "object"], present: 2, total: 2 },
+     13|       { key: "mix", types: ["boolean", "string"], present: 2, total: 2…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/6]⎯
+
+ FAIL  |unit| src/schema/profile.test.ts > empirical field prevalence > ignores inherited properties and counts own undefined as present
+AssertionError: expected [] to deeply equal [ { key: 'own', …(3) } ]
+
+- Expected
++ Received
+
+- [
+-   {
+-     "key": "own",
+-     "present": 1,
+-     "total": 1,
+-     "types": [
+-       "undefined",
+-     ],
+-   },
+- ]
++ []
+
+ ❯ src/schema/profile.test.ts:20:38
+     18|   it("ignores inherited properties and counts own undefined as present…
+     19|     const row = Object.assign(Object.create({ inherited: true }), { ow…
+     20|     expect(inferFieldProfile([row])).toEqual([{ key: "own", types: ["u…
+       |                                      ^
+     21|   });
+     22| });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/6]⎯
+
+
+ Test Files  2 failed (2)
+      Tests  6 failed | 2 passed (8)
+   Start at  16:54:59
+   Duration  129ms (transform 31ms, setup 0ms, import 46ms, tests 13ms, environment 0ms)

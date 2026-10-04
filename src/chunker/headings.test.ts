@@ -2,6 +2,11 @@ import { describe, it, expect } from "vitest";
 import { extractHeadings, headingPathAtOffset } from "./headings.js";
 
 describe("extractHeadings", () => {
+  it("ignores headings in list-container fences", () => {
+    expect(extractHeadings("- ```md\n  ## Relations\n  ```\n## Real\n").map((h) => h.text)).toEqual(
+      ["Real"],
+    );
+  });
   it("returns [] for empty input", () => {
     expect(extractHeadings("")).toEqual([]);
   });
