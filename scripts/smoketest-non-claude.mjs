@@ -47,9 +47,7 @@ import { join, resolve } from "node:path";
 const CLI = process.argv[2] ?? "dist/cli.js";
 
 if (process.argv.includes("--help") || process.argv.includes("-h")) {
-  console.error(
-    "usage: node scripts/smoketest-non-claude.mjs [path/to/dist/cli.js]",
-  );
+  console.error("usage: node scripts/smoketest-non-claude.mjs [path/to/dist/cli.js]");
   process.exit(0);
 }
 
@@ -150,10 +148,7 @@ const EXPECTED_TOOLS = [
 ];
 
 // Phase 2 (plan 02-06): two MCP Resources promoted from tools.
-const EXPECTED_RESOURCES = [
-  "vault-memory://memory/sinks",
-  "vault-memory://memory/stats",
-];
+const EXPECTED_RESOURCES = ["vault-memory://memory/sinks", "vault-memory://memory/stats"];
 
 // Phase 8 (plan 08-05 / REL-08): the 5 v1 tools that were promoted to MCP
 // Resources keep their tool entries (with DEPRECATED in the description)
@@ -213,10 +208,7 @@ const transport = new StdioClientTransport({
 // The captured client_info.name flows through to the audit log if any
 // write_* tool runs (none in this smoketest, but the seam is exercised
 // at connect time).
-const client = new Client(
-  { name: "non-claude-smoketest", version: "1.0.0" },
-  { capabilities: {} },
-);
+const client = new Client({ name: "non-claude-smoketest", version: "1.0.0" }, { capabilities: {} });
 
 let exitCode = 0;
 const fail = (msg) => {
@@ -300,7 +292,9 @@ try {
   if (listVaultsResp.isError === true) {
     fail(`list_vaults returned isError: true — ${JSON.stringify(listVaultsResp).slice(0, 200)}`);
   } else if (!Array.isArray(listVaultsResp.content)) {
-    fail(`list_vaults response missing content[] — ${JSON.stringify(listVaultsResp).slice(0, 200)}`);
+    fail(
+      `list_vaults response missing content[] — ${JSON.stringify(listVaultsResp).slice(0, 200)}`,
+    );
   } else {
     pass(`tools/call list_vaults returned valid envelope`);
   }
@@ -312,10 +306,7 @@ try {
   const recordObs = tools.find((t) => t.name === "record_observation");
   if (!recordObs) {
     fail("record_observation tool missing from tools/list");
-  } else if (
-    typeof recordObs.description !== "string" ||
-    recordObs.description.length === 0
-  ) {
+  } else if (typeof recordObs.description !== "string" || recordObs.description.length === 0) {
     fail("record_observation has empty description");
   } else {
     pass(
@@ -339,40 +330,49 @@ try {
     // this via `client.listResourceTemplates()`. We union static URIs
     // and templates so the presence check below covers both shapes.
     const { resourceTemplates } = await client.listResourceTemplates();
-    const staticUris = (resources ?? [])
-      .map((r) => r.uri)
-      .filter((u) => typeof u === "string");
+    const staticUris = (resources ?? []).map((r) => r.uri).filter((u) => typeof u === "string");
     const templateUris = (resourceTemplates ?? [])
       .map((r) => r.uriTemplate)
       .filter((u) => typeof u === "string");
     const allUris = [...staticUris, ...templateUris].sort();
-    const missingResources = EXPECTED_RESOURCES.filter(
-      (u) => !allUris.includes(u),
-    );
+    const missingResources = EXPECTED_RESOURCES.filter((u) => !allUris.includes(u));
     if (missingResources.length > 0) {
       fail(`missing resources: ${missingResources.join(", ")}`);
     } else {
-      pass(
-        `resources/list returned the 2 Phase 2 memory Resources (Phase 2 plan 02-06 / MEM-09)`,
-      );
+      pass(`resources/list returned the 2 Phase 2 memory Resources (Phase 2 plan 02-06 / MEM-09)`);
     }
 
-    // REL-08: assert all 10 expected URIs / templates are present.
-    const missingRel08 = EXPECTED_RESOURCE_URIS.filter(
-      (u) => !allUris.includes(u),
-    );
-    const extraRel08 = allUris.filter(
-      (u) => !EXPECTED_RESOURCE_URIS.includes(u),
-    );
+    // F08 adds a separate manual template; the frozen REL-08 catalog remains 13.
+    const manualUri = "vault-memory://man/{topic}";
+    const legacyUris = allUris.filter((uri) => uri !== manualUri);
+    if (
+      staticUris.includes(manualUri) ||
+      templateUris.filter((uri) => uri === manualUri).length !== 1
+    ) {
+      fail("F08 manual must be advertised exactly once as a template, never as a static resource");
+    } else {
+      const manual = await client.readResource({ uri: "vault-memory://man/audit_log" });
+      const payload = JSON.parse(manual.contents[0].text);
+      if (
+        payload.schema_version !== 1 ||
+        payload.topic !== "audit_log" ||
+        payload.annotations.readOnlyHint !== true
+      )
+        fail("F08 manual payload is invalid");
+      else pass("F08 separate manual template is discoverable and readable");
+    }
+    // REL-08: assert the original expected URIs / templates are present.
+    const missingRel08 = EXPECTED_RESOURCE_URIS.filter((u) => !legacyUris.includes(u));
+    const extraRel08 = legacyUris.filter((u) => !EXPECTED_RESOURCE_URIS.includes(u));
     if (missingRel08.length > 0) {
       fail(`REL-08 missing Resource URIs: ${missingRel08.join(", ")}`);
     }
     if (extraRel08.length > 0) {
       fail(`REL-08 unexpected Resource URIs: ${extraRel08.join(", ")}`);
     }
-    if (allUris.length !== EXPECTED_RESOURCE_URIS.length) {
+    if (legacyUris.length !== EXPECTED_RESOURCE_URIS.length) {
       fail(
-        `REL-08 Resource count: expected ${EXPECTED_RESOURCE_URIS.length}, got ${allUris.length}`,
+        `REL-08 Resource count: expected ${EXPECTED_RESOURCE_URIS.length}, got ${legacyUris.length}`,
       );
     } else if (missingRel08.length === 0 && extraRel08.length === 0) {
       pass(
@@ -395,9 +395,7 @@ try {
       } else {
         const parsed = JSON.parse(firstText);
         if (typeof parsed.total_docs !== "number") {
-          fail(
-            `memory/stats response missing total_docs — ${firstText.slice(0, 200)}`,
-          );
+          fail(`memory/stats response missing total_docs — ${firstText.slice(0, 200)}`);
         } else {
           pass(
             `resources/read memory/stats returned valid JSON with total_docs=${parsed.total_docs} (Phase 2 plan 02-06 / MEM-09)`,
@@ -459,25 +457,18 @@ try {
       arguments: { name: "meeting-prep" },
     });
     if (describe.isError === true) {
-      fail(
-        `describe_contract returned isError: true — ${JSON.stringify(describe).slice(0, 200)}`,
-      );
+      fail(`describe_contract returned isError: true — ${JSON.stringify(describe).slice(0, 200)}`);
     } else {
       const payload = JSON.parse(describe.content[0].text);
       // describeContract returns {ok: true, json_schema, summary}; we
       // tolerate either shape (the v2.0.0 surface emits ok:true so the
       // body lives at the top level).
       const hasSchema = payload.json_schema !== undefined || payload.ok === true;
-      const hasSummary =
-        typeof payload.summary === "string" && payload.summary.length > 0;
+      const hasSummary = typeof payload.summary === "string" && payload.summary.length > 0;
       if (!hasSchema) {
-        fail(
-          `describe_contract missing json_schema — ${JSON.stringify(payload).slice(0, 200)}`,
-        );
+        fail(`describe_contract missing json_schema — ${JSON.stringify(payload).slice(0, 200)}`);
       } else if (!hasSummary) {
-        fail(
-          `describe_contract missing summary — ${JSON.stringify(payload).slice(0, 200)}`,
-        );
+        fail(`describe_contract missing summary — ${JSON.stringify(payload).slice(0, 200)}`);
       } else {
         pass("Phase 6 — describe_contract(meeting-prep) returned json_schema + summary");
       }
@@ -514,9 +505,7 @@ try {
           `instantiate_contract(smoketest-trivial) missing write_back.doc_id — ${JSON.stringify(payload).slice(0, 300)}`,
         );
       } else {
-        pass(
-          `Phase 6 — instantiate_contract(smoketest-trivial) → write_back.doc_id ✓`,
-        );
+        pass(`Phase 6 — instantiate_contract(smoketest-trivial) → write_back.doc_id ✓`);
       }
     }
   } catch (err) {
@@ -556,9 +545,7 @@ try {
       }
     }
   } catch (err) {
-    fail(
-      `list_contracts Resource read threw: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    fail(`list_contracts Resource read threw: ${err instanceof Error ? err.message : String(err)}`);
   }
 } catch (err) {
   fail(`driver threw: ${err instanceof Error ? err.message : String(err)}`);
@@ -580,9 +567,7 @@ try {
 
 if (exitCode === 0) {
   console.log("");
-  console.log(
-    "✓ Non-Claude smoketest PASSED (Phase 1 + Phase 2 memory + Phase 6 contracts).",
-  );
+  console.log("✓ Non-Claude smoketest PASSED (Phase 1 + Phase 2 memory + Phase 6 contracts).");
 } else {
   console.error("");
   console.error("✗ Non-Claude smoketest FAILED — see assertions above.");
